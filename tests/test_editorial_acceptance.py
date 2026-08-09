@@ -461,6 +461,38 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(any(len(cluster.items) == 2 for cluster in merged))
         self.assertGreaterEqual(len(merged), 2)
 
+    def test_same_semiconductor_theme_does_not_merge_different_events(self) -> None:
+        hbf = _item(
+            "hbf-event",
+            "ai",
+            "반도체",
+            "한미반도체, HBF 상용화 임박 수혜",
+            "한미반도체의 HBF 상용화와 TC 본더 수율 검증이 전해졌다.",
+            metadata_title="한미반도체, HBF 상용화 임박 수혜",
+            metadata_description="비메모리 첨단 패키징 투자 확대가 예상된다.",
+            domain="hbf.example",
+        )
+        china = _item(
+            "china-market",
+            "economy",
+            "물가",
+            "10일 중국증시 첨단산업 모멘텀",
+            "중국증시와 물가 흐름을 정리했다.",
+            domain="china.example",
+        )
+        morgan = _item(
+            "morgan-market",
+            "ai",
+            "반도체",
+            "모건스탠리 메모리 반도체주 조정 끝",
+            "메모리 반도체주의 조정이 끝났다고 분석했다.",
+            metadata_title="모건스탠리 메모리 반도체주 조정 끝",
+            metadata_description="최근 주가 급락과 투자 재진입 기회를 분석했다.",
+            domain="morgan.example",
+        )
+        clusters = cluster_news((hbf, china, morgan))
+        self.assertEqual(len(clusters), 3)
+
     def test_event_clustering_merges_same_sports_interruption_theme(self) -> None:
         first = _item(
             "heat-a",
