@@ -15,6 +15,7 @@
 - 첨부 Visual Design Language Archive
 - 실제 생성된 GitHub 저장소와 원격 workflow
 - 실제 Pages 공개 결과
+- 첨부 Visual Design Language Archive의 실제 preview와 implementation 자료
 
 ### 확보하지 못한 자료
 
@@ -31,6 +32,7 @@
 - normalization·deduplication·clustering·scoring
 - deterministic rule engine
 - metadata enrichment과 provenance
+- `StoryFacts` 기반 결정론적 summary·headline synthesis와 story-specific next signal
 - mobile static renderer
 - status machine·artifact validator
 - GitHub Actions·Pages workflow
@@ -49,9 +51,11 @@
 
 ## 원격 연속성
 
-- 최신 UI commit: `39137fb20eea2a66916495bfe8703c1e1f8b025c`
-- CI run: `31326864815` 성공
-- Pages run: `31327087861` 성공
+- 최신 콘텐츠 commit: `39028d131594d75c98d485b5234b6fe3c6fd82cf`
+- CI run: `31330863299` 성공
+- Pages run: `31330889761` 성공
+- Pages build: `93288833389` 성공
+- Pages deploy: `93289017742` 성공
 - 공개 주소: [Insight Desk](https://kjkwon981229-prog.github.io/insight-desk/)
 - 실제 공개 root·latest·archive·날짜별 archive 확인 완료
 - 실제 NCP News·Trend 결과가 `COMPLETE`로 게시됨
@@ -59,7 +63,7 @@
 ## 현재 상태
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (25/25)
+LOCAL_TESTS_VERIFIED = YES (34/34)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
 GITHUB_ACTIONS_VERIFIED = YES
