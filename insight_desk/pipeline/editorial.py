@@ -277,13 +277,22 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
                 detected_terms = hits
         return detected_type, detected_value, detected_terms
 
+    heat_interruption = (
+        sports_context
+        and any(_contains(text, term) for term in ("폭염", "열파"))
+        and any(_contains(text, term) for term in ("중단", "멈춘", "휴식", "재개", "취소"))
+    )
+
     # The title is the strongest intent/event evidence.  Only fall back to
     # the combined lead text when the title contains no recognizable event;
     # this prevents a secondary sentence (for example an album mention in a
     # sports article) from changing the story's event type.
-    event_type, significance, matched_terms = detect_event(title_text)
-    if event_type == "OTHER":
-        event_type, significance, matched_terms = detect_event(text)
+    if heat_interruption:
+        event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
+    else:
+        event_type, significance, matched_terms = detect_event(title_text)
+        if event_type == "OTHER":
+            event_type, significance, matched_terms = detect_event(text)
     if event_type == "SCHEDULED_EVENT" and any(
         _contains(text, term) for term in ("블루카펫", "행사 참석", "행사 일정에 참석", "포토")
     ) and not any(_contains(text, term) for term in ("공연", "콘서트", "컴백", "앨범", "경기 결과", "시구")):
