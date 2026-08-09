@@ -47,7 +47,7 @@ def _item(
 ) -> NewsItem:
     provenance = (EvidenceType.SEARCH_SNIPPET, EvidenceType.OFFICIAL_SOURCE) if official else (EvidenceType.SEARCH_SNIPPET,)
     return NewsItem(
-        f"N-{key}", topic_id, topic_id, f"{topic_id} 주요 변화 {key}", summary,
+        f"N-{key}", topic_id, topic_id, f"{topic_id} 모델 출시 발표 {key}", summary,
         f"https://{domain or topic_id + '.example'}/story/{key}", "", f"https://{domain or topic_id + '.example'}/story/{key}",
         "2026-08-09T08:00:00+09:00", domain or topic_id + ".example", key, score,
         provenance=provenance, matched_topic_ids=matched or (topic_id,),
