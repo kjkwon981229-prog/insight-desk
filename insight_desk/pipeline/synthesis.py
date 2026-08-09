@@ -222,6 +222,24 @@ def _market_run_phrase(title: str) -> str:
     return match.group(0) if match else ""
 
 
+def _market_metric_number(title: str, numbers: tuple[str, ...]) -> str:
+    """Return a number only when the headline ties it to the metric.
+
+    A level such as ``1300원대 환율`` must not be rendered as the size of a
+    later-mentioned ``변동폭``.  If a variability marker is present, only a
+    number immediately following that marker is safe to reuse.
+    """
+
+    if not numbers:
+        return ""
+    cleaned = _clean_headline(title)
+    marker = re.search(r"변동폭|변동성", cleaned)
+    if marker:
+        nearby = _NUMBER_RE.search(cleaned[marker.end() : marker.end() + 32])
+        return nearby.group(0).replace(" ", "") if nearby else ""
+    return numbers[0]
+
+
 def _dates(text: str) -> tuple[str, ...]:
     return _unique([re.sub(r"\s+", "", value) for value in _DATE_RE.findall(text)])
 
@@ -475,7 +493,10 @@ def _headline(
         run_phrase = _market_run_phrase(cleaned)
         if run_phrase:
             return f"{subject} {run_phrase}"
-        result = f"{subject} {numbers[0]}"
+        metric_number = _market_metric_number(cleaned, numbers)
+        if not metric_number:
+            return f"{subject} {change}" if change and change not in _GENERIC_CHANGE_WORDS else subject
+        result = f"{subject} {metric_number}"
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
@@ -528,7 +549,11 @@ def _summary(
             and change
             and any(marker in change for marker in ("최대", "최고", "변동폭"))
         ):
-            sentence = f"{summary_subject} 변동폭이 {_number_with_ro(numbers[0])} {change} 수준으로 확대됐다."
+            metric_number = _market_metric_number(title, numbers)
+            if metric_number:
+                sentence = f"{summary_subject} 변동폭이 {_number_with_ro(metric_number)} {change} 수준으로 확대됐다."
+            else:
+                sentence = f"{summary_subject} 변동성이 {change} 수준으로 확대됐다."
         elif change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
             if marker and summary_subject and numbers[0].endswith(("%", "달러")):
