@@ -21,6 +21,7 @@ def _topic(
     anchors: tuple[str, ...] = (),
     negative: tuple[str, ...] = (),
     events: tuple[str, ...] = (),
+    required: tuple[str, ...] = (),
     conditional: bool = False,
 ) -> Topic:
     return Topic(
@@ -34,6 +35,7 @@ def _topic(
         intent_anchors=anchors,
         negative_context=negative,
         event_terms=events,
+        required_intent_terms=required,
     )
 
 
@@ -140,6 +142,86 @@ class EditorialAcceptanceTests(unittest.TestCase):
         direct_score = assess_relevance(StoryCluster("psat", (direct,)), topic).score
         incidental_score = assess_relevance(StoryCluster("psat", (incidental,)), topic).score
         self.assertGreater(direct_score, incidental_score)
+
+    def test_named_query_missing_from_title_is_not_saved_by_generic_topic_anchor(self) -> None:
+        topic = _topic(
+            "ai",
+            "AI·테크",
+            "Claude",
+            anchors=("AI", "인공지능"),
+            events=("출시",),
+        )
+        item = _item(
+            "FP-CLAUDE-01",
+            "ai",
+            "Claude",
+            "AI 비용 관리 도구 출시",
+            "클로드(Claude) 사용 비용을 줄이는 기능을 공개했다...",
+        )
+        assessment = assess_cluster(StoryCluster("ai", (item,)), topic)
+        self.assertFalse(assessment.relevance.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_psat_corporate_hiring_without_civil_service_intent_is_rejected(self) -> None:
+        topic = _topic(
+            "psat",
+            "PSAT·공채 일정",
+            "채용 일정",
+            anchors=("채용", "공고"),
+            events=("채용", "공고"),
+            required=("PSAT", "5급 공채", "7급 공채", "국가공무원", "공무원 시험"),
+            conditional=True,
+        )
+        item = _item(
+            "FP-PSAT-02",
+            "psat",
+            "채용 일정",
+            "근로복지공단 하반기 신입 공개 채용",
+            "274명을 채용한다. 지원 자격과 일정은 홈페이지 공고에서 확인할 수 있다.",
+        )
+        assessment = assess_cluster(StoryCluster("psat", (item,)), topic)
+        self.assertFalse(assessment.relevance.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_generic_kbo_player_story_without_league_or_hanwha_context_is_rejected(self) -> None:
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "KBO",
+            anchors=("선발", "부상", "경기"),
+            events=("선발", "부상"),
+            required=("한화", "KBO", "프로야구"),
+            conditional=True,
+        )
+        item = _item(
+            "FP-KBO-02",
+            "kbo",
+            "KBO",
+            "100% 회복 안 된 선수, 왜 벌써 선발 투입하나",
+            "구단이 선발 투입을 검토하고 있다.",
+        )
+        assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
+        self.assertFalse(assessment.relevance.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_forecast_metric_without_observed_change_is_rejected(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "미국 증시",
+            anchors=("미국 증시", "물가", "지표"),
+            events=("지표",),
+        )
+        item = _item(
+            "FP-METRIC-01",
+            "economy",
+            "미국 증시",
+            "7월 물가지표에 주목",
+            "다음 발표될 지표에 시장의 관심이 쏠린다.",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
+        self.assertFalse(assessment.event.passed)
+        self.assertFalse(assessment.qualified)
 
     def test_number_alone_is_not_an_event(self) -> None:
         topic = _topic("economy", "경제·투자", "환율", anchors=("환율",), events=("환율", "발표"))
