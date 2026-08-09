@@ -466,7 +466,7 @@ def _key_fact_panel(story: object) -> str:
         if changes:
             value = " ".join(str(changes[0]).split())
             if len(value) > 30:
-                value = value[:30].rstrip() + "…"
+                value = value[:30].rstrip()
             if value and value != numbers[0] and value not in {"기록", "발표", "공개", "확인"}:
                 facts_to_render.append(("변화", value))
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT", "POLICY"}:
