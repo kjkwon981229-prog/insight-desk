@@ -15,6 +15,7 @@ from insight_desk.domain.models import (
     RunState,
     RunStatus,
     Story,
+    StoryFacts,
     Topic,
 )
 from insight_desk.web.render import render_site
@@ -53,11 +54,21 @@ class ArtifactTests(unittest.TestCase):
         )
         story = Story(
             "t", "테스트", "테스트 제목", "테스트 요약", "한 출처에서 확인됐다.", "관심 흐름 확인", "", "", ("후속 발표",), ("N001",), Certainty.CONFIRMED, 1.0, 1, (EvidenceType.SEARCH_SNIPPET,), 0,
+            facts=StoryFacts(event_type="STATISTIC", key_numbers=("47원",), key_changes=("금융위기 후 최고",)),
         )
         briefing = Briefing(state, (topic,), ("첫 줄", "둘째 줄", "셋째 줄"), (story,), (item,), (), ())
         render_site(briefing, root)
         text = (root / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("N001", text)
-        self.assertNotIn("왜 보나", text)
-        self.assertNotIn("관심도와의 관계", text)
-        self.assertNotIn("산업·투자 판단", text)
+        for forbidden in (
+            "왜 보나",
+            "근거와 확인할 것",
+            "핵심 해석",
+            "관심도와의 관계",
+            "산업·투자 판단",
+            "출처 범위",
+        ):
+            self.assertNotIn(forbidden, text)
+        self.assertIn("전체 근거 보기", text)
+        self.assertIn("근거 1곳", text)
+        self.assertIn("key-fact-panel", text)
