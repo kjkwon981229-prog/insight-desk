@@ -10,7 +10,7 @@ from .naver import NaverApiClient, NaverApiError
 
 @dataclass(frozen=True)
 class NewsCollection:
-    raw_items: tuple[tuple[str, str, dict[str, object]], ...]
+    raw_items: tuple[tuple[str, str, str, dict[str, object]], ...]
     status: CollectorStatus
 
 
@@ -21,43 +21,108 @@ class TrendCollection:
 
 
 def collect_news(client: NaverApiClient, topics: tuple[Topic, ...]) -> NewsCollection:
-    raw: list[tuple[str, str, dict[str, object]]] = []
+    """Retrieve a bounded, topic-fair union of relevance and freshness results.
+
+    ``sim`` is the primary intent-retrieval channel and ``date`` is a bounded
+    freshness channel.  A query/channel pair is fetched once even when several
+    interests share it.  The per-query slice is capped before normalization so
+    request volume cannot silently become editorial authority.
+    """
+
+    raw: list[tuple[str, str, str, dict[str, object]]] = []
     errors: list[str] = []
     attempted = 0
     succeeded = 0
-    seen_payloads: dict[str, dict[str, object]] = {}
+    seen_payloads: dict[tuple[str, str], dict[str, object]] = {}
     enabled_topics = [topic for topic in topics if topic.enabled]
+    allocations: dict[tuple[str, str], dict[str, int]] = {}
     for topic in enabled_topics:
         queries = topic.all_news_queries
         if not queries:
             continue
         per_query = max(5, (topic.candidate_budget + len(queries) - 1) // len(queries))
+        sim_budget = max(1, (per_query * 3 + 4) // 5)
+        date_budget = max(0, per_query - sim_budget)
         for query in queries:
-            if query in seen_payloads:
-                # Reuse one network response while retaining every topic
-                # attribution for cross-interest deduplication.
-                raw.append((topic.id, query, seen_payloads[query]))
-                continue
-            attempted += 1
-            try:
-                # Equal request budgets keep broad query families from becoming
-                # implicit editorial authority. The final cap is topic-local.
-                payload = client.search_news(query, display=min(100, per_query))
-                succeeded += 1
+            allocations[(topic.id, query)] = {"SIM": sim_budget, "DATE": date_budget}
+
+    # The largest allocation wins for a shared query.  Each topic still gets
+    # only its own slice below, so sharing never increases a topic's candidate
+    # budget while it does prevent duplicate network calls.
+    request_budget: dict[tuple[str, str], int] = {}
+    for (topic_id, query), channels in allocations.items():
+        for channel, budget in channels.items():
+            if budget:
+                request_budget[(query, channel)] = max(request_budget.get((query, channel), 0), budget)
+
+    legacy_sort_client = False
+    for topic in enabled_topics:
+        for query in topic.all_news_queries:
+            for channel in ("SIM", "DATE"):
+                budget = allocations.get((topic.id, query), {}).get(channel, 0)
+                if not budget:
+                    continue
+                key = (query, channel)
+                payload = seen_payloads.get(key)
+                if payload is None and legacy_sort_client and channel == "DATE":
+                    payload = seen_payloads.get((query, "SIM"))
+                if payload is None:
+                    attempted += 1
+                    try:
+                        if legacy_sort_client:
+                            payload = client.search_news(query, display=min(100, request_budget[key]))
+                        else:
+                            payload = client.search_news(
+                                query,
+                                display=min(100, request_budget[key]),
+                                sort=channel.casefold(),
+                            )
+                        succeeded += 1
+                        items = payload.get("items", [])
+                        if isinstance(items, list):
+                            payload = {**payload, "items": items[: request_budget[key]]}
+                        seen_payloads[key] = payload
+                    except TypeError as exc:
+                        # Small isolated test transports from older package
+                        # versions may not expose ``sort``.  Production's
+                        # NaverApiClient always takes the explicit channel.
+                        if "sort" not in str(exc):
+                            raise
+                        legacy_sort_client = True
+                        try:
+                            payload = client.search_news(
+                                query,
+                                display=min(100, request_budget[key]),
+                            )
+                            succeeded += 1
+                            items = payload.get("items", [])
+                            if isinstance(items, list):
+                                payload = {**payload, "items": items[: request_budget[key]]}
+                            seen_payloads[key] = payload
+                        except NaverApiError as fallback_exc:
+                            errors.append(
+                                redact_text(
+                                    f"{topic.name}/{query}/{channel}: {fallback_exc.kind} {fallback_exc}"
+                                )
+                            )
+                            continue
+                    except NaverApiError as exc:
+                        errors.append(redact_text(f"{topic.name}/{query}/{channel}: {exc.kind} {exc}"))
+                        continue
                 items = payload.get("items", [])
-                if isinstance(items, list):
-                    payload = {**payload, "items": items[:per_query]}
-                seen_payloads[query] = payload
-                raw.append((topic.id, query, payload))
-            except NaverApiError as exc:
-                errors.append(redact_text(f"{topic.name}/{query}: {exc.kind} {exc}"))
+                sliced = {**payload, "items": items[:budget]} if isinstance(items, list) else payload
+                raw.append((topic.id, query, channel, sliced))
     failed = attempted - succeeded
     status = CollectorStatus(
         attempted=attempted,
         succeeded=succeeded,
         failed=failed,
         partial=failed > 0 and succeeded > 0,
-        item_count=sum(len(payload.get("items", [])) for _, _, payload in raw if isinstance(payload.get("items", []), list)),
+        item_count=sum(
+            len(payload.get("items", []))
+            for _, _, _, payload in raw
+            if isinstance(payload.get("items", []), list)
+        ),
         errors=tuple(errors[:20]),
     )
     return NewsCollection(raw_items=tuple(raw), status=status)
