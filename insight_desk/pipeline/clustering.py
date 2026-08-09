@@ -36,6 +36,7 @@ _CLUSTER_GENERIC_ENTITIES = {
     "앨범", "미니", "싱글", "음악", "차트", "가요계", "그룹", "신인", "걸그룹",
     "보이그룹", "콘셉트", "포토", "국내외", "글로벌", "집", "모델", "서비스",
     "제품", "신제품", "사업", "시장", "업계", "리그", "경기", "선수", "구단",
+    "kbo", "프로야구", "야구",
     "반도체", "메모리", "hbm", "hbf", "gpu", "ai", "증시", "주가", "첨단산업",
     "모멘텀", "수혜", "초호황",
 }
@@ -109,13 +110,12 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
         and token not in _GENERIC_TERMS
         and token not in _CONTEXT_TERMS
         and token not in _CLUSTER_GENERIC_ENTITIES
-        and not token.isdigit()
+        # A numeric level/result such as ``1300원대`` or ``55경기`` is a
+        # supporting fact, not an entity.  Let the dedicated number set
+        # carry it so a shared number cannot join unrelated events.
+        and not token[0].isdigit()
         and not _DATE_NUMBER_RE.fullmatch(token)
     }
-    if "프로야구" in text:
-        entities.add("야구")
-    if "kbo" in text:
-        entities.add("야구")
     actions = {
         term for term in _EVENT_TERMS if term in text and term not in _GENERIC_ACTION_TERMS
     }

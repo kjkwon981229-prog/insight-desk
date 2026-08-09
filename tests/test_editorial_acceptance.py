@@ -534,6 +534,59 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((heat, first_pitch))
         self.assertEqual(len(clusters), 2)
 
+    def test_same_date_does_not_merge_heat_interruption_and_first_pitch(self) -> None:
+        heat = _item(
+            "live-heat",
+            "kbo",
+            "KBO",
+            "'폭염 방학' 뒤 55경기 재편… KBO, 11일부터 후반기 재출발",
+            "KBO 리그가 폭염 중단을 마치고 11일부터 일정을 다시 소화한다.",
+            domain="heat.example",
+        )
+        first_pitch = _item(
+            "live-first-pitch",
+            "kbo",
+            "한화 경기",
+            "아이들 민니, 프로야구 11일 잠실 두산-한화전 시구",
+            "두산 베어스가 한화 이글스와의 홈 경기 시구자를 선정했다.",
+            domain="pitch.example",
+        )
+        clusters = cluster_news((heat, first_pitch))
+        self.assertEqual(len(clusters), 2)
+
+    def test_shared_market_level_does_not_merge_level_and_volatility_events(self) -> None:
+        level = _item(
+            "live-level",
+            "economy",
+            "원달러 환율",
+            "안정 찾는 외환시장… 원·달러 1300원대 초읽기",
+            "원·달러 환율 수준과 함께 변동성이 점차 안정화됐다.",
+            domain="level.example",
+        )
+        volatility = _item(
+            "live-volatility",
+            "economy",
+            "원달러 환율",
+            "이젠 1300원대 환율? 변동폭 금융위기 이후 최대",
+            "올해 환율 변동성이 글로벌 금융위기 이후 가장 큰 것으로 나타났다.",
+            domain="volatility.example",
+        )
+        clusters = cluster_news((level, volatility))
+        self.assertEqual(len(clusters), 2)
+
+    def test_sports_interruption_preserves_headline_action(self) -> None:
+        item = _item(
+            "heat-action",
+            "kbo",
+            "KBO",
+            "프로야구 폭염으로 경기 중단",
+            "폭염으로 리그 일정이 중단됐다.",
+        )
+        _, _, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kbo", (item,)), topic_name="KBO·한화 이글스", trend_metrics=()
+        )
+        self.assertEqual(facts.action, "중단")
+
     def test_heat_analysis_headline_merges_into_interruption_event(self) -> None:
         first = _item(
             "heat-analysis",
