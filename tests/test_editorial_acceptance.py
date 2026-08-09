@@ -261,8 +261,130 @@ class EditorialAcceptanceTests(unittest.TestCase):
             "",
         )
         assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
-        self.assertEqual(assessment.event.event_type, "OTHER")
+        self.assertEqual(assessment.event.event_type, "ROUTINE_SCHEDULE")
         self.assertFalse(assessment.qualified)
+
+    def test_dated_weekly_schedule_roundup_is_not_a_core_event(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "한국은행",
+            anchors=("한국은행", "금융당국"),
+            events=("일정", "개최"),
+        )
+        item = _item(
+            "routine-schedule",
+            "economy",
+            "한국은행",
+            "금주 한국은행 및 금융당국 주요일정 8월10일 개최",
+            "금융당국의 이번 주 일정을 정리했다.",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
+        self.assertEqual(assessment.event.event_type, "ROUTINE_SCHEDULE")
+        self.assertFalse(assessment.event.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_ceremonial_first_pitch_is_not_core_sports_news(self) -> None:
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "프로야구",
+            anchors=("KBO", "프로야구", "한화", "야구"),
+            events=("일정", "시구"),
+            required=("프로야구",),
+            conditional=True,
+        )
+        item = _item(
+            "routine-first-pitch",
+            "kbo",
+            "프로야구",
+            "가수 민니, 11일 두산-한화전 시구",
+            "잠실 경기에서 시구에 나선다.",
+        )
+        assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
+        self.assertEqual(assessment.event.event_type, "LOW_VALUE_APPEARANCE")
+        self.assertFalse(assessment.event.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_routine_ndf_quote_is_not_core_market_event(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "원달러 환율",
+            anchors=("원달러 환율", "환율"),
+            events=("하락", "환율"),
+        )
+        item = _item(
+            "routine-ndf",
+            "economy",
+            "원달러 환율",
+            "원·달러 NDF 1407.2/1407.6원, 8.15원 하락",
+            "NDF 환율이 하락했다.",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
+        self.assertEqual(assessment.event.event_type, "ROUTINE_MARKET_QUOTE")
+        self.assertFalse(assessment.event.passed)
+        self.assertFalse(assessment.qualified)
+
+    def test_different_dated_artist_releases_do_not_merge(self) -> None:
+        first = _item(
+            "release-a",
+            "kpop",
+            "K-POP",
+            "에반, 9월 7일 미니 1집 발매",
+            "에반의 새 앨범 발매 일정이 공개됐다.",
+            domain="a.example",
+        )
+        second = _item(
+            "release-b",
+            "kpop",
+            "K-POP",
+            "몬스타엑스, 9월 4일 미니 앨범 컴백",
+            "몬스타엑스가 9월 컴백한다.",
+            domain="b.example",
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 2)
+
+    def test_same_dated_artist_release_headlines_still_merge(self) -> None:
+        first = _item(
+            "same-release-a",
+            "kpop",
+            "K-POP",
+            "에반, 9월 7일 미니 1집 발매",
+            "에반의 새 앨범 발매 일정이 공개됐다.",
+            domain="a.example",
+        )
+        second = _item(
+            "same-release-b",
+            "kpop",
+            "K-POP",
+            "에반 9월 7일 컴백 일정 공개",
+            "에반의 9월 7일 컴백 소식이 전해졌다.",
+            domain="b.example",
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].items), 2)
+
+    def test_date_only_breaking_event_can_pass(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "한국은행",
+            anchors=("한국은행", "기준금리"),
+            events=("기준금리", "발표"),
+        )
+        item = _item(
+            "date-only-event",
+            "economy",
+            "한국은행",
+            "한국은행, 8월 14일 기준금리 발표",
+            "기준금리 결정 결과를 발표한다.",
+            channels=("DATE",),
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
+        self.assertTrue(assessment.qualified)
 
     def test_number_alone_is_not_an_event(self) -> None:
         topic = _topic("economy", "경제·투자", "환율", anchors=("환율",), events=("환율", "발표"))

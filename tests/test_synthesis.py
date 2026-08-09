@@ -91,6 +91,24 @@ class SynthesisTests(unittest.TestCase):
         self.assertEqual(certainty.value, "confirmed")
         self.assertEqual(watch, ("다음 월간 통계와 변동폭",))
 
+    def test_ndf_quote_preserves_the_full_supported_quote(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N-NDF",
+                    "원 · 달러 NDF 1407.2/1407.6원, 8.15원 하락",
+                    "원 · 달러 NDF가 하락했다.",
+                    "market.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
+        self.assertIn("1407.2", summary)
+        self.assertIn("1407.6원", summary)
+        self.assertIn("8.15원 하락", summary)
+        self.assertIn("1407.2", facts.key_numbers)
+
     def test_scheduled_event_extracts_date_and_location(self) -> None:
         cluster = StoryCluster(
             "topic",

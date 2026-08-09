@@ -13,6 +13,7 @@ from ..domain.models import (
     Story,
     Topic,
     TrendMetric,
+    to_jsonable,
 )
 from .clustering import StoryCluster
 from .editorial import effective_lead, effective_title, why_selected
@@ -200,6 +201,10 @@ def build_briefing(
                 "summary": story.summary,
                 "topic": story.topic_name,
                 "novelty": story.novelty,
+                "certainty": story.certainty.value,
+                "facts": to_jsonable(story.facts),
+                "trend_relationship": story.trend_relationship,
+                "matched_topic_ids": list(story.matched_topic_ids),
                 "why_selected": list(story.why_selected),
                 "final_score": story.editorial_score,
             }

@@ -32,10 +32,16 @@ _EVENT_TERMS = {
 }
 _GENERIC_TERMS = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
 _CONTEXT_TERMS = {"행사", "일정", "참석", "포토", "블루카펫", "대표", "얼굴", "내일의", "오늘의"}
+_CLUSTER_GENERIC_ENTITIES = {
+    "앨범", "미니", "싱글", "음악", "차트", "가요계", "그룹", "신인", "걸그룹",
+    "보이그룹", "콘셉트", "포토", "국내외", "글로벌", "집", "모델", "서비스",
+    "제품", "신제품", "사업", "시장", "업계", "리그", "경기", "선수", "구단",
+}
 _GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
 _DATE_NUMBER_RE = re.compile(
     r"(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일)|\d+(?:[,\.]\d+)?\s?(?:%|원|달러|억|만|명|건|배|개|곳|주년|위|점|대))"
 )
+_DATE_MARKER_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월(?:\s?\d{1,2}\s?일)?|일)")
 
 
 def _item_text(item: NewsItem) -> str:
@@ -91,6 +97,7 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
         if token not in _EVENT_TERMS
         and token not in _GENERIC_TERMS
         and token not in _CONTEXT_TERMS
+        and token not in _CLUSTER_GENERIC_ENTITIES
         and not token.isdigit()
         and not _DATE_NUMBER_RE.fullmatch(token)
     }
@@ -105,9 +112,20 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
     return entities, actions, dates_numbers
 
 
+def _date_markers(item: NewsItem) -> set[str]:
+    text = " ".join(value for value in (item.metadata_title, item.title) if value)
+    return {re.sub(r"\s+", "", value) for value in _DATE_MARKER_RE.findall(text)}
+
+
 def _similar(a: NewsItem, b: NewsItem) -> bool:
     if _is_sports_heat_story(a) and _is_sports_heat_story(b):
         return True
+    left_dates = _date_markers(a)
+    right_dates = _date_markers(b)
+    # Different dated events about the same entity are not one story merely
+    # because they share a generic action such as ``컴백`` or ``출시``.
+    if left_dates and right_dates and not left_dates & right_dates:
+        return False
     left = _tokens(a.title)
     right = _tokens(b.title)
     if not left or not right:

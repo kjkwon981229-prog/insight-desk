@@ -206,9 +206,11 @@ def _numbers(text: str) -> tuple[str, ...]:
     return tuple(values)
 
 
-def _meaningful_numbers(values: tuple[str, ...]) -> tuple[str, ...]:
+def _meaningful_numbers(values: tuple[str, ...], context: str = "") -> tuple[str, ...]:
     """Discard bare counters accidentally captured from Korean headlines."""
 
+    if any(marker in context.casefold() for marker in ("ndf", "선물환")) and "/" in context:
+        return values
     meaningful = tuple(value for value in values if re.search(r"[^\d,.\s]", value))
     if meaningful:
         return meaningful
@@ -220,6 +222,21 @@ def _meaningful_numbers(values: tuple[str, ...]) -> tuple[str, ...]:
 def _market_run_phrase(title: str) -> str:
     match = _MARKET_RUN_RE.search(_clean_headline(title))
     return match.group(0) if match else ""
+
+
+def _market_quote_detail(title: str, numbers: tuple[str, ...], change: str) -> str:
+    """Preserve an NDF quote pair and its movement without adding context."""
+
+    cleaned = _clean_headline(title)
+    if not any(marker in cleaned.casefold() for marker in ("ndf", "선물환")) or len(numbers) < 2:
+        return ""
+    direction = next((marker for marker in _DIRECTIONAL_CHANGE_WORDS if marker in cleaned), "")
+    if not direction:
+        return ""
+    values = [re.sub(r"\s+", "", value).removesuffix("원") for value in numbers[:3]]
+    if len(values) >= 3:
+        return f"{values[0]}/{values[1]}원, {values[2]}원 {direction}"
+    return f"{values[0]}/{values[1]}원 {direction}"
 
 
 def _market_metric_number(title: str, numbers: tuple[str, ...]) -> str:
@@ -535,8 +552,12 @@ def _summary(
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
         summary_subject = _fact_subject(summary_subject)
+        quote_detail = _market_quote_detail(title, numbers, change)
         run_phrase = _market_run_phrase(title)
-        if run_phrase:
+        if quote_detail:
+            source_note = "여러 보도에서 확인됐다." if source_count > 1 else "한 건의 보도에서 제시됐다."
+            sentence = f"{summary_subject} {quote_detail}이 {source_note}"
+        elif run_phrase:
             sentence = f"{summary_subject}의 {run_phrase}가 이어졌다."
         elif (
             event_type == "MARKET"
@@ -674,7 +695,7 @@ def synthesize_cluster(
     headline_item = _best_title_item(items)
     title = effective_title(headline_item) or _clean_headline(headline_item.title)
     numbers = _unique(list(_numbers(combined)))
-    display_numbers = _meaningful_numbers(numbers)
+    display_numbers = _meaningful_numbers(numbers, title)
     dates = _unique(list(_dates(combined)))
     times = _unique(list(_times(combined)))
     locations = _locations(combined)

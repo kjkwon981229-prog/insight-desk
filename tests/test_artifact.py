@@ -112,3 +112,22 @@ class ArtifactTests(unittest.TestCase):
         errors = validate_live_acceptance(path)
         self.assertTrue(any("truncated source copy" in error for error in errors))
         self.assertTrue(any("duplicate event signatures" in error for error in errors))
+
+    def test_live_acceptance_rejects_low_value_selected_events(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-low-value-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        story = {
+            "rank": 1,
+            "headline": "금주 금융당국 주요일정 8월10일 개최",
+            "summary": "금주 일정이 8월10일 개최될 예정이다.",
+            "event_type": "ROUTINE_SCHEDULE",
+            "source_count": 1,
+            "concrete_fact_count": 2,
+            "topic_id": "economy",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": "ROUTINE_SCHEDULE|금융당국|8월10일",
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("low-value event type" in error for error in errors))

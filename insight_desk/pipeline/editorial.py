@@ -37,6 +37,16 @@ _GENERIC_TERMS = {
     "관련", "보도", "소식", "기사", "변화", "주요", "뉴스", "확인", "공개", "발표",
     "올해", "이번", "지난", "전망", "이슈",
 }
+_LOW_VALUE_EVENT_TYPES = {
+    "LOW_VALUE_APPEARANCE",
+    "ROUTINE_SCHEDULE",
+    "ROUTINE_MARKET_QUOTE",
+}
+_ROUTINE_SCHEDULE_MARKERS = ("주요일정", "일정표", "금주 일정", "이번 주 일정", "이번주 일정")
+_ROUTINE_MARKET_QUALIFIERS = (
+    "변동성", "변동폭", "금융위기", "사상", "최대", "최고", "최저", "급등", "급락",
+    "개입", "정책", "기준금리", "결정",
+)
 
 
 def _fold(value: str) -> str:
@@ -248,6 +258,29 @@ def _event_terms_for(topic: Topic) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*topic.event_terms, *(term for _, terms, _ in _EVENT_PATTERNS for term in terms))))
 
 
+def _is_routine_schedule(title_text: str) -> bool:
+    compact = _compact(title_text)
+    return any(_compact(marker) in compact for marker in _ROUTINE_SCHEDULE_MARKERS) or (
+        _contains(title_text, "금주") and _contains(title_text, "일정")
+    )
+
+
+def _is_ceremonial_appearance(title_text: str) -> bool:
+    # A first-pitch/first-bat announcement is an entertainment appearance,
+    # not a baseball result, roster change, or meaningful game event.
+    return any(_contains(title_text, marker) for marker in ("시구", "시타")) and not any(
+        _contains(title_text, marker)
+        for marker in ("경기 결과", "승리", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")
+    )
+
+
+def _is_routine_market_quote(title_text: str) -> bool:
+    lowered = title_text.casefold()
+    return any(marker in lowered for marker in ("ndf", "선물환")) and not any(
+        _contains(title_text, marker) for marker in _ROUTINE_MARKET_QUALIFIERS
+    )
+
+
 def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     text = " ".join(effective_text(item) for item in cluster.items)
     title_text = " ".join(effective_title(item) for item in cluster.items)
@@ -299,6 +332,18 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         event_type = "LOW_VALUE_APPEARANCE"
         significance = 20.0
         matched_terms = ["LOW_VALUE_APPEARANCE"]
+    if event_type == "SCHEDULED_EVENT" and _is_routine_schedule(title_text):
+        event_type = "ROUTINE_SCHEDULE"
+        significance = 18.0
+        matched_terms = ["ROUTINE_SCHEDULE"]
+    elif event_type == "SCHEDULED_EVENT" and _is_ceremonial_appearance(title_text):
+        event_type = "LOW_VALUE_APPEARANCE"
+        significance = 18.0
+        matched_terms = ["LOW_VALUE_APPEARANCE"]
+    elif event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"} and _is_routine_market_quote(title_text):
+        event_type = "ROUTINE_MARKET_QUOTE"
+        significance = 22.0
+        matched_terms = ["ROUTINE_MARKET_QUOTE"]
     if event_type == "SCHEDULED_EVENT":
         # ``주요일정`` or ``금주 일정`` alone is a calendar label, not a
         # concrete event. Keep genuine dated events and public recruitment
@@ -330,7 +375,9 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     concrete = int(bool(title_subject)) + int(action) + int(bool(numbers or dates))
     if event_type == "MERCHANDISE":
         significance = min(significance, 18.0)
-    if event_type == "OTHER":
+    if event_type in _LOW_VALUE_EVENT_TYPES:
+        reasons = (event_type, "LOW_VALUE_EVENT")
+    elif event_type == "OTHER":
         reasons = ("NO_CONCRETE_EVENT",)
     else:
         reasons = (event_type, "CONCRETE_EVENT" if concrete >= 2 else "WEAK_EVENT_STRUCTURE")
@@ -345,7 +392,13 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         )
         if not metric_signal:
             reasons = (*reasons, "WEAK_METRIC_SIGNAL")
-    passed = event_type != "OTHER" and significance >= 35.0 and concrete >= 2 and action and metric_signal
+    passed = (
+        event_type not in {"OTHER", *_LOW_VALUE_EVENT_TYPES}
+        and significance >= 35.0
+        and concrete >= 2
+        and action
+        and metric_signal
+    )
     return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
 
 
@@ -499,6 +552,7 @@ def assess_cluster(
         or not evidence.passed and not single_source_supported
         or (novelty == "UNCHANGED")
         or (event.event_type == "MERCHANDISE" and not evidence.official)
+        or event.event_type in _LOW_VALUE_EVENT_TYPES
         or not synthesis_ready
         or (cluster.source_count == 1 and not single_source_supported)
         or (event.event_type == "OTHER" and cluster.source_count == 1 and event.concrete_fact_count == 0)

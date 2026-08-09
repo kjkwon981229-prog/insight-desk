@@ -19,6 +19,12 @@ def validate(path: Path) -> list[str]:
         "공통으로 확인되는 세부 사실은 제한적이다",
         "세부 내용은 추가 확인이 필요하다",
     )
+    low_value_event_types = {
+        "LOW_VALUE_APPEARANCE",
+        "ROUTINE_SCHEDULE",
+        "ROUTINE_MARKET_QUOTE",
+        "MERCHANDISE",
+    }
     metrics = {
         "selected_total": len(stories),
         "generic_headline_count": 0,
@@ -37,6 +43,8 @@ def validate(path: Path) -> list[str]:
             continue
         headline = str(story.get("headline", ""))
         summary = str(story.get("summary", ""))
+        if story.get("rank") not in (None, index):
+            errors.append(f"story {index} has non-sequential editorial rank")
         if not headline or any(marker in headline for marker in generic_headline_markers):
             metrics["generic_headline_count"] += 1
             errors.append(f"story {index} has a generic headline")
@@ -46,9 +54,12 @@ def validate(path: Path) -> list[str]:
         if any(marker in headline or marker in summary for marker in ("...", "…")):
             metrics["truncated_copy_count"] += 1
             errors.append(f"story {index} leaks truncated source copy")
-        if str(story.get("event_type", "OTHER")) == "OTHER":
+        event_type = str(story.get("event_type", "OTHER"))
+        if event_type == "OTHER":
             metrics["other_event_count"] += 1
             errors.append(f"story {index} has OTHER event type")
+        if event_type in low_value_event_types:
+            errors.append(f"story {index} has low-value event type {event_type}")
         certainty = str(story.get("certainty", ""))
         source_count = int(story.get("source_count", 0) or 0)
         concrete = int(story.get("concrete_fact_count", 0) or 0)
@@ -59,6 +70,8 @@ def validate(path: Path) -> list[str]:
         if certainty == "uncertain" and str(story.get("event_type", "OTHER")) == "OTHER" and source_count <= 1 and concrete == 0:
             metrics["low_information_uncertain_count"] += 1
             errors.append(f"story {index} is low-information uncertain")
+        if source_count <= 1 and not story.get("official_source") and "추가 확인이 필요하다" in summary:
+            errors.append(f"story {index} exposes unresolved single-source uncertainty")
         if not story.get("why_selected"):
             errors.append(f"story {index} has no why_selected")
         signature = str(story.get("event_signature", "")).strip()
