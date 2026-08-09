@@ -113,6 +113,28 @@ class EditorialAcceptanceTests(unittest.TestCase):
         assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
         self.assertFalse(assessment.qualified)
 
+    def test_hanwha_background_player_mention_is_not_core_story(self) -> None:
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "프로야구",
+            anchors=("KBO", "프로야구", "한화", "야구"),
+            negative=("전 프로야구 선수", "전 야구 선수", "결혼", "열애"),
+            events=("경기", "결과", "부상", "트레이드"),
+            required=("프로야구",),
+            conditional=True,
+        )
+        item = _item(
+            "FP-KBO-02",
+            "kbo",
+            "프로야구",
+            "배우 지안, 전 프로야구 선수와 결혼 발표",
+            "배우의 결혼 소식에서 전 프로야구 선수 경력이 언급됐다.",
+        )
+        assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
+        self.assertFalse(assessment.relevance.passed)
+        self.assertFalse(assessment.qualified)
+
     def test_single_source_other_without_concrete_fact_is_rejected(self) -> None:
         topic = _topic("ai", "AI·테크", "AI", anchors=("AI", "인공지능"), events=("발표",))
         item = _item("GENERIC-01", "ai", "AI", "AI 관련 보도", "세부 내용은 추가 확인이 필요하다.")
@@ -396,9 +418,44 @@ class EditorialAcceptanceTests(unittest.TestCase):
         _, summary, _, _, facts, _ = synthesize_cluster(
             StoryCluster("economy", (item,)), topic_name="경제·투자", trend_metrics=()
         )
-        self.assertIn("변동폭", summary)
+        self.assertIn("변동성", summary)
         self.assertIn("금융위기 이후 최대", summary)
+        self.assertNotIn("1300원으로", summary)
         self.assertEqual(facts.event_type, "MARKET")
+
+    def test_market_level_is_not_reported_as_volatility_size(self) -> None:
+        item = _item(
+            "market-level",
+            "economy",
+            "원달러 환율",
+            "안정 찾는 외환시장 원·달러 1300원대 환율, 변동성 금융위기 이후 최대",
+            "원·달러 환율 수준이 1300원대에 접근하는 가운데 올해 변동성이 금융위기 이후 가장 큰 것으로 나타났다.",
+        )
+        _, summary, _, _, _, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)), topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertIn("변동성이", summary)
+        self.assertNotIn("1300원으로", summary)
+
+    def test_snippet_tail_does_not_merge_unrelated_events(self) -> None:
+        first = _item(
+            "cluster-tail-a",
+            "kpop",
+            "JYP",
+            "스트레이 키즈 리믹스 공개",
+            "JYP가 새 공연을 준비하는 가운데 관련 일정이 공개됐다.",
+            domain="a.example",
+        )
+        second = _item(
+            "cluster-tail-b",
+            "kpop",
+            "SM",
+            "SM 2분기 실적 발표",
+            "SM 실적 발표와 함께 JYP 공연 관련 내용도 언급됐다.",
+            domain="b.example",
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 2)
 
     def test_novelty_states_do_not_fabricate_history(self) -> None:
         self.assertEqual(classify_novelty("MARKET|환율|47원", ()), "UNKNOWN_HISTORY")
