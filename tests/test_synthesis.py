@@ -109,6 +109,31 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("8.15원 하락", summary)
         self.assertIn("1407.2", facts.key_numbers)
 
+    def test_secondary_event_facts_do_not_contaminate_interruption_story(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "heat",
+                    "KBO 폭염으로 경기 중단",
+                    "폭염 영향으로 경기가 중단됐다.",
+                    "sports.example",
+                ),
+                _item(
+                    "appearance",
+                    "가수 민니, 11일 두산-한화전 시구",
+                    "11일 잠실 경기에서 시구한다.",
+                    "ent.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="KBO", trend_metrics=())
+        self.assertEqual(facts.event_type, "SPORTS_INTERRUPTION")
+        self.assertNotEqual(facts.action, "시구")
+        self.assertNotEqual(facts.date, "11일")
+        self.assertNotEqual(facts.location, "잠실")
+        self.assertNotIn("잠실", summary)
+
     def test_scheduled_event_extracts_date_and_location(self) -> None:
         cluster = StoryCluster(
             "topic",

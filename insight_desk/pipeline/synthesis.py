@@ -112,6 +112,33 @@ _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일))$")
 _MARKET_RUN_RE = re.compile(r"\d+\s?거래일(?:\s?연속)?\s?(?:순매수|순매도)")
+_GENERIC_HEADLINE_MARKERS = ("관련 보도", "관련 소식", "관련 기사", "관련 뉴스")
+_GENERIC_SUMMARY_MARKERS = (
+    "단일 검색 결과만 확인되어",
+    "공통으로 확인되는 세부 사실은 제한적이다",
+)
+
+
+def is_usable_synthesis(
+    headline: str,
+    summary: str,
+    *,
+    source_count: int,
+    official_source: bool = False,
+) -> bool:
+    """Reject display copy that cannot carry a concrete editorial fact."""
+
+    clean_headline = normalize_text(headline)
+    clean_summary = normalize_text(summary)
+    if not clean_headline or any(marker in clean_headline for marker in _GENERIC_HEADLINE_MARKERS):
+        return False
+    if not clean_summary or any(marker in clean_summary for marker in _GENERIC_SUMMARY_MARKERS):
+        return False
+    if _TRUNCATION_RE.search(clean_headline + clean_summary):
+        return False
+    if source_count <= 1 and not official_source and "추가 확인이 필요하다" in clean_summary:
+        return False
+    return True
 
 
 def _clean_headline(value: str) -> str:
@@ -274,7 +301,9 @@ def _repeated_values(
 ) -> tuple[str, ...]:
     counts: Counter[str] = Counter()
     for item in items:
-        values = extractor(f"{getattr(item, 'title', '')} {getattr(item, 'summary', '')}")
+        # Search descriptions may contain an unrelated trailing clause.  Only
+        # repeat facts that appear in the effective headline evidence.
+        values = extractor(effective_title(item))
         counts.update(set(values))
     return tuple(value for value, count in counts.most_common() if count >= 2)
 
@@ -689,16 +718,21 @@ def synthesize_cluster(
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
     items = cluster.items
     representative = cluster.representative
-    combined = " ".join(
-        f"{effective_title(item)} {effective_lead(item)}" for item in items
-    )
     headline_item = _best_title_item(items)
     title = effective_title(headline_item) or _clean_headline(headline_item.title)
-    numbers = _unique(list(_numbers(combined)))
+    headline_evidence = " ".join(
+        value for value in (effective_title(headline_item), effective_lead(headline_item)) if value
+    )
+    title_evidence = " ".join(effective_title(item) for item in items if effective_title(item))
+    repeated_numbers = _repeated_values(items, _numbers)
+    repeated_dates = _repeated_values(items, _dates)
+    repeated_times = _repeated_values(items, _times)
+    repeated_locations = _repeated_values(items, _locations)
+    numbers = _unique(list(_numbers(headline_evidence)) + list(repeated_numbers))
     display_numbers = _meaningful_numbers(numbers, title)
-    dates = _unique(list(_dates(combined)))
-    times = _unique(list(_times(combined)))
-    locations = _locations(combined)
+    dates = _unique(list(_dates(headline_evidence)) + list(repeated_dates))
+    times = _unique(list(_times(headline_evidence)) + list(repeated_times))
+    locations = _unique(list(_locations(headline_evidence)) + list(repeated_locations))
     # Classify the representative headline first. Descriptions may mention
     # generic words such as "정책" or "공개" while the headline carries the
     # actual subject (for example a market statistic). This keeps the
@@ -706,9 +740,9 @@ def synthesize_cluster(
     title_event_type = _event_type(title, _numbers(title))
     lead_event_type = _event_type(effective_lead(headline_item), _numbers(effective_lead(headline_item)))
     event_type = title_event_type if title_event_type != "OTHER" else (
-        lead_event_type if lead_event_type != "OTHER" else _event_type(combined, numbers)
+        lead_event_type if lead_event_type != "OTHER" else _event_type(title_evidence, numbers)
     )
-    action = _action(title) or _action(effective_lead(headline_item)) or _action(combined)
+    action = _action(title) or _action(effective_lead(headline_item)) or _action(title_evidence)
     subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
     change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
     repeated = _repeated_values(items, _numbers)
@@ -721,8 +755,10 @@ def synthesize_cluster(
     representative_values = _unique(list(_numbers(title)) + list(_dates(title)) + list(_locations(title)))
     unique_facts = tuple(value for value in representative_values if value not in repeated)
     uncertainty = ""
-    numeric_values = _repeated_values(items, _numbers)
-    all_numeric = _unique(list(_numbers(combined)))
+    numeric_values = repeated_numbers
+    # Keep all headline numbers for conflict detection, while only repeated
+    # or representative numbers are eligible for display facts.
+    all_numeric = _unique(list(_numbers(title_evidence)))
     if len(numeric_values) == 0 and len(all_numeric) > 1 and event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
         units = {re.sub(r"[\d,.\s]", "", value) for value in all_numeric}
         if len(units) == 1:
@@ -732,7 +768,7 @@ def synthesize_cluster(
     trend_state = _trend_state(cluster.topic_id, trend_metrics)
     date = dates[0] if dates else ""
     location = locations[0] if locations else ""
-    next_signal = _next_signal(event_type, combined, date, action)
+    next_signal = _next_signal(event_type, headline_evidence, date, action)
     facts = StoryFacts(
         subject=subject,
         action=action,

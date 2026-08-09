@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster
@@ -12,6 +12,7 @@ from .editorial import (
     why_selected,
 )
 from .novelty import classify_novelty
+from .synthesis import is_usable_synthesis, synthesize_cluster
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,25 @@ def _funnel_template() -> dict[str, int]:
     }
 
 
+def _synthesis_is_editorial_ready(
+    cluster: StoryCluster,
+    topic: Topic,
+    *,
+    official_source: bool,
+) -> bool:
+    headline, summary, _, _, _, _ = synthesize_cluster(
+        cluster,
+        topic_name=topic.name,
+        trend_metrics=(),
+    )
+    return is_usable_synthesis(
+        headline,
+        summary,
+        source_count=cluster.source_count,
+        official_source=official_source,
+    )
+
+
 def select_clusters(
     clusters: tuple[StoryCluster, ...],
     topics: tuple[Topic, ...],
@@ -102,6 +122,16 @@ def select_clusters(
         provisional = assess_cluster(cluster, topic)
         novelty = classify_novelty(provisional.event_signature, previous_signatures)
         assessment = assess_cluster(cluster, topic, novelty=novelty)
+        if assessment.qualified and not _synthesis_is_editorial_ready(
+            cluster,
+            topic,
+            official_source=assessment.evidence.official,
+        ):
+            assessment = replace(
+                assessment,
+                qualified=False,
+                reasons=(*assessment.reasons, "SYNTHESIS_NOT_EDITORIAL_READY"),
+            )
         grouped.setdefault(topic.id, []).append((cluster, assessment))
         assessments[f"{topic.id}:{candidate_key(cluster)}"] = assessment
         if assessment.relevance.passed:

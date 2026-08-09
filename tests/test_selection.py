@@ -110,6 +110,24 @@ class SelectionTests(unittest.TestCase):
         result = select_clusters((StoryCluster("psat", (candidate,)),), _topics(), limit=10)
         self.assertEqual(result.selected, ())
 
+    def test_generic_synthesis_output_is_not_selected(self) -> None:
+        candidate = replace(
+            _item(
+                "generic-market",
+                "economy",
+                score=100.0,
+                summary="코스피 상승 모멘텀을 찾지 못했다. 1일 기준 흐름이다.",
+            ),
+            query="코스피",
+            title="반도체 폭락장 속 코스피 역행",
+        )
+        result = select_clusters((StoryCluster("economy", (candidate,)),), _topics(), limit=10)
+        self.assertEqual(result.selected, ())
+        self.assertIn(
+            "SYNTHESIS_NOT_EDITORIAL_READY",
+            result.audit[0]["selection_reasons"],
+        )
+
     def test_cap_relaxes_when_only_one_topic_qualifies(self) -> None:
         result = select_clusters(tuple(_cluster(f"ai-{i}", "ai") for i in range(7)), _topics(), limit=10)
         self.assertEqual(len(result.selected), 7)
