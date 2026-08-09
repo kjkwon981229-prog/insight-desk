@@ -99,13 +99,40 @@ class SynthesisTests(unittest.TestCase):
                 _item("N004", "민니, 11일 잠실 두산-한화전 시구", "행사 일정과 장소를 전했다.", "ent.example"),
             ),
         )
-        _, summary, _, watch, facts, _ = synthesize_cluster(cluster, topic_name="문화", trend_metrics=())
+        headline, summary, _, watch, facts, _ = synthesize_cluster(cluster, topic_name="문화", trend_metrics=())
         self.assertEqual(facts.event_type, "SPORTS_EVENT")
         self.assertEqual(facts.date, "11일")
         self.assertEqual(facts.location, "잠실")
+        self.assertEqual(headline, "민니 11일 시구")
         self.assertIn("11일", summary)
         self.assertIn("잠실", summary)
         self.assertTrue(watch)
+
+    def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N009",
+                    "올해 원달러 환율 변동폭 47원…금융위기 후 최고",
+                    "관련 정책 변화가 발표됐다고 전했다.",
+                    "market.example",
+                ),
+                _item(
+                    "N010",
+                    "원달러 월평균 변동폭 47원 금융위기 이후 최대",
+                    "같은 수치를 보도했다.",
+                    "finance.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster, topic_name="경제", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "MARKET")
+        self.assertNotIn("…", headline)
+        self.assertIn("47원", headline)
+        self.assertNotIn("정책 변화가 발표됐다", summary)
 
     def test_single_low_information_story_does_not_get_generic_follow_up(self) -> None:
         cluster = StoryCluster(
