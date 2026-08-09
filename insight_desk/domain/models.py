@@ -17,6 +17,7 @@ class RunStatus(str, Enum):
 
 class Certainty(str, Enum):
     CONFIRMED = "confirmed"
+    SUPPORTED_SINGLE_SOURCE = "supported_single_source"
     INFERENCE = "inference"
     UNCERTAIN = "uncertain"
 
@@ -38,6 +39,9 @@ class Topic:
     query_families: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
     candidate_budget: int = 40
     selection_cap: int = 3
+    intent_anchors: tuple[str, ...] = field(default_factory=tuple)
+    negative_context: tuple[str, ...] = field(default_factory=tuple)
+    event_terms: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def all_news_queries(self) -> tuple[str, ...]:
@@ -80,6 +84,7 @@ class NewsItem:
     metadata_modified_at: str | None = None
     provenance: tuple[EvidenceType, ...] = field(default_factory=lambda: (EvidenceType.SEARCH_SNIPPET,))
     matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
+    retrieval_channels: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -154,6 +159,14 @@ class Story:
     metadata_enriched_count: int = 0
     facts: StoryFacts = field(default_factory=StoryFacts)
     matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
+    novelty: str = "UNKNOWN_HISTORY"
+    why_selected: tuple[str, ...] = field(default_factory=tuple)
+    intent_relevance: float = 0.0
+    event_significance: float = 0.0
+    evidence_strength: float = 0.0
+    information_completeness: float = 0.0
+    editorial_score: float = 0.0
+    event_signature: str = ""
 
 
 @dataclass(frozen=True)
@@ -197,6 +210,8 @@ class Briefing:
     enrichment_succeeded: int = 0
     enrichment_failed: int = 0
     selection_audit: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    selection_funnel: dict[str, dict[str, int]] = field(default_factory=dict)
+    selected_reviews: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 def _enum_value(value: Any) -> Any:
