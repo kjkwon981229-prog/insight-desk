@@ -2,14 +2,14 @@
 
 ## 검사 대상
 
-Insight Desk 모바일 정적 브리핑의 최신 UI commit `39137fb`와 Pages 실행 `31327087861`.
+Insight Desk 모바일 정적 브리핑의 최신 콘텐츠 commit `39028d1`와 Pages 실행 `31330889761`.
 
 ## 기능·데이터 검증
 
 | 검사 | 결과 |
 |---|---|
 | Python compileall | 통과 |
-| 전체 테스트 | `25/25` 통과 |
+| 전체 테스트 | `34/34` 통과 |
 | normalization·deduplication·clustering·scoring | 통과 |
 | Trend 상대지수 의미 계약 | 통과 |
 | metadata enrichment success | 통과 |
@@ -20,12 +20,16 @@ Insight Desk 모바일 정적 브리핑의 최신 UI commit `39137fb`와 Pages �
 | TOTAL_FAILURE 기존 Pages 보존 | 통과 |
 | artifact validator | 통과 |
 | Secret redaction·source/cache/HTML 검사 | 통과 |
+| 결정론적 synthesis A–J fixture | 통과 |
+| 변경 파일 Ruff `F,I` | 통과 |
 
 ## UI·정보구조 검증
 
 - editorial hero에 오늘의 핵심 흐름을 우선 배치
 - signal strip에 사건·검색 흐름·원문 보강을 압축 배치
 - story row에 사건 제목·요약·출처 범위·상세 근거를 분리
+- `StoryFacts` 기반으로 숫자·날짜·장소·행동을 추출하고 headline·summary를 별도 합성
+- 기사식 말줄임표와 숫자 뒤의 홍보 문구를 기본 화면에서 제거
 - Trend를 방향·변화폭·sparkline으로 표시
 - 방법론과 한계를 `details` disclosure로 이동
 - archive를 날짜별 reference list로 구성
@@ -37,22 +41,23 @@ Insight Desk 모바일 정적 브리핑의 최신 UI commit `39137fb`와 Pages �
 
 | 검사 | 실제 결과 |
 |---|---|
-| CI | `31326864815` 성공 |
-| Pages build | `93279078337` 성공 |
-| Pages deploy | `93279203775` 성공 |
+| CI | `31330863299` 성공 |
+| Pages build | `93288833389` 성공 |
+| Pages deploy | `93289017742` 성공 |
 | 실제 NCP 결과 | `COMPLETE` |
-| 공개 root | 새 문구·10개 story·11개 trend 확인 |
+| 공개 root | 새 문구·10개 story·11개 trend·dark hero 확인 |
 | 공개 latest | 새 문구·CSS·UTF-8·내부 링크 확인 |
 | 공개 archive | 날짜별 목록·링크 확인 |
-| 공개 날짜별 archive | 새 문구·methodology disclosure·57개 링크 확인 |
+| 공개 날짜별 archive | 새 문구·methodology disclosure·10개 story 확인 |
 | 가로 오버플로 | 1363px viewport에서 없음 |
+| 공개 HTML 안전 검사 | 금지 문구·내부 ID·말줄임표·secret/header 문자열 없음 |
 
-초기 재확인에서 archive 경로에 이전 문구가 보였으나 브라우저 캐시였다. 새 Pages 실행 뒤 clean URL을 다시 열어 이전 문구가 사라진 것을 확인했다.
+검증에는 최종 commit 식별자를 붙인 공개 URL을 사용해 브라우저 캐시의 영향을 배제했다. canonical root·latest·archive 경로와 cache-busted 경로 모두 정상 응답을 확인했다.
 
 ## 시각 검증 범위
 
-- 실제 공개 root screenshot 저장
-- 실제 공개 archive screenshot 저장
+- 실제 공개 root screenshot 확인
+- 실제 공개 archive screenshot 확인
 - 현재 cloud browser viewport: 1363px
 - CSS responsive breakpoint: 760px
 - 320·375·390·430·768·1024·1440px 별도 브라우저 렌더는 이 환경에서 실행하지 않음
@@ -61,11 +66,11 @@ Insight Desk 모바일 정적 브리핑의 최신 UI commit `39137fb`와 Pages �
 ## 최종 Gate
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (25/25)
+LOCAL_TESTS_VERIFIED = YES (34/34)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (31326864815)
-PAGES_DEPLOYMENT_VERIFIED = YES (31327087861)
+GITHUB_ACTIONS_VERIFIED = YES (31330863299)
+PAGES_DEPLOYMENT_VERIFIED = YES (31330889761)
 PAGES_URL_VERIFIED = YES
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
