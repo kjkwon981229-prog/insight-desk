@@ -37,6 +37,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("데이터 기준과 읽는 법", text)
         self.assertIn("상대 관심지수", text)
         css = (root / "assets/css/style.css").read_text(encoding="utf-8")
+        self.assertTrue(css.startswith(":root {"))
         self.assertIn("--accent:", css)
         self.assertIn("--space-1:", css)
         self.assertIn("prefers-color-scheme: dark", css)
