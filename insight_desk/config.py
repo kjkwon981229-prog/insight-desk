@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .domain.models import KeywordGroup, Topic
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def load_topics(path: Path) -> tuple[Topic, tuple[KeywordGroup, ...]]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"topic configuration cannot be read: {path.name}") from exc
+
+    topics: list[Topic] = []
+    groups: list[KeywordGroup] = []
+    for topic_raw in raw.get("topics", []):
+        topic_id = str(topic_raw["id"])
+        topics.append(
+            Topic(
+                id=topic_id,
+                name=str(topic_raw["name"]),
+                enabled=bool(topic_raw.get("enabled", True)),
+                conditional=bool(topic_raw.get("conditional", False)),
+                priority=int(topic_raw.get("priority", 50)),
+                news_queries=tuple(str(x) for x in topic_raw.get("news_queries", [])),
+            )
+        )
+        for index, group_raw in enumerate(topic_raw.get("trend_groups", []), start=1):
+            keywords = tuple(str(x) for x in group_raw.get("keywords", []))
+            if not keywords or len(keywords) > 20:
+                raise ConfigError(f"trend group has invalid keyword count: {topic_id}")
+            groups.append(
+                KeywordGroup(
+                    id=str(group_raw.get("id", f"{topic_id}_{index}")),
+                    topic_id=topic_id,
+                    name=str(group_raw["name"]),
+                    keywords=keywords,
+                    enabled=bool(group_raw.get("enabled", True)),
+                )
+            )
+    if not topics:
+        raise ConfigError("topic configuration is empty")
+    return tuple(topics), tuple(groups)

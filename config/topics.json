@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "topics": [
+    {
+      "id": "ai_tech",
+      "name": "AI·테크",
+      "enabled": true,
+      "conditional": false,
+      "priority": 90,
+      "news_queries": ["인공지능", "AI 에이전트", "반도체", "NVIDIA"],
+      "trend_groups": [
+        {"id": "chatgpt", "name": "ChatGPT", "keywords": ["ChatGPT", "챗GPT", "챗지피티"]},
+        {"id": "ai_agent", "name": "AI 에이전트", "keywords": ["AI 에이전트", "에이전틱 AI"]},
+        {"id": "semiconductor", "name": "반도체", "keywords": ["반도체", "메모리 반도체", "HBM"]}
+      ]
+    },
+    {
+      "id": "kpop",
+      "name": "엔터·음악·K-POP",
+      "enabled": true,
+      "conditional": false,
+      "priority": 70,
+      "news_queries": ["K-POP", "HYBE", "음원 차트", "음반 시장"],
+      "trend_groups": [
+        {"id": "kpop", "name": "K-POP", "keywords": ["K-POP", "케이팝", "KPOP"]},
+        {"id": "hybe", "name": "HYBE", "keywords": ["HYBE", "하이브"]}
+      ]
+    },
+    {
+      "id": "economy",
+      "name": "경제·투자",
+      "enabled": true,
+      "conditional": false,
+      "priority": 75,
+      "news_queries": ["한국은행 기준금리", "원달러 환율", "코스피", "국내 경제"],
+      "trend_groups": [
+        {"id": "exchange", "name": "원달러 환율", "keywords": ["원달러 환율", "달러 환율", "환율"]},
+        {"id": "kospi", "name": "코스피", "keywords": ["코스피", "KOSPI"]}
+      ]
+    },
+    {
+      "id": "kbo_hanwha",
+      "name": "KBO·한화 이글스",
+      "enabled": true,
+      "conditional": true,
+      "priority": 65,
+      "news_queries": ["한화 이글스", "KBO", "프로야구"],
+      "trend_groups": [
+        {"id": "hanwha", "name": "한화 이글스", "keywords": ["한화 이글스", "한화 야구"]},
+        {"id": "kbo", "name": "KBO", "keywords": ["KBO", "프로야구"]}
+      ]
+    },
+    {
+      "id": "psat_recruitment",
+      "name": "PSAT·공채 일정",
+      "enabled": true,
+      "conditional": true,
+      "priority": 55,
+      "news_queries": ["PSAT", "5급 공채", "국가공무원 채용"],
+      "trend_groups": [
+        {"id": "psat", "name": "PSAT", "keywords": ["PSAT", "공직적격성평가"]},
+        {"id": "civil_service", "name": "국가공무원 채용", "keywords": ["국가공무원 채용", "공무원 시험"]}
+      ]
+    }
+  ]
+}
