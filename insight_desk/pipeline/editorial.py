@@ -19,13 +19,13 @@ _GENERIC_SUMMARY_MARKERS = (
 )
 _EVENT_PATTERNS: tuple[tuple[str, tuple[str, ...], float], ...] = (
     ("REGULATION", ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"), 84.0),
-    ("POLICY", ("정책", "대책", "기준금리", "공고", "확정"), 76.0),
+    ("POLICY", ("정책", "대책", "기준금리", "공고"), 76.0),
     ("EARNINGS", ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"), 78.0),
     ("AWARD_CHART", ("1위", "차트", "관왕", "수상"), 74.0),
     ("PRODUCT_RELEASE", ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정"), 68.0),
-    ("INDUSTRY_CHANGE", ("투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환"), 66.0),
+    ("INDUSTRY_CHANGE", ("투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"), 66.0),
     ("SPORTS_INTERRUPTION", ("폭염", "중단", "멈춘"), 70.0),
-    ("SPORTS_RESULT", ("경기 결과", "승리", "패배", "홈런", "순위", "기록"), 72.0),
+    ("SPORTS_RESULT", ("경기 결과", "승리했다", "패배했다", "승리 확정", "우승", "승률", "연승", "연패", "홈런", "순위", "기록"), 72.0),
     ("ROSTER_PERSONNEL", ("선발", "엔트리", "부상", "트레이드", "등록", "말소"), 74.0),
     ("SCHEDULED_EVENT", ("일정", "예정", "개최", "시구", "공연", "콘서트", "컴백", "월드투어"), 64.0),
     ("ANNOUNCEMENT", ("발표", "공지", "공개"), 62.0),
@@ -151,7 +151,13 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         title_token_hits = sum(1 for token in query_tokens if _contains(title, token))
         lead_token_hits = sum(1 for token in query_tokens if _contains(lead, token))
         anchor_title = any(_contains(title, anchor) for anchor in anchors)
+        core_anchor_title = any(_contains(title, anchor) for anchor in topic.intent_anchors)
         anchor_lead = any(_contains(lead, anchor) for anchor in anchors)
+        query_title_match = bool(title_query or title_token_hits)
+        query_supporting_match = bool(lead_query or lead_token_hits or body_query)
+        required_match = not topic.required_intent_terms or any(
+            _contains(f"{title} {lead}", term) for term in topic.required_intent_terms
+        )
         negative_title = any(_contains(title, term) for term in topic.negative_context)
         negative_lead = any(_contains(lead, term) for term in topic.negative_context)
         negative_body = any(_contains(raw_body, term) for term in topic.negative_context)
@@ -197,14 +203,37 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         if background_only:
             score -= 28.0
             reasons.append("BACKGROUND_ONLY_MENTION")
+        # A named query found only in the supporting snippet is not enough
+        # when the headline is about a broad topic anchor.  This blocks, for
+        # example, a Claude search result whose title is only about a generic
+        # AI cost-management tool.  Broad topic queries still match through
+        # their own title token.
+        supporting_only_mismatch = bool(
+            not query_title_match
+            and core_anchor_title
+            and not any(_compact(query) == _compact(anchor) for anchor in topic.intent_anchors)
+        )
+        if supporting_only_mismatch:
+            score -= 35.0
+            reasons.append("QUERY_NOT_IN_TITLE")
+        if not required_match:
+            score -= 45.0
+            reasons.append("REQUIRED_INTENT_MISSING")
         if not title_query and not title_token_hits and not anchor_title and not (lead_query or lead_token_hits or anchor_lead):
             score -= 18.0
             reasons.append("NO_TITLE_OR_LEAD_INTENT")
 
         assessment = RelevanceAssessment(
             score=round(max(0.0, min(100.0, score)), 3),
-            passed=score >= 40.0 and bool(title_query or title_token_hits or anchor_title) and not background_only and not (negative_title or negative_lead),
-            direct_title_match=bool(title_query or title_token_hits or anchor_title),
+            passed=(
+                score >= 40.0
+                and bool(query_title_match or (anchor_title and not supporting_only_mismatch))
+                and not background_only
+                and not (negative_title or negative_lead)
+                and not supporting_only_mismatch
+                and required_match
+            ),
+            direct_title_match=bool(query_title_match or (anchor_title and not supporting_only_mismatch)),
             lead_match=bool(lead_query or lead_token_hits or anchor_lead),
             background_only=background_only,
             negative_match=bool(negative_title or negative_lead or negative_body),
@@ -280,7 +309,18 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         reasons = ("NO_CONCRETE_EVENT",)
     else:
         reasons = (event_type, "CONCRETE_EVENT" if concrete >= 2 else "WEAK_EVENT_STRUCTURE")
-    passed = event_type != "OTHER" and significance >= 35.0 and concrete >= 2 and action
+    metric_signal = True
+    if event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
+        metric_signal = any(
+            _contains(title_text, term) or _contains(text, term)
+            for term in (
+                "집계", "기록", "평균", "변동폭", "최고", "최대", "최저", "상승", "하락",
+                "증가", "감소", "급등", "급락", "실적", "매출", "영업이익", "공시", "수치",
+            )
+        )
+        if not metric_signal:
+            reasons = (*reasons, "WEAK_METRIC_SIGNAL")
+    passed = event_type != "OTHER" and significance >= 35.0 and concrete >= 2 and action and metric_signal
     return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
 
 
