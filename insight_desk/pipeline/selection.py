@@ -378,3 +378,16 @@ def cap_topic_candidates(
                 if key in seen:
                     continue
                 matched = topic_ids_for_item(item)
+                if any(
+                    other_id in topic_caps and counts.get(other_id, 0) >= topic_caps[other_id]
+                    for other_id in matched
+                ):
+                    continue
+                seen.add(key)
+                selected.append(item)
+                for other_id in matched:
+                    if other_id in counts:
+                        counts[other_id] += 1
+                changed = True
+                break
+    return tuple(selected)
