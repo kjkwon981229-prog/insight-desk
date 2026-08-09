@@ -93,6 +93,7 @@ _STOPWORDS = {
 _GENERIC_CHANGE_WORDS = {"기록", "발표", "공개", "확인"}
 _EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기"}
 _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
+_DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락"}
 
 
 def _clean_headline(value: str) -> str:
@@ -193,6 +194,8 @@ def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
             candidate = cleaned[: cleaned.find(marker) + len(marker)]
         else:
             candidate = cleaned.split(" · ", 1)[0]
+    if "," in candidate or "，" in candidate:
+        candidate = re.split(r"[,，]", candidate, maxsplit=1)[0]
     candidate = re.sub(r"^(?:올해|지난해|이번|내년)\s+", "", candidate).strip(" ,·-")
     return candidate[:48]
 
@@ -221,8 +224,14 @@ def _tail_after_first_number(title: str, numbers: tuple[str, ...]) -> str:
         index = cleaned.find(number)
         if index >= 0:
             tail = cleaned[index + len(number) :].strip(" ,·-")
-            if 2 <= len(tail) <= 28:
-                return tail
+            for marker in _CHANGE_MARKERS:
+                marker_index = tail.find(marker)
+                if marker_index < 0:
+                    continue
+                prefix = tail[:marker_index].strip(" ,·-—")[-16:]
+                value = f"{prefix} {marker}".strip()
+                if value and value not in _GENERIC_CHANGE_WORDS:
+                    return value
             break
     return ""
 
@@ -338,6 +347,8 @@ def _summary(
         particle = _particle(subject)
         if change in _GENERIC_CHANGE_WORDS:
             ending = "기록됐다."
+        elif change in _DIRECTIONAL_CHANGE_WORDS:
+            ending = f"{change}했다."
         else:
             ending = f"{change} 수준으로 확인됐다." if change else "관련 수치가 확인됐다."
         sentence = f"{subject}{particle} {_number_with_ro(numbers[0])} {ending}"
