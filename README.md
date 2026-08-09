@@ -18,6 +18,13 @@ Insight Desk는 NAVER Search News API와 NAVER Search Trend API에서 받은 자
 - `BUILD_REPORT.md`: 구현 범위와 검증 결과
 - `RECOVERY_REPORT.md`: 원본 확보 상태와 복구 provenance
 
+## 현재 배포 주소
+
+- GitHub repository: <https://github.com/kjkwon981229-prog/insight-desk>
+- GitHub Pages: <https://kjkwon981229-prog.github.io/insight-desk/>
+- 최신 원격 실행 상태: News·Trend 모두 성공, Pages 배포 성공
+- 남은 확인: iPhone Safari 실기기와 첫 예약 실행
+
 ## iPhone에서 최초 연결할 때 필요한 최소 행동
 
 Git CLI는 기본 경로로 요구하지 않는다.
