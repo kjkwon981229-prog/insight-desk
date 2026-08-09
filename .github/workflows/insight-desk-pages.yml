@@ -74,12 +74,17 @@ jobs:
       - name: Validate Pages artifact
         if: steps.state.outputs.publish == 'true'
         run: python scripts/validate_artifact.py build/site
+      - name: Validate live editorial acceptance
+        if: steps.state.outputs.publish == 'true'
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
       - name: Upload selection audit
         if: always() && hashFiles('build/selection-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: selection-audit-${{ github.run_id }}
-          path: build/selection-audit.json
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
           if-no-files-found: error
       - name: Upload Pages artifact
         if: steps.state.outputs.publish == 'true'
