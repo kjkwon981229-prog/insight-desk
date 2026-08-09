@@ -3,8 +3,18 @@
 ## 현재 판정
 
 - 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION`
-- 현재 검증 단계: 실제 NCP·Actions·Pages 재검증 완료; 물리 iPhone과 첫 예약 실행만 외부 확인 대기
+- 현재 상태: `HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`
+- Run #12의 원격 NCP/Pages 성공은 수집·배포 성공 증거일 뿐이며, 실제 selected story 품질 감사에서 false pass가 확인되어 최종 판정을 철회했다.
 - 원본 Windows working tree를 복구한 결과가 아니라, 확정된 모바일 웹 계약을 기준으로 재구축한 결과다.
+
+## 이번 production recovery 변경
+
+- News retrieval을 query별 `sort=sim` + `sort=date` bounded dual channel로 분리하고, shared query/channel 요청을 재사용한다.
+- 제목·원문 metadata·lead를 우선하는 intent relevance gate를 추가했다. biography·quotation·부차적 언급은 제목 중심 사건 신호가 없으면 탈락한다.
+- concrete event gate, single-source policy, source diversity/evidence 분리, event signature clustering, 이전 latest 기반 `NEW/UPDATE/UNCHANGED/UNKNOWN_HISTORY`를 연결했다.
+- 최종 lineup은 품질 gate 이후에만 0~10개로 선택한다. 10개를 채우지 않으며, `01/02`는 실제 editorial score 순위다.
+- live acceptance artifact는 selected story별 source/publisher/retrieval/relevance/event/evidence/novelty/why_selected를 기록하고, Pages 공개 payload에서는 제거한다.
+- 이전 live false-positive 사례는 blacklist가 아니라 일반화된 PSAT biography, K-POP incidental mention, KBO merchandise, generic fallback, truncated metadata 회귀로 고정했다.
 
 ## A. 관심사·선정 구조
 
@@ -39,14 +49,16 @@ cross-topic 중복은 `matched_topic_ids`로 보존한다. config 순서가 stor
 - batch 간 absolute ratio 비교와 global popularity ranking은 하지 않는다.
 - 기사 게시 시각과 사건 발생 시각의 구분을 유지한다.
 
-### 실제 live 콘텐츠 감사에서 고친 결함
+### 이전 live 콘텐츠 감사에서 확인된 false pass
 
-Pages의 실제 NCP 결과를 다시 읽어 다음 두 결함을 확인했다.
+Pages Run #12의 실제 NCP 결과를 다시 읽어 다음 결함을 확인했다.
 
 - 잘린 NAVER description 조각이 key fact 후보로 흘러갈 수 있었다.
-- 정보가 부족한 단일 검색 결과가 `관련 내용이 확인됐다` 같은 무의미한 문구로 채워질 수 있었다.
+- 선택된 10개가 모두 single-source였고, 모두 `UNCERTAIN`에 가까운 저정보 후보였으며, 다수가 `OTHER` event와 generic headline/summary였다.
+- PSAT biography 문구, 부차적 아이돌 언급, KBO 상품/문화성 기사처럼 query token은 맞지만 관심사 의도와 사건 중심이 맞지 않는 후보가 들어왔다.
+- 이 결과 때문에 Run #12의 콘텐츠 PASS와 `CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY` 기록을 철회했다.
 
-`23c572a`에서 잘림 표식이 있는 텍스트를 fact/변화량에서 제외하고, headline을 완전한 절로 정리했으며, query relevance와 관측 가능한 신호가 없는 후보는 selection filler로 사용하지 않도록 수정했다. 정보가 부족한 단일 출처는 한계가 드러나는 문구로 표시하고, 없는 사실은 만들지 않는다.
+이번 수정본에서는 잘림 표식이 있는 텍스트를 fact/변화량에서 제외하고, headline을 화면에서 정리하며, query relevance·concrete event·evidence·novelty를 통과하지 못한 후보는 selection filler로 사용하지 않도록 했다. 정보가 부족한 단일 출처와 generic synthesis는 core lineup과 live acceptance에서 차단한다. 없는 사실은 만들지 않는다.
 
 ## D. PWA·배포
 
@@ -76,7 +88,7 @@ Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 �
 ## 로컬 검증
 
 - `python3 -m compileall -q insight_desk scripts tests` — 통과
-- `python3 -m unittest discover -s tests -q` — `48/48` 통과
+- `python3 -m unittest discover -s tests -q` — `62/62` 통과
 - fixture `COMPLETE` 생성 — 통과
 - synthesis A–J fixture 생성 — 통과
 - fixture/synthesis artifact validator — 통과
@@ -89,15 +101,15 @@ Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 �
 
 전체 Ruff 기본 실행은 기존 장문 HTML/CSS E501이 남아 전체 통과로 기록하지 않는다. mypy는 실행 환경에 설치되어 있지 않아 통과로 주장하지 않는다.
 
-## 최종 게이트(현재 단계)
+## 현재 게이트(원격 재실행 전)
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (48/48)
-LIVE_NCP_NEWS_VERIFIED = YES (Pages #12, status COMPLETE)
-LIVE_NCP_TREND_VERIFIED = YES (Pages #12, status COMPLETE)
-GITHUB_ACTIONS_VERIFIED = YES (CI 31334275366; Pages 31334331280)
-PAGES_DEPLOYMENT_VERIFIED = YES
-PAGES_URL_VERIFIED = YES
+LOCAL_TESTS_VERIFIED = YES (62/62)
+LIVE_NCP_NEWS_VERIFIED = PENDING (new recovery run)
+LIVE_NCP_TREND_VERIFIED = PENDING (new recovery run)
+GITHUB_ACTIONS_VERIFIED = PENDING (new recovery run)
+PAGES_DEPLOYMENT_VERIFIED = PENDING (new recovery run)
+PAGES_URL_VERIFIED = PENDING (new recovery run)
 MOBILE_BROWSER_VERIFIED = PARTIAL (cloud desktop viewport + responsive source/artifact checks)
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES (local regression)
@@ -115,8 +127,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 릴리스 상태
 
-`CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`
+`HOLD`
 
-물리 iPhone Safari와 아직 도달하지 않은 첫 예약 실행만 외부 acceptance로 남아 있다. 코드·선정·PWA·실제 NCP·Actions·Pages·artifact·공개 URL gate는 확인했다.
-
-`NO_KNOWN_FURTHER_MODIFICATIONS_WITHIN_SCOPE = YES`
+새 dual-retrieval 및 editorial gate가 실제 NCP selected story 전부에서 false-positive를 제거하는지 확인하기 전에는 원격 완료를 주장하지 않는다.
