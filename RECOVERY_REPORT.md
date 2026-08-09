@@ -63,13 +63,15 @@
 
 ## 현재 상태
 
+이전 Pages Run #12는 배포 자체에는 성공했지만 실제 콘텐츠 selection false pass가 확인되어 완료 판정을 철회했다. 현재 작업은 원본 복구가 아니라, 그 false pass를 일반화된 deterministic retrieval/relevance/event/evidence/novelty/selection gate로 교정하는 production recovery다.
+
 ```text
-LOCAL_TESTS_VERIFIED = YES (48/48)
-LIVE_NCP_NEWS_VERIFIED = YES (Run #12)
-LIVE_NCP_TREND_VERIFIED = YES (Run #12)
-GITHUB_ACTIONS_VERIFIED = YES (CI 31334275366; Pages 31334331280)
-PAGES_DEPLOYMENT_VERIFIED = YES
-PAGES_URL_VERIFIED = YES
+LOCAL_TESTS_VERIFIED = YES (62/62 local)
+LIVE_NCP_NEWS_VERIFIED = PENDING (recovery run)
+LIVE_NCP_TREND_VERIFIED = PENDING (recovery run)
+GITHUB_ACTIONS_VERIFIED = PENDING (recovery run)
+PAGES_DEPLOYMENT_VERIFIED = PENDING (recovery run)
+PAGES_URL_VERIFIED = PENDING (recovery run)
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 SCHEDULED_RUN_VERIFIED = PENDING
@@ -85,6 +87,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 판정
 
-`CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`
+`HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`
 
-물리 iPhone Safari와 첫 scheduled event만 외부 acceptance로 남아 있다.
+새 코드가 실제 live selected story 전부에서 relevance/event/evidence/novelty hard gate를 통과할 때까지 외부 완료로 올리지 않는다.
