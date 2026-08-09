@@ -23,11 +23,14 @@ def validate(path: Path) -> list[str]:
         "selected_total": len(stories),
         "generic_headline_count": 0,
         "generic_summary_count": 0,
+        "truncated_copy_count": 0,
         "other_event_count": 0,
         "uncertain_count": 0,
         "single_source_count": 0,
+        "duplicate_event_count": 0,
         "low_information_uncertain_count": 0,
     }
+    signatures: dict[str, int] = {}
     for index, story in enumerate(stories, 1):
         if not isinstance(story, dict):
             errors.append(f"story {index} is not an object")
@@ -40,6 +43,9 @@ def validate(path: Path) -> list[str]:
         if not summary or any(marker in summary for marker in generic_summary_markers):
             metrics["generic_summary_count"] += 1
             errors.append(f"story {index} has a generic summary")
+        if any(marker in headline or marker in summary for marker in ("...", "…")):
+            metrics["truncated_copy_count"] += 1
+            errors.append(f"story {index} leaks truncated source copy")
         if str(story.get("event_type", "OTHER")) == "OTHER":
             metrics["other_event_count"] += 1
             errors.append(f"story {index} has OTHER event type")
@@ -55,8 +61,15 @@ def validate(path: Path) -> list[str]:
             errors.append(f"story {index} is low-information uncertain")
         if not story.get("why_selected"):
             errors.append(f"story {index} has no why_selected")
+        signature = str(story.get("event_signature", "")).strip()
+        if signature:
+            signatures[signature] = signatures.get(signature, 0) + 1
         if not story.get("topic_id") and not story.get("topic"):
             errors.append(f"story {index} has no user-facing topic")
+    duplicate_event_count = sum(count - 1 for count in signatures.values() if count > 1)
+    metrics["duplicate_event_count"] = duplicate_event_count
+    if duplicate_event_count:
+        errors.append("selected stories contain duplicate event signatures")
     print(json.dumps(metrics, ensure_ascii=False, sort_keys=True))
     return errors
 
