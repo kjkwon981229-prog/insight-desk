@@ -153,6 +153,26 @@ class SynthesisTests(unittest.TestCase):
         self.assertEqual(summary, "민형배 시장-김산 무안군수 회동 일정이 9일 광주에서 예정돼 있다.")
         self.assertEqual(facts.action, "공개")
 
+    def test_numeric_headline_drops_clickbait_after_the_change_marker(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N012",
+                    "네비우스(NBIS), 엔비디아가 지분 쓸어담고 170% 급등 월가 더 오른다",
+                    "주가가 크게 올랐다고 전했다.",
+                    "market.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster, topic_name="시장", trend_metrics=()
+        )
+        self.assertEqual(headline, "네비우스(NBIS) 170% · 급등")
+        self.assertEqual(summary, "네비우스(NBIS)는 170%로 급등했다.")
+        self.assertEqual(facts.key_changes[0], "급등")
+        self.assertNotIn("월가 더 오른다", headline + summary)
+
     def test_single_low_information_story_does_not_get_generic_follow_up(self) -> None:
         cluster = StoryCluster(
             "topic",
