@@ -97,7 +97,10 @@ def _clean_headline(value: str) -> str:
     text = normalize_text(value)
     text = re.sub(r"^\s*(?:\[[^]]+\]|속보|단독|전문)\s*[:：]?\s*", "", text)
     text = text.replace("원달러", "원·달러")
-    text = re.sub(r"[.…]{2,}", " ", text)
+    # Search headlines often use one ellipsis as a visual separator. It is
+    # still an indication that the source title was copied, so remove it
+    # before the title becomes user-facing briefing copy.
+    text = re.sub(r"(?:\.{2,}|…)", " ", text)
     text = re.sub(r"[\"“”‘’]", "", text)
     text = re.sub(r"\s+", " ", text).strip(" .·-—")
     return text
@@ -286,13 +289,28 @@ def _next_signal(event_type: str, text: str, date: str, action: str) -> str:
     return ""
 
 
-def _headline(title: str, event_type: str, subject: str, numbers: tuple[str, ...], change: str) -> str:
+def _headline(
+    title: str,
+    event_type: str,
+    subject: str,
+    numbers: tuple[str, ...],
+    change: str,
+    *,
+    date: str = "",
+    action: str = "",
+) -> str:
     cleaned = _clean_headline(title)
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         result = f"{subject} {numbers[0]}"
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
+    if event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
+        # Keep event headlines factual and short; omit article-style hype
+        # after the event verb.
+        event_action = action if action in {"시구", "개최", "공연", "콘서트", "선발", "경기"} else ""
+        event_date = date if date and date not in subject else ""
+        return " ".join(part for part in (subject, event_date, event_action) if part).strip() or cleaned
     return cleaned
 
 
@@ -316,7 +334,7 @@ def _summary(
             ending = f"{change} 수준으로 확인됐다." if change else "관련 수치가 확인됐다."
         sentence = f"{subject}{particle} {_number_with_ro(numbers[0])} {ending}"
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
-        event_phrase = action or "관련 일정"
+        event_phrase = action if action in {"시구", "개최", "공연", "콘서트", "선발", "경기"} else "행사"
         if date or location:
             when = f"{date} " if date else ""
             where = f"{location}에서 " if location else ""
@@ -366,7 +384,12 @@ def synthesize_cluster(
     dates = _unique(list(_dates(combined)))
     times = _unique(list(_times(combined)))
     locations = _locations(combined)
-    event_type = _event_type(combined, numbers)
+    # Classify the representative headline first. Descriptions may mention
+    # generic words such as "정책" or "공개" while the headline carries the
+    # actual subject (for example a market statistic). This keeps the
+    # synthesis anchored to the strongest visible evidence.
+    title_event_type = _event_type(title, _numbers(title))
+    event_type = title_event_type if title_event_type != "OTHER" else _event_type(combined, numbers)
     action = _action(combined)
     subject = _subject(title, action, numbers)
     change = _tail_after_first_number(title, numbers) or (_change_phrases(title)[:1] or ("",))[0]
@@ -411,7 +434,7 @@ def synthesize_cluster(
         next_known_event=next_signal,
         uncertainty=uncertainty,
     )
-    headline = _headline(title, event_type, subject, numbers, change)
+    headline = _headline(title, event_type, subject, numbers, change, date=date, action=action)
     summary = _summary(
         title,
         event_type,
