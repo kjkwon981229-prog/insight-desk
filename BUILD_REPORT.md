@@ -11,18 +11,18 @@
 | 항목 | 결과 |
 |---|---|
 | GitHub 저장소 | `kjkwon981229-prog/insight-desk` |
-| 최신 UI commit | `39137fb20eea2a66916495bfe8703c1e1f8b025c` |
-| CI | `Run #10 · 31326864815` 성공 |
-| Pages 실행 | `Run #5 · 31327087861` 성공 |
-| Pages build | `93279078337` 성공 |
-| Pages deploy | `93279203775` 성공 |
-| Pages artifact | `github-pages`, 854 KB |
-| artifact digest | `sha256:9d36de5b0ca961b46bd857b4461a61e9f9714b46d87f6e17fe17462c14e5a253` |
+| 최신 UI·콘텐츠 commit | `39028d131594d75c98d485b5234b6fe3c6fd82cf` |
+| CI | `Run #34 · 31330863299` 성공 |
+| Pages 실행 | `Run #9 · 31330889761` 성공 |
+| Pages build | `93288833389` 성공 |
+| Pages deploy | `93289017742` 성공 |
+| Pages artifact | `github-pages`, 857,640 bytes |
+| artifact digest | `sha256:b224f857918bb929f6097a3c6cc84cad9635889218bd8bd332939a717e72974e` |
 | 실제 공개 주소 | [Insight Desk](https://kjkwon981229-prog.github.io/insight-desk/) |
 | 실제 실행 상태 | `COMPLETE` |
-| 현재 결과 규모 | 사건 묶음 10개, 검색 관심 그룹 11개, 원문 보강 5건 중 4건 |
+| 현재 결과 규모 | 사건 묶음 10개, 검색 관심 그룹 11개, 원문 보강 5건 중 5건 |
 
-`latest`, `archive`, 날짜별 archive를 공개 URL에서 직접 열어 확인했다. UTF-8, CSS 로드, 내부 링크, 가로 오버플로, 사용자 화면의 내부 근거 ID 미노출도 확인했다. 최초 확인에서 남아 있던 일부 경로의 이전 문구는 브라우저 캐시였으며, 동일 공개 URL을 새로 읽어 새 문구로 갱신된 것을 재확인했다.
+`latest`, `archive`, 날짜별 archive를 공개 URL에서 직접 열어 확인했다. UTF-8, CSS 로드, 내부 링크, 가로 오버플로, 사용자 화면의 내부 근거 ID 미노출을 확인했다. 캐시 영향을 배제하기 위해 최종 commit 식별자를 붙인 공개 URL도 함께 확인했다.
 
 GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있다. 현재 실행 실패나 배포 오류는 아니며, 이후 Actions 버전 정비 대상으로 기록한다.
 
@@ -34,6 +34,9 @@ GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있�
 - Trend ratio를 원시 검색량으로 표시하지 않고 방향·비교 기준 중심으로 표시
 - 큰 둥근 카드 중심 구조를 editorial hero·signal strip·story row·trend visualization·reference method 구조로 교체
 - 사건별 evidence row와 접을 수 있는 상세 출처 영역 추가
+- 여러 근거에서 사실을 추출하는 `StoryFacts`와 결정론적 headline·summary 합성 추가
+- 숫자 뒤의 기사식 홍보 문구와 말줄임표를 headline·summary에서 제거
+- 일정형 사건은 의미 있는 날짜·장소·행동만 남기고 generic follow-up은 생략
 - 내부 근거 ID를 기본 사용자 화면에서 제거
 - `왜 보나`, `관심도와의 관계`, `산업·투자 판단`, 기계적인 evidence 문구 제거
 - light/dark 색상 토큰과 저채도 핑크 포인트 적용
@@ -93,20 +96,28 @@ GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있�
 ## 로컬 검증
 
 - `python3 -m compileall -q insight_desk scripts tests` — 통과
-- `python3 -m unittest discover -s tests -v` — `25/25` 통과
+- `python3 -m unittest discover -s tests -v` — `34/34` 통과
 - fixture `COMPLETE` 브리핑 생성 — 통과
 - `python3 scripts/validate_artifact.py build/fixture-site` — 통과
+- `python3 scripts/build_synthesis_fixture.py` — A–J 10개 대표 사례 생성 통과
+- `python3 scripts/validate_artifact.py build/synthesis-fixture-site` — 통과
 - enrichment 성공·403·timeout·malformed HTML·missing OG·중복 URL — 통과
 - News-only·Trends-only·PARTIAL·TOTAL_FAILURE — 통과
 - secret redaction·cache 보안·Trend semantics — 통과
 - 사용자 화면의 금지 문구·내부 evidence ID 검사 — 통과
+- 변경 파일 대상 Ruff `F,I` 검사 — 통과
+
+전체 프로젝트 Ruff와 mypy는 기존 미수정 영역의 선행 오류가 남아 있어 전체 통과로 기록하지 않았다. 이번 변경 모듈에서 새로 추가된 오류는 확인되지 않았다.
 
 ## 시각 검증
 
 - 실제 공개 Pages desktop viewport 1363px에서 root·latest·archive·날짜별 페이지 확인
+- 최종 공개 root에서 dark editorial hero의 배경·텍스트 토큰이 실제 적용되는지 확인
+- 최종 공개 root에서 10개 story, 6개 key-fact panel, 5개 next-signal panel, 10개 disclosure 확인
 - `scrollWidth <= innerWidth` 확인
 - UTF-8 한글, 긴 제목 줄바꿈, 링크, disclosure, archive 이동 확인
-- 실제 공개 root와 archive 화면을 screenshot으로 저장
+- 금지 문구·내부 ID·말줄임표·인증 정보가 공개 HTML에 없는지 확인
+- 실제 공개 root 화면 screenshot 확인
 - CSS에 320px 이상 responsive 규칙, dark mode, reduced-motion 규칙 존재 확인
 
 정확한 320·375·390·430px 브라우저 viewport와 실제 iPhone Safari는 이 환경에서 직접 측정하지 못했다. 따라서 모바일 검증은 `PARTIAL`, iPhone 검증은 `PENDING`으로 남긴다.
@@ -114,11 +125,11 @@ GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있�
 ## 최종 Gate
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (25/25)
+LOCAL_TESTS_VERIFIED = YES (34/34)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (31326864815)
-PAGES_DEPLOYMENT_VERIFIED = YES (31327087861)
+GITHUB_ACTIONS_VERIFIED = YES (31330863299)
+PAGES_DEPLOYMENT_VERIFIED = YES (31330889761)
 PAGES_URL_VERIFIED = YES
 MOBILE_BROWSER_VERIFIED = PARTIAL (cloud 1363px + responsive source checks)
 IPHONE_SAFARI_VERIFIED = PENDING
