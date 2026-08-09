@@ -3,150 +3,118 @@
 ## 현재 판정
 
 - 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION`
-- 제품 릴리스 상태: `CONDITIONAL PASS`
+- 현재 검증 단계: 실제 NCP·Actions·Pages 재검증 완료; 물리 iPhone과 첫 예약 실행만 외부 확인 대기
 - 원본 Windows working tree를 복구한 결과가 아니라, 확정된 모바일 웹 계약을 기준으로 재구축한 결과다.
 
-## 원격 검증 증거
+## A. 관심사·선정 구조
+
+원래의 `global score → top 10 → first story hero` 구조는 최종 편집 권한으로 사용하지 않는다. `config/topics.json`을 관심사 SSOT로 두고 다음 다섯 영역을 독립적으로 처리한다.
+
+- AI·테크
+- 엔터·음악·K-POP
+- 경제·투자
+- KBO·한화 이글스
+- PSAT·공채 일정
+
+각 topic에 query family와 공정 candidate budget을 적용하고, topic-local quality·publisher diversity·공식 근거·신선도·중복 밀도를 사용해 후보를 평가한다. 이후 core coverage floor, conditional omission, 남은 slot 경쟁, saturation penalty와 topic cap을 적용한다. 개인 priority는 동률에 가까운 후보의 보조 신호로만 사용한다.
+
+source item 수 자체는 중요도 보너스로 사용하지 않는다. 같은 매체의 재전송은 diminishing return으로 보고, 서로 다른 publisher와 official evidence를 근거 품질 신호로 사용한다.
+
+cross-topic 중복은 `matched_topic_ids`로 보존한다. config 순서가 story 소유권을 빼앗지 않는다. enrichment 후보도 topic-diverse round-robin으로 배정한다.
+
+## B. 홈 경험
+
+첫 story를 자동 hero로 승격하지 않는다. 홈은 `오늘의 브리핑 → 관심사별 lead signal → 오늘 볼 뉴스 → 검색 관심 흐름 → 데이터 기준` 순서로 생성된다. overview는 선택된 lineup의 story 수·대표 관심사·trend 상태에서 만들며 첫 story summary를 복사하지 않는다.
+
+내부 cluster 수, API 작업 수, enrichment 카운터, internal topic ID는 기본 화면에 노출하지 않는다. 전체 selection 사유는 Actions의 `selection-audit` artifact에만 남긴다.
+
+## C. 데이터·콘텐츠 계약
+
+- NAVER Search 결과는 1차 근거로 유지한다.
+- metadata enrichment는 선택적이며 실패해도 수집 상태를 실패로 바꾸지 않는다.
+- `SEARCH_SNIPPET`, `ENRICHED_METADATA`, `OFFICIAL_SOURCE` provenance를 구분한다.
+- fact-first synthesis, contextual evidence, story-specific next signal을 유지한다.
+- raw snippet truncation, generic next-signal filler, cluster debug copy를 사용자 화면에서 차단한다.
+- Search Trend ratio는 원시 검색량이 아닌 동일 keyword group 내부의 상대 관심지수다.
+- batch 간 absolute ratio 비교와 global popularity ranking은 하지 않는다.
+- 기사 게시 시각과 사건 발생 시각의 구분을 유지한다.
+
+### 실제 live 콘텐츠 감사에서 고친 결함
+
+Pages의 실제 NCP 결과를 다시 읽어 다음 두 결함을 확인했다.
+
+- 잘린 NAVER description 조각이 key fact 후보로 흘러갈 수 있었다.
+- 정보가 부족한 단일 검색 결과가 `관련 내용이 확인됐다` 같은 무의미한 문구로 채워질 수 있었다.
+
+`23c572a`에서 잘림 표식이 있는 텍스트를 fact/변화량에서 제외하고, headline을 완전한 절로 정리했으며, query relevance와 관측 가능한 신호가 없는 후보는 selection filler로 사용하지 않도록 수정했다. 정보가 부족한 단일 출처는 한계가 드러나는 문구로 표시하고, 없는 사실은 만들지 않는다.
+
+## D. PWA·배포
+
+- `display: standalone`, `start_url`, `scope`, theme/background color, Apple web-app meta, `viewport-fit=cover`, safe-area CSS를 연결했다.
+- 승인된 아이콘 보드의 Candidate 5 영역을 그대로 추출하고 리사이즈하여 `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, `favicon.png`로 연결했다. 새 아이콘 geometry를 생성하지 않았다.
+- manifest provenance: `APPROVED_CANDIDATE_5_EXTRACTED`
+- service worker는 추가하지 않았다. 매일 갱신되는 정적 브리핑에서 오래된 offline HTML이 최신 결과처럼 보일 위험을 피하기 위한 의도적 선택이다.
+- total failure·render failure·validation failure에서는 새 Pages 배포를 하지 않고 기존 정상 사이트를 보존한다.
+- 최신 페이지에만 Asia/Seoul 기준 freshness 표시를 적용하고, 날짜 archive에는 stale 경고를 적용하지 않는다.
+
+## 원격 증거
 
 | 항목 | 결과 |
 |---|---|
-| GitHub 저장소 | `kjkwon981229-prog/insight-desk` |
-| 최신 UI·콘텐츠 commit | `39028d131594d75c98d485b5234b6fe3c6fd82cf` |
-| CI | `Run #34 · 31330863299` 성공 |
-| Pages 실행 | `Run #9 · 31330889761` 성공 |
-| Pages build | `93288833389` 성공 |
-| Pages deploy | `93289017742` 성공 |
-| Pages artifact | `github-pages`, 857,640 bytes |
-| artifact digest | `sha256:b224f857918bb929f6097a3c6cc84cad9635889218bd8bd332939a717e72974e` |
-| 실제 공개 주소 | [Insight Desk](https://kjkwon981229-prog.github.io/insight-desk/) |
-| 실제 실행 상태 | `COMPLETE` |
-| 현재 결과 규모 | 사건 묶음 10개, 검색 관심 그룹 11개, 원문 보강 5건 중 5건 |
+| 저장소 | [kjkwon981229-prog/insight-desk](https://github.com/kjkwon981229-prog/insight-desk) |
+| 최종 소스 commit | `23c572afe7bd8e2240f1cc6bda4431dd2572ca44` |
+| 최종 CI | [Run · 31334275366](https://github.com/kjkwon981229-prog/insight-desk/actions/runs/31334275366) 성공 · 48 tests |
+| 최종 Pages workflow | [Run #12 · 31334331280](https://github.com/kjkwon981229-prog/insight-desk/actions/runs/31334331280) build/deploy 성공 |
+| Pages build job | `93297582968` 성공 · 실제 NCP status `COMPLETE`, `publish=true` |
+| Pages deploy job | `93297710682` 성공 · 실제 공개 URL 평가 성공 |
+| Pages artifact | ID `9043866757`, 363,516 bytes, `sha256:fdb1f41482c4c6ff5b7f43ddd63e26cc00c3a1d002b90a42844d920bc19abe94` |
+| selection audit artifact | ID `9043866490`, 6,029 bytes, secret 없는 내부 감사 산출물 |
+| 공개 주소 | [Insight Desk](https://kjkwon981229-prog.github.io/insight-desk/) |
 
-`latest`, `archive`, 날짜별 archive를 공개 URL에서 직접 열어 확인했다. UTF-8, CSS 로드, 내부 링크, 가로 오버플로, 사용자 화면의 내부 근거 ID 미노출을 확인했다. 캐시 영향을 배제하기 위해 최종 commit 식별자를 붙인 공개 URL도 함께 확인했다.
-
-GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있다. 현재 실행 실패나 배포 오류는 아니며, 이후 Actions 버전 정비 대상으로 기록한다.
-
-## 이번 개선 범위
-
-- 뉴스 검색 결과를 1차 근거로 유지하고, 상위 기사만 공개 metadata로 선택 보강
-- 보강 실패 시 검색 결과로 안전하게 fallback
-- `SEARCH_SNIPPET`, `ENRICHED_METADATA`, `OFFICIAL_SOURCE` provenance 구분
-- Trend ratio를 원시 검색량으로 표시하지 않고 방향·비교 기준 중심으로 표시
-- 큰 둥근 카드 중심 구조를 editorial hero·signal strip·story row·trend visualization·reference method 구조로 교체
-- 사건별 evidence row와 접을 수 있는 상세 출처 영역 추가
-- 여러 근거에서 사실을 추출하는 `StoryFacts`와 결정론적 headline·summary 합성 추가
-- 숫자 뒤의 기사식 홍보 문구와 말줄임표를 headline·summary에서 제거
-- 일정형 사건은 의미 있는 날짜·장소·행동만 남기고 generic follow-up은 생략
-- 내부 근거 ID를 기본 사용자 화면에서 제거
-- `왜 보나`, `관심도와의 관계`, `산업·투자 판단`, 기계적인 evidence 문구 제거
-- light/dark 색상 토큰과 저채도 핑크 포인트 적용
-- archive를 날짜별 reference list로 재구성
-
-## 디자인 갭 감사
-
-초기 UI는 다음 다섯 문제가 가장 컸다.
-
-1. 모든 정보가 큰 둥근 카드 안에 쌓여 정보 위계가 약했다.
-2. 첫 화면에 오늘의 판단보다 시스템형 지표가 먼저 보였다.
-3. Trend가 숫자와 문장에 머물러 변화 방향을 한눈에 읽기 어려웠다.
-4. evidence ID와 기계적인 section 문구가 사용자 화면에 노출됐다.
-5. archive·methodology가 본문과 같은 카드 패턴으로 표현됐다.
-
-## 아카이브에서 채택한 문법
-
-| 자료 | 적용한 문법 |
-|---|---|
-| `r2-impl-cand-000002-a` | 결론을 먼저 보여주는 editorial hero, 큰 제목과 작은 보조 신호의 대비 |
-| `r2-impl-cand-000009-a` | 판단과 근거를 나란히 읽는 evidence rail, 데이터가 장식이 아닌 설명이 되도록 한 시각화 |
-| `r2-impl-cand-000014-a` | 얇은 구분선, 정의 목록, 방법론 disclosure, 날짜별 reference archive |
-| `r2-impl-cand-000011-a` | 실제 관계 edge 데이터가 없어 적용하지 않음 |
-
-아카이브의 색상이나 화면을 복제하지 않고, 현재 브리핑의 정보 순서와 데이터 계약에 맞는 문법만 재조합했다.
-
-## 시각 품질 자체평가
-
-공개 desktop render와 source-level responsive 검사를 기준으로 평가했다. 실제 iPhone Safari 확인 점수와는 별개다.
-
-| 항목 | 점수 |
-|---|---:|
-| Typography | 9/10 |
-| Information hierarchy | 9/10 |
-| Editorial composition | 9/10 |
-| Data visualization | 9/10 |
-| Evidence UX | 9/10 |
-| Microcopy | 9/10 |
-| Mobile density | 9/10 |
-| Color system | 9/10 |
-| Archive fidelity | 9/10 |
-| Overall polish | 9/10 |
-| 합계 | **90/100** |
-
-모바일 실기기와 정확한 viewport별 screenshot은 아직 확인하지 않았으므로, 이 점수는 디자인 구조와 공개 desktop render에 대한 자체평가로 한정한다.
-
-## 데이터 품질·안전성
-
-- NAVER News의 제목·요약·원문 링크·게시 시각을 PRIMARY SEARCH EVIDENCE로 유지
-- 상위 N건에만 짧은 timeout과 제한된 concurrency로 원문 공개 정보 수집
-- HTML 전문을 장기 저장하지 않음
-- 403, timeout, malformed HTML, OG metadata 부재는 브리핑 실패로 승격하지 않음
-- 공식 출처는 안전하게 식별되는 후보가 없을 때 억지로 생성하지 않음
-- Search Trend ratio는 상대 관심지수이며, 서로 다른 batch의 절대값을 비교하지 않음
-- 기사 게시 시각과 사건 발생 시각을 구분
+Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 포함된 commit을 실제 NCP `COMPLETE`로 빌드하고, artifact validation을 거쳐 Pages에 배포한 증거다. 로그에는 NCP secret이 `***`로 마스킹되어 있고, artifact에는 manifest·192/512 icon·Apple touch icon·favicon이 포함되어 있다.
 
 ## 로컬 검증
 
 - `python3 -m compileall -q insight_desk scripts tests` — 통과
-- `python3 -m unittest discover -s tests -v` — `34/34` 통과
-- fixture `COMPLETE` 브리핑 생성 — 통과
-- `python3 scripts/validate_artifact.py build/fixture-site` — 통과
-- `python3 scripts/build_synthesis_fixture.py` — A–J 10개 대표 사례 생성 통과
-- `python3 scripts/validate_artifact.py build/synthesis-fixture-site` — 통과
-- enrichment 성공·403·timeout·malformed HTML·missing OG·중복 URL — 통과
+- `python3 -m unittest discover -s tests -q` — `48/48` 통과
+- fixture `COMPLETE` 생성 — 통과
+- synthesis A–J fixture 생성 — 통과
+- fixture/synthesis artifact validator — 통과
+- selection multi-day matrix A–J — 통과
+- enrichment success·403·timeout·malformed HTML·missing OG·fallback — 통과
 - News-only·Trends-only·PARTIAL·TOTAL_FAILURE — 통과
 - secret redaction·cache 보안·Trend semantics — 통과
-- 사용자 화면의 금지 문구·내부 evidence ID 검사 — 통과
-- 변경 파일 대상 Ruff `F,I` 검사 — 통과
+- internal ID·금지 microcopy·hero coupling 회귀 — 통과
+- 변경 PWA/validator/content 파일 Ruff `F,I` — 통과
 
-전체 프로젝트 Ruff와 mypy는 기존 미수정 영역의 선행 오류가 남아 있어 전체 통과로 기록하지 않았다. 이번 변경 모듈에서 새로 추가된 오류는 확인되지 않았다.
+전체 Ruff 기본 실행은 기존 장문 HTML/CSS E501이 남아 전체 통과로 기록하지 않는다. mypy는 실행 환경에 설치되어 있지 않아 통과로 주장하지 않는다.
 
-## 시각 검증
-
-- 실제 공개 Pages desktop viewport 1363px에서 root·latest·archive·날짜별 페이지 확인
-- 최종 공개 root에서 dark editorial hero의 배경·텍스트 토큰이 실제 적용되는지 확인
-- 최종 공개 root에서 10개 story, 6개 key-fact panel, 5개 next-signal panel, 10개 disclosure 확인
-- `scrollWidth <= innerWidth` 확인
-- UTF-8 한글, 긴 제목 줄바꿈, 링크, disclosure, archive 이동 확인
-- 금지 문구·내부 ID·말줄임표·인증 정보가 공개 HTML에 없는지 확인
-- 실제 공개 root 화면 screenshot 확인
-- CSS에 320px 이상 responsive 규칙, dark mode, reduced-motion 규칙 존재 확인
-
-정확한 320·375·390·430px 브라우저 viewport와 실제 iPhone Safari는 이 환경에서 직접 측정하지 못했다. 따라서 모바일 검증은 `PARTIAL`, iPhone 검증은 `PENDING`으로 남긴다.
-
-## 최종 Gate
+## 최종 게이트(현재 단계)
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (34/34)
-LIVE_NCP_NEWS_VERIFIED = YES
-LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (31330863299)
-PAGES_DEPLOYMENT_VERIFIED = YES (31330889761)
+LOCAL_TESTS_VERIFIED = YES (48/48)
+LIVE_NCP_NEWS_VERIFIED = YES (Pages #12, status COMPLETE)
+LIVE_NCP_TREND_VERIFIED = YES (Pages #12, status COMPLETE)
+GITHUB_ACTIONS_VERIFIED = YES (CI 31334275366; Pages 31334331280)
+PAGES_DEPLOYMENT_VERIFIED = YES
 PAGES_URL_VERIFIED = YES
-MOBILE_BROWSER_VERIFIED = PARTIAL (cloud 1363px + responsive source checks)
+MOBILE_BROWSER_VERIFIED = PARTIAL (cloud desktop viewport + responsive source/artifact checks)
 IPHONE_SAFARI_VERIFIED = PENDING
-PARTIAL_FAILURE_VERIFIED = YES
-TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
+PARTIAL_FAILURE_VERIFIED = YES (local regression)
+TOTAL_FAILURE_PRESERVATION_VERIFIED = YES (local regression)
 SECRET_SCAN_VERIFIED = YES
 SCHEDULED_RUN_VERIFIED = PENDING
+PWA_MANIFEST_VERIFIED = YES (local artifact)
+PWA_ICON_VERIFIED = YES (artifact + public page head)
 ```
 
-## 남은 위험과 최소 조치
+## 남은 외부 확인
 
-- 실제 iPhone Safari에서 첫 화면, 가로 밀림, 뉴스 링크, archive, 다크 모드를 사용자가 한 번 확인해야 한다.
-- 첫 예약 실행이 실제로 수집·생성·배포되는지는 예약 시각 이후 확인해야 한다.
-- Actions Node.js 20 경고는 실패가 아니지만 향후 action 버전 업데이트가 필요하다.
+1. iPhone Safari에서 첫 화면·가로 밀림·뉴스 원문·archive·다크 모드를 확인한다.
+2. 첫 `07:30 KST` 예약 실행 acceptance는 실제 schedule event 이후 확인한다.
 
-## 최종 릴리스 상태
+## 현재 릴리스 상태
 
-`CONDITIONAL PASS`
+`CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`
 
-핵심 기능·데이터 계약·실제 NCP 실행·Actions·Pages·공개 URL·로컬 회귀는 통과했다. 실기기와 예약 실행이 아직 확인되지 않았으므로 `PASS`로 올리지 않는다.
+물리 iPhone Safari와 아직 도달하지 않은 첫 예약 실행만 외부 acceptance로 남아 있다. 코드·선정·PWA·실제 NCP·Actions·Pages·artifact·공개 URL gate는 확인했다.
