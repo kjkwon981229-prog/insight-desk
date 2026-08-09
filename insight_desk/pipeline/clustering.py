@@ -31,6 +31,11 @@ _EVENT_TERMS = {
     "폭염", "중단", "멈춘", "논란",
 }
 _GENERIC_TERMS = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
+_CONTEXT_TERMS = {"행사", "일정", "참석", "포토", "블루카펫", "대표", "얼굴", "내일의", "오늘의"}
+_GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
+_DATE_NUMBER_RE = re.compile(
+    r"(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일)|\d+(?:[,\.]\d+)?\s?(?:%|원|달러|억|만|명|건|배|개|곳|주년|위|점|대))"
+)
 
 
 def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
@@ -45,13 +50,23 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
         if value
     ).lower()
     tokens = _tokens(text)
-    entities = {token for token in tokens if token not in _EVENT_TERMS and token not in _GENERIC_TERMS}
+    entities = {
+        token
+        for token in tokens
+        if token not in _EVENT_TERMS
+        and token not in _GENERIC_TERMS
+        and token not in _CONTEXT_TERMS
+        and not token.isdigit()
+        and not _DATE_NUMBER_RE.fullmatch(token)
+    }
     if "프로야구" in text:
         entities.add("야구")
     if "kbo" in text:
         entities.add("야구")
-    actions = {token for token in tokens if token in _EVENT_TERMS}
-    dates_numbers = set(re.findall(r"(?:20\d{2}|\d{1,3}(?:[,\.]\d{3})*)(?:년|월|일|%|원|달러|억|만)?", text))
+    actions = {
+        term for term in _EVENT_TERMS if term in text and term not in _GENERIC_ACTION_TERMS
+    }
+    dates_numbers = set(_DATE_NUMBER_RE.findall(text))
     return entities, actions, dates_numbers
 
 
