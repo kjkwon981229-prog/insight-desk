@@ -24,8 +24,9 @@ Insight Desk는 NAVER Search News API와 NAVER Search Trend API에서 받은 자
 
 - GitHub repository: <https://github.com/kjkwon981229-prog/insight-desk>
 - GitHub Pages: <https://kjkwon981229-prog.github.io/insight-desk/>
-- 최신 원격 실행 상태: News·Trend 모두 성공, Pages 배포 성공
-- 남은 확인: iPhone Safari 실기기와 첫 예약 실행
+- 최신 원격 콘텐츠 판정: 이전 Run #12는 실제 선정 품질 false pass로 철회됨
+- 현재 상태: dual retrieval·intent/event/evidence/novelty/selection 수정본의 원격 재실행 대기
+- 남은 확인: 새 live selected-stories audit, iPhone Safari 실기기와 첫 예약 실행
 
 ## iPhone에서 최초 연결할 때 필요한 최소 행동
 
@@ -73,7 +74,7 @@ Search Trend의 `ratio`는 실제 검색 횟수가 아니라 상대 검색지수
 
 모바일 화면은 특정 기사 한 건을 영웅처럼 내세우지 않고, `오늘의 브리핑` overview → 관심사별 lead signal → 오늘 볼 뉴스 → 검색 관심 흐름 → 데이터 기준 순서로 읽힌다. warm off-white 바탕과 charcoal 텍스트에 muted pink를 section marker·근거 rail·trend emphasis로만 사용하며, 다크 모드와 320px 이상 viewport를 함께 지원한다.
 
-선정은 전체 기사를 한 번에 정렬해 자르는 방식이 아니다. 다섯 관심사를 `config/topics.json`에서 독립적으로 수집하고, query별 공정 예산과 topic-local quality를 적용한 뒤 core coverage floor, conditional omission, topic saturation cap, publisher diversity를 반영한다. 선택 사유는 공개 화면이 아닌 Actions의 `selection-audit` artifact로 남긴다. 개인 priority는 동률에 가까운 후보의 보조 신호로만 사용한다.
+선정은 전체 기사를 한 번에 정렬해 자르는 방식이 아니다. 각 query를 `sim`과 `date` 두 채널로 제한 수집하고, `SIM + DATE → intent relevance → concrete event → evidence → novelty → quality-first selection` 순서로 거른다. 다섯 관심사는 `config/topics.json`에서 독립적으로 다루며 query별 공정 예산, topic-local quality, conditional omission, topic saturation cap, publisher diversity를 적용한다. 최대 10개일 뿐 기준 미달 후보로 채우지 않는다. 선택 사유는 공개 화면이 아닌 Actions의 `selection-audit` artifact로 남긴다. 개인 priority는 보조 신호로만 사용한다.
 
 Visual Design Language Archive에서 확인한 문법은 다음처럼 선별했다.
 
@@ -95,7 +96,7 @@ python scripts/validate_artifact.py build/fixture-site
 
 fixture 실행은 실제 NAVER 연결 성공을 의미하지 않는다. 실제 연결은 GitHub Secrets를 등록한 뒤 Actions에서만 확인한다.
 
-선택 계층에는 AI·테크 물량 우세, 경제 물량 우세, K-POP/KBO/PSAT 단독 이벤트, conditional 무후보, 교차 관심사 중복, syndicated source volume, 공식 근거, enrichment round-robin을 포함한 10일 회귀 행렬이 있다.
+선택 계층에는 AI·테크 물량 우세, 경제 물량 우세, K-POP/KBO/PSAT 단독 이벤트, conditional 무후보, 교차 관심사 중복, incidental query mention, concrete-event gate, source-volume bias, novelty, 공식 근거, enrichment round-robin을 포함한 회귀 행렬이 있다. 실제 live 결과의 selected story는 별도 hard gate로 generic headline/summary, OTHER event, 저정보 single-source, conditional filler를 검사한다.
 
 현재 `manifest.webmanifest`는 `display: standalone`, `scope`, theme/background, safe-area, Apple web-app 메타와 Candidate 5 아이콘을 연결한다. 별도 원본 파일이 아닌 승인 아이콘 보드의 Candidate 5 시안 영역을 그대로 추출·리사이즈했으며, 새로운 도형을 생성하지 않았다. manifest에는 `APPROVED_CANDIDATE_5_EXTRACTED` provenance를 기록한다.
 
