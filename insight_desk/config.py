@@ -35,6 +35,15 @@ def load_topics(path: Path) -> tuple[Topic, tuple[KeywordGroup, ...]]:
                 ),
                 candidate_budget=max(10, int(topic_raw.get("candidate_budget", 40))),
                 selection_cap=max(1, int(topic_raw.get("selection_cap", 3))),
+                intent_anchors=tuple(
+                    str(value) for value in topic_raw.get("intent_anchors", []) if str(value).strip()
+                ),
+                negative_context=tuple(
+                    str(value) for value in topic_raw.get("negative_context", []) if str(value).strip()
+                ),
+                event_terms=tuple(
+                    str(value) for value in topic_raw.get("event_terms", []) if str(value).strip()
+                ),
             )
         )
         for index, group_raw in enumerate(topic_raw.get("trend_groups", []), start=1):
