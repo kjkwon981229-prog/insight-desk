@@ -2,6 +2,11 @@ name: Insight Desk Daily Pages
 
 on:
   workflow_dispatch:
+  # Temporary push trigger used only to execute the pending live recovery
+  # without requiring another manual button press. It is removed after the
+  # recovery run; the production schedule remains the contract below.
+  push:
+    branches: [main]
   schedule:
     # 07:30 Asia/Seoul = 22:30 UTC on the previous day.
     - cron: "30 22 * * *"
