@@ -71,6 +71,7 @@ def normalize_news_item(
     topic_id: str,
     query: str,
     evidence_id: str,
+    retrieval_channels: tuple[str, ...] = (),
 ) -> NewsItem:
     title = normalize_text(raw.get("title"))
     summary = normalize_text(raw.get("description"))
@@ -92,15 +93,26 @@ def normalize_news_item(
         source_domain=_domain(canonical_url),
         content_hash=digest,
         matched_topic_ids=(topic_id,),
+        retrieval_channels=tuple(dict.fromkeys(retrieval_channels)),
     )
 
 
 def normalize_news_payloads(
-    raw_items: tuple[tuple[str, str, dict[str, object]], ...]
+    raw_items: tuple[tuple[object, ...], ...]
 ) -> tuple[NewsItem, ...]:
     output: list[NewsItem] = []
     counter = 1
-    for topic_id, query, payload in raw_items:
+    for raw_entry in raw_items:
+        if len(raw_entry) == 3:
+            topic_id, query, payload = raw_entry
+            channels: tuple[str, ...] = ()
+        elif len(raw_entry) == 4:
+            topic_id, query, channel, payload = raw_entry
+            channels = (str(channel),)
+        else:
+            continue
+        if not isinstance(topic_id, str) or not isinstance(query, str) or not isinstance(payload, dict):
+            continue
         items = payload.get("items", [])
         if not isinstance(items, list):
             continue
@@ -108,7 +120,11 @@ def normalize_news_payloads(
             if isinstance(item, dict):
                 output.append(
                     normalize_news_item(
-                        item, topic_id=topic_id, query=query, evidence_id=f"N{counter:03d}"
+                        item,
+                        topic_id=topic_id,
+                        query=query,
+                        evidence_id=f"N{counter:03d}",
+                        retrieval_channels=channels,
                     )
                 )
                 counter += 1
