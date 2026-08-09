@@ -91,6 +91,8 @@ _STOPWORDS = {
     "또",
 }
 _GENERIC_CHANGE_WORDS = {"기록", "발표", "공개", "확인"}
+_EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기"}
+_SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
 
 
 def _clean_headline(value: str) -> str:
@@ -186,7 +188,11 @@ def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
     elif action and action in cleaned:
         candidate = cleaned[: cleaned.find(action)]
     else:
-        candidate = cleaned.split(" · ", 1)[0]
+        marker = next((value for value in _SUBJECT_END_MARKERS if value in cleaned), "")
+        if marker:
+            candidate = cleaned[: cleaned.find(marker) + len(marker)]
+        else:
+            candidate = cleaned.split(" · ", 1)[0]
     candidate = re.sub(r"^(?:올해|지난해|이번|내년)\s+", "", candidate).strip(" ,·-")
     return candidate[:48]
 
@@ -308,9 +314,11 @@ def _headline(
     if event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         # Keep event headlines factual and short; omit article-style hype
         # after the event verb.
-        event_action = action if action in {"시구", "개최", "공연", "콘서트", "선발", "경기"} else ""
+        event_action = action if action in _EVENT_ACTIONS else ""
         event_date = date if date and date not in subject else ""
-        return " ".join(part for part in (subject, event_date, event_action) if part).strip() or cleaned
+        if event_action:
+            return " ".join(part for part in (subject, event_date, event_action) if part).strip() or cleaned
+        return f"{subject} 일정" if date else subject
     return cleaned
 
 
@@ -334,15 +342,18 @@ def _summary(
             ending = f"{change} 수준으로 확인됐다." if change else "관련 수치가 확인됐다."
         sentence = f"{subject}{particle} {_number_with_ro(numbers[0])} {ending}"
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
-        event_phrase = action if action in {"시구", "개최", "공연", "콘서트", "선발", "경기"} else "행사"
+        event_phrase = action if action in _EVENT_ACTIONS else ""
         if date or location:
             when = f"{date} " if date else ""
             where = f"{location}에서 " if location else ""
-            sentence = f"{subject} {event_phrase} 일정이 {when}{where}예정돼 있다."
+            phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"
+            sentence = f"{subject} {phrase} {when}{where}예정돼 있다."
         else:
-            sentence = f"{subject} {event_phrase} 일정이 공개됐다."
+            phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"
+            sentence = f"{subject} {phrase} 공개됐다."
     elif event_type == "POLICY" and subject:
-        sentence = f"{subject} 관련 정책 변화가 발표됐다."
+        policy_action = action if action in {"발표", "공개", "시행", "고시", "확정"} else "변경"
+        sentence = f"{subject} {policy_action}가 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
         sentence = f"{subject} 출시 또는 판매 일정이 공개됐다."
     elif event_type == "ANNOUNCEMENT":
