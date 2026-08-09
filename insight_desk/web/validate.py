@@ -10,7 +10,7 @@ REQUIRED_FILES = (
     "data/latest.json",
     "assets/css/style.css",
 )
-_LOCAL_HREF = re.compile(r'href="([^"#]+)"')
+_LOCAL_HREF = re.compile(r'href=["\']([^"\'#]+)["\']')
 
 
 def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple[str, ...]:
@@ -34,11 +34,17 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
             if "width=device-width" not in text:
                 errors.append(f"missing mobile viewport: {relative}")
 
-    if (site_dir / "index.html").is_file():
-        for href in _LOCAL_HREF.findall((site_dir / "index.html").read_text(encoding="utf-8")):
-            if href.startswith(("http://", "https://", "mailto:", "#")):
+    for html_path in site_dir.rglob("*.html"):
+        try:
+            html_text = html_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if any(marker in html_text for marker in ("/workspace/", "/home/runner/", "\\workspace\\")):
+            errors.append(f"local filesystem path exposed: {html_path.relative_to(site_dir)}")
+        for href in _LOCAL_HREF.findall(html_text):
+            if href.startswith(("http://", "https://", "mailto:", "#", "data:")):
                 continue
-            target = (site_dir / href).resolve()
+            target = (html_path.parent / href).resolve()
             if site_dir.resolve() not in target.parents and target != site_dir.resolve():
                 errors.append(f"local link escapes artifact: {href}")
             elif not target.exists():

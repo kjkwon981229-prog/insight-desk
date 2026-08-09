@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from ..collectors.enrichment import EnrichmentReport
 from ..domain.models import (
     Briefing,
     Certainty,
     CollectorStatus,
+    EvidenceType,
     NewsItem,
     RunState,
     RunStatus,
@@ -52,6 +54,7 @@ def build_briefing(
     clusters: tuple[StoryCluster, ...],
     trend_metrics: tuple[TrendMetric, ...],
     generated_at: datetime,
+    enrichment: EnrichmentReport | None = None,
 ) -> Briefing:
     topic_by_id = {topic.id: topic for topic in topics}
     ranked_clusters = score_clusters(clusters)
@@ -60,6 +63,16 @@ def build_briefing(
         representative = cluster.representative
         topic_name = topic_by_id.get(cluster.topic_id, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ())).name
         summary = representative.summary or "검색 결과에 요약문이 없어 제목과 출처만 확인할 수 있다."
+        provenance = tuple(
+            dict.fromkeys(
+                evidence_type
+                for item in cluster.items
+                for evidence_type in item.provenance
+            )
+        )
+        metadata_count = sum(
+            EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items
+        )
         stories.append(
             Story(
                 topic_id=cluster.topic_id,
@@ -75,6 +88,8 @@ def build_briefing(
                 certainty=Certainty.CONFIRMED,
                 score=representative.score,
                 source_count=cluster.source_count,
+                provenance=provenance,
+                metadata_enriched_count=metadata_count,
             )
         )
 
@@ -92,11 +107,18 @@ def build_briefing(
         lines.append("검색어 트렌드 자료는 이번 실행에서 확인되지 않았다.")
     lines.append("뉴스와 검색 관심도의 동시 관찰은 가능하지만, 인과관계는 별도 자료 없이는 확정하지 않는다.")
 
+    report = enrichment or EnrichmentReport()
     limitations = [
-        "뉴스는 NAVER 검색 API가 제공한 제목·요약·링크만 사용했다.",
-        "Search Trend의 ratio는 원시 검색량이 아닌 상대 검색지수이며 그룹·배치 간 절대 순위를 만들지 않았다.",
-        f"기준 시각은 {generated_at.isoformat(timespec='seconds')}이며 기사 게시 시각과 사건 발생 시각을 구분했다.",
+        "뉴스 근거는 NAVER 검색 결과의 제목·요약·링크를 기본으로 사용했다.",
+        "Search Trend는 원시 검색량이 아닌 상대 관심지수이며, 동일 키워드 그룹 내부의 직전 구간 변화만 비교했다.",
+        f"데이터 기준 시각은 {generated_at.isoformat(timespec='seconds')}이며, 기사 게시 시각과 사건 발생 시각은 별도 개념이다.",
     ]
+    if report.attempted:
+        limitations.append(
+            f"상위 기사 원문 공개 metadata는 {report.attempted}건 중 {report.succeeded}건을 선택적으로 보강했으며, 실패한 경우 검색 결과를 유지했다."
+        )
+    if report.failed:
+        limitations.append("일부 원문 metadata를 확보하지 못해 NAVER 검색 근거만으로 계속 표시했다.")
     if state.warnings:
         limitations.extend(state.warnings)
     if state.status in {RunStatus.NEWS_ONLY, RunStatus.TRENDS_ONLY, RunStatus.PARTIAL}:
@@ -110,6 +132,9 @@ def build_briefing(
         news=news,
         trend_metrics=trend_metrics,
         limitations=tuple(dict.fromkeys(limitations)),
+        enrichment_attempted=report.attempted,
+        enrichment_succeeded=report.succeeded,
+        enrichment_failed=report.failed,
     )
 
 

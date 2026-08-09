@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from ..domain.models import NewsItem, Topic
@@ -27,22 +28,7 @@ def score_news(items: tuple[NewsItem, ...], topics: tuple[Topic, ...], *, now: d
         query_match = 1 if item.query.casefold() in text else 0
         recency = max(0.0, 40.0 - min(40.0, _age_hours(item, now) * 1.2))
         score = recency + query_match * 18.0 + min(15.0, len(item.summary) / 80.0) + topic.priority / 20.0
-        scored.append(
-            NewsItem(
-                evidence_id=item.evidence_id,
-                topic_id=item.topic_id,
-                query=item.query,
-                title=item.title,
-                summary=item.summary,
-                original_url=item.original_url,
-                naver_url=item.naver_url,
-                canonical_url=item.canonical_url,
-                published_at=item.published_at,
-                source_domain=item.source_domain,
-                content_hash=item.content_hash,
-                score=round(score, 4),
-            )
-        )
+        scored.append(replace(item, score=round(score, 4)))
     return tuple(sorted(scored, key=lambda item: (-item.score, item.title)))
 
 

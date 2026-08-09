@@ -21,6 +21,12 @@ class Certainty(str, Enum):
     UNCERTAIN = "uncertain"
 
 
+class EvidenceType(str, Enum):
+    SEARCH_SNIPPET = "SEARCH_SNIPPET"
+    ENRICHED_METADATA = "ENRICHED_METADATA"
+    OFFICIAL_SOURCE = "OFFICIAL_SOURCE"
+
+
 @dataclass(frozen=True)
 class Topic:
     id: str
@@ -54,6 +60,13 @@ class NewsItem:
     source_domain: str
     content_hash: str
     score: float = 0.0
+    metadata_title: str = ""
+    metadata_description: str = ""
+    metadata_canonical_url: str = ""
+    publisher: str = ""
+    metadata_published_at: str | None = None
+    metadata_modified_at: str | None = None
+    provenance: tuple[EvidenceType, ...] = field(default_factory=lambda: (EvidenceType.SEARCH_SNIPPET,))
 
 
 @dataclass(frozen=True)
@@ -97,6 +110,8 @@ class Story:
     certainty: Certainty
     score: float
     source_count: int
+    provenance: tuple[EvidenceType, ...] = field(default_factory=tuple)
+    metadata_enriched_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -136,6 +151,9 @@ class Briefing:
     news: tuple[NewsItem, ...]
     trend_metrics: tuple[TrendMetric, ...]
     limitations: tuple[str, ...]
+    enrichment_attempted: int = 0
+    enrichment_succeeded: int = 0
+    enrichment_failed: int = 0
 
 
 def _enum_value(value: Any) -> Any:

@@ -9,7 +9,7 @@
 | 검사 | 결과 |
 |---|---|
 | Python compileall | 통과 |
-| unit/contract tests | 19/19 통과 |
+| unit/contract tests | 24/24 통과 |
 | NCP endpoint/header fake contract | 통과 |
 | status machine | 통과 |
 | normalization/dedup/trend semantics | 통과 |
@@ -35,15 +35,20 @@
 - 날짜별 archive와 실패 시 기존 Pages 보존 경로를 분리했다.
 - 1차 원격 실행에서 Pages Source 미설정으로 deploy가 404 실패한 것을 확인했다.
 - 사용자가 Pages Source를 `GitHub Actions`로 설정한 뒤 2차 실행에서 deploy 성공을 확인했다.
+- 상위 기사 5건 이하에만 lightweight metadata 보강을 적용하고, 원문 HTML·전문은 저장하지 않도록 했다.
+- metadata success·403·timeout·missing OG·malformed/empty HTML fallback을 회귀 테스트로 잠갔다.
+- 보강 provenance를 `SEARCH_SNIPPET`·`ENRICHED_METADATA`·`OFFICIAL_SOURCE`로 분리했다.
+- 000002·000009·000014 archive grammar를 hero·evidence·methodology/archive에 적용하고 000011 관계도는 데이터 부족으로 제외했다.
+- CSS token·다크 모드·320px 이상 overflow 방어와 전체 HTML 내부 링크 검사를 추가했다.
 
 ## 남은 확인
 
-실제 NCP 권한과 API 호출은 `COMPLETE`로 확인했다. 남은 검증은 iPhone Safari 실기기 표시와 첫 예약 실행이다.
+실제 NCP 권한과 API 호출은 기존 원격 run `31323695534`에서 `COMPLETE`로 확인했다. 이번 UI/evidence 변경은 로컬 24개 테스트와 fixture artifact에서 검증했으며, 새 commit을 원격 main에 반영한 뒤 Pages workflow 재실행이 필요하다. 남은 검증은 새 UI의 원격 배포, iPhone Safari 실기기 표시와 첫 예약 실행이다.
 
 ## 최종 Gate
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (19/19)
+LOCAL_TESTS_VERIFIED = YES (24/24)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
 GITHUB_ACTIONS_VERIFIED = YES
@@ -56,3 +61,7 @@ TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
 SECRET_SCAN_VERIFIED = YES
 SCHEDULED_RUN_VERIFIED = PENDING
 ```
+
+## 이번 개선 판정
+
+`CONDITIONAL PASS` — 로컬 구현·회귀·artifact 검증 통과. 원격 Pages 재배포와 실제 iPhone Safari 확인 전에는 새 디자인에 대해 `PASS`로 올리지 않는다.

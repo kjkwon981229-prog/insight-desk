@@ -59,11 +59,24 @@ Git CLI는 기본 경로로 요구하지 않는다.
 
 따라서 전체 실패가 발생해도 마지막 정상 Pages 결과는 유지된다. 아카이브는 성공한 workflow의 정적 site를 GitHub Actions cache에서 이어받으며, cache가 만료된 경우에는 이후 성공 실행부터 다시 축적된다.
 
-## 데이터 의미
+## 데이터 근거와 의미
 
 Search Trend의 `ratio`는 실제 검색 횟수가 아니라 상대 검색지수다. 서로 다른 API 요청 batch의 절대 ratio를 한 순위로 비교하지 않고, 각 그룹의 직전 구간 대비 변화만 표시한다.
 
-뉴스는 제목·검색 요약·원문 링크만 사용한다. 게시 시각과 사건 발생 시각을 동일시하지 않으며, 제공 자료만으로 직접 인과관계를 확정하지 않는다.
+뉴스는 NAVER 검색 결과의 제목·검색 요약·원문 링크를 1차 근거로 사용한다. 상위 기사 일부에는 짧은 timeout·제한된 동시성으로 공개 HTML metadata(title, description, canonical, publisher, published/modified time)를 선택적으로 보강한다. 원문 HTML이나 기사 전문은 저장하지 않으며, 403·timeout·metadata 누락은 검색 결과로 안전하게 fallback한다.
+
+화면의 `검색 결과 근거`, `원문 metadata 보강` 표시는 evidence provenance다. 공식 출처는 명확한 후보를 안전하게 식별할 수 있을 때만 보조 근거로 연결하며, 범용 웹 크롤링이나 추정으로 대체하지 않는다. 게시 시각과 사건 발생 시각을 동일시하지 않으며, 제공 자료만으로 직접 인과관계를 확정하지 않는다.
+
+## 화면 구조
+
+모바일 화면은 하나의 핵심 판단을 먼저 보여준 뒤, 사건별 근거 카드와 관심도 흐름, 접을 수 있는 데이터 기준·방법론을 순서대로 보여준다. warm off-white 바탕과 charcoal 텍스트에 muted pink를 section marker·근거 rail·trend emphasis로만 사용하며, 다크 모드와 320px 이상 viewport를 함께 지원한다.
+
+Visual Design Language Archive에서 확인한 문법은 다음처럼 선별했다.
+
+- `r2-impl-cand-000002-a`: editorial hero와 single-focal hierarchy
+- `r2-impl-cand-000009-a`: 지표→근거→판단의 evidence framing
+- `r2-impl-cand-000014-a`: 접을 수 있는 methodology와 archive reference 구조
+- `r2-impl-cand-000011-a`: 현재 데이터에는 충분한 관계 정보가 없어 적용하지 않음
 
 ## 로컬 검증
 

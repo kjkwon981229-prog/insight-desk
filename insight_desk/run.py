@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from .collectors.cache import ResponseCache
 from .collectors.collect import collect_news, collect_trends
+from .collectors.enrichment import EnrichmentReport, MetadataEnricher
 from .collectors.naver import NaverApiClient, NaverCredentials
 from .config import load_topics
 from .domain.models import CollectorStatus, RunState, RunStatus, to_jsonable
@@ -23,6 +24,7 @@ from .web.render import render_site
 from .web.validate import validate_artifact
 
 SEOUL = ZoneInfo("Asia/Seoul")
+METADATA_ENRICHMENT_LIMIT = 5
 
 
 def _empty_status() -> CollectorStatus:
@@ -84,7 +86,18 @@ def execute(
         normalized = normalize_news_payloads(news_collection.raw_items)
         deduplicated = deduplicate_news(normalized)
         scored = score_news(deduplicated, topics, now=current)
-        clusters = cluster_news(scored)
+        enriched = scored
+        enrichment_report: EnrichmentReport | None = None
+        transport = getattr(client, "transport", None)
+        if transport is not None:
+            metadata_cache_path = cache_path.with_name(
+                f"{cache_path.stem}-metadata{cache_path.suffix or '.json'}"
+            )
+            enriched, enrichment_report = MetadataEnricher(
+                transport=transport,
+                cache=ResponseCache(metadata_cache_path),
+            ).enrich(scored, limit=METADATA_ENRICHMENT_LIMIT)
+        clusters = cluster_news(enriched)
         points = parse_trend_batches(trend_collection.raw_batches)
         metrics = compute_trend_metrics(points)
         state = RunState(
@@ -105,10 +118,11 @@ def execute(
         briefing = build_briefing(
             state=state,
             topics=topics,
-            news=scored,
+            news=enriched,
             clusters=clusters,
             trend_metrics=metrics,
             generated_at=current,
+            enrichment=enrichment_report,
         )
         try:
             render_site(briefing, output_dir)
