@@ -9,7 +9,7 @@ from pathlib import Path
 from ..domain.models import Briefing, RunStatus, TrendMetric, to_jsonable
 from ..pipeline.synthesis import clean_headline
 
-CSS = r"""+:root {
+CSS = r""":root {
   color-scheme: light;
   --bg: #f5f1ef;
   --surface: #fffdfb;
