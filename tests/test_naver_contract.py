@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import date
+from urllib.parse import parse_qs, urlsplit
 
 from insight_desk.collectors.naver import BASE_URL, NEWS_PATH, TREND_PATH, NaverApiClient, NaverCredentials
 from insight_desk.collectors.transport import HttpResponse
@@ -41,3 +42,10 @@ class NaverContractTests(unittest.TestCase):
         self.assertNotIn("id-secret", transport.calls[0][1])
         self.assertNotIn("secret-value", transport.calls[1][3].decode())
 
+    def test_news_sort_channel_is_sent_without_secret_data(self) -> None:
+        transport = FakeTransport()
+        client = NaverApiClient(NaverCredentials("id-secret", "secret-value"), transport=transport)
+        client.search_news("AI", display=3, sort="sim")
+        client.search_news("AI", display=2, sort="date")
+        sorts = [parse_qs(urlsplit(call[1]).query)["sort"][0] for call in transport.calls]
+        self.assertEqual(sorts, ["sim", "date"])
