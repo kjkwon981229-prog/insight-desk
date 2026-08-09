@@ -474,7 +474,9 @@ def _key_fact_panel(story: object) -> str:
             facts_to_render.append(("일정", str(facts.date)))
         if getattr(facts, "location", ""):
             facts_to_render.append(("장소", str(facts.location)))
-        if getattr(facts, "action", "") and (getattr(facts, "date", "") or getattr(facts, "location", "")):
+        if getattr(facts, "action", "") not in {"발표", "공개", "확인"} and (
+            getattr(facts, "date", "") or getattr(facts, "location", "")
+        ):
             facts_to_render.append(("내용", str(facts.action)))
     if not facts_to_render:
         return ""
