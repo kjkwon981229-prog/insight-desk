@@ -13,6 +13,8 @@
 - 구형 master specification
 - 현재 사용자가 제공한 모바일 웹·Actions·Pages·NCP 계약
 - NAVER API HUB와 GitHub Pages 공식 문서
+- 실제 생성된 GitHub repository `kjkwon981229-prog/insight-desk`
+- 실제 workflow run 2회와 공개 Pages URL
 
 ## 확보하지 못한 자료
 
@@ -21,7 +23,9 @@
 - 기존 테스트 92개
 - 기존 BUILD_REPORT/README/workflow
 - 기존 generated HTML/PDF/SQLite cache
-- Insight Desk GitHub repository와 branch
+- 고장 난 노트북의 원본 Codex working tree
+- 실제 iPhone Safari 화면 확인 결과
+- 첫 예약 실행 결과
 
 ## Provenance 분류
 
@@ -50,23 +54,48 @@
 
 - 기존 Windows application source
 - 최신 mobile migration tree
-- 실제 remote deployment 결과
+- 실제 iPhone Safari 검증 결과
+- 첫 예약 실행 결과
 
 ## 연속성 수준
 
 제품 목표와 일부 설계 계약은 이어졌지만, 코드 수준의 연속성은 확인되지 않는다. 따라서 이 결과물을 “Codex 원본 working tree 복구본”이라고 부르지 않는다. 현재 산출물은 원본 유실 뒤의 계약 기반 재구축본이다.
 
+## 원격 검증 결과
+
+- 1차 run `31323478041`: News·Trend와 build는 성공했으나 Pages Source 미설정으로 deploy가 404 실패했다.
+- 사용자가 Pages Source를 `GitHub Actions`로 설정했다.
+- 2차 run `31323695534`: 실제 NCP `COMPLETE`, artifact 검증·업로드·Pages deploy 모두 성공했다.
+- 공개 URL: <https://kjkwon981229-prog.github.io/insight-desk/>
+- 최신·archive·날짜별 archive·UTF-8·CSS·공개 HTML Secret 패턴 검사를 통과했다.
+
 ## 사용자에게 필요한 다음 최소 행동
 
-1. 이 프로젝트 파일을 본인이 사용할 GitHub repository에 업로드한다.
-2. NCP에서 새 Client ID·Client Secret을 발급한다.
-3. GitHub `Settings → Secrets and variables → Actions`에 `NCP_CLIENT_ID`, `NCP_CLIENT_SECRET`을 등록한다.
-4. `Settings → Pages`에서 Source를 `GitHub Actions`로 설정한다.
-5. `Actions → Insight Desk Daily Pages → Run workflow`를 한 번 실행한다.
-6. 배포된 Pages 주소를 iPhone Safari에서 열어 확인한다.
+1. 위 Pages URL을 iPhone Safari에서 연다.
+2. 첫 화면, 가로 밀림 없음, 뉴스 링크 하나, archive, 다크 모드를 확인한다.
+3. 확인 후 결과를 알려준다.
+
+예약 실행은 매일 07:30 KST로 설정되어 있으며, 실제 첫 예약 실행 전까지 `PENDING`이다.
+
+## 최종 Gate
+
+```text
+LOCAL_TESTS_VERIFIED = YES (19/19)
+LIVE_NCP_NEWS_VERIFIED = YES
+LIVE_NCP_TREND_VERIFIED = YES
+GITHUB_ACTIONS_VERIFIED = YES (31323695534)
+PAGES_DEPLOYMENT_VERIFIED = YES
+PAGES_URL_VERIFIED = YES
+MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS)
+IPHONE_SAFARI_VERIFIED = PENDING
+PARTIAL_FAILURE_VERIFIED = YES
+TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
+SECRET_SCAN_VERIFIED = YES
+SCHEDULED_RUN_VERIFIED = PENDING
+```
 
 ## 최종 판정
 
 `RECOVERY_COMPLETE_REMOTE_PENDING`
 
-코드·workflow·정적 Pages 구조·자동 테스트는 현재 환경에서 검증했지만, 실제 NCP·GitHub·Pages 연결은 아직 확인하지 않았다.
+실제 원격 수집·분석·Pages 배포까지 확인했지만, iPhone Safari 실기기 확인과 첫 예약 실행은 아직 남아 있다. 원본 Codex working tree를 복구한 것이 아니라 LEVEL D 계약 기반 재구축본이라는 provenance는 유지한다.
