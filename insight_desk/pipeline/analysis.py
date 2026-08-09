@@ -15,8 +15,9 @@ from ..domain.models import (
     TrendMetric,
 )
 from .clustering import StoryCluster
+from .editorial import effective_lead, effective_title, why_selected
 from .scoring import score_clusters
-from .selection import select_clusters
+from .selection import candidate_key, select_clusters
 from .synthesis import synthesize_cluster
 
 
@@ -35,30 +36,47 @@ def _trend_label(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     rising = any(metric.delta is not None and metric.delta > 0 for metric in relevant)
     falling = any(metric.delta is not None and metric.delta < 0 for metric in relevant)
     if rising and falling:
-        return "검색 관심 ↕"
+        return "검색 관심 · 혼조"
     if rising:
-        return "검색 관심 ↑"
+        return "검색 관심 · 상승"
     if falling:
-        return "검색 관심 ↓"
+        return "검색 관심 · 둔화"
     if any(metric.interpretation == "비교 기준 부족" for metric in relevant):
-        return "검색 관심 ?"
-    return "검색 관심 →"
+        return "검색 관심 · 비교 부족"
+    return "검색 관심 · 큰 변화 없음"
+
+
+def _story_trend_label(cluster: StoryCluster, metrics: tuple[TrendMetric, ...]) -> str:
+    """Attach a trend only when its group name matches the story evidence."""
+
+    text = " ".join(
+        value
+        for item in cluster.items
+        for value in (effective_title(item), effective_lead(item), item.query)
+        if value
+    ).casefold()
+    matched = tuple(
+        metric
+        for metric in _trend_for_topic(cluster.topic_id, metrics)
+        if metric.group_name.casefold() in text or metric.group_id.casefold() in text
+    )
+    return _trend_label(cluster.topic_id, matched)
 
 
 def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
     if not metrics:
-        return "검색 관심 ? 비교 자료 부족"
+        return "검색 관심 · 비교 부족"
     rising = sum(1 for metric in metrics if metric.delta is not None and metric.delta > 0)
     falling = sum(1 for metric in metrics if metric.delta is not None and metric.delta < 0)
     if rising and falling:
-        return "검색 관심 ↕ 그룹별 방향 혼조"
+        return "검색 관심 · 혼조"
     if rising:
-        return f"검색 관심 ↑ {rising}개 그룹 상승"
+        return f"검색 관심 · {rising}개 그룹 상승"
     if falling:
-        return f"검색 관심 ↓ {falling}개 그룹 둔화"
+        return f"검색 관심 · {falling}개 그룹 둔화"
     if any(metric.interpretation == "비교 기준 부족" for metric in metrics):
-        return "검색 관심 ? 비교 자료 부족"
-    return "검색 관심 → 큰 변화 없음"
+        return "검색 관심 · 비교 부족"
+    return "검색 관심 · 큰 변화 없음"
 
 
 def build_briefing(
@@ -70,13 +88,20 @@ def build_briefing(
     trend_metrics: tuple[TrendMetric, ...],
     generated_at: datetime,
     enrichment: EnrichmentReport | None = None,
+    previous_signatures: tuple[str, ...] = (),
 ) -> Briefing:
     topic_by_id = {topic.id: topic for topic in topics}
     # score_clusters is retained as a candidate-quality ordering. It is not the
     # public lineup anymore; selection applies coverage and diversity rules.
     ranked_clusters = score_clusters(clusters)
-    selection = select_clusters(ranked_clusters, topics, limit=10)
+    selection = select_clusters(
+        ranked_clusters,
+        topics,
+        limit=10,
+        previous_signatures=previous_signatures,
+    )
     stories: list[Story] = []
+    selected_reviews = tuple(selection.selected_reviews)
     for cluster in selection.selected:
         topic_name = topic_by_id.get(cluster.topic_id, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ())).name
         provenance = tuple(
@@ -94,6 +119,9 @@ def build_briefing(
             topic_name=topic_name,
             trend_metrics=trend_metrics,
         )
+        assessment = selection.assessments.get(candidate_key(cluster))
+        if assessment is None:
+            continue
         stories.append(
             Story(
                 topic_id=cluster.topic_id,
@@ -101,13 +129,13 @@ def build_briefing(
                 title=headline,
                 summary=summary,
                 why_it_matters=evidence_summary,
-                trend_relationship=_trend_label(cluster.topic_id, trend_metrics),
+                trend_relationship=_story_trend_label(cluster, trend_metrics),
                 industry_impact="",
                 investment_relevance="",
                 watch_next=watch_next,
                 evidence_ids=tuple(item.evidence_id for item in cluster.items),
                 certainty=certainty,
-                score=cluster.representative.score,
+                score=assessment.final_score,
                 source_count=cluster.source_count,
                 provenance=provenance,
                 metadata_enriched_count=metadata_count,
@@ -119,6 +147,14 @@ def build_briefing(
                         for topic_id in (item.matched_topic_ids or (item.topic_id,))
                     )
                 ),
+                novelty=assessment.novelty,
+                why_selected=why_selected(assessment),
+                intent_relevance=assessment.relevance.score,
+                event_significance=assessment.event.significance,
+                evidence_strength=assessment.evidence.strength,
+                information_completeness=assessment.completeness,
+                editorial_score=assessment.final_score,
+                event_signature=assessment.event_signature,
             )
         )
 
@@ -154,6 +190,22 @@ def build_briefing(
     if state.status in {RunStatus.NEWS_ONLY, RunStatus.TRENDS_ONLY, RunStatus.PARTIAL}:
         limitations.append("일부 수집 경로가 실패해 성공한 데이터만 게시했다.")
 
+    final_reviews: list[dict[str, object]] = []
+    for rank, story in enumerate(stories, 1):
+        review = dict(selected_reviews[rank - 1]) if rank <= len(selected_reviews) else {}
+        review.update(
+            {
+                "rank": rank,
+                "headline": story.title,
+                "summary": story.summary,
+                "topic": story.topic_name,
+                "novelty": story.novelty,
+                "why_selected": list(story.why_selected),
+                "final_score": story.editorial_score,
+            }
+        )
+        final_reviews.append(review)
+
     return Briefing(
         state=state,
         topics=topics,
@@ -166,6 +218,8 @@ def build_briefing(
         enrichment_succeeded=report.succeeded,
         enrichment_failed=report.failed,
         selection_audit=selection.audit,
+        selection_funnel=selection.funnel,
+        selected_reviews=tuple(final_reviews),
     )
 
 
