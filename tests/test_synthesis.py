@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+import json
+import unittest
+from pathlib import Path
+
+from insight_desk.domain.models import EvidenceType, NewsItem, TrendMetric
+from insight_desk.pipeline.clustering import StoryCluster
+from insight_desk.pipeline.synthesis import synthesize_cluster
+
+
+def _item(
+    evidence_id: str,
+    title: str,
+    summary: str,
+    domain: str,
+    *,
+    provenance: tuple[EvidenceType, ...] = (EvidenceType.SEARCH_SNIPPET,),
+) -> NewsItem:
+    return NewsItem(
+        evidence_id,
+        "topic",
+        "query",
+        title,
+        summary,
+        f"https://{domain}/story/{evidence_id}",
+        "",
+        f"https://{domain}/story/{evidence_id}",
+        "2026-08-09T08:00:00+09:00",
+        domain,
+        evidence_id,
+        10.0,
+        provenance=provenance,
+    )
+
+
+class SynthesisTests(unittest.TestCase):
+    def test_representative_case_matrix_is_safe_to_synthesize(self) -> None:
+        cases = json.loads(
+            (Path(__file__).resolve().parents[1] / "fixtures/synthesis_cases.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(len(cases), 10)
+        for case_name, case in cases.items():
+            items = []
+            for index, raw in enumerate(case["items"], 1):
+                provenance = (EvidenceType.SEARCH_SNIPPET,)
+                if raw.get("official"):
+                    provenance += (EvidenceType.OFFICIAL_SOURCE,)
+                items.append(
+                    _item(
+                        f"{case_name}-{index}",
+                        raw["title"],
+                        raw.get("summary", ""),
+                        raw["domain"],
+                        provenance=provenance,
+                    )
+                )
+            _, summary, _, _, _, _ = synthesize_cluster(
+                StoryCluster("topic", tuple(items)), topic_name=case["topic"], trend_metrics=()
+            )
+            self.assertNotIn("...", summary, case_name)
+            self.assertNotIn("…", summary, case_name)
+
+    def test_statistic_is_fact_first_and_preserves_key_number(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N001",
+                    "올해 원달러 환율 변동폭 47원 금융위기 후 최고",
+                    "한국은행 통계를 인용해 월평균 변동폭이 47원으로 집계됐다고 전했다.",
+                    "bok.or.kr",
+                ),
+                _item(
+                    "N002",
+                    "원달러 월평균 변동폭 47원 금융위기 이후 최대",
+                    "월평균 수치가 47원이라는 같은 흐름을 전했다.",
+                    "news.example",
+                ),
+            ),
+        )
+        headline, summary, evidence, watch, facts, certainty = synthesize_cluster(
+            cluster, topic_name="경제", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "MARKET")
+        self.assertIn("47원", headline)
+        self.assertIn("47원", summary)
+        self.assertNotIn("...", summary)
+        self.assertNotIn("…", summary)
+        self.assertIn("공식 자료", evidence)
+        self.assertEqual(certainty.value, "confirmed")
+        self.assertEqual(watch, ("다음 월간 통계와 변동폭",))
+
+    def test_scheduled_event_extracts_date_and_location(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item("N003", "민니 11일 두산-한화전 시구", "11일 잠실야구장에서 시구 예정이다.", "sports.example"),
+                _item("N004", "민니, 11일 잠실 두산-한화전 시구", "행사 일정과 장소를 전했다.", "ent.example"),
+            ),
+        )
+        _, summary, _, watch, facts, _ = synthesize_cluster(cluster, topic_name="문화", trend_metrics=())
+        self.assertEqual(facts.event_type, "SPORTS_EVENT")
+        self.assertEqual(facts.date, "11일")
+        self.assertEqual(facts.location, "잠실")
+        self.assertIn("11일", summary)
+        self.assertIn("잠실", summary)
+        self.assertTrue(watch)
+
+    def test_single_low_information_story_does_not_get_generic_follow_up(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (_item("N005", "지역 행사 소식 전달", "현장 소식이 전해졌다.", "local.example"),),
+        )
+        _, summary, evidence, watch, facts, certainty = synthesize_cluster(
+            cluster, topic_name="지역", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "OTHER")
+        self.assertFalse(watch)
+        self.assertIn("한 건", evidence)
+        self.assertEqual(certainty.value, "uncertain")
+        self.assertNotIn("후속 공식 발표", summary)
+
+    def test_conflicting_numeric_reports_are_flagged_for_confirmation(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item("N006", "기업 매출 100억원 기록", "분기 매출이 100억원이라고 전했다.", "a.example"),
+                _item("N007", "기업 매출 120억원 기록", "분기 매출을 120억원으로 보도했다.", "b.example"),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="기업", trend_metrics=())
+        self.assertEqual(facts.event_type, "EARNINGS")
+        self.assertIn("추가 확인", summary)
+        self.assertTrue(facts.uncertainty)
+
+    def test_trend_state_uses_only_topic_metrics(self) -> None:
+        metric = TrendMetric(
+            "group",
+            "검색어",
+            "topic",
+            "batch-a",
+            80.0,
+            40.0,
+            50.0,
+            40.0,
+            100.0,
+            1.0,
+            "상승",
+        )
+        cluster = StoryCluster("topic", (_item("N008", "검색어 발표", "새 발표가 나왔다.", "a.example"),))
+        _, _, _, _, facts, _ = synthesize_cluster(cluster, topic_name="테스트", trend_metrics=(metric,))
+        self.assertEqual(facts.trend_state, "상승")
+
+
+if __name__ == "__main__":
+    unittest.main()
