@@ -2,62 +2,72 @@
 
 ## 검사 대상
 
-현재 Work에서 LEVEL D로 재구축한 Insight Desk 모바일 웹 패키지.
+Insight Desk 모바일 정적 브리핑의 최신 UI commit `39137fb`와 Pages 실행 `31327087861`.
 
-## 자동 검증 결과
+## 기능·데이터 검증
 
 | 검사 | 결과 |
 |---|---|
 | Python compileall | 통과 |
-| unit/contract tests | 24/24 통과 |
-| NCP endpoint/header fake contract | 통과 |
-| status machine | 통과 |
-| normalization/dedup/trend semantics | 통과 |
-| UTF-8/mobile viewport | 통과 |
-| latest/archive/data JSON | 통과 |
-| Pages required files/local links | 통과 |
-| live NCP News/Trend | 실제 `COMPLETE` — run `31323695534` |
-| GitHub Actions build | 통과 — run `31323695534` |
-| Pages artifact upload/deploy | 통과 — run `31323695534` |
-| 새 evidence/UI Pages artifact upload/deploy | 통과 — run `31325115501`, build `93274126259`, deploy `93274259666` |
-| 공개 최신·archive·날짜별 URL | 통과 |
-| 공개 HTML UTF-8/CSS/Secret 패턴 | 통과 |
-| 공개 새 UI/provenance/methodology | 통과 — `TODAY'S SIGNAL`, `핵심 신호`, metadata provenance 확인 |
-| 공개 URL cloud viewport overflow | 통과 — `scrollWidth <= innerWidth` |
-| iPhone 실기기 | 사용자 확인 대기 |
-| 첫 예약 실행 | 대기 — 07:30 KST |
+| 전체 테스트 | `25/25` 통과 |
+| normalization·deduplication·clustering·scoring | 통과 |
+| Trend 상대지수 의미 계약 | 통과 |
+| metadata enrichment success | 통과 |
+| metadata 403·timeout·malformed HTML·missing OG fallback | 통과 |
+| enrichment 실패의 상태 독립성 | 통과 |
+| COMPLETE | 통과 |
+| NEWS_ONLY·TRENDS_ONLY·PARTIAL | 통과 |
+| TOTAL_FAILURE 기존 Pages 보존 | 통과 |
+| artifact validator | 통과 |
+| Secret redaction·source/cache/HTML 검사 | 통과 |
 
-## 발견·수정 사항
+## UI·정보구조 검증
 
-- 기존 프로젝트 source가 없음을 확인해 원본 복구 주장을 제거했다.
-- 구형 Windows·LLM·수동 실행 계약을 현재 사용자의 원격 모바일 웹 명령과 혼합하지 않았다.
-- News/Trend 결과를 하나의 성공 플래그로 합치지 않고 독립 상태로 보존했다.
-- 부분 성공은 게시하고 전체 실패·렌더링 실패·검증 실패는 배포를 차단한다.
-- Trend ratio를 실제 검색량으로 표시하지 않도록 문구·계산·차트 라벨을 고정했다.
-- Secret이 cache·HTML·JSON·workflow 로그에 남지 않는 경계를 테스트했다.
-- 날짜별 archive와 실패 시 기존 Pages 보존 경로를 분리했다.
-- 1차 원격 실행에서 Pages Source 미설정으로 deploy가 404 실패한 것을 확인했다.
-- 사용자가 Pages Source를 `GitHub Actions`로 설정한 뒤 2차 실행에서 deploy 성공을 확인했다.
-- 상위 기사 5건 이하에만 lightweight metadata 보강을 적용하고, 원문 HTML·전문은 저장하지 않도록 했다.
-- metadata success·403·timeout·missing OG·malformed/empty HTML fallback을 회귀 테스트로 잠갔다.
-- 보강 provenance를 `SEARCH_SNIPPET`·`ENRICHED_METADATA`·`OFFICIAL_SOURCE`로 분리했다.
-- 000002·000009·000014 archive grammar를 hero·evidence·methodology/archive에 적용하고 000011 관계도는 데이터 부족으로 제외했다.
-- CSS token·다크 모드·320px 이상 overflow 방어와 전체 HTML 내부 링크 검사를 추가했다.
+- editorial hero에 오늘의 핵심 흐름을 우선 배치
+- signal strip에 사건·검색 흐름·원문 보강을 압축 배치
+- story row에 사건 제목·요약·출처 범위·상세 근거를 분리
+- Trend를 방향·변화폭·sparkline으로 표시
+- 방법론과 한계를 `details` disclosure로 이동
+- archive를 날짜별 reference list로 구성
+- 기본 화면에서 내부 evidence ID 제거
+- `왜 보나`, `관심도와의 관계`, `산업·투자 판단`, `선택적 metadata`, 영문 section label 제거
+- light/dark token과 핑크 포인트 확인
 
-## 남은 확인
+## 원격 검증
 
-실제 NCP 권한과 API 호출은 새 원격 run `31325115501`에서 `COMPLETE`로 확인했다. 새 Pages artifact에는 상위 metadata 5건 중 4건 보강 결과가 포함됐고, 공개 URL에서 새 UI·provenance·methodology·archive 이동을 확인했다. 남은 검증은 320/375/390/430px별 별도 측정, iPhone Safari 실기기 표시와 첫 예약 실행이다.
+| 검사 | 실제 결과 |
+|---|---|
+| CI | `31326864815` 성공 |
+| Pages build | `93279078337` 성공 |
+| Pages deploy | `93279203775` 성공 |
+| 실제 NCP 결과 | `COMPLETE` |
+| 공개 root | 새 문구·10개 story·11개 trend 확인 |
+| 공개 latest | 새 문구·CSS·UTF-8·내부 링크 확인 |
+| 공개 archive | 날짜별 목록·링크 확인 |
+| 공개 날짜별 archive | 새 문구·methodology disclosure·57개 링크 확인 |
+| 가로 오버플로 | 1363px viewport에서 없음 |
+
+초기 재확인에서 archive 경로에 이전 문구가 보였으나 브라우저 캐시였다. 새 Pages 실행 뒤 clean URL을 다시 열어 이전 문구가 사라진 것을 확인했다.
+
+## 시각 검증 범위
+
+- 실제 공개 root screenshot 저장
+- 실제 공개 archive screenshot 저장
+- 현재 cloud browser viewport: 1363px
+- CSS responsive breakpoint: 760px
+- 320·375·390·430·768·1024·1440px 별도 브라우저 렌더는 이 환경에서 실행하지 않음
+- 실제 iPhone Safari는 사용자 확인 대기
 
 ## 최종 Gate
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (24/24)
+LOCAL_TESTS_VERIFIED = YES (25/25)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (run 31325115501)
-PAGES_DEPLOYMENT_VERIFIED = YES
+GITHUB_ACTIONS_VERIFIED = YES (31326864815)
+PAGES_DEPLOYMENT_VERIFIED = YES (31327087861)
 PAGES_URL_VERIFIED = YES
-MOBILE_BROWSER_VERIFIED = PARTIAL (공개 URL·현재 cloud viewport; 320/375/390/430px pending)
+MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES
 TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
@@ -65,6 +75,8 @@ SECRET_SCAN_VERIFIED = YES
 SCHEDULED_RUN_VERIFIED = PENDING
 ```
 
-## 이번 개선 판정
+## 최종 판정
 
-`CONDITIONAL PASS` — 로컬 구현·회귀·artifact 검증, 실제 NCP·Actions·Pages·공개 URL 확인 통과. 320/375/390/430px별 측정, 실제 iPhone Safari와 첫 예약 실행 전에는 `PASS`로 올리지 않는다.
+`CONDITIONAL PASS`
+
+구현·자동검증·실제 원격 실행·공개 경로 검증은 통과했다. 실제 iPhone Safari와 첫 예약 실행이 남아 있어 최종 `PASS`는 보류한다.
