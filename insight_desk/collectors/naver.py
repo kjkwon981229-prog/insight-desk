@@ -97,8 +97,19 @@ class NaverApiClient:
             self.cache.set(cache_key, payload)
         return payload
 
-    def search_news(self, query: str, *, display: int = 100, start: int = 1) -> dict[str, object]:
-        params = urlencode({"query": query, "display": display, "start": start, "sort": "date", "format": "json"})
+    def search_news(
+        self,
+        query: str,
+        *,
+        display: int = 100,
+        start: int = 1,
+        sort: str = "date",
+    ) -> dict[str, object]:
+        if sort not in {"sim", "date"}:
+            raise ValueError("NAVER news sort must be sim or date")
+        params = urlencode(
+            {"query": query, "display": display, "start": start, "sort": sort, "format": "json"}
+        )
         return self._request_json("GET", f"{BASE_URL}{NEWS_PATH}?{params}")
 
     def search_trend(
