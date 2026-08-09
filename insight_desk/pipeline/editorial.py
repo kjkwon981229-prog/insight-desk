@@ -465,6 +465,12 @@ def is_generic_summary(value: str) -> bool:
 
 def event_signature(cluster: StoryCluster, event: EventAssessment | None = None) -> str:
     assessed = event or assess_event(cluster, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ()))
+    if assessed.event_type == "SPORTS_INTERRUPTION":
+        evidence = " ".join(effective_text(item) for item in cluster.items)
+        league = "프로야구" if any(term in evidence for term in ("프로야구", "KBO", "야구")) else "야구"
+        heat = "폭염" if any(term in evidence for term in ("폭염", "열파")) else ""
+        dates = _DATE_RE.findall(evidence)
+        return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
     title = effective_title(cluster.representative)
     terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
     numbers = _NUMBER_RE.findall(" ".join(effective_text(item) for item in cluster.items))

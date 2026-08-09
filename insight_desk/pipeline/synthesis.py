@@ -746,7 +746,10 @@ def synthesize_cluster(
     repeated_locations = _repeated_values(items, _locations)
     numbers = _unique(list(_numbers(headline_evidence)) + list(repeated_numbers))
     display_numbers = _meaningful_numbers(numbers, title)
-    dates = _unique(list(_dates(headline_evidence)) + list(repeated_dates))
+    metadata_dates = _unique(
+        [date for item in items for date in _dates(safe_evidence_text(item.metadata_description))]
+    )
+    dates = _unique(list(_dates(headline_evidence)) + list(repeated_dates) + list(metadata_dates))
     times = _unique(list(_times(headline_evidence)) + list(repeated_times))
     locations = _unique(list(_locations(headline_evidence)) + list(repeated_locations))
     # Classify the representative headline first. Descriptions may mention
@@ -762,7 +765,15 @@ def synthesize_cluster(
     # secondary article may describe a different event while sharing the
     # same entity or theme.
     action = _action(title) or _action(effective_lead(headline_item))
-    subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
+    if event_type == "SPORTS_INTERRUPTION":
+        interruption_evidence = headline_evidence.casefold()
+        subject = "프로야구" if any(term in interruption_evidence for term in ("프로야구", "kbo", "야구")) else "KBO"
+        if any(term in interruption_evidence for term in ("중단", "멈춘", "취소", "휴식", "방학")):
+            action = "중단"
+        elif "재개" in interruption_evidence:
+            action = "재개"
+    else:
+        subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
     change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
     repeated = _repeated_values(items, _numbers)
     if not repeated:

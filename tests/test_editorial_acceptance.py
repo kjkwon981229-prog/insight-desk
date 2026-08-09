@@ -554,6 +554,26 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((heat, first_pitch))
         self.assertEqual(len(clusters), 2)
 
+    def test_heat_tail_player_analysis_does_not_merge_with_interruption(self) -> None:
+        heat = _item(
+            "live-heat-event",
+            "kbo",
+            "KBO",
+            "프로야구 폭염으로 경기 중단",
+            "폭염으로 리그 일정이 중단됐다.",
+            domain="heat.example",
+        )
+        player = _item(
+            "live-player-tail",
+            "kbo",
+            "KBO",
+            "\"관심 가진 구단들 많더라\" 예비 FA 호령존 쟁탈전 벌어지나...폭염 재정...",
+            "KBO 리그 중견수의 FA 가치와 쟁탈전을 분석했다.",
+            domain="player.example",
+        )
+        clusters = cluster_news((heat, player))
+        self.assertEqual(len(clusters), 2)
+
     def test_shared_market_level_does_not_merge_level_and_volatility_events(self) -> None:
         level = _item(
             "live-level",
@@ -585,7 +605,23 @@ class EditorialAcceptanceTests(unittest.TestCase):
         _, _, _, _, facts, _ = synthesize_cluster(
             StoryCluster("kbo", (item,)), topic_name="KBO·한화 이글스", trend_metrics=()
         )
+        self.assertEqual(facts.subject, "프로야구")
         self.assertEqual(facts.action, "중단")
+
+    def test_sports_interruption_uses_trusted_metadata_date(self) -> None:
+        item = _item(
+            "heat-metadata-date",
+            "kbo",
+            "KBO",
+            "'폭염 휴식' 마친 KBO리그 11일 재개...",
+            "검색 결과가 잘렸다...",
+            metadata_title="'폭염 휴식' 마친 KBO리그 11일 재개...",
+            metadata_description="폭염으로 일시 중단됐던 KBO리그가 오는 11일 다시 시작한다.",
+        )
+        _, _, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kbo", (item,)), topic_name="KBO·한화 이글스", trend_metrics=()
+        )
+        self.assertEqual(facts.date, "11일")
 
     def test_heat_analysis_headline_merges_into_interruption_event(self) -> None:
         first = _item(

@@ -41,6 +41,9 @@ _CLUSTER_GENERIC_ENTITIES = {
     "모멘텀", "수혜", "초호황",
 }
 _GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
+_HEAT_INTERRUPTION_TERMS = {
+    "중단", "멈춘", "휴식", "재개", "취소", "방학", "브레이크", "순연", "재편", "일정"
+}
 _DATE_NUMBER_RE = re.compile(
     r"(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일)|\d+(?:[,\.]\d+)?\s?(?:%|원|달러|억|만|명|건|배|개|곳|주년|위|점|대))"
 )
@@ -77,12 +80,18 @@ def _is_sports_heat_story(item: NewsItem) -> bool:
     headline = " ".join(value for value in (item.metadata_title, item.title) if value).lower()
     if not any(term in headline for term in ("폭염", "열파")):
         return False
-    text = " ".join(
-        value for value in (headline, item.metadata_description, item.summary) if value
+    trusted_lead = " ".join(
+        value
+        for value in (item.metadata_description, item.summary)
+        if value and not re.search(r"\.{2,}|…", value)
     ).lower()
     return bool(
-        any(term in text for term in ("폭염", "열파"))
-        and any(term in text for term in ("kbo", "프로야구", "한국 야구", "야구"))
+        any(term in headline for term in ("폭염", "열파"))
+        and any(term in f"{headline} {trusted_lead}" for term in ("kbo", "프로야구", "한국 야구", "야구"))
+        and (
+            any(term in headline for term in _HEAT_INTERRUPTION_TERMS)
+            or any(term in trusted_lead for term in _HEAT_INTERRUPTION_TERMS)
+        )
     )
 
 
