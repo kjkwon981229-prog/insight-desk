@@ -6,7 +6,24 @@
 
 현재 판정: `RECOVERY_COMPLETE_REMOTE_PENDING`
 
-의미: 모바일 웹 실행 코드, workflow, Pages 산출물 구조, 테스트는 준비됐지만 실제 GitHub repository·NCP Secrets·Pages URL은 이 작업 공간에서 확인하지 않았다.
+의미: 실제 NCP News·Trend 호출, GitHub Actions 실행, Pages 배포와 공개 URL까지 확인했다. 다만 실제 iPhone Safari 확인과 첫 예약 실행 확인은 아직 사용자 확인 대기 상태다.
+
+## 원격 실검증 결과
+
+| 항목 | 실제 결과 |
+|---|---|
+| GitHub repository | `kjkwon981229-prog/insight-desk` |
+| 반영 commit | `f3d9735eb4b1c44d3437c9a6cfab72027203c66e` |
+| 1차 workflow run | `31323478041` — build/실제 수집/artifact 성공, Pages 비활성으로 deploy 실패 |
+| Pages 설정 조치 | 사용자가 Source를 `GitHub Actions`로 변경 |
+| 2차 workflow run | `31323695534` — build 성공, deploy 성공 |
+| 실제 NCP 상태 | `COMPLETE` — News·Trend 모두 성공 |
+| 실제 Pages URL | <https://kjkwon981229-prog.github.io/insight-desk/> |
+| 공개 HTML 검증 | 최신·archive·날짜별 archive·UTF-8·CSS·내부 링크 확인 |
+| 예약 실행 | `PENDING` — 첫 예약 시각 미도래 |
+| iPhone Safari | `PENDING` — 사용자 실기기 확인 대기 |
+
+1차 실행의 실패는 코드나 NCP 인증 오류가 아니라 repository의 Pages Source가 비활성 상태였기 때문이다. Pages Source를 `GitHub Actions`로 설정한 뒤 재실행했고, 2차 실행에서 deploy까지 성공했다.
 
 ## 구현 범위
 
@@ -47,23 +64,42 @@
 ## 검증 실행
 
 - `python -m compileall -q insight_desk scripts tests` — 통과
-- `python -m unittest discover -s tests -v` — 18개 통과
+- `python -m unittest discover -s tests -v` — 19개 통과
 - `python scripts/build_fixture_site.py` — `COMPLETE True`
 - `python scripts/validate_artifact.py build/fixture-site` — 통과
 - Naver endpoint/header contract fake transport — 통과
 - status machine matrix — 통과
 - UTF-8/mobile viewport/archive JSON — 통과
+- 실제 GitHub Actions runner의 `COMPLETE` 실행 — 통과
+- 실제 NCP News·Trend 호출 — `COMPLETE`로 확인
+- 실제 Pages artifact upload/deploy — 통과
+- 공개 최신·archive·날짜별 archive URL — 통과
+- 공개 HTML/CSS Secret·로컬 경로 패턴 검사 — 누출 없음
 
-## 미검증 범위
+## 남은 확인 범위
 
-- 실제 NCP 자격 증명으로 News·Trend 라이브 호출
-- 실제 API 권한·한도·계정 정책
-- 실제 GitHub Actions runner에서의 workflow 실행
-- 실제 Pages URL·iPhone Safari 실기기 표시
+- 실제 iPhone Safari에서 첫 화면·가로 밀림·뉴스 링크·archive·다크 모드 확인
+- 첫 예약 실행에서 자동 수집·게시까지 이어지는지 확인
 - GitHub Actions cache의 장기 보존 정책
-- 320/375/390/430px 실기기 캡처 검증
 
-위 항목은 현재 Work에 계정 권한과 Secret이 없어 성공했다고 쓰지 않았다.
+자동 모바일 검증은 artifact의 viewport·overflow·UTF-8 계약과 공개 HTML/CSS 로드 상태까지 확인했다. 실제 iPhone 화면은 별도 확인 전까지 성공으로 판정하지 않는다.
+
+## 최종 Gate
+
+```text
+LOCAL_TESTS_VERIFIED = YES (19/19)
+LIVE_NCP_NEWS_VERIFIED = YES
+LIVE_NCP_TREND_VERIFIED = YES
+GITHUB_ACTIONS_VERIFIED = YES (run 31323695534)
+PAGES_DEPLOYMENT_VERIFIED = YES
+PAGES_URL_VERIFIED = YES
+MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS 검증)
+IPHONE_SAFARI_VERIFIED = PENDING
+PARTIAL_FAILURE_VERIFIED = YES (로컬 회귀 경로)
+TOTAL_FAILURE_PRESERVATION_VERIFIED = YES (로컬 회귀 경로)
+SECRET_SCAN_VERIFIED = YES
+SCHEDULED_RUN_VERIFIED = PENDING
+```
 
 ## 변경하지 않은 영역
 
