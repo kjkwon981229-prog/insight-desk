@@ -118,3 +118,5 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 `CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`
 
 물리 iPhone Safari와 아직 도달하지 않은 첫 예약 실행만 외부 acceptance로 남아 있다. 코드·선정·PWA·실제 NCP·Actions·Pages·artifact·공개 URL gate는 확인했다.
+
+`NO_KNOWN_FURTHER_MODIFICATIONS_WITHIN_SCOPE = YES`
