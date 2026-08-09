@@ -167,6 +167,18 @@ def _best_title_item(items: tuple[object, ...]) -> object:
             score -= 30.0
         if _TRUNCATION_RE.search(getattr(item, "title", "")):
             score -= 12.0
+        heat_sports = (
+            any(term in title for term in ("폭염", "열파"))
+            and any(term in title for term in ("KBO", "프로야구", "야구"))
+        )
+        if heat_sports:
+            # Prefer the concrete league interruption headline over an
+            # analysis headline such as ``선발진 리셋`` inside the same event.
+            score += 24.0
+            if any(term in title for term in ("중단", "멈춘", "취소")):
+                score += 12.0
+            if any(term in title for term in ("→", "리셋", "체력 충전")):
+                score -= 10.0
         return score, float(getattr(item, "score", 0.0)), title
 
     return max(items, key=quality)
@@ -247,9 +259,15 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         return "POLICY"
     if any(word in text for word in ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
+    sports_context = any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기", "시구"))
+    if (
+        sports_context
+        and any(word in text for word in ("폭염", "열파"))
+        and any(word in text for word in ("중단", "멈춘", "휴식", "재개", "취소"))
+    ):
+        return "SPORTS_INTERRUPTION"
     if any(word in text for word in ("부상", "트레이드", "엔트리", "선발")):
         return "ROSTER_PERSONNEL"
-    sports_context = any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기", "시구"))
     if sports_context and _DATE_RE.search(text) and any(word in text for word in ("시구", "개최", "예정")):
         return "SPORTS_EVENT"
     if any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기 결과")) and any(word in text for word in ("중단", "멈춘", "폭염")):
@@ -488,6 +506,12 @@ def _summary(
             and any(marker in change for marker in ("최대", "최고", "급등", "급락", "변동"))
         ):
             sentence = f"{summary_subject} 변동폭이 {numbers[0]}과 {numbers[1]} 사이를 오가며 {change} 수준으로 확대됐다."
+        elif (
+            event_type == "MARKET"
+            and change
+            and any(marker in change for marker in ("최대", "최고", "변동폭"))
+        ):
+            sentence = f"{summary_subject} 변동폭이 {_number_with_ro(numbers[0])} {change} 수준으로 확대됐다."
         elif change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
             if marker and summary_subject and numbers[0].endswith(("%", "달러")):
@@ -531,7 +555,11 @@ def _summary(
             release_fact = "출시·발매"
         sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
     elif event_type == "AWARD_CHART" and subject:
-        sentence = f"{subject}의 차트·수상 성과가 확인됐다."
+        chart_number = next((value for value in numbers if value.endswith("위")), "")
+        if chart_number:
+            sentence = f"{subject}가 음악 차트 {chart_number}에 올랐다."
+        else:
+            sentence = f"{subject}의 차트·수상 성과가 확인됐다."
     elif event_type == "INDUSTRY_CHANGE" and subject:
         change_action = {
             "유치": "투자 유치",
