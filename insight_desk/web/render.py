@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 
-from ..domain.models import Briefing, EvidenceType, RunStatus, TrendMetric, to_jsonable
-
+from ..domain.models import Briefing, RunStatus, TrendMetric, to_jsonable
+from ..pipeline.synthesis import clean_headline
 
 CSS = r"""+:root {
   color-scheme: light;
@@ -27,9 +28,9 @@ CSS = r"""+:root {
   --danger: #a34856;
   --dark-text: #fff9fa;
   --dark-muted: #c7bdc1;
-  --shadow-soft: 0 10px 28px rgba(45, 35, 39, .06);
-  --radius-sm: 8px;
-  --radius-md: 14px;
+  --shadow-soft: none;
+  --radius-sm: 4px;
+  --radius-md: 8px;
   --space-1: 6px;
   --space-2: 10px;
   --space-3: 14px;
@@ -107,7 +108,14 @@ p { margin: 0; }
   grid-template-columns: minmax(0, 1.45fr) minmax(210px, .55fr);
   padding: clamp(46px, 8vw, 88px) 0 clamp(42px, 7vw, 72px);
 }
-.hero-main { min-width: 0; }
+.hero-main { background: var(--surface-dark); color: var(--dark-text); min-width: 0; padding: clamp(26px, 5vw, 54px); }
+.hero-main h1 { color: var(--dark-text); }
+.hero-main .hero-lede { color: var(--dark-text); }
+.hero-main .status-line { color: var(--dark-muted); }
+.hero-main .status-line strong { color: var(--dark-text); }
+.hero-main .status-line.complete strong { color: var(--success); }
+.hero-main .status-line.partial strong, .hero-main .status-line.news-only strong, .hero-main .status-line.trends-only strong { color: var(--warning); }
+.hero-main .status-line.failure strong { color: var(--danger); }
 .hero h1 { margin-top: 12px; max-width: 880px; }
 .hero-lede { font-size: clamp(1.03rem, 2vw, 1.35rem); line-height: 1.55; margin-top: 24px; max-width: 680px; }
 .hero-aside { align-self: end; border-left: 2px solid var(--accent); min-width: 0; padding: 4px 0 4px 20px; }
@@ -132,7 +140,7 @@ p { margin: 0; }
 .section-heading h2 { margin-top: 5px; }
 .section-heading .meta { text-align: right; }
 .story-list { border-bottom: 1px solid var(--line); }
-.story-row { display: grid; gap: 20px; grid-template-columns: 44px minmax(0, 1fr) minmax(190px, .38fr); padding: 28px 0 30px; }
+.story-row { display: grid; gap: 20px; grid-template-columns: 44px minmax(0, 1fr); padding: 28px 0 30px; }
 .story-row + .story-row { border-top: 1px solid var(--line); }
 .story-row.lead { padding-top: 34px; }
 .story-index { color: var(--accent-strong); font-size: .83rem; letter-spacing: .05em; padding-top: 4px; }
@@ -142,13 +150,18 @@ p { margin: 0; }
 .story-row h3 { max-width: 690px; }
 .story-row.lead h3 { font-size: clamp(1.5rem, 4vw, 2.45rem); }
 .story-summary { font-size: 1rem; line-height: 1.58; margin-top: 12px; max-width: 720px; }
-.evidence-line { flex-wrap: wrap; gap: 7px 12px; margin-top: 16px; }
+.key-fact-panel { background: var(--accent-soft); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 17px; max-width: 720px; padding: 12px 14px; }
+.key-fact { min-width: 0; }
+.key-fact + .key-fact { border-left: 1px solid var(--line); padding-left: 12px; }
+.key-fact strong { color: var(--text); display: block; font-size: clamp(1.1rem, 3vw, 1.45rem); letter-spacing: -.04em; line-height: 1.2; margin-top: 4px; overflow-wrap: anywhere; }
+.key-fact .fact-value { color: var(--muted-strong); display: block; font-size: .86rem; line-height: 1.4; margin-top: 4px; }
+.evidence-line { border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); flex-wrap: wrap; gap: 7px 12px; margin-top: 17px; padding: 10px 0; }
 .evidence-line span { color: var(--muted-strong); font-size: .78rem; }
 .evidence-line span + span::before { color: var(--line-strong); content: "·"; margin-right: 12px; }
 .evidence-line .accent-mark { color: var(--accent-strong); font-weight: 800; }
-.story-aside { border-left: 1px solid var(--line); min-width: 0; padding-left: 20px; }
-.story-aside .label { display: block; margin-bottom: 6px; }
-.story-aside p { color: var(--muted-strong); font-size: .88rem; line-height: 1.55; }
+.next-signal { background: var(--surface-muted); border-left: 2px solid var(--accent); border-radius: var(--radius-sm); margin-top: 15px; max-width: 720px; padding: 10px 13px; }
+.next-signal .label { color: var(--accent-strong); display: block; }
+.next-signal p { color: var(--muted-strong); font-size: .9rem; margin-top: 3px; }
 .story-details { border-top: 1px solid var(--line); margin-top: 20px; }
 .story-details summary { color: var(--accent-strong); cursor: pointer; font-size: .86rem; font-weight: 800; min-height: 46px; padding: 12px 0; }
 .detail-grid { display: grid; gap: 18px 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 4px 0 20px; }
@@ -177,11 +190,6 @@ p { margin: 0; }
 .trend-spark { align-self: center; display: block; height: 54px; max-width: 100%; width: 100%; }
 .trend-spark polyline { fill: none; stroke: var(--accent); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.8; vector-effect: non-scaling-stroke; }
 .trend-spark line { stroke: var(--line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.source-index { border-bottom: 1px solid var(--line); list-style: none; margin: 0; padding: 0; }
-.source-row { align-items: baseline; gap: 12px; justify-content: space-between; padding: 14px 0; }
-.source-row + .source-row { border-top: 1px solid var(--line); }
-.source-row a { min-width: 0; overflow-wrap: anywhere; }
-.source-row .meta { flex: 0 0 auto; text-align: right; }
 .empty-state { padding: 24px 0; }
 .method-section { padding: var(--space-7) 0 0; }
 .method { border-bottom: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); }
@@ -226,8 +234,10 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 48px; }
   .section-heading .meta { margin-top: 7px; text-align: left; }
   .story-row { grid-template-columns: 30px minmax(0, 1fr); padding: 24px 0 27px; }
   .story-row.lead { padding-top: 28px; }
-  .story-aside { border-left: 0; border-top: 1px solid var(--line); grid-column: 2; padding: 16px 0 0; }
   .story-row.lead h3 { font-size: 1.55rem; }
+  .key-fact-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .key-fact:nth-child(3) { border-left: 0; grid-column: 1 / -1; padding-left: 0; padding-top: 8px; }
+  .key-fact:nth-child(3) strong { font-size: 1rem; }
   .detail-grid { grid-template-columns: 1fr; }
   .trend-row { grid-template-columns: 1fr; gap: 10px; }
   .trend-spark { height: 48px; }
@@ -249,7 +259,7 @@ def _status_class(status: RunStatus) -> str:
     if status == RunStatus.COMPLETE:
         return "complete"
     if status in {RunStatus.PARTIAL, RunStatus.NEWS_ONLY, RunStatus.TRENDS_ONLY}:
-        return status.value.lower().replace("_", "-")
+        return str(status.value).lower().replace("_", "-")
     return "failure"
 
 
@@ -305,6 +315,30 @@ def _format_published(value: object) -> str:
     except ValueError:
         return raw[:16]
     return parsed.strftime("%m.%d %H:%M")
+
+
+_PUBLISHER_NAMES = {
+    "joongang.co.kr": "중앙일보",
+    "chosun.com": "조선일보",
+    "donga.com": "동아일보",
+    "hankyung.com": "한국경제",
+    "mk.co.kr": "매일경제",
+    "yonhapnews.co.kr": "연합뉴스",
+    "newsis.com": "뉴시스",
+    "joynews24.com": "조이뉴스24",
+    "bok.or.kr": "한국은행",
+}
+
+
+def _publisher_name(item: object) -> str:
+    publisher = str(getattr(item, "publisher", "") or "").strip()
+    if publisher:
+        return publisher
+    domain = str(getattr(item, "source_domain", "") or "").lower().removeprefix("www.")
+    for known_domain, name in _PUBLISHER_NAMES.items():
+        if domain == known_domain or domain.endswith("." + known_domain):
+            return name
+    return domain or "원문"
 
 
 def _provenance_label(value: object) -> str:
@@ -373,7 +407,7 @@ def _metric_row(metric: TrendMetric) -> str:
     )
 
 
-def _story_items(story: object, news_by_id: dict[str, object]) -> list[object]:
+def _story_items(story: object, news_by_id: Mapping[str, object]) -> list[object]:
     return [
         news_by_id[evidence_id]
         for evidence_id in getattr(story, "evidence_ids", ())
@@ -381,7 +415,7 @@ def _story_items(story: object, news_by_id: dict[str, object]) -> list[object]:
     ]
 
 
-def _story_sources(story: object, news_by_id: dict[str, object]) -> str:
+def _story_sources(story: object, news_by_id: Mapping[str, object]) -> str:
     items = _story_items(story, news_by_id)
     if not items:
         return '<p class="meta">연결된 원문 링크가 없다.</p>'
@@ -392,44 +426,25 @@ def _story_sources(story: object, news_by_id: dict[str, object]) -> str:
         if not url or url in seen:
             continue
         seen.add(url)
-        source = getattr(item, "publisher", "") or getattr(item, "source_domain", "") or "원문"
+        source = _publisher_name(item)
         published = _format_published(getattr(item, "metadata_published_at", None) or getattr(item, "published_at", None))
         rows.append(
             '<li>'
-            f'<a href="{_esc(url)}" rel="noreferrer" target="_blank">{_esc(getattr(item, "title", "원문 열기"))}</a>'
+            f'<a href="{_esc(url)}" rel="noreferrer" target="_blank">{_esc(clean_headline(getattr(item, "title", "원문 열기")))}</a>'
             f'<span class="meta">{_esc(source)} · {_esc(published)}</span>'
             '</li>'
         )
     return '<ul class="source-links">' + "".join(rows) + "</ul>" if rows else '<p class="meta">연결된 원문 링크가 없다.</p>'
 
 
-def _story_source_names(story: object, news_by_id: dict[str, object]) -> str:
-    names: list[str] = []
-    for item in _story_items(story, news_by_id):
-        name = getattr(item, "publisher", "") or getattr(item, "source_domain", "")
-        if name and name not in names:
-            names.append(name)
-    if not names:
-        return "출처 미확인"
-    if len(names) > 3:
-        return "· ".join(names[:3]) + f" 외 {len(names) - 3}곳"
-    return "· ".join(names)
-
-
-def _story_evidence_line(story: object, news_by_id: dict[str, object]) -> str:
-    items = _story_items(story, news_by_id)
-    chips = [f'{getattr(story, "source_count", 0)}곳에서 확인']
-    provenance: list[str] = []
-    for item in items:
-        for value in getattr(item, "provenance", ()):
-            label = _provenance_label(value)
-            if label not in provenance:
-                provenance.append(label)
-    for value in getattr(story, "provenance", ()):
-        label = _provenance_label(value)
-        if label not in provenance:
-            provenance.append(label)
-    chips.extend(provenance)
+def _story_evidence_line(story: object, news_by_id: Mapping[str, object]) -> str:
+    facts = getattr(story, "facts", None)
+    chips = [f'근거 {getattr(story, "source_count", 0)}곳']
+    trend = str(getattr(story, "trend_relationship", "") or "")
+    if trend:
+        chips.append(trend)
+    if getattr(facts, "official_source", ""):
+        chips.append("공식 자료")
     if getattr(story, "metadata_enriched_count", 0):
         chips.append(f'원문 {getattr(story, "metadata_enriched_count")}건 보강')
     return "".join(
@@ -438,12 +453,66 @@ def _story_evidence_line(story: object, news_by_id: dict[str, object]) -> str:
     )
 
 
-def _story_row(story: object, news_by_id: dict[str, object], index: int) -> str:
+def _key_fact_panel(story: object) -> str:
+    facts = getattr(story, "facts", None)
+    if facts is None:
+        return ""
+    event_type = str(getattr(facts, "event_type", "OTHER"))
+    facts_to_render: list[tuple[str, str]] = []
+    numbers = tuple(getattr(facts, "key_numbers", ()) or ())
+    changes = tuple(getattr(facts, "key_changes", ()) or ())
+    if numbers and event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
+        facts_to_render.append(("핵심 수치", numbers[0]))
+        if changes:
+            value = " ".join(str(changes[0]).split())
+            if len(value) > 30:
+                value = value[:30].rstrip() + "…"
+            if value and value != numbers[0] and value not in {"기록", "발표", "공개", "확인"}:
+                facts_to_render.append(("변화", value))
+    elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT", "POLICY"}:
+        if getattr(facts, "date", ""):
+            facts_to_render.append(("일정", str(facts.date)))
+        if getattr(facts, "location", ""):
+            facts_to_render.append(("장소", str(facts.location)))
+        if getattr(facts, "action", "") and (getattr(facts, "date", "") or getattr(facts, "location", "")):
+            facts_to_render.append(("내용", str(facts.action)))
+    if not facts_to_render:
+        return ""
+    cells = "".join(
+        f'<div class="key-fact"><span class="label">{_esc(label)}</span><strong>{_esc(value)}</strong></div>'
+        for label, value in facts_to_render[:3]
+    )
+    return f'<div class="key-fact-panel" aria-label="핵심 사실">{cells}</div>'
+
+
+def _next_signal_panel(story: object) -> str:
+    watch_next = tuple(getattr(story, "watch_next", ()) or ())
+    if not watch_next:
+        return ""
+    value = " · ".join(str(item) for item in watch_next)
+    return f'<div class="next-signal"><span class="label">다음 신호</span><p>{_esc(value)}</p></div>'
+
+
+def _story_row(story: object, news_by_id: Mapping[str, object], index: int) -> str:
     items = _story_items(story, news_by_id)
     first_item = items[0] if items else None
     published = getattr(first_item, "metadata_published_at", None) or getattr(first_item, "published_at", None)
-    watch_next = getattr(story, "watch_next", ())
-    watch_html = "".join(f"<li>{_esc(value)}</li>" for value in watch_next)
+    facts = getattr(story, "facts", None)
+    uncertainty = str(getattr(facts, "uncertainty", "") or "")
+    detail_blocks = [
+        f'<div class="detail-block"><span class="label">확인된 내용</span><p>{_esc(getattr(story, "why_it_matters", ""))}</p></div>'
+    ]
+    if uncertainty:
+        detail_blocks.append(
+            f'<div class="detail-block"><span class="label">추가 확인</span><p>{_esc(uncertainty)}</p></div>'
+        )
+    details = (
+        '<details class="story-details">'
+        '<summary>전체 근거 보기</summary>'
+        f'<div class="detail-grid">{"".join(detail_blocks)}</div>'
+        f'{_story_sources(story, news_by_id)}'
+        '</details>'
+    )
     return (
         f'<article class="story-row {"lead" if index == 1 else ""}">'
         f'<div class="story-index">{index:02d}</div>'
@@ -454,44 +523,13 @@ def _story_row(story: object, news_by_id: dict[str, object], index: int) -> str:
         '</div>'
         f'<h3>{_esc(getattr(story, "title", "제목 없음"))}</h3>'
         f'<p class="story-summary">{_esc(getattr(story, "summary", ""))}</p>'
+        f'{_key_fact_panel(story)}'
         f'<div class="evidence-line">{_story_evidence_line(story, news_by_id)}</div>'
-        '<details class="story-details">'
-        '<summary>근거와 확인할 것</summary>'
-        '<div class="detail-grid">'
-        f'<div class="detail-block"><span class="label">핵심 해석</span><p>{_esc(getattr(story, "why_it_matters", ""))}</p></div>'
-        f'<div class="detail-block"><span class="label">검색 관심 흐름</span><p>{_esc(getattr(story, "trend_relationship", ""))}</p></div>'
+        f'{_next_signal_panel(story)}'
+        f'{details}'
         '</div>'
-        '<span class="label">확인할 것</span>'
-        f'<ul class="watch-list">{watch_html or "<li>추가 확인 항목 없음</li>"}</ul>'
-        f'{_story_sources(story, news_by_id)}'
-        '</details>'
-        '</div>'
-        '<aside class="story-aside">'
-        '<span class="label">출처 범위</span>'
-        f'<p>{_esc(_story_source_names(story, news_by_id))}</p>'
-        '</aside>'
         '</article>'
     )
-
-
-def _source_list(briefing: Briefing) -> str:
-    unique: dict[str, object] = {}
-    for item in briefing.news:
-        url = item.original_url or item.naver_url
-        if url:
-            unique.setdefault(url, item)
-    if not unique:
-        return '<p class="meta">표시할 원문 링크가 없다.</p>'
-    rows = []
-    for url, item in list(unique.items())[:30]:
-        source = item.publisher or item.source_domain or "원문"
-        rows.append(
-            '<li class="source-row">'
-            f'<a href="{_esc(url)}" rel="noreferrer" target="_blank">{_esc(item.title)}</a>'
-            f'<span class="meta">{_esc(source)}</span>'
-            '</li>'
-        )
-    return '<ul class="source-index">' + "".join(rows) + "</ul>"
 
 
 def _signal_counts(briefing: Briefing) -> tuple[str, str, str]:
@@ -500,10 +538,8 @@ def _signal_counts(briefing: Briefing) -> tuple[str, str, str]:
     trend_note = f"상승 {rising} · 하락 {falling}" if briefing.trend_metrics else "이번 실행에서 없음"
     if briefing.enrichment_attempted:
         enrichment = f"{briefing.enrichment_succeeded}/{briefing.enrichment_attempted}"
-        enrichment_note = "상위 원문 선택 보강"
     else:
         enrichment = "–"
-        enrichment_note = "선택 보강 없음"
     return str(len(briefing.stories)), trend_note, enrichment
 
 
@@ -540,6 +576,11 @@ def _methodology(briefing: Briefing, limitation_html: str) -> str:
     )
 
 
+def _nav_link(key: str, label: str, href: str, active_nav: str) -> str:
+    current = ' aria-current="page"' if key == active_nav else ""
+    return f'<a href="{_esc(href)}"{current}>{_esc(label)}</a>'
+
+
 def _document(
     briefing: Briefing,
     *,
@@ -551,7 +592,7 @@ def _document(
     state = briefing.state
     status_class = _status_class(state.status)
     status_label = _status_label(state.status)
-    news_by_id = {item.evidence_id: item for item in briefing.news}
+    news_by_id: Mapping[str, object] = {item.evidence_id: item for item in briefing.news}
     stories = briefing.stories
     first_story = stories[0] if stories else None
     hero_title = getattr(first_story, "title", "이번 실행에서 새 결과가 없다.")
@@ -567,10 +608,7 @@ def _document(
         ("trends", "검색 흐름", f"{nav_prefix}index.html#trends"),
         ("archive", "아카이브", f"{nav_prefix}archive/index.html"),
     )
-    nav_html = "".join(
-        f'<a href="{_esc(href)}" {"aria-current=\"page\"" if key == active_nav else ""}>{_esc(label)}</a>'
-        for key, label, href in nav_items
-    )
+    nav_html = "".join(_nav_link(key, label, href, active_nav) for key, label, href in nav_items)
     return f'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Insight Desk 모바일 뉴스·검색 관심 흐름 브리핑"><title>{_esc(title)}</title>
@@ -579,13 +617,12 @@ def _document(
 <header class="site-header"><div class="brand-row"><a class="brand" href="{_esc(nav_prefix)}index.html">INSIGHT DESK</a><div class="header-meta"><span>{_esc(_format_date(state.generated_at))}</span><span>기준 {_esc(_format_date(state.data_cutoff))}</span></div></div>
 <nav class="site-nav" aria-label="브리핑 탐색">{nav_html}</nav></header>
 <section class="hero" id="today" aria-labelledby="hero-heading"><div class="hero-main"><div class="eyebrow">오늘의 흐름 · { _esc(getattr(first_story, "topic_name", "Insight Desk")) }</div><h1 id="hero-heading">{_esc(hero_title)}</h1><p class="hero-lede">{_esc(hero_lede)}</p><p class="status-line {status_class}"><strong>{_esc(status_label)}</strong> · {_esc(_status_sentence(state.status))}</p></div>
-<aside class="hero-aside"><span class="label">함께 본 신호</span><p>{_esc(summary_line)}</p><p class="meta">뉴스와 검색 관심 흐름의 동시 관찰만 표시하며, 인과관계는 단정하지 않는다.</p></aside></section>
+<aside class="hero-aside"><span class="label">브리핑 한눈에</span><p>{_esc(summary_line)}</p><p class="meta">{_esc(briefing.three_line_summary[2] if len(briefing.three_line_summary) > 2 else "")}</p></aside></section>
 {_notice_html(briefing)}
 <section class="signal-strip" id="signals" aria-label="핵심 신호"><div class="signal-cell"><span class="label">주요 사건</span><div class="signal-value">{_esc(signal_stories)}</div><span class="signal-label">사건 묶음</span><span class="signal-note">뉴스 {len(briefing.news)}건</span></div><div class="signal-cell"><span class="label">검색 흐름</span><div class="signal-value">{_esc(str(len(briefing.trend_metrics)))}</div><span class="signal-label">키워드 그룹</span><span class="signal-note">{_esc(signal_trends)}</span></div><div class="signal-cell"><span class="label">원문 보강</span><div class="signal-value">{_esc(signal_enrichment)}</div><span class="signal-label">선택 원문 보강</span><span class="signal-note">상위 기사에 한함</span></div></section>
-<section class="content-section" id="stories" aria-labelledby="stories-heading"><div class="section-heading"><div><span class="section-index">01 / 핵심 흐름</span><h2 id="stories-heading">핵심 뉴스</h2></div><p class="meta">사건 단위로 묶은 주요 흐름</p></div><div class="story-list">{stories_html or '<p class="meta empty-state">표시할 뉴스가 없다.</p>'}</div></section>
+<section class="content-section" id="stories" aria-labelledby="stories-heading"><div class="section-heading"><div><span class="section-index">01 / 핵심 흐름</span><h2 id="stories-heading">핵심 뉴스</h2></div><p class="meta">사건 단위로 압축한 주요 흐름</p></div><div class="story-list">{stories_html or '<p class="meta empty-state">표시할 뉴스가 없다.</p>'}</div></section>
 <section class="content-section" id="trends" aria-labelledby="trends-heading"><div class="section-heading"><div><span class="section-index">02 / 관심 변화</span><h2 id="trends-heading">검색 관심 흐름</h2></div><p class="meta">같은 그룹 안에서 직전 구간과 비교</p></div><div class="trend-overview"><span><strong>상대 관심지수</strong> · 원시 검색량이 아님</span><span>방향과 변화폭 중심으로 표시</span></div><div class="trend-list">{trend_html or '<p class="meta empty-state">이번 실행에서 검색 관심 흐름을 확인하지 못했다.</p>'}</div></section>
-<section class="content-section" id="sources" aria-labelledby="sources-heading"><div class="section-heading"><div><span class="section-index">03 / 출처</span><h2 id="sources-heading">확인한 출처</h2></div><p class="meta">원문 링크를 열어 자세히 보기</p></div>{_source_list(briefing)}</section>
-<section class="method-section" id="method" aria-labelledby="method-heading"><div class="section-heading"><div><span class="section-index">04 / 기준과 방법</span><h2 id="method-heading">데이터 기준</h2></div><p class="meta">기준 {_esc(_format_timestamp(state.generated_at))}</p></div>{_methodology(briefing, limitation_html)}</section>
+<section class="method-section" id="method" aria-labelledby="method-heading"><div class="section-heading"><div><span class="section-index">03 / 기준과 방법</span><h2 id="method-heading">데이터 기준</h2></div><p class="meta">기준 {_esc(_format_timestamp(state.generated_at))}</p></div>{_methodology(briefing, limitation_html)}</section>
 <footer>Insight Desk · 정적 브리핑 · 뉴스 전문을 복제하지 않고 제목·요약·원문 링크를 사용한다.</footer>
 </main></body></html>'''
 
