@@ -223,6 +223,25 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertFalse(assessment.event.passed)
         self.assertFalse(assessment.qualified)
 
+    def test_vague_weekly_schedule_title_is_not_a_concrete_event(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "한국은행",
+            anchors=("한국은행", "금융당국"),
+            events=("일정",),
+        )
+        item = _item(
+            "vague-schedule",
+            "economy",
+            "한국은행",
+            "금주 한국은행 및 금융당국 주요일정",
+            "",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic)
+        self.assertEqual(assessment.event.event_type, "OTHER")
+        self.assertFalse(assessment.qualified)
+
     def test_number_alone_is_not_an_event(self) -> None:
         topic = _topic("economy", "경제·투자", "환율", anchors=("환율",), events=("환율", "발표"))
         item = _item("number-only", "economy", "환율", "환율 47", "숫자만 제시됐다.")
