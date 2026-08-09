@@ -110,6 +110,8 @@ _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "�
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
+_DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일))$")
+_MARKET_RUN_RE = re.compile(r"\d+\s?거래일(?:\s?연속)?\s?(?:순매수|순매도)")
 
 
 def _clean_headline(value: str) -> str:
@@ -208,7 +210,16 @@ def _meaningful_numbers(values: tuple[str, ...]) -> tuple[str, ...]:
     """Discard bare counters accidentally captured from Korean headlines."""
 
     meaningful = tuple(value for value in values if re.search(r"[^\d,.\s]", value))
-    return meaningful or values
+    if meaningful:
+        return meaningful
+    if values and all(_DATE_COUNTER_RE.fullmatch(value) for value in values):
+        return ()
+    return values
+
+
+def _market_run_phrase(title: str) -> str:
+    match = _MARKET_RUN_RE.search(_clean_headline(title))
+    return match.group(0) if match else ""
 
 
 def _dates(text: str) -> tuple[str, ...]:
@@ -461,6 +472,9 @@ def _headline(
 ) -> str:
     cleaned = _clean_headline(title)
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
+        run_phrase = _market_run_phrase(cleaned)
+        if run_phrase:
+            return f"{subject} {run_phrase}"
         result = f"{subject} {numbers[0]}"
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
@@ -500,7 +514,10 @@ def _summary(
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
         summary_subject = _fact_subject(summary_subject)
-        if (
+        run_phrase = _market_run_phrase(title)
+        if run_phrase:
+            sentence = f"{summary_subject}의 {run_phrase}가 이어졌다."
+        elif (
             event_type == "MARKET"
             and len(numbers) >= 2
             and any(marker in change for marker in ("최대", "최고", "급등", "급락", "변동"))
