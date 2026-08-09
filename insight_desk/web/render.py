@@ -509,7 +509,15 @@ def _key_fact_panel(story: object) -> str:
     facts_to_render: list[tuple[str, str]] = []
     numbers = tuple(getattr(facts, "key_numbers", ()) or ())
     changes = tuple(getattr(facts, "key_changes", ()) or ())
-    if numbers and event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
+    if numbers and event_type in {
+        "STATISTIC",
+        "MARKET",
+        "MARKET_MOVE",
+        "EARNINGS",
+        "AWARD_CHART",
+        "INDUSTRY_CHANGE",
+        "REGULATION",
+    }:
         facts_to_render.append(("핵심 수치", numbers[0]))
         if changes:
             value = " ".join(str(changes[0]).split())
@@ -519,7 +527,15 @@ def _key_fact_panel(story: object) -> str:
                 value = ""
             if value and value != numbers[0] and value not in {"기록", "발표", "공개", "확인"}:
                 facts_to_render.append(("변화", value))
-    elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT", "POLICY"}:
+    elif event_type in {
+        "SCHEDULED_EVENT",
+        "SPORTS_EVENT",
+        "SPORTS_RESULT",
+        "SPORTS_INTERRUPTION",
+        "ROSTER_PERSONNEL",
+        "ENTERTAINMENT_EVENT",
+        "POLICY",
+    }:
         if getattr(facts, "date", ""):
             facts_to_render.append(("일정", str(facts.date)))
         if getattr(facts, "location", ""):
@@ -800,6 +816,8 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
     if isinstance(payload, dict):
         # Selection reasoning is a build-time audit artifact, not public UI/data.
         payload.pop("selection_audit", None)
+        payload.pop("selection_funnel", None)
+        payload.pop("selected_reviews", None)
     payload_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     (output_dir / "data/latest.json").write_text(payload_text, encoding="utf-8")
     (output_dir / "latest/data.json").write_text(payload_text, encoding="utf-8")
