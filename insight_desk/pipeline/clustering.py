@@ -24,12 +24,53 @@ def _tokens(text: str) -> set[str]:
     return {token.lower() for token in re.findall(r"[A-Za-z0-9가-힣]{2,}", text)}
 
 
+_EVENT_TERMS = {
+    "규제", "정책", "발표", "공개", "출시", "투자", "유치", "인수", "실적", "공시",
+    "경기", "승리", "패배", "부상", "트레이드", "선발", "엔트리", "시행", "일정",
+    "컴백", "공연", "콘서트", "차트", "기록", "상승", "하락", "급등", "급락", "변동",
+    "폭염", "중단", "멈춘", "논란",
+}
+_GENERIC_TERMS = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
+
+
+def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
+    text = " ".join(
+        value
+        for value in (
+            item.metadata_title,
+            item.title,
+            item.metadata_description,
+            item.summary if not re.search(r"\.{2,}|…", item.summary) else "",
+        )
+        if value
+    ).lower()
+    tokens = _tokens(text)
+    entities = {token for token in tokens if token not in _EVENT_TERMS and token not in _GENERIC_TERMS}
+    if "프로야구" in text:
+        entities.add("야구")
+    if "kbo" in text:
+        entities.add("야구")
+    actions = {token for token in tokens if token in _EVENT_TERMS}
+    dates_numbers = set(re.findall(r"(?:20\d{2}|\d{1,3}(?:[,\.]\d{3})*)(?:년|월|일|%|원|달러|억|만)?", text))
+    return entities, actions, dates_numbers
+
+
 def _similar(a: NewsItem, b: NewsItem) -> bool:
     left = _tokens(a.title)
     right = _tokens(b.title)
     if not left or not right:
         return False
-    return len(left & right) / len(left | right) >= 0.45
+    if len(left & right) / len(left | right) >= 0.45 and (left & right) - _GENERIC_TERMS:
+        return True
+    left_entities, left_actions, left_dates = _event_parts(a)
+    right_entities, right_actions, right_dates = _event_parts(b)
+    shared_entities = left_entities & right_entities
+    shared_actions = left_actions & right_actions
+    shared_dates = left_dates & right_dates
+    # A shared entity alone is not enough: the action/event or a concrete date
+    # must also line up. This prevents two unrelated stories about one company
+    # or artist from being over-merged.
+    return bool(shared_entities and (shared_actions or shared_dates))
 
 
 def cluster_news(items: tuple[NewsItem, ...]) -> tuple[StoryCluster, ...]:
