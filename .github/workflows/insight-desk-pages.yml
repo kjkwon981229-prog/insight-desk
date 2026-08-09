@@ -1,6 +1,10 @@
 name: Insight Desk Daily Pages
 
 on:
+  # Temporary one-run trigger used only to execute the freshly committed
+  # editorial acceptance fixes. Removed immediately after the run.
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     # 07:30 Asia/Seoul = 22:30 UTC on the previous day.
