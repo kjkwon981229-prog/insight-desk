@@ -96,6 +96,33 @@ class TrendMetric:
 
 
 @dataclass(frozen=True)
+class StoryFacts:
+    """Deterministic facts extracted from a story cluster.
+
+    These are observations available in the search evidence, not generated
+    claims. Empty fields mean the source set did not support that fact.
+    """
+
+    subject: str = ""
+    action: str = ""
+    object: str = ""
+    event_type: str = "OTHER"
+    date: str = ""
+    time: str = ""
+    location: str = ""
+    key_numbers: tuple[str, ...] = field(default_factory=tuple)
+    key_changes: tuple[str, ...] = field(default_factory=tuple)
+    official_source: str = ""
+    source_count: int = 0
+    source_diversity: int = 0
+    repeated_facts: tuple[str, ...] = field(default_factory=tuple)
+    unique_facts: tuple[str, ...] = field(default_factory=tuple)
+    trend_state: str = "비교 부족"
+    next_known_event: str = ""
+    uncertainty: str = ""
+
+
+@dataclass(frozen=True)
 class Story:
     topic_id: str
     topic_name: str
@@ -112,6 +139,7 @@ class Story:
     source_count: int
     provenance: tuple[EvidenceType, ...] = field(default_factory=tuple)
     metadata_enriched_count: int = 0
+    facts: StoryFacts = field(default_factory=StoryFacts)
 
 
 @dataclass(frozen=True)
