@@ -9,16 +9,20 @@
 | 검사 | 결과 |
 |---|---|
 | Python compileall | 통과 |
-| unit/contract tests | 18/18 통과 |
+| unit/contract tests | 19/19 통과 |
 | NCP endpoint/header fake contract | 통과 |
 | status machine | 통과 |
 | normalization/dedup/trend semantics | 통과 |
 | UTF-8/mobile viewport | 통과 |
 | latest/archive/data JSON | 통과 |
 | Pages required files/local links | 통과 |
-| live NCP call | 미실행 — Secret 없음 |
-| GitHub Actions/Pages remote run | 미실행 — 연결 repository가 대상 아님 |
-| iPhone 실기기 | 미검증 |
+| live NCP News/Trend | 실제 `COMPLETE` — run `31323695534` |
+| GitHub Actions build | 통과 — run `31323695534` |
+| Pages artifact upload/deploy | 통과 — run `31323695534` |
+| 공개 최신·archive·날짜별 URL | 통과 |
+| 공개 HTML UTF-8/CSS/Secret 패턴 | 통과 |
+| iPhone 실기기 | 사용자 확인 대기 |
+| 첫 예약 실행 | 대기 — 07:30 KST |
 
 ## 발견·수정 사항
 
@@ -29,7 +33,26 @@
 - Trend ratio를 실제 검색량으로 표시하지 않도록 문구·계산·차트 라벨을 고정했다.
 - Secret이 cache·HTML·JSON·workflow 로그에 남지 않는 경계를 테스트했다.
 - 날짜별 archive와 실패 시 기존 Pages 보존 경로를 분리했다.
+- 1차 원격 실행에서 Pages Source 미설정으로 deploy가 404 실패한 것을 확인했다.
+- 사용자가 Pages Source를 `GitHub Actions`로 설정한 뒤 2차 실행에서 deploy 성공을 확인했다.
 
 ## 남은 확인
 
-실제 Secret 등록 뒤 Actions에서 한 번 실행해야 NCP 권한, API 한도, Pages 설정, 실기기 표시를 확인할 수 있다. 이 작업 공간에서는 해당 원격 검증을 완료했다고 판정하지 않는다.
+실제 NCP 권한과 API 호출은 `COMPLETE`로 확인했다. 남은 검증은 iPhone Safari 실기기 표시와 첫 예약 실행이다.
+
+## 최종 Gate
+
+```text
+LOCAL_TESTS_VERIFIED = YES (19/19)
+LIVE_NCP_NEWS_VERIFIED = YES
+LIVE_NCP_TREND_VERIFIED = YES
+GITHUB_ACTIONS_VERIFIED = YES
+PAGES_DEPLOYMENT_VERIFIED = YES
+PAGES_URL_VERIFIED = YES
+MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS)
+IPHONE_SAFARI_VERIFIED = PENDING
+PARTIAL_FAILURE_VERIFIED = YES
+TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
+SECRET_SCAN_VERIFIED = YES
+SCHEDULED_RUN_VERIFIED = PENDING
+```
