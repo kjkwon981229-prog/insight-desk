@@ -1,101 +1,88 @@
 # RECOVERY_REPORT
 
-## 복구 레벨
+## 복구 수준
 
 `LEVEL D — CONTRACT RECONSTRUCTION`
 
-현재 Work에는 Insight Desk source, ZIP, workflow, generated site가 없었다. 연결된 GitHub repository는 `kjkwon981229-prog/-` 하나였지만, 확인 결과 Insight Desk가 아닌 `VOCA Loop PWA Icon Check`였고 관련 검색 결과도 없었다. Library에서 확인된 자료는 `INSIGHT_DESK_ARCHITECT_v1.1_ZERO_COST_READY.md`, 해당 QA 문서, 구형 `MASTER_SPEC.md`와 Windows 설계 문서였다.
+최신 Codex working tree와 기존 Windows source는 확보하지 못했다. 따라서 현재 결과물을 원본 코드 복구본이라고 주장하지 않고, 확정된 NAVER API·GitHub Actions·GitHub Pages·모바일 웹 계약을 기준으로 재구축한 결과로 기록한다.
 
-## 확보한 자료
+## 자료와 provenance
 
-- v1.1 ZERO COST Windows 설계 계약
-- v1.1 ZERO COST QA 문서
-- 구형 master specification
-- 현재 사용자가 제공한 모바일 웹·Actions·Pages·NCP 계약
-- NAVER API HUB와 GitHub Pages 공식 문서
-- 실제 생성된 GitHub repository `kjkwon981229-prog/insight-desk`
-- 실제 workflow run 2회와 공개 Pages URL
+### 확보한 자료
 
-## 확보하지 못한 자료
+- 모바일 웹·Actions·Pages·NCP 확정 계약
+- 제품·관심사·상태 모델 요구사항
+- 첨부 Visual Design Language Archive
+- 실제 생성된 GitHub 저장소와 원격 workflow
+- 실제 Pages 공개 결과
+
+### 확보하지 못한 자료
 
 - 최신 Codex working tree
-- 기존 Python source와 49개 파일 구조
-- 기존 테스트 92개
-- 기존 BUILD_REPORT/README/workflow
-- 기존 generated HTML/PDF/SQLite cache
-- 고장 난 노트북의 원본 Codex working tree
-- 실제 iPhone Safari 화면 확인 결과
+- 기존 Windows application source
+- 기존 92개 테스트와 원래 generated site
+- 기존 SQLite/cache/dist 산출물
+- 실제 iPhone Safari 확인 결과
 - 첫 예약 실행 결과
-
-## Provenance 분류
-
-### RECOVERED
-
-- Library 설계 문서의 제품명·기본 관심사·NAVER endpoint/header 의미
-- 사용자가 현재 명령에서 확정한 remote mobile web contract
 
 ### REIMPLEMENTED
 
-- 모든 실행 source
-- News/Trend collectors
-- deterministic pipeline
-- status machine
+- News·Trend collector
+- normalization·deduplication·clustering·scoring
+- deterministic rule engine
+- metadata enrichment과 provenance
 - mobile static renderer
-- artifact validator
-- GitHub Actions workflows
-- regression tests
+- status machine·artifact validator
+- GitHub Actions·Pages workflow
+- 회귀 테스트
 
 ### INFERRED
 
-- 기본 관심사별 검색어와 trend group의 최소 프리셋
-- Actions cache를 이용한 성공 site archive 유지 방식
+- 기본 관심사 preset
+- 일부 archive 유지 전략
+- 첨부 디자인 문법의 제품 적용 방식
 
-### UNAVAILABLE
+### UNAVAILABLE / EXCLUDED
 
-- 기존 Windows application source
-- 최신 mobile migration tree
-- 실제 iPhone Safari 검증 결과
-- 첫 예약 실행 결과
+- Windows UI·Credential Manager·Task Scheduler·PyInstaller·PDF desktop workflow
+- 기존 Codex source 수준의 연속성
 
-## 연속성 수준
+## 원격 연속성
 
-제품 목표와 일부 설계 계약은 이어졌지만, 코드 수준의 연속성은 확인되지 않는다. 따라서 이 결과물을 “Codex 원본 working tree 복구본”이라고 부르지 않는다. 현재 산출물은 원본 유실 뒤의 계약 기반 재구축본이다.
+- 최신 UI commit: `39137fb20eea2a66916495bfe8703c1e1f8b025c`
+- CI run: `31326864815` 성공
+- Pages run: `31327087861` 성공
+- 공개 주소: [Insight Desk](https://kjkwon981229-prog.github.io/insight-desk/)
+- 실제 공개 root·latest·archive·날짜별 archive 확인 완료
+- 실제 NCP News·Trend 결과가 `COMPLETE`로 게시됨
 
-## 원격 검증 결과
-
-- 1차 run `31323478041`: News·Trend와 build는 성공했으나 Pages Source 미설정으로 deploy가 404 실패했다.
-- 사용자가 Pages Source를 `GitHub Actions`로 설정했다.
-- 2차 run `31323695534`: 실제 NCP `COMPLETE`, artifact 검증·업로드·Pages deploy 모두 성공했다.
-- 공개 URL: <https://kjkwon981229-prog.github.io/insight-desk/>
-- 최신·archive·날짜별 archive·UTF-8·CSS·공개 HTML Secret 패턴 검사를 통과했다.
-
-## 사용자에게 필요한 다음 최소 행동
-
-1. 위 Pages URL을 iPhone Safari에서 연다.
-2. 첫 화면, 가로 밀림 없음, 뉴스 링크 하나, archive, 다크 모드를 확인한다.
-3. 확인 후 결과를 알려준다.
-
-예약 실행은 매일 07:30 KST로 설정되어 있으며, 실제 첫 예약 실행 전까지 `PENDING`이다.
-
-## 최종 Gate
+## 현재 상태
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (19/19)
+LOCAL_TESTS_VERIFIED = YES (25/25)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (31323695534)
+GITHUB_ACTIONS_VERIFIED = YES
 PAGES_DEPLOYMENT_VERIFIED = YES
 PAGES_URL_VERIFIED = YES
-MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS)
+MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
-PARTIAL_FAILURE_VERIFIED = YES
-TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
-SECRET_SCAN_VERIFIED = YES
 SCHEDULED_RUN_VERIFIED = PENDING
+SECRET_SCAN_VERIFIED = YES
 ```
+
+## 사용자에게 필요한 최소 행동
+
+1. [Pages 주소](https://kjkwon981229-prog.github.io/insight-desk/)를 iPhone Safari에서 연다.
+2. 첫 화면에 가로 밀림이 없는지 확인한다.
+3. 뉴스 링크 하나를 연다.
+4. 아카이브를 연다.
+5. iPhone 다크 모드에서 다시 확인한다.
+
+예약 실행은 매일 07:30 KST로 설정되어 있으며, 실제 첫 실행 전까지 `PENDING`이다.
 
 ## 최종 판정
 
 `RECOVERY_COMPLETE_REMOTE_PENDING`
 
-실제 원격 수집·분석·Pages 배포까지 확인했지만, iPhone Safari 실기기 확인과 첫 예약 실행은 아직 남아 있다. 원본 Codex working tree를 복구한 것이 아니라 LEVEL D 계약 기반 재구축본이라는 provenance는 유지한다.
+원격 코드·실제 NCP 수집·Actions·Pages·공개 URL까지 확인했지만, 실제 iPhone Safari와 첫 예약 실행은 아직 확인하지 않았다.
