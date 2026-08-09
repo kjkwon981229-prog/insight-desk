@@ -17,9 +17,12 @@
 | 1차 workflow run | `31323478041` — build/실제 수집/artifact 성공, Pages 비활성으로 deploy 실패 |
 | Pages 설정 조치 | 사용자가 Source를 `GitHub Actions`로 변경 |
 | 2차 workflow run | `31323695534` — build 성공, deploy 성공 |
+| 3차 workflow run | `31325115501` — 새 evidence/UI commit 기준 build·deploy 성공 |
 | 실제 NCP 상태 | `COMPLETE` — News·Trend 모두 성공 |
+| 3차 실제 NCP 상태 | `COMPLETE` — News·Trend 모두 성공, 상위 metadata 5건 중 4건 보강 |
 | 실제 Pages URL | <https://kjkwon981229-prog.github.io/insight-desk/> |
-| 공개 HTML 검증 | 최신·archive·날짜별 archive·UTF-8·CSS·내부 링크 확인 |
+| 3차 Pages artifact | build `93274126259`, deploy `93274259666`, artifact `9041308981` |
+| 공개 HTML 검증 | 최신·latest·archive·날짜별 archive·UTF-8·CSS·내부 링크·새 UI 문구 확인 |
 | 예약 실행 | `PENDING` — 첫 예약 시각 미도래 |
 | iPhone Safari | `PENDING` — 사용자 실기기 확인 대기 |
 
@@ -77,13 +80,17 @@
 - Naver endpoint/header contract fake transport — 통과
 - status machine matrix — 통과
 - UTF-8/mobile viewport/archive JSON — 통과
-- 실제 GitHub Actions runner의 `COMPLETE` 실행 — 통과
+- 실제 GitHub Actions runner의 기존 `COMPLETE` 실행 — 통과
+- 실제 GitHub Actions runner의 새 commit `COMPLETE` 실행 — run `31325115501` 통과
 - 실제 NCP News·Trend 호출 — `COMPLETE`로 확인
 - 실제 Pages artifact upload/deploy — 통과
 - 공개 최신·archive·날짜별 archive URL — 통과
 - 공개 HTML/CSS Secret·로컬 경로 패턴 검사 — 누출 없음
 - metadata parser/enrichment success·403·timeout·missing OG·bounded Top-N — 통과
 - fixture HTML의 provenance·methodology·pink token·dark mode·내부 링크 — 통과
+- 공개 URL의 `TODAY'S SIGNAL`·`핵심 신호`·provenance·methodology — 확인
+- 공개 URL의 root/latest/archive/date URL과 CSS 로드 — 확인
+- 공개 URL cloud browser viewport에서 `scrollWidth <= innerWidth`, UTF-8 — 확인
 
 ## 정보 품질·디자인 개선 기록
 
@@ -108,7 +115,7 @@ NAVER Search News의 제목·description·originallink·link·pubDate는 PRIMARY
 - 첫 예약 실행에서 자동 수집·게시까지 이어지는지 확인
 - GitHub Actions cache의 장기 보존 정책
 
-자동 모바일 검증은 artifact의 viewport·overflow·UTF-8 계약과 공개 HTML/CSS 로드 상태까지 확인했다. 실제 iPhone 화면은 별도 확인 전까지 성공으로 판정하지 않는다.
+자동 모바일 검증은 artifact의 viewport·overflow·UTF-8 계약과 공개 HTML/CSS 로드 상태까지 확인했다. 공개 URL은 cloud browser의 현재 viewport에서 실제 DOM·CSS와 overflow를 확인했다. 320/375/390/430px별 에뮬레이터 측정과 실제 iPhone Safari 화면은 별도 확인 전까지 성공으로 판정하지 않는다.
 
 ## 최종 Gate
 
@@ -116,10 +123,10 @@ NAVER Search News의 제목·description·originallink·link·pubDate는 PRIMARY
 LOCAL_TESTS_VERIFIED = YES (24/24)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES (run 31323695534)
+GITHUB_ACTIONS_VERIFIED = YES (run 31325115501)
 PAGES_DEPLOYMENT_VERIFIED = YES
 PAGES_URL_VERIFIED = YES
-MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS 검증)
+MOBILE_BROWSER_VERIFIED = PARTIAL (공개 URL·현재 cloud viewport 확인; 320/375/390/430px별 측정 pending)
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES (로컬 회귀 경로)
 TOTAL_FAILURE_PRESERVATION_VERIFIED = YES (로컬 회귀 경로)
@@ -145,4 +152,4 @@ SCHEDULED_RUN_VERIFIED = PENDING
 
 `CONDITIONAL PASS`
 
-로컬 코드·fixture·회귀 테스트·artifact 검증은 통과했다. 원격 main 반영 후에는 기존 workflow를 수동 실행해 새 UI가 실제 Pages artifact로 배포되는지 확인해야 하며, iPhone Safari와 예약 실행의 기존 `PENDING` 상태는 유지한다.
+로컬 코드·fixture·회귀 테스트·artifact 검증, 새 commit의 실제 NCP 수집과 Pages 배포, 공개 URL의 새 UI 확인까지 통과했다. 다만 320/375/390/430px별 별도 브라우저 측정, iPhone Safari 실기기, 첫 예약 실행은 아직 확인하지 않았다.

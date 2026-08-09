@@ -19,8 +19,11 @@
 | live NCP News/Trend | 실제 `COMPLETE` — run `31323695534` |
 | GitHub Actions build | 통과 — run `31323695534` |
 | Pages artifact upload/deploy | 통과 — run `31323695534` |
+| 새 evidence/UI Pages artifact upload/deploy | 통과 — run `31325115501`, build `93274126259`, deploy `93274259666` |
 | 공개 최신·archive·날짜별 URL | 통과 |
 | 공개 HTML UTF-8/CSS/Secret 패턴 | 통과 |
+| 공개 새 UI/provenance/methodology | 통과 — `TODAY'S SIGNAL`, `핵심 신호`, metadata provenance 확인 |
+| 공개 URL cloud viewport overflow | 통과 — `scrollWidth <= innerWidth` |
 | iPhone 실기기 | 사용자 확인 대기 |
 | 첫 예약 실행 | 대기 — 07:30 KST |
 
@@ -43,7 +46,7 @@
 
 ## 남은 확인
 
-실제 NCP 권한과 API 호출은 기존 원격 run `31323695534`에서 `COMPLETE`로 확인했다. 이번 UI/evidence 변경은 로컬 24개 테스트와 fixture artifact에서 검증했으며, 새 commit을 원격 main에 반영한 뒤 Pages workflow 재실행이 필요하다. 남은 검증은 새 UI의 원격 배포, iPhone Safari 실기기 표시와 첫 예약 실행이다.
+실제 NCP 권한과 API 호출은 새 원격 run `31325115501`에서 `COMPLETE`로 확인했다. 새 Pages artifact에는 상위 metadata 5건 중 4건 보강 결과가 포함됐고, 공개 URL에서 새 UI·provenance·methodology·archive 이동을 확인했다. 남은 검증은 320/375/390/430px별 별도 측정, iPhone Safari 실기기 표시와 첫 예약 실행이다.
 
 ## 최종 Gate
 
@@ -51,10 +54,10 @@
 LOCAL_TESTS_VERIFIED = YES (24/24)
 LIVE_NCP_NEWS_VERIFIED = YES
 LIVE_NCP_TREND_VERIFIED = YES
-GITHUB_ACTIONS_VERIFIED = YES
+GITHUB_ACTIONS_VERIFIED = YES (run 31325115501)
 PAGES_DEPLOYMENT_VERIFIED = YES
 PAGES_URL_VERIFIED = YES
-MOBILE_BROWSER_VERIFIED = YES (자동·공개 HTML/CSS)
+MOBILE_BROWSER_VERIFIED = PARTIAL (공개 URL·현재 cloud viewport; 320/375/390/430px pending)
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES
 TOTAL_FAILURE_PRESERVATION_VERIFIED = YES
@@ -64,4 +67,4 @@ SCHEDULED_RUN_VERIFIED = PENDING
 
 ## 이번 개선 판정
 
-`CONDITIONAL PASS` — 로컬 구현·회귀·artifact 검증 통과. 원격 Pages 재배포와 실제 iPhone Safari 확인 전에는 새 디자인에 대해 `PASS`로 올리지 않는다.
+`CONDITIONAL PASS` — 로컬 구현·회귀·artifact 검증, 실제 NCP·Actions·Pages·공개 URL 확인 통과. 320/375/390/430px별 측정, 실제 iPhone Safari와 첫 예약 실행 전에는 `PASS`로 올리지 않는다.
