@@ -69,13 +69,18 @@ def _is_sports_heat_story(item: NewsItem) -> bool:
 
 
 def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
+    # The NAVER description is a retrieval snippet, not a trustworthy body
+    # document.  Its trailing clauses often mention an unrelated person,
+    # brand, or event.  Do not let that incidental tail merge otherwise
+    # separate stories.  Use the title and optional enriched metadata as the
+    # event signature; the dedicated heat-interruption rule above is the only
+    # bounded exception that needs the snippet context.
     text = " ".join(
         value
         for value in (
             item.metadata_title,
             item.title,
             item.metadata_description,
-            item.summary if not re.search(r"\.{2,}|…", item.summary) else "",
         )
         if value
     ).lower()
