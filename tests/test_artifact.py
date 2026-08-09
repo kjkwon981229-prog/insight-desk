@@ -20,6 +20,7 @@ from insight_desk.domain.models import (
 )
 from insight_desk.web.render import render_site
 from insight_desk.web.validate import validate_artifact
+from scripts.validate_live_acceptance import validate as validate_live_acceptance
 
 
 class ArtifactTests(unittest.TestCase):
@@ -91,3 +92,23 @@ class ArtifactTests(unittest.TestCase):
         self.assertNotIn('class="hero"', text)
         self.assertNotIn("selection_audit", (root / "data/latest.json").read_text(encoding="utf-8"))
         self.assertIn("data-generated-date", text)
+
+    def test_live_acceptance_rejects_truncation_and_duplicate_events(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-live-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        story = {
+            "headline": "KBO 폭염으로 경기 중단…",
+            "summary": "프로야구 경기가 폭염 영향으로 중단됐다.",
+            "event_type": "SPORTS_INTERRUPTION",
+            "source_count": 2,
+            "concrete_fact_count": 2,
+            "topic_id": "kbo",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": "SPORTS_INTERRUPTION|폭염|KBO",
+        }
+        payload = {"selected_stories": [story, dict(story, headline="KBO 폭염으로 경기 중단")]} 
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("truncated source copy" in error for error in errors))
+        self.assertTrue(any("duplicate event signatures" in error for error in errors))
