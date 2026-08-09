@@ -299,6 +299,22 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         event_type = "LOW_VALUE_APPEARANCE"
         significance = 20.0
         matched_terms = ["LOW_VALUE_APPEARANCE"]
+    if event_type == "SCHEDULED_EVENT":
+        # ``주요일정`` or ``금주 일정`` alone is a calendar label, not a
+        # concrete event. Keep genuine dated events and public recruitment
+        # schedules, but reject a single thin search result that cannot
+        # produce a factual briefing sentence.
+        has_scheduled_signal = bool(_DATE_RE.search(text)) or any(
+            _contains(text, term)
+            for term in (
+                "예정", "개최", "시구", "공연", "콘서트", "컴백", "월드투어",
+                "시험 일정", "원서접수", "합격자", "공고",
+            )
+        )
+        if not has_scheduled_signal:
+            event_type = "OTHER"
+            significance = 0.0
+            matched_terms = []
     numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(text)))
     dates = tuple(dict.fromkeys(_DATE_RE.findall(text)))
     event_terms = _event_terms_for(topic)
