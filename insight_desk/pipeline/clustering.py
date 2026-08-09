@@ -38,6 +38,36 @@ _DATE_NUMBER_RE = re.compile(
 )
 
 
+def _item_text(item: NewsItem) -> str:
+    return " ".join(
+        value
+        for value in (
+            item.query,
+            item.metadata_title,
+            item.title,
+            item.metadata_description,
+            item.summary if not re.search(r"\.{2,}|…", item.summary) else "",
+        )
+        if value
+    ).lower()
+
+
+def _is_sports_heat_story(item: NewsItem) -> bool:
+    """Recognize the league-wide heat interruption theme across headlines.
+
+    Search headlines describe the same disruption with different wording
+    (``폭염은 물러가도``, ``폭염에 멈춘``, ``폭염 휴식``).  Requiring exact
+    action-token overlap leaves those reports in separate clusters and lets
+    one analytical headline masquerade as a second event.
+    """
+
+    text = _item_text(item)
+    return bool(
+        any(term in text for term in ("폭염", "열파"))
+        and any(term in text for term in ("kbo", "프로야구", "한국 야구", "야구"))
+    )
+
+
 def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
     text = " ".join(
         value
@@ -71,6 +101,8 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
 
 
 def _similar(a: NewsItem, b: NewsItem) -> bool:
+    if _is_sports_heat_story(a) and _is_sports_heat_story(b):
+        return True
     left = _tokens(a.title)
     right = _tokens(b.title)
     if not left or not right:
