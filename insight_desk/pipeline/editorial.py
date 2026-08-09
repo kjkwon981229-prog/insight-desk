@@ -1,0 +1,477 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass
+
+from ..domain.models import EvidenceType, NewsItem, Topic
+from .clustering import StoryCluster
+from .normalization import normalize_text
+
+_TRUNCATION_RE = re.compile(r"\.{2,}|…")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
+_NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|년|개월|분|시|위|점|대|km))?")
+_DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
+_GENERIC_HEADLINE_RE = re.compile(r"^(?:.+\s)?관련\s*(?:보도|소식|기사)$")
+_GENERIC_SUMMARY_MARKERS = (
+    "단일 검색 결과만 확인되어",
+    "공통으로 확인되는 세부 사실은 제한적이다",
+)
+_EVENT_PATTERNS: tuple[tuple[str, tuple[str, ...], float], ...] = (
+    ("REGULATION", ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"), 84.0),
+    ("POLICY", ("정책", "대책", "기준금리", "공고", "확정"), 76.0),
+    ("EARNINGS", ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"), 78.0),
+    ("AWARD_CHART", ("1위", "차트", "관왕", "수상"), 74.0),
+    ("PRODUCT_RELEASE", ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정"), 68.0),
+    ("INDUSTRY_CHANGE", ("투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환"), 66.0),
+    ("SPORTS_INTERRUPTION", ("폭염", "중단", "멈춘"), 70.0),
+    ("SPORTS_RESULT", ("경기 결과", "승리", "패배", "홈런", "순위", "기록"), 72.0),
+    ("ROSTER_PERSONNEL", ("선발", "엔트리", "부상", "트레이드", "등록", "말소"), 74.0),
+    ("SCHEDULED_EVENT", ("일정", "예정", "개최", "시구", "공연", "콘서트", "컴백", "월드투어"), 64.0),
+    ("ANNOUNCEMENT", ("발표", "공지", "공개"), 62.0),
+    ("STATISTIC", ("통계", "지표", "평균", "변동폭", "최고", "최대", "최저", "상승", "하락", "증가", "감소"), 68.0),
+    ("MARKET_MOVE", ("환율", "코스피", "증시", "주가", "금리", "변동성", "급등", "급락"), 64.0),
+    ("MERCHANDISE", ("굿즈", "유니폼", "패션", "상품", "기념품", "리본핀", "콜라보"), 18.0),
+)
+_GENERIC_TERMS = {
+    "관련", "보도", "소식", "기사", "변화", "주요", "뉴스", "확인", "공개", "발표",
+    "올해", "이번", "지난", "전망", "이슈",
+}
+
+
+def _fold(value: str) -> str:
+    return unicodedata.normalize("NFKC", normalize_text(value)).casefold()
+
+
+def _compact(value: str) -> str:
+    return re.sub(r"[^a-z0-9가-힣]", "", _fold(value))
+
+
+def _tokens(value: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(token for token in _TOKEN_RE.findall(_fold(value)) if len(token) >= 2))
+
+
+def _contains(text: str, phrase: str) -> bool:
+    compact_text = _compact(text)
+    compact_phrase = _compact(phrase)
+    return bool(compact_phrase and compact_phrase in compact_text)
+
+
+def safe_evidence_text(value: str) -> str:
+    text = normalize_text(value)
+    return "" if _TRUNCATION_RE.search(text) else text
+
+
+def effective_title(item: NewsItem) -> str:
+    metadata_title = safe_evidence_text(item.metadata_title)
+    if metadata_title:
+        return metadata_title
+    search_title = safe_evidence_text(item.title)
+    if search_title:
+        return search_title
+    raw = normalize_text(item.metadata_title or item.title)
+    marker = _TRUNCATION_RE.search(raw)
+    return raw[: marker.start()].strip(" ,·-—") if marker else raw
+
+
+def effective_lead(item: NewsItem) -> str:
+    metadata_description = safe_evidence_text(item.metadata_description)
+    return metadata_description or safe_evidence_text(item.summary)
+
+
+def effective_text(item: NewsItem) -> str:
+    return " ".join(part for part in (effective_title(item), effective_lead(item)) if part)
+
+
+def topic_anchor_terms(topic: Topic) -> tuple[str, ...]:
+    """Return configured intent vocabulary plus a narrow test/config fallback."""
+
+    values = list(topic.intent_anchors)
+    values.extend(_TOKEN_RE.findall(topic.name))
+    values.extend(_TOKEN_RE.findall(topic.id.replace("_", " ")))
+    values.extend(topic.all_news_queries)
+    return tuple(dict.fromkeys(value for value in values if value.strip()))
+
+
+@dataclass(frozen=True)
+class RelevanceAssessment:
+    score: float
+    passed: bool
+    direct_title_match: bool
+    lead_match: bool
+    background_only: bool
+    negative_match: bool
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class EventAssessment:
+    event_type: str
+    significance: float
+    concrete_fact_count: int
+    passed: bool
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class EvidenceAssessment:
+    strength: float
+    publisher_diversity: int
+    official: bool
+    metadata_complete: bool
+    passed: bool
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class EditorialAssessment:
+    relevance: RelevanceAssessment
+    event: EventAssessment
+    evidence: EvidenceAssessment
+    completeness: float
+    novelty: str
+    event_signature: str
+    qualified: bool
+    final_score: float
+    reasons: tuple[str, ...]
+
+
+def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment:
+    best: RelevanceAssessment | None = None
+    anchors = topic_anchor_terms(topic)
+    for item in cluster.items:
+        title = effective_title(item)
+        lead = effective_lead(item)
+        raw_body = safe_evidence_text(item.summary)
+        query = item.query
+        query_tokens = _tokens(query)
+        title_query = _contains(title, query)
+        lead_query = _contains(lead, query)
+        body_query = _contains(raw_body, query)
+        title_token_hits = sum(1 for token in query_tokens if _contains(title, token))
+        lead_token_hits = sum(1 for token in query_tokens if _contains(lead, token))
+        anchor_title = any(_contains(title, anchor) for anchor in anchors)
+        anchor_lead = any(_contains(lead, anchor) for anchor in anchors)
+        negative_title = any(_contains(title, term) for term in topic.negative_context)
+        negative_lead = any(_contains(lead, term) for term in topic.negative_context)
+        negative_body = any(_contains(raw_body, term) for term in topic.negative_context)
+
+        score = 0.0
+        reasons: list[str] = []
+        if title_query:
+            score += 58.0
+            reasons.append("EXACT_QUERY_IN_TITLE")
+        elif title_token_hits:
+            score += 42.0 + min(10.0, title_token_hits * 4.0)
+            reasons.append("QUERY_TOKEN_IN_TITLE")
+        elif lead_query:
+            score += 32.0
+            reasons.append("EXACT_QUERY_IN_LEAD")
+        elif lead_token_hits:
+            score += 24.0
+            reasons.append("QUERY_TOKEN_IN_LEAD")
+        elif body_query or any(_contains(raw_body, token) for token in query_tokens):
+            score += 8.0
+            reasons.append("QUERY_ONLY_IN_SNIPPET")
+
+        if anchor_title:
+            score += 42.0
+            reasons.append("CORE_ENTITY_IN_TITLE")
+        elif anchor_lead:
+            score += 14.0
+            reasons.append("CORE_ENTITY_IN_LEAD")
+        if negative_title:
+            score -= 30.0
+            reasons.append("NEGATIVE_CONTEXT_IN_TITLE")
+        elif negative_lead:
+            score -= 22.0
+            reasons.append("NEGATIVE_CONTEXT_IN_LEAD")
+        elif negative_body:
+            score -= 14.0
+            reasons.append("NEGATIVE_CONTEXT_IN_SNIPPET")
+
+        background_only = bool(
+            (body_query or any(_contains(raw_body, token) for token in query_tokens))
+            and not (title_query or title_token_hits or lead_query or lead_token_hits or anchor_title)
+        )
+        if background_only:
+            score -= 28.0
+            reasons.append("BACKGROUND_ONLY_MENTION")
+        if not title_query and not title_token_hits and not anchor_title and not (lead_query or lead_token_hits or anchor_lead):
+            score -= 18.0
+            reasons.append("NO_TITLE_OR_LEAD_INTENT")
+
+        assessment = RelevanceAssessment(
+            score=round(max(0.0, min(100.0, score)), 3),
+            passed=score >= 40.0 and bool(title_query or title_token_hits or anchor_title) and not background_only and not (negative_title or negative_lead),
+            direct_title_match=bool(title_query or title_token_hits or anchor_title),
+            lead_match=bool(lead_query or lead_token_hits or anchor_lead),
+            background_only=background_only,
+            negative_match=bool(negative_title or negative_lead or negative_body),
+            reasons=tuple(dict.fromkeys(reasons)),
+        )
+        if best is None or assessment.score > best.score:
+            best = assessment
+    return best or RelevanceAssessment(0.0, False, False, False, True, False, ("NO_EVIDENCE",))
+
+
+def _event_terms_for(topic: Topic) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*topic.event_terms, *(term for _, terms, _ in _EVENT_PATTERNS for term in terms))))
+
+
+def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
+    text = " ".join(effective_text(item) for item in cluster.items)
+    title_text = " ".join(effective_title(item) for item in cluster.items)
+    event_type = "OTHER"
+    significance = 0.0
+    matched_terms: list[str] = []
+    def standalone(term: str) -> bool:
+        if " " in term:
+            return _contains(text, term)
+        return bool(re.search(rf"(?<![가-힣A-Za-z0-9]){re.escape(term)}(?![가-힣A-Za-z0-9])", text, re.IGNORECASE))
+
+    sports_context = any(
+        standalone(term)
+        for term in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "엔트리", "선발", "트레이드", "경기 결과")
+    )
+    def detect_event(source: str) -> tuple[str, float, list[str]]:
+        detected_type = "OTHER"
+        detected_value = 0.0
+        detected_terms: list[str] = []
+        for candidate_type, patterns, value in _EVENT_PATTERNS:
+            if candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"} and not sports_context:
+                continue
+            hits = [pattern for pattern in patterns if _contains(source, pattern)]
+            if hits and value > detected_value:
+                detected_type = candidate_type
+                detected_value = value
+                detected_terms = hits
+        return detected_type, detected_value, detected_terms
+
+    # The title is the strongest intent/event evidence.  Only fall back to
+    # the combined lead text when the title contains no recognizable event;
+    # this prevents a secondary sentence (for example an album mention in a
+    # sports article) from changing the story's event type.
+    event_type, significance, matched_terms = detect_event(title_text)
+    if event_type == "OTHER":
+        event_type, significance, matched_terms = detect_event(text)
+    if event_type == "SCHEDULED_EVENT" and any(
+        _contains(text, term) for term in ("블루카펫", "행사 참석", "행사 일정에 참석", "포토")
+    ) and not any(_contains(text, term) for term in ("공연", "콘서트", "컴백", "앨범", "경기 결과", "시구")):
+        event_type = "LOW_VALUE_APPEARANCE"
+        significance = 20.0
+        matched_terms = ["LOW_VALUE_APPEARANCE"]
+    numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(text)))
+    dates = tuple(dict.fromkeys(_DATE_RE.findall(text)))
+    event_terms = _event_terms_for(topic)
+    topic_terms = topic_anchor_terms(topic)
+    title_subject = any(_contains(title_text, term) for term in topic_terms)
+    action_signal_terms = (
+        "발표", "공개", "출시", "발매", "유치", "투자", "인수", "규제", "시행", "고시",
+        "상승", "하락", "증가", "감소", "변동", "급등", "급락", "통계", "지표", "실적",
+        "경기 결과", "승리", "패배", "중단", "멈춘", "컴백", "공연", "콘서트", "트레이드", "부상",
+        "차트", "관왕", "수상", "순위", "일정", "예정", "시구", "선발", "엔트리",
+    )
+    action = bool(any(_contains(title_text, term) or _contains(text, term) for term in action_signal_terms))
+    concrete = int(bool(title_subject)) + int(action) + int(bool(numbers or dates))
+    if event_type == "MERCHANDISE":
+        significance = min(significance, 18.0)
+    if event_type == "OTHER":
+        reasons = ("NO_CONCRETE_EVENT",)
+    else:
+        reasons = (event_type, "CONCRETE_EVENT" if concrete >= 2 else "WEAK_EVENT_STRUCTURE")
+    passed = event_type != "OTHER" and significance >= 35.0 and concrete >= 2 and action
+    return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
+
+
+def _is_official(item: NewsItem) -> bool:
+    if EvidenceType.OFFICIAL_SOURCE in item.provenance:
+        return True
+    domain = item.source_domain.casefold()
+    return domain.endswith((".go.kr", ".gov", ".or.kr")) or "bok.or.kr" in domain
+
+
+def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
+    publishers = {item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain}
+    official = any(_is_official(item) for item in cluster.items)
+    metadata_complete = any(
+        len(effective_title(item)) >= 12 and len(effective_lead(item)) >= 24 for item in cluster.items
+    )
+    repeated = max(0, len(cluster.items) - len(publishers))
+    strength = min(40.0, len(publishers) * 14.0) + (42.0 if official else 0.0)
+    if metadata_complete:
+        strength += 18.0
+    strength -= min(8.0, repeated * 1.5)
+    reasons: list[str] = []
+    if official:
+        reasons.append("OFFICIAL_SOURCE")
+    if len(publishers) >= 2:
+        reasons.append("INDEPENDENT_PUBLISHERS")
+    elif publishers:
+        reasons.append("SINGLE_PUBLISHER")
+    if metadata_complete:
+        reasons.append("COMPLETE_METADATA")
+    passed = bool(publishers) and (len(publishers) >= 2 or official or metadata_complete)
+    return EvidenceAssessment(
+        round(max(0.0, min(100.0, strength)), 3),
+        len(publishers),
+        official,
+        metadata_complete,
+        passed,
+        tuple(reasons),
+    )
+
+
+def completeness_score(cluster: StoryCluster) -> float:
+    representative = cluster.representative
+    title = effective_title(representative)
+    lead = effective_lead(representative)
+    raw_title = representative.metadata_title or representative.title
+    score = 25.0 if title and raw_title and not _TRUNCATION_RE.search(raw_title) else 0.0
+    score += 25.0 if lead and not _TRUNCATION_RE.search(lead) else 0.0
+    score += 15.0 if _NUMBER_RE.search(title) or _DATE_RE.search(title) else 0.0
+    score += 15.0 if any(_NUMBER_RE.search(effective_text(item)) for item in cluster.items) else 0.0
+    score += 20.0 if cluster.source_count > 1 else 0.0
+    return min(100.0, score)
+
+
+def is_generic_headline(value: str) -> bool:
+    text = normalize_text(value)
+    return not text or bool(_GENERIC_HEADLINE_RE.match(text)) or text in {"관련 보도", "관련 소식"}
+
+
+def is_generic_summary(value: str) -> bool:
+    text = normalize_text(value)
+    return any(marker in text for marker in _GENERIC_SUMMARY_MARKERS)
+
+
+def event_signature(cluster: StoryCluster, event: EventAssessment | None = None) -> str:
+    assessed = event or assess_event(cluster, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ()))
+    title = effective_title(cluster.representative)
+    terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
+    numbers = _NUMBER_RE.findall(" ".join(effective_text(item) for item in cluster.items))
+    dates = _DATE_RE.findall(" ".join(effective_text(item) for item in cluster.items))
+    return "|".join(dict.fromkeys((assessed.event_type, *terms[:8], *numbers[:3], *dates[:2])))
+
+
+def assess_cluster(
+    cluster: StoryCluster,
+    topic: Topic,
+    *,
+    novelty: str = "UNKNOWN_HISTORY",
+) -> EditorialAssessment:
+    relevance = assess_relevance(cluster, topic)
+    event = assess_event(cluster, topic)
+    evidence = assess_evidence(cluster)
+    completeness = completeness_score(cluster)
+    signature = event_signature(cluster, event)
+    representative = cluster.representative
+    raw_headline = representative.metadata_title or representative.title
+    # A source headline may use an editorial ellipsis even when the clause
+    # before it is a complete, fact-bearing headline.  The renderer removes
+    # the marker; selection should reject only the resulting generic or empty
+    # headline, not every article that contains the marker.
+    generic_headline = is_generic_headline(effective_title(representative))
+    generic_summary = is_generic_summary(effective_lead(representative))
+    single_source_supported = (
+        cluster.source_count == 1
+        and (
+            evidence.official
+            or evidence.metadata_complete
+            or (
+                relevance.passed
+                and relevance.direct_title_match
+                and relevance.score >= 40
+                and event.significance >= 64
+                and event.concrete_fact_count >= 2
+            )
+        )
+    )
+    synthesis_ready = not (
+        event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
+        and not (
+            _NUMBER_RE.search(effective_title(cluster.representative))
+            or _DATE_RE.search(effective_title(cluster.representative))
+            or effective_lead(cluster.representative)
+            or cluster.source_count > 1
+        )
+    )
+    reasons = list(relevance.reasons + event.reasons + evidence.reasons)
+    if single_source_supported:
+        reasons.append("SUPPORTED_SINGLE_SOURCE")
+    if generic_headline:
+        reasons.append("GENERIC_HEADLINE")
+    if generic_summary:
+        reasons.append("GENERIC_SUMMARY")
+    if novelty == "NEW":
+        novelty_value = 100.0
+        reasons.append("NEW")
+    elif novelty == "UPDATE":
+        novelty_value = 86.0
+        reasons.append("UPDATE")
+    elif novelty == "UNCHANGED":
+        novelty_value = 0.0
+        reasons.append("UNCHANGED")
+    else:
+        novelty_value = 52.0
+        reasons.append("UNKNOWN_HISTORY")
+    recency = max(0.0, min(100.0, representative.score))
+    personal = min(100.0, max(0.0, float(topic.priority)))
+    score = (
+        relevance.score * 0.32
+        + event.significance * 0.25
+        + evidence.strength * 0.16
+        + completeness * 0.10
+        + novelty_value * 0.10
+        + recency * 0.05
+        + personal * 0.02
+    )
+    hard_reject = (
+        generic_headline
+        or generic_summary
+        or not relevance.passed
+        or not event.passed
+        or not evidence.passed and not single_source_supported
+        or (novelty == "UNCHANGED")
+        or (event.event_type == "MERCHANDISE" and not evidence.official)
+        or not synthesis_ready
+        or (cluster.source_count == 1 and not single_source_supported)
+        or (event.event_type == "OTHER" and cluster.source_count == 1 and event.concrete_fact_count == 0)
+    )
+    qualified = not hard_reject and score >= 42.0
+    if qualified:
+        reasons.append("QUALIFIED")
+    else:
+        reasons.append("REJECTED_BY_EDITORIAL_GATE")
+    return EditorialAssessment(
+        relevance=relevance,
+        event=event,
+        evidence=evidence,
+        completeness=round(completeness, 3),
+        novelty=novelty,
+        event_signature=signature,
+        qualified=qualified,
+        final_score=round(score, 4),
+        reasons=tuple(dict.fromkeys(reasons)),
+    )
+
+
+def why_selected(assessment: EditorialAssessment) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if assessment.relevance.score >= 70:
+        reasons.append("HIGH_INTENT")
+    elif assessment.relevance.passed:
+        reasons.append("DIRECT_TOPIC_MATCH")
+    if assessment.event.passed:
+        reasons.append("CONCRETE_EVENT")
+    if assessment.evidence.official:
+        reasons.append("OFFICIAL_SOURCE")
+    elif assessment.evidence.publisher_diversity >= 2:
+        reasons.append("MULTI_SOURCE")
+    elif assessment.evidence.metadata_complete:
+        reasons.append("COMPLETE_METADATA")
+    else:
+        reasons.append("SUPPORTED_SINGLE_SOURCE")
+    if assessment.novelty in {"NEW", "UPDATE"}:
+        reasons.append(assessment.novelty)
+    return tuple(reasons)
