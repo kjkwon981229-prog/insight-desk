@@ -1,0 +1,68 @@
+{
+  "A_statistic_official": {
+    "topic": "경제",
+    "items": [
+      {"title": "원달러 환율 변동폭 47원 금융위기 후 최고", "summary": "한국은행 통계를 인용해 월평균 변동폭이 47원으로 집계됐다고 전했다.", "domain": "bok.or.kr", "official": true},
+      {"title": "원달러 월평균 변동폭 47원 금융위기 이후 최대", "summary": "월평균 수치가 47원이라는 같은 흐름을 전했다.", "domain": "news.example"}
+    ]
+  },
+  "B_scheduled_event": {
+    "topic": "스포츠",
+    "items": [
+      {"title": "민니 11일 두산-한화전 시구", "summary": "11일 잠실야구장에서 시구 예정이다.", "domain": "sports.example"},
+      {"title": "민니, 11일 잠실 두산-한화전 시구", "summary": "행사 일정과 장소를 전했다.", "domain": "ent.example"}
+    ]
+  },
+  "C_repeated_fact": {
+    "topic": "정책",
+    "items": [
+      {"title": "정부 주거 지원 대책 발표", "summary": "정부가 같은 주거 지원 대책을 발표했다.", "domain": "policy-a.example"},
+      {"title": "정부 주거 지원 대책 세부안 발표", "summary": "주거 지원 대책의 세부 내용이 공개됐다.", "domain": "policy-b.example"}
+    ]
+  },
+  "D_trend_rise": {
+    "topic": "테크",
+    "items": [
+      {"title": "AI 에이전트 기업 발표", "summary": "AI 에이전트 활용 계획을 발표했다.", "domain": "tech.example"}
+    ]
+  },
+  "E_trend_flat": {
+    "topic": "문화",
+    "items": [
+      {"title": "K-POP 해외 공연 일정 발표", "summary": "해외 공연 일정이 공개됐다.", "domain": "music.example"}
+    ]
+  },
+  "F_single_source": {
+    "topic": "지역",
+    "items": [
+      {"title": "지역 행사 소식 전달", "summary": "현장 소식이 전해졌다.", "domain": "local.example"}
+    ]
+  },
+  "G_source_disagreement": {
+    "topic": "기업",
+    "items": [
+      {"title": "기업 매출 100억원 기록", "summary": "분기 매출이 100억원이라고 전했다.", "domain": "finance-a.example"},
+      {"title": "기업 매출 120억원 기록", "summary": "분기 매출을 120억원으로 보도했다.", "domain": "finance-b.example"}
+    ]
+  },
+  "H_no_follow_up": {
+    "topic": "사회",
+    "items": [
+      {"title": "지역 현장 소식 전달", "summary": "현장 소식이 전해졌다.", "domain": "society.example"}
+    ]
+  },
+  "I_official_source": {
+    "topic": "공공",
+    "items": [
+      {"title": "공공기관 서비스 운영 변경", "summary": "공공기관이 서비스 운영 변경을 공지했다.", "domain": "agency.go.kr", "official": true},
+      {"title": "공공기관 서비스 변경 공지", "summary": "운영 변경 내용을 확인했다.", "domain": "public.example"}
+    ]
+  },
+  "J_partial_source": {
+    "topic": "산업",
+    "items": [
+      {"title": "산업 행사 일정 공개", "summary": "산업 행사 일정이 공개됐다.", "domain": "industry.example"},
+      {"title": "산업 행사 일정 추가 보도", "summary": "", "domain": "unavailable.example"}
+    ]
+  }
+}
