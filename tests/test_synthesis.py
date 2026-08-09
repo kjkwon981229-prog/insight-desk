@@ -186,6 +186,26 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("한 건", evidence)
         self.assertEqual(certainty.value, "uncertain")
         self.assertNotIn("후속 공식 발표", summary)
+        self.assertNotIn("관련 내용이 확인됐다", summary)
+        self.assertIn("추가 확인이 필요하다", summary)
+
+    def test_truncated_source_artifacts_never_become_facts_or_headline(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N013",
+                    "영탁, 명곡 완전 재해석… 트로트의 진짜 맛",
+                    "... 코스피도 이틀째 하락했다. 7일 코...",
+                    "music.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="문화", trend_metrics=())
+        displayed = headline + summary + " ".join(facts.key_changes)
+        self.assertNotIn("...", displayed)
+        self.assertNotIn("…", displayed)
+        self.assertEqual(headline, "영탁 관련 보도")
 
     def test_conflicting_numeric_reports_are_flagged_for_confirmation(self) -> None:
         cluster = StoryCluster(

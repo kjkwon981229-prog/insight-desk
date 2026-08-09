@@ -100,6 +100,16 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("psat", {cluster.topic_id for cluster in result.selected})
         self.assertEqual(len(result.selected), 4)
 
+    def test_irrelevant_low_signal_candidate_is_not_used_as_filler(self) -> None:
+        candidate = replace(
+            _item("noise", "psat", score=90.0),
+            query="PSAT",
+            title="지역 행사 소식",
+            summary="현장 소식만 전해졌다.",
+        )
+        result = select_clusters((StoryCluster("psat", (candidate,)),), _topics(), limit=10)
+        self.assertEqual(result.selected, ())
+
     def test_cap_relaxes_when_only_one_topic_qualifies(self) -> None:
         result = select_clusters(tuple(_cluster(f"ai-{i}", "ai") for i in range(7)), _topics(), limit=10)
         self.assertEqual(len(result.selected), 7)

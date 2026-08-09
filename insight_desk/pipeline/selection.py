@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from ..domain.models import EvidenceType, NewsItem, Topic
@@ -25,6 +26,27 @@ def _publisher_count(cluster: StoryCluster) -> int:
     return len({item.source_domain for item in cluster.items if item.source_domain})
 
 
+def _query_tokens(query: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(token.casefold() for token in re.findall(r"[A-Za-z0-9가-힣·]{2,}", query)))
+
+
+def _has_query_relevance(cluster: StoryCluster) -> bool:
+    for item in cluster.items:
+        text = f"{item.title} {item.summary}".casefold()
+        tokens = _query_tokens(item.query)
+        if not tokens or item.query.casefold() in text or any(token in text for token in tokens):
+            return True
+    return False
+
+
+def _has_observable_signal(cluster: StoryCluster) -> bool:
+    text = " ".join(f"{item.title} {item.summary}" for item in cluster.items)
+    return bool(
+        re.search(r"\d", text)
+        or re.search(r"(?:일정|예정|통계|지표|공시|공식|발표|공개|확정|시행|경기|시구|선발|출시|실적|매출|금리|환율|증시|상승|하락|증가|감소|확대|축소|기록)", text)
+    )
+
+
 def candidate_quality(cluster: StoryCluster, topic: Topic) -> float:
     """Score a story inside one topic without using raw media volume.
 
@@ -46,7 +68,13 @@ def candidate_quality(cluster: StoryCluster, topic: Topic) -> float:
 
 def _meaningful(cluster: StoryCluster, quality: float) -> bool:
     representative = cluster.representative
-    return quality >= 20.0 and len(representative.title.strip()) >= 8 and len(representative.summary.strip()) >= 15
+    return (
+        quality >= 20.0
+        and len(representative.title.strip()) >= 8
+        and len(representative.summary.strip()) >= 15
+        and _has_query_relevance(cluster)
+        and (_has_observable_signal(cluster) or cluster.source_count > 1)
+    )
 
 
 def _coverage(cluster: StoryCluster) -> set[str]:

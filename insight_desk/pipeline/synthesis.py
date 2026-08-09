@@ -94,19 +94,51 @@ _GENERIC_CHANGE_WORDS = {"기록", "발표", "공개", "확인"}
 _EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기"}
 _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락"}
+_TRUNCATION_RE = re.compile(r"\.{2,}|…")
+_TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 
 
 def _clean_headline(value: str) -> str:
     text = normalize_text(value)
     text = re.sub(r"^\s*(?:\[[^]]+\]|속보|단독|전문)\s*[:：]?\s*", "", text)
     text = text.replace("원달러", "원·달러")
-    # Search headlines often use one ellipsis as a visual separator. It is
-    # still an indication that the source title was copied, so remove it
-    # before the title becomes user-facing briefing copy.
-    text = re.sub(r"(?:\.{2,}|…)", " ", text)
+    # A search title containing an ellipsis may be truncated. Keep the
+    # complete clause before the marker; never expose the marker or its
+    # possibly incomplete tail as briefing copy.
+    marker = _TRUNCATION_RE.search(text)
+    if marker:
+        text = text[: marker.start()]
     text = re.sub(r"[\"“”‘’]", "", text)
     text = re.sub(r"\s+", " ", text).strip(" .·-—")
     return text
+
+
+def _editorial_headline(value: str, *, subject: str = "") -> str:
+    """Reduce a source headline to a complete, non-truncated display phrase."""
+
+    raw = normalize_text(value)
+    cleaned = _clean_headline(raw)
+    if _TRUNCATION_RE.search(raw):
+        clauses = [part.strip(" ,·-—") for part in re.split(r"[,，|｜:：]", cleaned) if part.strip()]
+        first = clauses[0] if clauses else ""
+        if len(first) >= 5:
+            return first
+        if subject.strip():
+            return f"{subject.strip()} 관련 보도"
+    if len(cleaned) <= 56:
+        return cleaned
+    clauses = [part.strip(" ,·-—") for part in re.split(r"[,，|｜:：]", cleaned) if part.strip()]
+    for clause in clauses:
+        if 8 <= len(clause) <= 56:
+            return clause
+    return cleaned
+
+
+def _safe_evidence_text(value: str) -> str:
+    """Return a snippet only when it is a complete, non-truncated fragment."""
+
+    text = normalize_text(value)
+    return "" if _TRUNCATION_RE.search(text) else text
 
 
 def _unique(values: list[str]) -> tuple[str, ...]:
@@ -213,6 +245,10 @@ def _change_phrases(text: str) -> tuple[str, ...]:
         start = max(0, index - 14)
         end = min(len(text), index + len(marker) + 8)
         fragment = re.sub(r"\s+", " ", text[start:end]).strip(" ,·")
+        # Description snippets can begin or end in the middle of a sentence.
+        # Such fragments are evidence only, never a display fact.
+        if _TRUNCATION_RE.search(fragment):
+            continue
         if fragment and fragment not in phrases:
             phrases.append(fragment)
     return tuple(phrases[:2])
@@ -328,7 +364,7 @@ def _headline(
         if event_action:
             return " ".join(part for part in (subject, event_date, event_action) if part).strip() or cleaned
         return f"{subject} 일정" if date else subject
-    return cleaned
+    return _editorial_headline(title, subject=subject)
 
 
 def _summary(
@@ -344,14 +380,21 @@ def _summary(
     uncertainty: str,
 ) -> str:
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
-        particle = _particle(subject)
-        if change in _GENERIC_CHANGE_WORDS:
-            ending = "기록됐다."
-        elif change in _DIRECTIONAL_CHANGE_WORDS:
-            ending = f"{change}했다."
+        summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
+        if change and change not in _GENERIC_CHANGE_WORDS:
+            marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
+            if marker and summary_subject and numbers[0].endswith(("%", "달러")):
+                sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {marker}했다."
+            else:
+                lead = f"{summary_subject} 관련 " if summary_subject else ""
+                sentence = f"{lead}{numbers[0]} 수치와 {change} 흐름이 "
+                sentence += "여러 보도에서 확인됐다." if source_count > 1 else "한 건의 보도에서 제시됐다. 추가 확인이 필요하다."
+        elif source_count > 1:
+            lead = f"{summary_subject} 관련 " if summary_subject else ""
+            sentence = f"{lead}{numbers[0]} 수치가 여러 보도에서 반복됐지만 변화 방향은 추가 확인이 필요하다."
         else:
-            ending = f"{change} 수준으로 확인됐다." if change else "관련 수치가 확인됐다."
-        sentence = f"{subject}{particle} {_number_with_ro(numbers[0])} {ending}"
+            lead = f"{summary_subject} 관련 " if summary_subject else ""
+            sentence = f"{lead}{numbers[0]} 수치가 한 건의 보도에서 제시돼 추가 확인이 필요하다."
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         event_phrase = action if action in _EVENT_ACTIONS else ""
         if date or location:
@@ -370,7 +413,10 @@ def _summary(
     elif event_type == "ANNOUNCEMENT":
         sentence = f"{subject or _clean_headline(title)} 발표가 확인됐다."
     else:
-        sentence = f"{_clean_headline(title)} 관련 내용이 확인됐다."
+        if source_count > 1:
+            sentence = "여러 매체가 같은 이슈를 전했지만, 공통으로 확인되는 세부 사실은 제한적이다."
+        else:
+            sentence = "단일 검색 결과만 확인되어 세부 내용은 추가 확인이 필요하다."
     if uncertainty:
         sentence += f" {uncertainty}"
     return sentence.replace("...", "").replace("…", "").strip()
@@ -399,7 +445,7 @@ def synthesize_cluster(
     items = cluster.items
     representative = cluster.representative
     combined = " ".join(
-        f"{getattr(item, 'title', '')} {getattr(item, 'summary', '')}" for item in items
+        f"{_clean_headline(getattr(item, 'title', ''))} {_safe_evidence_text(getattr(item, 'summary', ''))}" for item in items
     )
     title = _clean_headline(representative.title)
     numbers = _unique(list(_numbers(combined)))
@@ -446,7 +492,10 @@ def synthesize_cluster(
         time=times[0] if times else "",
         location=location,
         key_numbers=numbers[:3],
-        key_changes=_unique(([change] if change else []) + list(_change_phrases(combined)))[:2],
+        key_changes=_unique(
+            ([change] if change else [])
+            + list(_change_phrases(" ".join(_clean_headline(getattr(item, "title", "")) for item in items)))
+        )[:2],
         official_source=official,
         source_count=source_count,
         source_diversity=source_count,
@@ -456,7 +505,7 @@ def synthesize_cluster(
         next_known_event=next_signal,
         uncertainty=uncertainty,
     )
-    headline = _headline(title, event_type, subject, numbers, change, date=date, action=action)
+    headline = _headline(representative.title, event_type, subject, numbers, change, date=date, action=action)
     summary = _summary(
         title,
         event_type,
