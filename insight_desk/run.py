@@ -18,7 +18,8 @@ from .pipeline.clustering import cluster_news
 from .pipeline.deduplication import deduplicate_news
 from .pipeline.normalization import normalize_news_payloads
 from .pipeline.scoring import score_news
-from .pipeline.selection import topic_diverse_enrichment_candidates
+from .pipeline.novelty import load_previous_signatures
+from .pipeline.selection import cap_topic_candidates, topic_diverse_enrichment_candidates
 from .pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 from .security import assert_no_secret_values, redact_error
 from .web.render import render_site
@@ -41,8 +42,19 @@ def _write_state(path: Path, state: RunState, secrets: tuple[str, ...]) -> None:
     temp.replace(path)
 
 
-def _write_selection_audit(path: Path, audit: tuple[dict[str, object], ...], secrets: tuple[str, ...]) -> None:
-    payload = {"selection_audit": audit}
+def _write_selection_audit(
+    path: Path,
+    *,
+    audit: tuple[dict[str, object], ...],
+    funnel: dict[str, dict[str, int]],
+    selected_reviews: tuple[dict[str, object], ...],
+    secrets: tuple[str, ...],
+) -> None:
+    payload = {
+        "selection_audit": audit,
+        "funnel": funnel,
+        "selected_stories": selected_reviews,
+    }
     assert_no_secret_values(payload, secrets)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -94,7 +106,8 @@ def execute(
         normalized = normalize_news_payloads(news_collection.raw_items)
         deduplicated = deduplicate_news(normalized)
         scored = score_news(deduplicated, topics, now=current)
-        enriched = scored
+        bounded = cap_topic_candidates(scored, topics)
+        enriched = bounded
         enrichment_report: EnrichmentReport | None = None
         transport = getattr(client, "transport", None)
         if transport is not None:
@@ -102,7 +115,7 @@ def execute(
                 f"{cache_path.stem}-metadata{cache_path.suffix or '.json'}"
             )
             enrichment_targets = topic_diverse_enrichment_candidates(
-                scored,
+                bounded,
                 topics,
                 limit=METADATA_ENRICHMENT_LIMIT,
             )
@@ -111,7 +124,7 @@ def execute(
                 cache=ResponseCache(metadata_cache_path),
             ).enrich(enrichment_targets, limit=METADATA_ENRICHMENT_LIMIT)
             by_evidence_id = {item.evidence_id: item for item in enriched_targets}
-            enriched = tuple(by_evidence_id.get(item.evidence_id, item) for item in scored)
+            enriched = tuple(by_evidence_id.get(item.evidence_id, item) for item in bounded)
         clusters = cluster_news(enriched)
         points = parse_trend_batches(trend_collection.raw_batches)
         metrics = compute_trend_metrics(points)
@@ -138,6 +151,7 @@ def execute(
             trend_metrics=metrics,
             generated_at=current,
             enrichment=enrichment_report,
+            previous_signatures=load_previous_signatures(output_dir),
         )
         try:
             render_site(briefing, output_dir)
@@ -150,7 +164,20 @@ def execute(
             )
             _write_state(state_path, failure, secrets)
             return failure
-        _write_selection_audit(state_path.with_name("selection-audit.json"), briefing.selection_audit, secrets)
+        _write_selection_audit(
+            state_path.with_name("selection-audit.json"),
+            audit=briefing.selection_audit,
+            funnel=briefing.selection_funnel,
+            selected_reviews=briefing.selected_reviews,
+            secrets=secrets,
+        )
+        _write_selection_audit(
+            state_path.with_name("live-acceptance.json"),
+            audit=briefing.selection_audit,
+            funnel=briefing.selection_funnel,
+            selected_reviews=briefing.selected_reviews,
+            secrets=secrets,
+        )
         validation_errors = validate_artifact(output_dir, secrets=secrets)
         if validation_errors:
             failure = replace(
