@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster
+from .editorial import (
+    EditorialAssessment,
+    assess_cluster,
+    assess_relevance,
+    effective_title,
+    why_selected,
+)
+from .novelty import classify_novelty
 
 
 @dataclass(frozen=True)
 class SelectionResult:
     selected: tuple[StoryCluster, ...]
     audit: tuple[dict[str, object], ...]
+    funnel: dict[str, dict[str, int]]
+    assessments: dict[str, EditorialAssessment]
+    selected_reviews: tuple[dict[str, object], ...]
 
 
 def topic_ids_for_item(item: NewsItem) -> tuple[str, ...]:
@@ -23,58 +33,24 @@ def candidate_key(cluster: StoryCluster) -> str:
 
 
 def _publisher_count(cluster: StoryCluster) -> int:
-    return len({item.source_domain for item in cluster.items if item.source_domain})
-
-
-def _query_tokens(query: str) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(token.casefold() for token in re.findall(r"[A-Za-z0-9가-힣·]{2,}", query)))
-
-
-def _has_query_relevance(cluster: StoryCluster) -> bool:
-    for item in cluster.items:
-        text = f"{item.title} {item.summary}".casefold()
-        tokens = _query_tokens(item.query)
-        if not tokens or item.query.casefold() in text or any(token in text for token in tokens):
-            return True
-    return False
-
-
-def _has_observable_signal(cluster: StoryCluster) -> bool:
-    text = " ".join(f"{item.title} {item.summary}" for item in cluster.items)
-    return bool(
-        re.search(r"\d", text)
-        or re.search(r"(?:일정|예정|통계|지표|공시|공식|발표|공개|확정|시행|경기|시구|선발|출시|실적|매출|금리|환율|증시|상승|하락|증가|감소|확대|축소|기록)", text)
-    )
+    return len({item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain})
 
 
 def candidate_quality(cluster: StoryCluster, topic: Topic) -> float:
-    """Score a story inside one topic without using raw media volume.
+    """Legacy-compatible evidence-aware candidate quality helper.
 
-    The existing item score remains a recency/query signal. Priority is removed
-    from that score here and used only as a small tie-breaker in final lineup
-    selection. Publisher diversity and official evidence add more value than
-    repeated syndicated copies.
+    Final selection uses the separated editorial components.  This helper is
+    intentionally not a global importance score; independent publishers add
+    value while repeated copies have diminishing returns.
     """
 
     representative = cluster.representative
-    base = max(0.0, representative.score - topic.priority / 20.0)
-    diversity = min(3, _publisher_count(cluster)) * 3.0
+    publishers = _publisher_count(cluster)
     official = 5.0 if any(EvidenceType.OFFICIAL_SOURCE in item.provenance for item in cluster.items) else 0.0
-    metadata = 1.0 if any(EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items) else 0.0
-    completeness = 3.0 if len(representative.title) >= 10 and len(representative.summary) >= 18 else 0.0
-    repeated_copy_penalty = min(4.0, max(0, len(cluster.items) - _publisher_count(cluster)) * 0.75)
-    return round(base + diversity + official + metadata + completeness - repeated_copy_penalty, 4)
-
-
-def _meaningful(cluster: StoryCluster, quality: float) -> bool:
-    representative = cluster.representative
-    return (
-        quality >= 20.0
-        and len(representative.title.strip()) >= 8
-        and len(representative.summary.strip()) >= 15
-        and _has_query_relevance(cluster)
-        and (_has_observable_signal(cluster) or cluster.source_count > 1)
-    )
+    metadata = 1.0 if any(item.metadata_title or item.metadata_description for item in cluster.items) else 0.0
+    diversity_bonus = min(4, publishers) * 5.0
+    syndicated_penalty = min(10.0, max(0, len(cluster.items) - publishers) * 1.5)
+    return round(max(0.0, representative.score) + diversity_bonus + official + metadata - syndicated_penalty, 4)
 
 
 def _coverage(cluster: StoryCluster) -> set[str]:
@@ -84,120 +60,243 @@ def _coverage(cluster: StoryCluster) -> set[str]:
     return covered
 
 
+def _funnel_template() -> dict[str, int]:
+    return {
+        "deduplicated": 0,
+        "intent_pass": 0,
+        "event_pass": 0,
+        "evidence_pass": 0,
+        "novelty_pass": 0,
+        "qualified": 0,
+        "selected": 0,
+    }
+
+
 def select_clusters(
     clusters: tuple[StoryCluster, ...],
     topics: tuple[Topic, ...],
     *,
     limit: int = 10,
+    previous_signatures: tuple[str, ...] = (),
 ) -> SelectionResult:
-    """Select a repeatable, personal, multi-topic lineup.
+    """Select only qualified events, then apply coverage and diversity.
 
-    Core topics receive a representation opportunity only when a meaningful
-    candidate exists. Conditional topics follow the same quality gate. The
-    remaining slots use quality plus mild priority tie-breaking with a topic
-    saturation penalty; no filler is created to make a quota look balanced.
+    Ten is a maximum, never a quota.  Coverage is applied after intent,
+    event, evidence, and novelty gates so a weak item cannot enter merely to
+    represent a topic.
     """
 
     topic_by_id = {topic.id: topic for topic in topics}
     enabled_topics = tuple(topic for topic in topics if topic.enabled)
-    grouped: dict[str, list[tuple[StoryCluster, float, bool]]] = {topic.id: [] for topic in enabled_topics}
+    grouped: dict[str, list[tuple[StoryCluster, EditorialAssessment]]] = {
+        topic.id: [] for topic in enabled_topics
+    }
+    funnel: dict[str, dict[str, int]] = {topic.id: _funnel_template() for topic in enabled_topics}
+    assessments: dict[str, EditorialAssessment] = {}
+
     for cluster in clusters:
         topic = topic_by_id.get(cluster.topic_id)
         if topic is None or not topic.enabled:
             continue
-        quality = candidate_quality(cluster, topic)
-        grouped.setdefault(cluster.topic_id, []).append((cluster, quality, _meaningful(cluster, quality)))
-    for values in grouped.values():
-        values.sort(key=lambda value: (-value[1], value[0].representative.title))
+        funnel[topic.id]["deduplicated"] += 1
+        provisional = assess_cluster(cluster, topic)
+        novelty = classify_novelty(provisional.event_signature, previous_signatures)
+        assessment = assess_cluster(cluster, topic, novelty=novelty)
+        grouped.setdefault(topic.id, []).append((cluster, assessment))
+        assessments[f"{topic.id}:{candidate_key(cluster)}"] = assessment
+        if assessment.relevance.passed:
+            funnel[topic.id]["intent_pass"] += 1
+        if assessment.event.passed:
+            funnel[topic.id]["event_pass"] += 1
+        if assessment.evidence.passed or "SUPPORTED_SINGLE_SOURCE" in assessment.reasons:
+            funnel[topic.id]["evidence_pass"] += 1
+        if novelty != "UNCHANGED":
+            funnel[topic.id]["novelty_pass"] += 1
+        if assessment.qualified:
+            funnel[topic.id]["qualified"] += 1
 
-    selected: list[StoryCluster] = []
+    for values in grouped.values():
+        values.sort(key=lambda value: (-value[1].final_score, effective_title(value[0].representative)))
+
+    selected: list[tuple[StoryCluster, EditorialAssessment, str, float]] = []
     selected_keys: set[str] = set()
     selected_coverage: set[str] = set()
     topic_counts: dict[str, int] = {topic.id: 0 for topic in enabled_topics}
     records: dict[tuple[str, str], dict[str, object]] = {}
 
-    def record(cluster: StoryCluster, *, quality: float, meaningful: bool, selected_value: bool, reason: str, penalty: float = 0.0) -> None:
+    qualifying_topic_ids = {
+        topic_id for topic_id, values in grouped.items() if any(assessment.qualified for _, assessment in values)
+    }
+    capped = len(qualifying_topic_ids) >= 3
+
+    def local_rank(topic_id: str, key: str) -> int:
+        return next(
+            (index for index, (cluster, _) in enumerate(grouped.get(topic_id, ()), 1) if candidate_key(cluster) == key),
+            0,
+        )
+
+    def write_record(
+        cluster: StoryCluster,
+        assessment: EditorialAssessment,
+        *,
+        selected_value: bool,
+        reason: str,
+        penalty: float = 0.0,
+    ) -> None:
         topic = topic_by_id[cluster.topic_id]
-        records[(cluster.topic_id, candidate_key(cluster))] = {
-            "candidate_key": candidate_key(cluster),
+        key = candidate_key(cluster)
+        records[(cluster.topic_id, key)] = {
+            "candidate_key": key,
             "topic_id": cluster.topic_id,
             "topic_name": topic.name,
-            "quality": quality,
-            "topic_local_rank": next(
-                (index for index, value in enumerate(grouped.get(cluster.topic_id, ()), 1) if candidate_key(value[0]) == candidate_key(cluster)),
-                0,
-            ),
-            "qualifying": meaningful,
+            "topic_local_rank": local_rank(cluster.topic_id, key),
+            "qualifying": assessment.qualified,
             "selected": selected_value,
             "reason": reason,
             "saturation_penalty": round(penalty, 3),
             "conditional": topic.conditional,
-            "source_diversity": _publisher_count(cluster),
+            "source_count": cluster.source_count,
+            "source_diversity": assessment.evidence.publisher_diversity,
+            "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
+            "intent_relevance": assessment.relevance.score,
+            "event_type": assessment.event.event_type,
+            "event_significance": assessment.event.significance,
+            "evidence_strength": assessment.evidence.strength,
+            "certainty_gate": "supported_single_source" if "SUPPORTED_SINGLE_SOURCE" in assessment.reasons else "multi_or_official",
+            "novelty": assessment.novelty,
+            "event_signature": assessment.event_signature,
+            "final_score": assessment.final_score,
+            "why_selected": list(why_selected(assessment)) if selected_value else [],
+            "selection_reasons": list(assessment.reasons),
         }
 
-    def choose(cluster: StoryCluster, quality: float, reason: str, penalty: float = 0.0) -> None:
+    def choose(cluster: StoryCluster, assessment: EditorialAssessment, reason: str, penalty: float = 0.0) -> None:
         key = candidate_key(cluster)
-        if key in selected_keys or len(selected) >= limit:
+        if key in selected_keys or len(selected) >= max(0, limit):
             return
-        selected.append(cluster)
+        selected.append((cluster, assessment, reason, penalty))
         selected_keys.add(key)
         topic_counts[cluster.topic_id] = topic_counts.get(cluster.topic_id, 0) + 1
         selected_coverage.update(_coverage(cluster))
-        record(cluster, quality=quality, meaningful=True, selected_value=True, reason=reason, penalty=penalty)
+        funnel[cluster.topic_id]["selected"] += 1
+        write_record(cluster, assessment, selected_value=True, reason=reason, penalty=penalty)
 
-    qualifying_topic_ids = {
-        topic_id for topic_id, values in grouped.items() if any(meaningful for _, _, meaningful in values)
-    }
-
-    # Coverage floor: one meaningful candidate per represented interest. A
-    # cross-topic duplicate can satisfy both interests without being rendered twice.
+    # One best qualified candidate gets a representation opportunity for each
+    # interest that actually has a qualifying event. A shared event can cover
+    # multiple interests without being rendered twice.
     for topic in enabled_topics:
         if topic.id in selected_coverage or len(selected) >= limit:
             continue
-        for cluster, quality, meaningful in grouped.get(topic.id, ()):
-            if meaningful and candidate_key(cluster) not in selected_keys:
-                choose(cluster, quality, "coverage floor")
+        for cluster, assessment in grouped.get(topic.id, ()):
+            if assessment.qualified and candidate_key(cluster) not in selected_keys:
+                choose(cluster, assessment, "quality coverage floor")
                 break
-            record(cluster, quality=quality, meaningful=meaningful, selected_value=False, reason="cross-topic duplicate" if candidate_key(cluster) in selected_keys else "not selected")
 
-    cap = 3 if len(qualifying_topic_ids) >= 4 else limit
-    candidates: dict[str, tuple[StoryCluster, float, bool]] = {}
+    # Merge cross-topic views by canonical candidate key. Choose the strongest
+    # topic-local assessment as the primary editorial view.
+    candidates: dict[str, tuple[StoryCluster, EditorialAssessment]] = {}
     for topic_id, values in grouped.items():
-        for cluster, quality, meaningful in values:
+        for cluster, assessment in values:
+            if not assessment.qualified:
+                continue
             key = candidate_key(cluster)
             existing = candidates.get(key)
-            if existing is None or quality > existing[1]:
-                candidates[key] = (cluster, quality, meaningful)
+            if existing is None or assessment.final_score > existing[1].final_score:
+                candidates[key] = (cluster, assessment)
 
-    while len(selected) < limit:
-        available: list[tuple[float, StoryCluster, float, float]] = []
-        for key, (cluster, quality, meaningful) in candidates.items():
-            if key in selected_keys or not meaningful:
+    while len(selected) < max(0, limit):
+        available: list[tuple[float, StoryCluster, EditorialAssessment, float]] = []
+        for key, (cluster, assessment) in candidates.items():
+            if key in selected_keys:
                 continue
+            topic = topic_by_id[cluster.topic_id]
             current_count = topic_counts.get(cluster.topic_id, 0)
-            if current_count >= cap and len(qualifying_topic_ids) >= 2:
+            if capped and current_count >= topic.selection_cap:
                 continue
-            penalty = min(12.0, current_count * 4.0)
-            adjacency = 8.0 if selected and selected[-1].topic_id == cluster.topic_id else 0.0
-            if len(selected) >= 2 and selected[-1].topic_id == selected[-2].topic_id == cluster.topic_id:
-                adjacency += 12.0
-            priority_tie = topic_by_id[cluster.topic_id].priority / 1000.0
-            available.append((quality - penalty - adjacency + priority_tie, cluster, penalty, adjacency))
+            saturation_penalty = min(18.0, current_count * 7.0)
+            adjacency_penalty = 5.0 if selected and selected[-1][0].topic_id == cluster.topic_id else 0.0
+            if len(selected) >= 2 and selected[-1][0].topic_id == selected[-2][0].topic_id == cluster.topic_id:
+                adjacency_penalty += 8.0
+            theme_penalty = 0.0
+            title_tokens = set(effective_title(cluster.representative).casefold().split())
+            for existing, _, _, _ in selected:
+                existing_tokens = set(effective_title(existing.representative).casefold().split())
+                if len(title_tokens & existing_tokens) >= 2:
+                    theme_penalty += 4.0
+            adjusted = assessment.final_score - saturation_penalty - adjacency_penalty - min(8.0, theme_penalty)
+            available.append((adjusted, cluster, assessment, saturation_penalty + adjacency_penalty + theme_penalty))
         if not available:
             break
-        _, cluster, penalty, _ = max(available, key=lambda value: (value[0], -len(selected), value[1].representative.title))
-        choose(cluster, candidate_quality(cluster, topic_by_id[cluster.topic_id]), "quality + diversity", penalty)
+        _, cluster, assessment, penalty = max(
+            available,
+            key=lambda value: (value[0], value[2].final_score, -len(selected), effective_title(value[1].representative)),
+        )
+        choose(cluster, assessment, "quality + diversity", penalty)
+
+    # Final numbering must be an actual editorial ranking, not config order or
+    # coverage insertion order.
+    selected.sort(key=lambda value: (-value[1].final_score, effective_title(value[0].representative)))
 
     for topic_id, values in grouped.items():
-        for cluster, quality, meaningful in values:
+        for cluster, assessment in values:
             key = (topic_id, candidate_key(cluster))
             if key in records:
                 continue
-            reason = "quality threshold" if not meaningful else ("topic cap" if topic_counts.get(topic_id, 0) >= cap else "remaining slot")
-            record(cluster, quality=quality, meaningful=meaningful, selected_value=False, reason=reason)
+            if not assessment.qualified:
+                reason = "editorial quality gate"
+            elif candidate_key(cluster) in selected_keys:
+                reason = "cross-topic event already selected"
+            elif capped and topic_counts.get(topic_id, 0) >= topic_by_id[topic_id].selection_cap:
+                reason = "topic saturation cap"
+            else:
+                reason = "remaining slot"
+            write_record(cluster, assessment, selected_value=False, reason=reason)
 
-    audit = tuple(sorted(records.values(), key=lambda item: (str(item["topic_id"]), int(item["topic_local_rank"]))))
-    return SelectionResult(tuple(selected), audit)
+    selected_reviews: list[dict[str, object]] = []
+    for rank, (cluster, assessment, reason, _) in enumerate(selected, 1):
+        selected_reviews.append(
+            {
+                "rank": rank,
+                "topic_id": cluster.topic_id,
+                "topic": topic_by_id[cluster.topic_id].name,
+                "headline": effective_title(cluster.representative),
+                "source_count": cluster.source_count,
+                "publisher_diversity": assessment.evidence.publisher_diversity,
+                "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
+                "query": cluster.representative.query,
+                "intent_relevance": assessment.relevance.score,
+                "event_type": assessment.event.event_type,
+                "event_significance": assessment.event.significance,
+                "concrete_fact_count": assessment.event.concrete_fact_count,
+                "evidence_strength": assessment.evidence.strength,
+                "official_source": assessment.evidence.official,
+                "metadata_complete": assessment.evidence.metadata_complete,
+                "certainty": (
+                    "confirmed"
+                    if assessment.evidence.official or assessment.evidence.publisher_diversity >= 2
+                    else "supported_single_source"
+                ),
+                "novelty": assessment.novelty,
+                "final_score": assessment.final_score,
+                "why_selected": list(why_selected(assessment)),
+                "selection_reason": reason,
+                "summary_source": "metadata_or_search_evidence",
+            }
+        )
+
+    selected_clusters = tuple(cluster for cluster, _, _, _ in selected)
+    return SelectionResult(
+        selected=selected_clusters,
+        audit=tuple(
+            sorted(
+                records.values(),
+                key=lambda item: (str(item["topic_id"]), int(item["topic_local_rank"])),
+            )
+        ),
+        funnel=funnel,
+        assessments={candidate_key(cluster): assessment for cluster, assessment, _, _ in selected},
+        selected_reviews=tuple(selected_reviews),
+    )
 
 
 def topic_diverse_enrichment_candidates(
@@ -206,15 +305,19 @@ def topic_diverse_enrichment_candidates(
     *,
     limit: int,
 ) -> tuple[NewsItem, ...]:
-    """Choose enrichment targets round-robin by topic, not global score."""
+    """Choose cheap-intent-passing enrichment targets round-robin by topic."""
 
-    by_topic: dict[str, list[NewsItem]] = {topic.id: [] for topic in topics if topic.enabled}
+    by_topic: dict[str, list[tuple[NewsItem, float]]] = {topic.id: [] for topic in topics if topic.enabled}
     for item in items:
         for topic_id in topic_ids_for_item(item):
-            if topic_id in by_topic:
-                by_topic[topic_id].append(item)
-    for topic_id, values in by_topic.items():
-        values.sort(key=lambda item: (-item.score, item.title))
+            topic = next((topic for topic in topics if topic.id == topic_id and topic.enabled), None)
+            if topic is None:
+                continue
+            assessment = assess_relevance(StoryCluster(topic_id, (item,)), topic)
+            if assessment.passed:
+                by_topic[topic_id].append((item, assessment.score))
+    for values in by_topic.values():
+        values.sort(key=lambda value: (-value[1], -value[0].score, effective_title(value[0])))
     selected: list[NewsItem] = []
     seen: set[str] = set()
     while len(selected) < limit:
@@ -223,11 +326,11 @@ def topic_diverse_enrichment_candidates(
             if not topic.enabled:
                 continue
             values = by_topic.get(topic.id, [])
-            while values and (values[0].canonical_url or values[0].evidence_id) in seen:
+            while values and (values[0][0].canonical_url or values[0][0].evidence_id) in seen:
                 values.pop(0)
             if not values:
                 continue
-            item = values.pop(0)
+            item, _ = values.pop(0)
             key = item.canonical_url or item.evidence_id
             if key in seen:
                 continue
@@ -238,4 +341,52 @@ def topic_diverse_enrichment_candidates(
                 break
         if not changed:
             break
+    return tuple(selected)
+
+
+def cap_topic_candidates(
+    items: tuple[NewsItem, ...],
+    topics: tuple[Topic, ...],
+) -> tuple[NewsItem, ...]:
+    """Enforce the configured merged topic-pool upper bound fairly."""
+
+    enabled = tuple(topic for topic in topics if topic.enabled)
+    by_topic: dict[str, list[NewsItem]] = {topic.id: [] for topic in enabled}
+    for item in items:
+        for topic_id in topic_ids_for_item(item):
+            if topic_id in by_topic:
+                by_topic[topic_id].append(item)
+    for values in by_topic.values():
+        values.sort(key=lambda item: (-item.score, effective_title(item)))
+    topic_caps = {topic.id: topic.candidate_budget for topic in enabled}
+    counts = {topic.id: 0 for topic in enabled}
+    selected: list[NewsItem] = []
+    seen: set[str] = set()
+    positions = {topic.id: 0 for topic in enabled}
+    changed = True
+    while changed:
+        changed = False
+        for topic in enabled:
+            if counts[topic.id] >= topic.candidate_budget:
+                continue
+            values = by_topic[topic.id]
+            while positions[topic.id] < len(values):
+                item = values[positions[topic.id]]
+                positions[topic.id] += 1
+                key = item.canonical_url or item.content_hash or item.evidence_id
+                if key in seen:
+                    continue
+                matched = topic_ids_for_item(item)
+                if any(
+                    other_id in topic_caps and counts.get(other_id, 0) >= topic_caps[other_id]
+                    for other_id in matched
+                ):
+                    continue
+                seen.add(key)
+                selected.append(item)
+                for other_id in matched:
+                    if other_id in counts:
+                        counts[other_id] += 1
+                changed = True
+                break
     return tuple(selected)
