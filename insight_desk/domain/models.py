@@ -42,6 +42,7 @@ class Topic:
     intent_anchors: tuple[str, ...] = field(default_factory=tuple)
     negative_context: tuple[str, ...] = field(default_factory=tuple)
     event_terms: tuple[str, ...] = field(default_factory=tuple)
+    required_intent_terms: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def all_news_queries(self) -> tuple[str, ...]:
