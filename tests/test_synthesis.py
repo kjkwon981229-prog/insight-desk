@@ -134,6 +134,25 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("47원", headline)
         self.assertNotIn("정책 변화가 발표됐다", summary)
 
+    def test_generic_event_uses_a_natural_schedule_sentence(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "N011",
+                    "민형배 시장-김산 무안군수 회동… 군공항 이전·반도체 클러스터 상생",
+                    "9일 광주에서 관련 일정이 공개됐다.",
+                    "local.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster, topic_name="정책", trend_metrics=()
+        )
+        self.assertEqual(headline, "민형배 시장-김산 무안군수 회동 일정")
+        self.assertEqual(summary, "민형배 시장-김산 무안군수 회동 일정이 9일 광주에서 예정돼 있다.")
+        self.assertEqual(facts.action, "공개")
+
     def test_single_low_information_story_does_not_get_generic_follow_up(self) -> None:
         cluster = StoryCluster(
             "topic",
