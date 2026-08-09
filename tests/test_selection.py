@@ -139,7 +139,7 @@ class SelectionTests(unittest.TestCase):
             query="반도체",
             title="모건스탠리 \"메모리 반도체주 조정 끝...지금이 재진입 기회\"",
             metadata_title="모건스탠리 \"메모리 반도체주 조정 끝...지금이 재진입 기회\"",
-            metadata_description="주주환원 정책을 반등의 핵심으로 꼽으며 투자 매력을 강조했다.",
+            metadata_description="최근 주가 급락을 분석하며 주주환원 정책을 반등의 핵심으로 꼽고 투자 매력을 강조했다.",
         )
         result = select_clusters((StoryCluster("ai", (candidate,)),), _topics(), limit=10)
         self.assertEqual(result.selected, ())

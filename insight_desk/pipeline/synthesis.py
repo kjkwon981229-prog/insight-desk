@@ -330,7 +330,19 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         return "AWARD_CHART"
     if any(word in text for word in ("규제", "법안", "고시", "금지", "허용")):
         return "REGULATION"
-    if any(word in text for word in ("정책", "시행", "대책", "규정", "기준금리")):
+    if any(
+        word in text
+        for word in (
+            "정책 발표",
+            "정책 결정",
+            "정책 시행",
+            "정책 개편",
+            "대책 발표",
+            "대책 시행",
+            "규정",
+            "기준금리",
+        )
+    ):
         return "POLICY"
     if any(word in text for word in ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
