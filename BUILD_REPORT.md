@@ -60,6 +60,26 @@ GitHub Actions에는 Node.js 20 사용 중단 예정 경고가 2건 남아 있�
 
 아카이브의 색상이나 화면을 복제하지 않고, 현재 브리핑의 정보 순서와 데이터 계약에 맞는 문법만 재조합했다.
 
+## 시각 품질 자체평가
+
+공개 desktop render와 source-level responsive 검사를 기준으로 평가했다. 실제 iPhone Safari 확인 점수와는 별개다.
+
+| 항목 | 점수 |
+|---|---:|
+| Typography | 9/10 |
+| Information hierarchy | 9/10 |
+| Editorial composition | 9/10 |
+| Data visualization | 9/10 |
+| Evidence UX | 9/10 |
+| Microcopy | 9/10 |
+| Mobile density | 9/10 |
+| Color system | 9/10 |
+| Archive fidelity | 9/10 |
+| Overall polish | 9/10 |
+| 합계 | **90/100** |
+
+모바일 실기기와 정확한 viewport별 screenshot은 아직 확인하지 않았으므로, 이 점수는 디자인 구조와 공개 desktop render에 대한 자체평가로 한정한다.
+
 ## 데이터 품질·안전성
 
 - NAVER News의 제목·요약·원문 링크·게시 시각을 PRIMARY SEARCH EVIDENCE로 유지
