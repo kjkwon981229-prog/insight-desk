@@ -277,20 +277,20 @@ class MetadataEnricher:
         enriched: list[NewsItem] = []
         for item in items:
             url = item.original_url or item.naver_url
-            result = results.get(url)
-            if result is None or not result.success:
+            metadata_result = results.get(url)
+            if metadata_result is None or not metadata_result.success:
                 enriched.append(item)
                 continue
             provenance = tuple(dict.fromkeys((*item.provenance, EvidenceType.ENRICHED_METADATA)))
             enriched.append(
                 replace(
                     item,
-                    metadata_title=result.title,
-                    metadata_description=result.description,
-                    metadata_canonical_url=result.canonical_url,
-                    publisher=result.publisher,
-                    metadata_published_at=result.published_at,
-                    metadata_modified_at=result.modified_at,
+                    metadata_title=metadata_result.title,
+                    metadata_description=metadata_result.description,
+                    metadata_canonical_url=metadata_result.canonical_url,
+                    publisher=metadata_result.publisher,
+                    metadata_published_at=metadata_result.published_at,
+                    metadata_modified_at=metadata_result.modified_at,
                     provenance=provenance,
                 )
             )
