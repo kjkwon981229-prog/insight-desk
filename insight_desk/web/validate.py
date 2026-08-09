@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -9,6 +10,7 @@ REQUIRED_FILES = (
     "archive/index.html",
     "data/latest.json",
     "assets/css/style.css",
+    "manifest.webmanifest",
 )
 _LOCAL_HREF = re.compile(r'href=["\']([^"\'#]+)["\']')
 
@@ -33,6 +35,25 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
                 errors.append(f"missing UTF-8 declaration: {relative}")
             if "width=device-width" not in text:
                 errors.append(f"missing mobile viewport: {relative}")
+            for marker in (
+                "rel=\"manifest\"",
+                "theme-color",
+                "apple-mobile-web-app-capable",
+            ):
+                if marker not in text:
+                    errors.append(f"missing PWA head contract ({marker}): {relative}")
+
+    manifest_path = site_dir / "manifest.webmanifest"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for key, expected in (("display", "standalone"), ("name", "Insight Desk"), ("short_name", "Insight Desk")):
+                if manifest.get(key) != expected:
+                    errors.append(f"invalid manifest {key}: {expected}")
+            if manifest.get("x-icon-status") != "ICON_ASSET_BLOCKED":
+                errors.append("manifest icon provenance is not explicit")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            errors.append("invalid manifest.webmanifest")
 
     for html_path in site_dir.rglob("*.html"):
         try:

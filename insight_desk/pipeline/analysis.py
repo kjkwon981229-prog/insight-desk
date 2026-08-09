@@ -16,6 +16,7 @@ from ..domain.models import (
 )
 from .clustering import StoryCluster
 from .scoring import score_clusters
+from .selection import select_clusters
 from .synthesis import synthesize_cluster
 
 
@@ -71,9 +72,12 @@ def build_briefing(
     enrichment: EnrichmentReport | None = None,
 ) -> Briefing:
     topic_by_id = {topic.id: topic for topic in topics}
+    # score_clusters is retained as a candidate-quality ordering. It is not the
+    # public lineup anymore; selection applies coverage and diversity rules.
     ranked_clusters = score_clusters(clusters)
+    selection = select_clusters(ranked_clusters, topics, limit=10)
     stories: list[Story] = []
-    for cluster in ranked_clusters[:10]:
+    for cluster in selection.selected:
         topic_name = topic_by_id.get(cluster.topic_id, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ())).name
         provenance = tuple(
             dict.fromkeys(
@@ -108,14 +112,30 @@ def build_briefing(
                 provenance=provenance,
                 metadata_enriched_count=metadata_count,
                 facts=facts,
+                matched_topic_ids=tuple(
+                    dict.fromkeys(
+                        topic_id
+                        for item in cluster.items
+                        for topic_id in (item.matched_topic_ids or (item.topic_id,))
+                    )
+                ),
             )
         )
 
-    lines = [
-        stories[0].summary if stories else "선택한 관심사에서 표시할 뉴스 결과가 확인되지 않았다.",
-        _trend_overview(trend_metrics),
-        f"근거 {stories[0].source_count}곳" if stories else "근거 없음",
-    ]
+    represented_ids = tuple(dict.fromkeys(topic_id for story in stories for topic_id in (story.matched_topic_ids or (story.topic_id,))))
+    represented_names = tuple(topic_by_id[topic_id].name for topic_id in represented_ids if topic_id in topic_by_id)
+    if stories:
+        lines = [
+            f"오늘 확인할 가치가 있는 {len(stories)}개 변화를 {len(represented_names)}개 관심사에서 추렸다.",
+            _trend_overview(trend_metrics),
+            " · ".join(represented_names) if represented_names else "선택한 관심사에서 확인한 흐름",
+        ]
+    else:
+        lines = [
+            "오늘은 표시 기준을 넘은 변화가 없다.",
+            _trend_overview(trend_metrics),
+            "조건을 충족한 관심사만 표시했다.",
+        ]
 
     report = enrichment or EnrichmentReport()
     limitations = [
@@ -145,6 +165,7 @@ def build_briefing(
         enrichment_attempted=report.attempted,
         enrichment_succeeded=report.succeeded,
         enrichment_failed=report.failed,
+        selection_audit=selection.audit,
     )
 
 

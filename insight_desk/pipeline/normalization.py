@@ -91,6 +91,7 @@ def normalize_news_item(
         published_at=published_at,
         source_domain=_domain(canonical_url),
         content_hash=digest,
+        matched_topic_ids=(topic_id,),
     )
 
 

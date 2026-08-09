@@ -33,14 +33,19 @@ def _similar(a: NewsItem, b: NewsItem) -> bool:
 
 
 def cluster_news(items: tuple[NewsItem, ...]) -> tuple[StoryCluster, ...]:
-    clusters: list[list[NewsItem]] = []
+    # A duplicate can legitimately match more than one personal interest.
+    # Build topic-local views after cross-topic dedupe so config order does not
+    # steal attribution from the secondary interest.
+    clusters: list[tuple[str, list[NewsItem]]] = []
     for item in items:
-        placed = False
-        for cluster in clusters:
-            if cluster[0].topic_id == item.topic_id and any(_similar(item, member) for member in cluster):
-                cluster.append(item)
-                placed = True
-                break
-        if not placed:
-            clusters.append([item])
-    return tuple(StoryCluster(topic_id=cluster[0].topic_id, items=tuple(cluster)) for cluster in clusters)
+        topic_ids = tuple(dict.fromkeys(item.matched_topic_ids or (item.topic_id,)))
+        for topic_id in topic_ids:
+            placed = False
+            for existing_topic_id, cluster in clusters:
+                if existing_topic_id == topic_id and any(_similar(item, member) for member in cluster):
+                    cluster.append(item)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append((topic_id, [item]))
+    return tuple(StoryCluster(topic_id=topic_id, items=tuple(cluster)) for topic_id, cluster in clusters)

@@ -23,6 +23,7 @@ CSS = r""":root {
   --accent: #c35b78;
   --accent-strong: #943c59;
   --accent-soft: #f0d9e0;
+  --accent-ink: #7d3049;
   --success: #36735c;
   --warning: #936329;
   --danger: #a34856;
@@ -54,6 +55,7 @@ CSS = r""":root {
     --accent: #d27a98;
     --accent-strong: #f0a1b9;
     --accent-soft: #4c303c;
+    --accent-ink: #f0a1b9;
     --success: #91c8aa;
     --warning: #e0b27b;
     --danger: #f1a0aa;
@@ -77,8 +79,8 @@ body {
 a { color: var(--accent-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { color: var(--accent); }
 a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
-.shell { width: min(calc(100% - 36px), 1120px); margin: 0 auto; }
-.site-header { border-bottom: 1px solid var(--line); padding: 24px 0 14px; }
+.shell { width: min(calc(100% - 36px), 1120px); margin: 0 auto; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.site-header { border-bottom: 1px solid var(--line); padding: max(24px, env(safe-area-inset-top)) 0 14px; }
 .brand-row, .header-meta, .site-nav, .section-heading, .story-meta, .evidence-line, .method-summary, .archive-link, .source-row { display: flex; align-items: center; }
 .brand-row { justify-content: space-between; gap: var(--space-3); }
 .brand { color: var(--text); font-size: .78rem; font-weight: 900; letter-spacing: .19em; text-decoration: none; }
@@ -102,6 +104,20 @@ h2 { font-size: clamp(1.45rem, 3vw, 2.25rem); letter-spacing: -.045em; }
 h3 { font-size: clamp(1.2rem, 2vw, 1.55rem); letter-spacing: -.035em; }
 p { margin: 0; }
 .meta { color: var(--muted); font-size: .82rem; }
+.briefing-overview { border-bottom: 1px solid var(--line-strong); padding: clamp(34px, 7vw, 70px) 0 30px; }
+.briefing-overview h1 { font-size: clamp(2.1rem, 8vw, 4rem); margin-top: 10px; }
+.overview-lede { font-size: clamp(1rem, 2vw, 1.24rem); line-height: 1.5; margin-top: 15px; max-width: 720px; }
+.overview-status { color: var(--muted-strong); font-size: .86rem; margin-top: 16px; }
+.overview-status strong { color: var(--accent-strong); }
+.freshness-banner { background: var(--accent-soft); border-left: 2px solid var(--accent); color: var(--muted-strong); font-size: .84rem; margin-top: 17px; padding: 9px 12px; }
+.freshness-banner[hidden] { display: none; }
+.lead-signals { display: grid; gap: 1px; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; margin: 28px 0 0; padding: 0; }
+.lead-signal { border-left: 1px solid var(--line); min-width: 0; padding: 5px 18px 2px; }
+.lead-signal:first-child { border-left: 2px solid var(--accent); padding-left: 17px; }
+.lead-signal .label { color: var(--accent-strong); display: block; }
+.lead-signal a { color: var(--text); display: block; font-size: .98rem; font-weight: 780; line-height: 1.35; margin-top: 5px; text-decoration: none; }
+.lead-signal a:hover { color: var(--accent-strong); }
+.overview-empty { color: var(--muted-strong); margin-top: 20px; }
 .hero {
   display: grid;
   gap: clamp(28px, 6vw, 76px);
@@ -129,7 +145,7 @@ p { margin: 0; }
 .notice { border-left: 2px solid var(--warning); color: var(--muted-strong); margin-top: 20px; padding-left: 14px; }
 .notice summary { color: var(--warning); cursor: pointer; font-weight: 800; min-height: 40px; padding: 7px 0; }
 .notice ul { margin: 4px 0 12px; padding-left: 18px; }
-.signal-strip { border-bottom: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.signal-strip { border-bottom: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .signal-cell { min-width: 0; padding: 18px 20px 17px 0; }
 .signal-cell + .signal-cell { border-left: 1px solid var(--line); padding-left: 20px; }
 .signal-value { color: var(--text); font-size: clamp(1.7rem, 4vw, 2.5rem); font-weight: 850; letter-spacing: -.07em; line-height: 1; margin-top: 8px; }
@@ -142,13 +158,13 @@ p { margin: 0; }
 .story-list { border-bottom: 1px solid var(--line); }
 .story-row { display: grid; gap: 20px; grid-template-columns: 44px minmax(0, 1fr); padding: 28px 0 30px; }
 .story-row + .story-row { border-top: 1px solid var(--line); }
-.story-row.lead { padding-top: 34px; }
+.story-row.lead { padding-top: 28px; }
 .story-index { color: var(--accent-strong); font-size: .83rem; letter-spacing: .05em; padding-top: 4px; }
 .story-main { min-width: 0; }
 .story-meta { color: var(--muted); flex-wrap: wrap; font-size: .78rem; gap: 4px 10px; margin-bottom: 8px; }
 .story-topic { color: var(--accent-strong); font-weight: 800; }
 .story-row h3 { max-width: 690px; }
-.story-row.lead h3 { font-size: clamp(1.5rem, 4vw, 2.45rem); }
+.story-row.lead h3 { font-size: clamp(1.2rem, 2vw, 1.55rem); }
 .story-summary { font-size: 1rem; line-height: 1.58; margin-top: 12px; max-width: 720px; }
 .key-fact-panel { background: var(--accent-soft); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 17px; max-width: 720px; padding: 12px 14px; }
 .key-fact { min-width: 0; }
@@ -214,16 +230,18 @@ p { margin: 0; }
 .archive-date strong { display: block; font-size: 1.14rem; }
 .archive-date span { color: var(--muted); display: block; font-size: .8rem; margin-top: 2px; }
 .archive-arrow { color: var(--accent-strong); font-size: 1.25rem; }
-footer { color: var(--muted); font-size: .78rem; padding: 38px 0 48px; }
+footer { color: var(--muted); font-size: .78rem; padding: 38px 0 max(48px, env(safe-area-inset-bottom)); }
 @media (max-width: 760px) {
   .shell { width: min(calc(100% - 24px), 1120px); }
-  .site-header { padding-top: 19px; }
+  .site-header { padding-top: max(19px, env(safe-area-inset-top)); }
   .brand-row { align-items: flex-start; display: block; }
   .header-meta { justify-content: flex-start; margin-top: 9px; }
   .site-nav { gap: 14px; margin-top: 12px; }
-  .hero { display: block; padding: 42px 0 38px; }
-  .hero h1 { font-size: clamp(2rem, 10vw, 2.55rem); }
-  .hero-aside { margin-top: 30px; }
+  .briefing-overview { padding-top: 36px; }
+  .briefing-overview h1 { font-size: clamp(2.05rem, 11vw, 3rem); }
+  .lead-signals { grid-template-columns: 1fr; margin-top: 24px; }
+  .lead-signal, .lead-signal:first-child { border-left: 0; border-top: 1px solid var(--line); padding: 12px 0 10px; }
+  .lead-signal:first-child { border-left: 2px solid var(--accent); padding-left: 10px; }
   .signal-cell { padding-right: 10px; }
   .signal-cell + .signal-cell { padding-left: 10px; }
   .signal-value { font-size: 1.7rem; }
@@ -234,7 +252,7 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 48px; }
   .section-heading .meta { margin-top: 7px; text-align: left; }
   .story-row { grid-template-columns: 30px minmax(0, 1fr); padding: 24px 0 27px; }
   .story-row.lead { padding-top: 28px; }
-  .story-row.lead h3 { font-size: 1.55rem; }
+  .story-row.lead h3 { font-size: 1.2rem; }
   .key-fact-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .key-fact:nth-child(3) { border-left: 0; grid-column: 1 / -1; padding-left: 0; padding-top: 8px; }
   .key-fact:nth-child(3) strong { font-size: 1rem; }
@@ -249,6 +267,19 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 48px; }
   html { scroll-behavior: auto; }
 }
 """.strip() + "\n"
+
+MANIFEST = {
+    "name": "Insight Desk",
+    "short_name": "Insight Desk",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "theme_color": "#c35b78",
+    "background_color": "#f5f1ef",
+    "description": "관심사별 뉴스와 검색 관심 흐름을 정리하는 모바일 브리핑",
+    "icons": [],
+    "x-icon-status": "ICON_ASSET_BLOCKED",
+}
 
 
 def _esc(value: object) -> str:
@@ -393,12 +424,26 @@ def _trend_change(metric: TrendMetric) -> str:
     return "비교 기준 부족"
 
 
-def _metric_row(metric: TrendMetric) -> str:
+def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
+    if not metrics:
+        return "비교 자료 부족"
+    rising = sum(1 for metric in metrics if metric.delta is not None and metric.delta > 0)
+    falling = sum(1 for metric in metrics if metric.delta is not None and metric.delta < 0)
+    if rising and falling:
+        return "그룹별 방향 혼조"
+    if rising:
+        return f"{rising}개 그룹 상승"
+    if falling:
+        return f"{falling}개 그룹 둔화"
+    return "큰 변화 없음"
+
+
+def _metric_row(metric: TrendMetric, topic_names: Mapping[str, str]) -> str:
     direction, direction_class = _trend_direction(metric)
     return (
         '<article class="trend-row">'
         '<div class="trend-copy">'
-        f'<span class="trend-topic">{_esc(metric.topic_id)}</span>'
+        f'<span class="trend-topic">{_esc(topic_names.get(metric.topic_id, "관심사"))}</span>'
         f'<h3>{_esc(metric.group_name)}</h3>'
         f'<p class="trend-change"><span class="trend-direction {direction_class}">{_esc(direction)}</span> · {_esc(_trend_change(metric))}</p>'
         '</div>'
@@ -445,8 +490,6 @@ def _story_evidence_line(story: object, news_by_id: Mapping[str, object]) -> str
         chips.append(trend)
     if getattr(facts, "official_source", ""):
         chips.append("공식 자료")
-    if getattr(story, "metadata_enriched_count", 0):
-        chips.append(f'원문 {getattr(story, "metadata_enriched_count")}건 보강')
     return "".join(
         f'<span class="{"accent-mark" if index == 0 else ""}">{_esc(chip)}</span>'
         for index, chip in enumerate(dict.fromkeys(chips))
@@ -516,7 +559,7 @@ def _story_row(story: object, news_by_id: Mapping[str, object], index: int) -> s
         '</details>'
     )
     return (
-        f'<article class="story-row {"lead" if index == 1 else ""}">'
+        f'<article class="story-row" id="story-{index}">'
         f'<div class="story-index">{index:02d}</div>'
         '<div class="story-main">'
         '<div class="story-meta">'
@@ -546,11 +589,16 @@ def _signal_counts(briefing: Briefing) -> tuple[str, str, str]:
 
 
 def _notice_html(briefing: Briefing) -> str:
-    values = tuple(dict.fromkeys((*briefing.state.warnings, *briefing.state.errors, *briefing.state.render_errors)))
-    if not values:
+    status = briefing.state.status
+    messages = {
+        RunStatus.NEWS_ONLY: "뉴스는 업데이트됐습니다. 검색 관심 데이터는 이번 브리핑에서 제외했습니다.",
+        RunStatus.TRENDS_ONLY: "검색 관심 흐름은 업데이트됐습니다. 뉴스는 이번 브리핑에서 제외했습니다.",
+        RunStatus.PARTIAL: "일부 관심사 또는 검색 요청이 지연되어 확인된 범위만 표시합니다.",
+    }
+    message = messages.get(status)
+    if not message:
         return ""
-    items = "".join(f"<li>{_esc(value)}</li>" for value in values)
-    return f'<details class="notice"><summary>이번 실행의 범위 안내</summary><ul>{items}</ul></details>'
+    return f'<div class="notice" role="status">{_esc(message)}</div>'
 
 
 def _methodology(briefing: Briefing, limitation_html: str) -> str:
@@ -583,6 +631,69 @@ def _nav_link(key: str, label: str, href: str, active_nav: str) -> str:
     return f'<a href="{_esc(href)}"{current}>{_esc(label)}</a>'
 
 
+def _topic_names(briefing: Briefing) -> dict[str, str]:
+    return {topic.id: topic.name for topic in briefing.topics}
+
+
+def _represented_topics(briefing: Briefing) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            topic_id
+            for story in briefing.stories
+            for topic_id in (story.matched_topic_ids or (story.topic_id,))
+        )
+    )
+
+
+def _lead_signals(briefing: Briefing, nav_prefix: str) -> str:
+    names = _topic_names(briefing)
+    rows: list[str] = []
+    seen: set[str] = set()
+    for index, story in enumerate(briefing.stories, 1):
+        topic_id = story.topic_id
+        if topic_id in seen:
+            continue
+        seen.add(topic_id)
+        rows.append(
+            '<li class="lead-signal">'
+            f'<span class="label">{_esc(names.get(topic_id, story.topic_name))}</span>'
+            f'<a href="{_esc(nav_prefix)}index.html#story-{index}">{_esc(story.title)}</a>'
+            '</li>'
+        )
+        if len(rows) >= 3:
+            break
+    return "".join(rows) or '<li class="overview-empty">오늘은 표시 기준을 넘은 변화가 없다.</li>'
+
+
+def _freshness_script() -> str:
+    return """<script>
+(function () {
+  var banner = document.getElementById('freshness-banner');
+  var page = document.querySelector('[data-latest-briefing]');
+  if (!banner || !page) return;
+  var generated = page.getAttribute('data-generated-date') || '';
+  var dateParts = new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date());
+  var year = '', month = '', day = '';
+  dateParts.forEach(function (part) { if (part.type === 'year') year = part.value; if (part.type === 'month') month = part.value; if (part.type === 'day') day = part.value; });
+  var today = year + '-' + month + '-' + day;
+  if (generated && generated < today) {
+    banner.textContent = '최신 브리핑 · ' + generated.replace(/-/g, '.') + ' — 오늘 업데이트는 아직 완료되지 않았습니다.';
+    banner.hidden = false;
+  }
+}());
+</script>"""
+
+
+def _pwa_head(asset_prefix: str) -> str:
+    return (
+        f'<link rel="manifest" href="{_esc(asset_prefix)}manifest.webmanifest">'
+        '<meta name="theme-color" content="#c35b78">'
+        '<meta name="apple-mobile-web-app-capable" content="yes">'
+        '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
+        '<meta name="apple-mobile-web-app-title" content="Insight Desk">'
+    )
+
+
 def _document(
     briefing: Briefing,
     *,
@@ -590,39 +701,40 @@ def _document(
     asset_prefix: str,
     nav_prefix: str,
     active_nav: str = "today",
+    is_latest: bool = True,
 ) -> str:
     state = briefing.state
     status_class = _status_class(state.status)
     status_label = _status_label(state.status)
     news_by_id: Mapping[str, object] = {item.evidence_id: item for item in briefing.news}
     stories = briefing.stories
-    first_story = stories[0] if stories else None
-    hero_title = getattr(first_story, "title", "이번 실행에서 새 결과가 없다.")
-    hero_lede = getattr(first_story, "summary", "") or _status_sentence(state.status)
-    summary_line = briefing.three_line_summary[1] if len(briefing.three_line_summary) > 1 else _status_sentence(state.status)
     stories_html = "".join(_story_row(story, news_by_id, index) for index, story in enumerate(stories, 1))
-    signal_stories, signal_trends, signal_enrichment = _signal_counts(briefing)
-    trend_html = "".join(_metric_row(metric) for metric in briefing.trend_metrics)
+    represented = _represented_topics(briefing)
+    topic_names = _topic_names(briefing)
+    trend_html = "".join(_metric_row(metric, topic_names) for metric in briefing.trend_metrics)
+    trend_note = _trend_overview(briefing.trend_metrics)
     limitation_html = "".join(f"<p>· {_esc(item)}</p>" for item in briefing.limitations)
     nav_items = (
         ("today", "오늘", f"{nav_prefix}index.html#today"),
-        ("stories", "핵심 뉴스", f"{nav_prefix}index.html#stories"),
+        ("stories", "오늘 볼 뉴스", f"{nav_prefix}index.html#stories"),
         ("trends", "검색 흐름", f"{nav_prefix}index.html#trends"),
         ("archive", "아카이브", f"{nav_prefix}archive/index.html"),
     )
     nav_html = "".join(_nav_link(key, label, href, active_nav) for key, label, href in nav_items)
+    latest_attrs = f' data-latest-briefing="true" data-generated-date="{_esc(state.generated_at[:10])}"' if is_latest else ""
+    freshness_html = _freshness_script() if is_latest else ""
     return f'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Insight Desk 모바일 뉴스·검색 관심 흐름 브리핑"><title>{_esc(title)}</title>
-<link rel="stylesheet" href="{_esc(asset_prefix)}assets/css/style.css"></head>
-<body><main class="shell">
+{_pwa_head(asset_prefix)}<link rel="stylesheet" href="{_esc(asset_prefix)}assets/css/style.css"></head>
+<body><main class="shell"{latest_attrs}>
 <header class="site-header"><div class="brand-row"><a class="brand" href="{_esc(nav_prefix)}index.html">INSIGHT DESK</a><div class="header-meta"><span>{_esc(_format_date(state.generated_at))}</span><span>기준 {_esc(_format_date(state.data_cutoff))}</span></div></div>
 <nav class="site-nav" aria-label="브리핑 탐색">{nav_html}</nav></header>
-<section class="hero" id="today" aria-labelledby="hero-heading"><div class="hero-main"><div class="eyebrow">오늘의 흐름 · { _esc(getattr(first_story, "topic_name", "Insight Desk")) }</div><h1 id="hero-heading">{_esc(hero_title)}</h1><p class="hero-lede">{_esc(hero_lede)}</p><p class="status-line {status_class}"><strong>{_esc(status_label)}</strong> · {_esc(_status_sentence(state.status))}</p></div>
-<aside class="hero-aside"><span class="label">브리핑 한눈에</span><p>{_esc(summary_line)}</p><p class="meta">{_esc(briefing.three_line_summary[2] if len(briefing.three_line_summary) > 2 else "")}</p></aside></section>
+<section class="briefing-overview" id="today" aria-labelledby="briefing-heading"><span class="eyebrow">오늘의 개인 브리핑 · {_esc(_format_date(state.generated_at))}</span><h1 id="briefing-heading">오늘의 브리핑</h1><p class="overview-lede">{_esc(briefing.three_line_summary[0] if briefing.three_line_summary else _status_sentence(state.status))}</p><p class="overview-status {status_class}"><strong>{_esc(status_label)}</strong> · {_esc(_status_sentence(state.status))}</p><div class="freshness-banner" id="freshness-banner" hidden role="status"></div><ul class="lead-signals" aria-label="관심사별 주요 신호">{_lead_signals(briefing, nav_prefix)}</ul></section>
+{freshness_html}
 {_notice_html(briefing)}
-<section class="signal-strip" id="signals" aria-label="핵심 신호"><div class="signal-cell"><span class="label">주요 사건</span><div class="signal-value">{_esc(signal_stories)}</div><span class="signal-label">사건 묶음</span><span class="signal-note">뉴스 {len(briefing.news)}건</span></div><div class="signal-cell"><span class="label">검색 흐름</span><div class="signal-value">{_esc(str(len(briefing.trend_metrics)))}</div><span class="signal-label">키워드 그룹</span><span class="signal-note">{_esc(signal_trends)}</span></div><div class="signal-cell"><span class="label">원문 보강</span><div class="signal-value">{_esc(signal_enrichment)}</div><span class="signal-label">선택 원문 보강</span><span class="signal-note">상위 기사에 한함</span></div></section>
-<section class="content-section" id="stories" aria-labelledby="stories-heading"><div class="section-heading"><div><span class="section-index">01 / 핵심 흐름</span><h2 id="stories-heading">핵심 뉴스</h2></div><p class="meta">사건 단위로 압축한 주요 흐름</p></div><div class="story-list">{stories_html or '<p class="meta empty-state">표시할 뉴스가 없다.</p>'}</div></section>
+<section class="signal-strip" id="signals" aria-label="브리핑 범위"><div class="signal-cell"><span class="label">오늘의 범위</span><div class="signal-value">{_esc(str(len(stories)))}</div><span class="signal-label">주요 변화</span><span class="signal-note">{_esc(str(len(represented)))}개 관심사에서 확인</span></div><div class="signal-cell"><span class="label">검색 흐름</span><div class="signal-value">{_esc("있음" if briefing.trend_metrics else "없음")}</div><span class="signal-label">상대 관심지수</span><span class="signal-note">{_esc(trend_note)}</span></div></section>
+<section class="content-section" id="stories" aria-labelledby="stories-heading"><div class="section-heading"><div><span class="section-index">01 / 오늘의 변화</span><h2 id="stories-heading">오늘 볼 뉴스</h2></div><p class="meta">관심사별로 고른 사건 단위 요약</p></div><div class="story-list">{stories_html or '<p class="meta empty-state">표시할 뉴스가 없다.</p>'}</div></section>
 <section class="content-section" id="trends" aria-labelledby="trends-heading"><div class="section-heading"><div><span class="section-index">02 / 관심 변화</span><h2 id="trends-heading">검색 관심 흐름</h2></div><p class="meta">같은 그룹 안에서 직전 구간과 비교</p></div><div class="trend-overview"><span><strong>상대 관심지수</strong> · 원시 검색량이 아님</span><span>방향과 변화폭 중심으로 표시</span></div><div class="trend-list">{trend_html or '<p class="meta empty-state">이번 실행에서 검색 관심 흐름을 확인하지 못했다.</p>'}</div></section>
 <section class="method-section" id="method" aria-labelledby="method-heading"><div class="section-heading"><div><span class="section-index">03 / 기준과 방법</span><h2 id="method-heading">데이터 기준</h2></div><p class="meta">기준 {_esc(_format_timestamp(state.generated_at))}</p></div>{_methodology(briefing, limitation_html)}</section>
 <footer>Insight Desk · 정적 브리핑 · 뉴스 전문을 복제하지 않고 제목·요약·원문 링크를 사용한다.</footer>
@@ -653,7 +765,7 @@ def _archive_page(records: list[dict[str, str]]) -> str:
             '</a></li>'
         )
     links = "".join(rows) or '<li class="archive-item"><span class="meta">저장된 브리핑이 없다.</span></li>'
-    return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="description" content="Insight Desk 날짜별 브리핑 아카이브"><title>Insight Desk · 아카이브</title><link rel="stylesheet" href="../assets/css/style.css"></head><body><main class="shell"><header class="site-header"><div class="brand-row"><a class="brand" href="../index.html">INSIGHT DESK</a><div class="header-meta"><span>날짜별 목록</span></div></div><nav class="site-nav" aria-label="브리핑 탐색"><a href="../index.html">오늘</a><a href="../index.html#stories">핵심 뉴스</a><a href="../index.html#trends">검색 흐름</a><a href="index.html" aria-current="page">아카이브</a></nav></header><section class="archive-hero"><span class="eyebrow">기록 · 날짜별 목록</span><h1>브리핑 아카이브</h1><p>날짜별 실행 결과를 문서처럼 다시 확인한다. 각 페이지는 해당 시점에 게시된 정적 브리핑이다.</p><p class="archive-count">{len(records)}개의 기록</p></section><section class="content-section" aria-labelledby="archive-heading"><div class="section-heading"><div><span class="section-index">01 / 날짜별 기록</span><h2 id="archive-heading">날짜별 기록</h2></div><p class="meta">최근 순</p></div><ol class="archive-index">{links}</ol></section><footer>Insight Desk · 정적 브리핑 기록</footer></main></body></html>'''
+    return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="description" content="Insight Desk 날짜별 브리핑 아카이브"><title>Insight Desk · 아카이브</title>{_pwa_head("../")}<link rel="stylesheet" href="../assets/css/style.css"></head><body><main class="shell"><header class="site-header"><div class="brand-row"><a class="brand" href="../index.html">INSIGHT DESK</a><div class="header-meta"><span>날짜별 목록</span></div></div><nav class="site-nav" aria-label="브리핑 탐색"><a href="../index.html">오늘</a><a href="../index.html#stories">오늘 볼 뉴스</a><a href="../index.html#trends">검색 흐름</a><a href="index.html" aria-current="page">아카이브</a></nav></header><section class="archive-hero"><span class="eyebrow">기록 · 날짜별 목록</span><h1>브리핑 아카이브</h1><p>날짜별 실행 결과를 문서처럼 다시 확인한다. 각 페이지는 해당 시점에 게시된 정적 브리핑이다.</p><p class="archive-count">{len(records)}개의 기록</p></section><section class="content-section" aria-labelledby="archive-heading"><div class="section-heading"><div><span class="section-index">01 / 날짜별 기록</span><h2 id="archive-heading">날짜별 기록</h2></div><p class="meta">최근 순</p></div><ol class="archive-index">{links}</ol></section><footer>Insight Desk · 정적 브리핑 기록</footer></main></body></html>'''
 
 
 def render_site(briefing: Briefing, output_dir: Path) -> None:
@@ -663,11 +775,17 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
     (output_dir / "archive").mkdir(exist_ok=True)
     (output_dir / "data").mkdir(exist_ok=True)
     (output_dir / "assets/css/style.css").write_text(CSS, encoding="utf-8")
+    (output_dir / "manifest.webmanifest").write_text(
+        json.dumps(MANIFEST, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
     date_value = briefing.state.generated_at[:10]
     date_dir = output_dir / "archive" / date_value
     date_dir.mkdir(parents=True, exist_ok=True)
     payload = to_jsonable(briefing)
+    if isinstance(payload, dict):
+        # Selection reasoning is a build-time audit artifact, not public UI/data.
+        payload.pop("selection_audit", None)
     payload_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     (output_dir / "data/latest.json").write_text(payload_text, encoding="utf-8")
     (output_dir / "latest/data.json").write_text(payload_text, encoding="utf-8")
@@ -695,6 +813,7 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
             asset_prefix="../../",
             nav_prefix="../../",
             active_nav="archive",
+            is_latest=False,
         ),
         encoding="utf-8",
     )

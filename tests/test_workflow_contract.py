@@ -12,6 +12,12 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("exit 1", workflow)
         self.assertIn("if: needs.build.result == 'success' && needs.build.outputs.publish == 'true'", workflow)
 
+    def test_schedule_and_selection_audit_contract(self) -> None:
+        workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
+        self.assertIn('cron: "30 22 * * *"', workflow)
+        self.assertIn("selection-audit-${{ github.run_id }}", workflow)
+        self.assertIn("hashFiles('build/selection-audit.json')", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

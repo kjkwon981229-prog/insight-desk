@@ -35,6 +35,18 @@ class Topic:
     conditional: bool
     priority: int
     news_queries: tuple[str, ...]
+    query_families: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
+    candidate_budget: int = 40
+    selection_cap: int = 3
+
+    @property
+    def all_news_queries(self) -> tuple[str, ...]:
+        """Return the configured query family without duplicate requests."""
+
+        values = self.news_queries
+        for family in self.query_families:
+            values += tuple(family)
+        return tuple(dict.fromkeys(query for query in values if query.strip()))
 
 
 @dataclass(frozen=True)
@@ -67,6 +79,7 @@ class NewsItem:
     metadata_published_at: str | None = None
     metadata_modified_at: str | None = None
     provenance: tuple[EvidenceType, ...] = field(default_factory=lambda: (EvidenceType.SEARCH_SNIPPET,))
+    matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -140,6 +153,7 @@ class Story:
     provenance: tuple[EvidenceType, ...] = field(default_factory=tuple)
     metadata_enriched_count: int = 0
     facts: StoryFacts = field(default_factory=StoryFacts)
+    matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -182,6 +196,7 @@ class Briefing:
     enrichment_attempted: int = 0
     enrichment_succeeded: int = 0
     enrichment_failed: int = 0
+    selection_audit: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 def _enum_value(value: Any) -> Any:

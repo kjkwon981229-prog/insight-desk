@@ -10,8 +10,9 @@ Insight Desk는 NAVER Search News API와 NAVER Search Trend API에서 받은 자
 
 ## 포함된 구성
 
-- `insight_desk/`: 수집·분석·상태 기계·정적 HTML 렌더러
-- `config/topics.json`: 관심사와 검색어 프리셋
+- `insight_desk/`: 수집·분석·선택·상태 기계·정적 HTML 렌더러
+- `config/topics.json`: 다섯 관심사와 query family의 단일 설정 원본
+- `manifest.webmanifest`: standalone PWA 설정. 승인 아이콘은 현재 작업 공간에서 확보되지 않아 아이콘 상태를 별도로 표시한다.
 - `.github/workflows/insight-desk-pages.yml`: 수동·매일 실행과 Pages 배포
 - `.github/workflows/ci.yml`: 컴파일·테스트·fixture artifact 검증
 - `tests/`: 핵심 회귀 테스트
@@ -69,7 +70,9 @@ Search Trend의 `ratio`는 실제 검색 횟수가 아니라 상대 검색지수
 
 ## 화면 구조
 
-모바일 화면은 하나의 핵심 판단을 먼저 보여준 뒤, 사건별 근거 카드와 관심도 흐름, 접을 수 있는 데이터 기준·방법론을 순서대로 보여준다. warm off-white 바탕과 charcoal 텍스트에 muted pink를 section marker·근거 rail·trend emphasis로만 사용하며, 다크 모드와 320px 이상 viewport를 함께 지원한다.
+모바일 화면은 특정 기사 한 건을 영웅처럼 내세우지 않고, `오늘의 브리핑` overview → 관심사별 lead signal → 오늘 볼 뉴스 → 검색 관심 흐름 → 데이터 기준 순서로 읽힌다. warm off-white 바탕과 charcoal 텍스트에 muted pink를 section marker·근거 rail·trend emphasis로만 사용하며, 다크 모드와 320px 이상 viewport를 함께 지원한다.
+
+선정은 전체 기사를 한 번에 정렬해 자르는 방식이 아니다. 다섯 관심사를 `config/topics.json`에서 독립적으로 수집하고, query별 공정 예산과 topic-local quality를 적용한 뒤 core coverage floor, conditional omission, topic saturation cap, publisher diversity를 반영한다. 선택 사유는 공개 화면이 아닌 Actions의 `selection-audit` artifact로 남긴다. 개인 priority는 동률에 가까운 후보의 보조 신호로만 사용한다.
 
 Visual Design Language Archive에서 확인한 문법은 다음처럼 선별했다.
 
@@ -90,6 +93,10 @@ python scripts/validate_artifact.py build/fixture-site
 ```
 
 fixture 실행은 실제 NAVER 연결 성공을 의미하지 않는다. 실제 연결은 GitHub Secrets를 등록한 뒤 Actions에서만 확인한다.
+
+선택 계층에는 AI·테크 물량 우세, 경제 물량 우세, K-POP/KBO/PSAT 단독 이벤트, conditional 무후보, 교차 관심사 중복, syndicated source volume, 공식 근거, enrichment round-robin을 포함한 10일 회귀 행렬이 있다.
+
+현재 `manifest.webmanifest`는 `display: standalone`, `scope`, theme/background, safe-area, Apple web-app 메타를 연결한다. 승인된 Candidate 5 아이콘 파일은 이 작업 공간에서 확인되지 않아 `ICON_ASSET_BLOCKED`로 기록했으며 임의 아이콘은 만들지 않았다. 이 상태에서는 PWA 아이콘 완료나 `FINAL_PASS`를 주장하지 않는다.
 
 ## 공식 계약
 

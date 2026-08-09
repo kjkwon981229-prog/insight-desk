@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -18,6 +18,7 @@ from .pipeline.clustering import cluster_news
 from .pipeline.deduplication import deduplicate_news
 from .pipeline.normalization import normalize_news_payloads
 from .pipeline.scoring import score_news
+from .pipeline.selection import topic_diverse_enrichment_candidates
 from .pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 from .security import assert_no_secret_values, redact_error
 from .web.render import render_site
@@ -38,6 +39,13 @@ def _write_state(path: Path, state: RunState, secrets: tuple[str, ...]) -> None:
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temp.replace(path)
+
+
+def _write_selection_audit(path: Path, audit: tuple[dict[str, object], ...], secrets: tuple[str, ...]) -> None:
+    payload = {"selection_audit": audit}
+    assert_no_secret_values(payload, secrets)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def execute(
@@ -93,10 +101,17 @@ def execute(
             metadata_cache_path = cache_path.with_name(
                 f"{cache_path.stem}-metadata{cache_path.suffix or '.json'}"
             )
-            enriched, enrichment_report = MetadataEnricher(
+            enrichment_targets = topic_diverse_enrichment_candidates(
+                scored,
+                topics,
+                limit=METADATA_ENRICHMENT_LIMIT,
+            )
+            enriched_targets, enrichment_report = MetadataEnricher(
                 transport=transport,
                 cache=ResponseCache(metadata_cache_path),
-            ).enrich(scored, limit=METADATA_ENRICHMENT_LIMIT)
+            ).enrich(enrichment_targets, limit=METADATA_ENRICHMENT_LIMIT)
+            by_evidence_id = {item.evidence_id: item for item in enriched_targets}
+            enriched = tuple(by_evidence_id.get(item.evidence_id, item) for item in scored)
         clusters = cluster_news(enriched)
         points = parse_trend_batches(trend_collection.raw_batches)
         metrics = compute_trend_metrics(points)
@@ -135,6 +150,7 @@ def execute(
             )
             _write_state(state_path, failure, secrets)
             return failure
+        _write_selection_audit(state_path.with_name("selection-audit.json"), briefing.selection_audit, secrets)
         validation_errors = validate_artifact(output_dir, secrets=secrets)
         if validation_errors:
             failure = replace(

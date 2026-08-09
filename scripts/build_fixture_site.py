@@ -8,7 +8,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from insight_desk.config import load_topics  # noqa: E402
 from insight_desk.domain.models import KeywordGroup  # noqa: E402
 from insight_desk.run import execute  # noqa: E402
 

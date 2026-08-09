@@ -7,7 +7,13 @@
       "enabled": true,
       "conditional": false,
       "priority": 90,
+      "candidate_budget": 40,
+      "selection_cap": 3,
       "news_queries": ["인공지능", "AI 에이전트", "반도체", "NVIDIA"],
+      "query_families": [
+        ["ChatGPT", "OpenAI", "생성형 AI", "AI 에이전트"],
+        ["NVIDIA", "GPU", "HBM", "HyperCLOVA X", "Gemini", "Claude"]
+      ],
       "trend_groups": [
         {"id": "chatgpt", "name": "ChatGPT", "keywords": ["ChatGPT", "챗GPT", "챗지피티"]},
         {"id": "ai_agent", "name": "AI 에이전트", "keywords": ["AI 에이전트", "에이전틱 AI"]},
@@ -20,7 +26,13 @@
       "enabled": true,
       "conditional": false,
       "priority": 70,
+      "candidate_budget": 40,
+      "selection_cap": 3,
       "news_queries": ["K-POP", "HYBE", "음원 차트", "음반 시장"],
+      "query_families": [
+        ["SM", "JYP", "YG", "아이돌", "가요계"],
+        ["Billboard K-POP", "빌보드", "음악 차트", "음반 시장"]
+      ],
       "trend_groups": [
         {"id": "kpop", "name": "K-POP", "keywords": ["K-POP", "케이팝", "KPOP"]},
         {"id": "hybe", "name": "HYBE", "keywords": ["HYBE", "하이브"]}
@@ -32,7 +44,13 @@
       "enabled": true,
       "conditional": false,
       "priority": 75,
+      "candidate_budget": 40,
+      "selection_cap": 3,
       "news_queries": ["한국은행 기준금리", "원달러 환율", "코스피", "국내 경제"],
+      "query_families": [
+        ["한국은행", "기준금리", "물가", "국내 경제"],
+        ["원·달러 환율", "미국 연준", "미국 증시", "반도체", "코스피"]
+      ],
       "trend_groups": [
         {"id": "exchange", "name": "원달러 환율", "keywords": ["원달러 환율", "달러 환율", "환율"]},
         {"id": "kospi", "name": "코스피", "keywords": ["코스피", "KOSPI"]}
@@ -44,7 +62,13 @@
       "enabled": true,
       "conditional": true,
       "priority": 65,
+      "candidate_budget": 36,
+      "selection_cap": 3,
       "news_queries": ["한화 이글스", "KBO", "프로야구"],
+      "query_families": [
+        ["한화 이글스", "한화 경기", "한화 야구"],
+        ["KBO", "프로야구", "프로야구 일정"]
+      ],
       "trend_groups": [
         {"id": "hanwha", "name": "한화 이글스", "keywords": ["한화 이글스", "한화 야구"]},
         {"id": "kbo", "name": "KBO", "keywords": ["KBO", "프로야구"]}
@@ -56,7 +80,13 @@
       "enabled": true,
       "conditional": true,
       "priority": 55,
+      "candidate_budget": 36,
+      "selection_cap": 3,
       "news_queries": ["PSAT", "5급 공채", "국가공무원 채용"],
+      "query_families": [
+        ["PSAT", "공직적격성평가", "5급 공채"],
+        ["7급 공채", "국가공무원 채용", "공무원 시험", "채용 일정"]
+      ],
       "trend_groups": [
         {"id": "psat", "name": "PSAT", "keywords": ["PSAT", "공직적격성평가"]},
         {"id": "civil_service", "name": "국가공무원 채용", "keywords": ["국가공무원 채용", "공무원 시험"]}

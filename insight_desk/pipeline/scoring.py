@@ -23,11 +23,13 @@ def score_news(items: tuple[NewsItem, ...], topics: tuple[Topic, ...], *, now: d
     topic_by_id = {topic.id: topic for topic in topics}
     scored: list[NewsItem] = []
     for item in items:
-        topic = topic_by_id[item.topic_id]
+        topic_ids = item.matched_topic_ids or (item.topic_id,)
+        matched_topics = [topic_by_id[topic_id] for topic_id in topic_ids if topic_id in topic_by_id]
+        topic_priority = max((topic.priority for topic in matched_topics), default=50)
         text = f"{item.title} {item.summary}".casefold()
         query_match = 1 if item.query.casefold() in text else 0
         recency = max(0.0, 40.0 - min(40.0, _age_hours(item, now) * 1.2))
-        score = recency + query_match * 18.0 + min(15.0, len(item.summary) / 80.0) + topic.priority / 20.0
+        score = recency + query_match * 18.0 + min(15.0, len(item.summary) / 80.0) + topic_priority / 20.0
         scored.append(replace(item, score=round(score, 4)))
     return tuple(sorted(scored, key=lambda item: (-item.score, item.title)))
 

@@ -28,6 +28,13 @@ def load_topics(path: Path) -> tuple[Topic, tuple[KeywordGroup, ...]]:
                 conditional=bool(topic_raw.get("conditional", False)),
                 priority=int(topic_raw.get("priority", 50)),
                 news_queries=tuple(str(x) for x in topic_raw.get("news_queries", [])),
+                query_families=tuple(
+                    tuple(str(query) for query in family if str(query).strip())
+                    for family in topic_raw.get("query_families", [])
+                    if isinstance(family, list)
+                ),
+                candidate_budget=max(10, int(topic_raw.get("candidate_budget", 40))),
+                selection_cap=max(1, int(topic_raw.get("selection_cap", 3))),
             )
         )
         for index, group_raw in enumerate(topic_raw.get("trend_groups", []), start=1):

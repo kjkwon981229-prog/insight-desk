@@ -41,7 +41,19 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("--accent:", css)
         self.assertIn("--space-1:", css)
         self.assertIn("prefers-color-scheme: dark", css)
+        self.assertIn("env(safe-area-inset-top)", css)
         self.assertTrue((root / "archive/2026-08-09/index.html").exists())
+        manifest = json.loads((root / "manifest.webmanifest").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["display"], "standalone")
+        self.assertEqual(manifest["x-icon-status"], "ICON_ASSET_BLOCKED")
+        for page in (root / "index.html", root / "latest/index.html", root / "archive/index.html", root / "archive/2026-08-09/index.html"):
+            page_text = page.read_text(encoding="utf-8")
+            self.assertIn('rel="manifest"', page_text)
+            self.assertIn("apple-mobile-web-app-capable", page_text)
+            self.assertIn("viewport-fit=cover", page_text)
+        self.assertNotIn("serviceWorker", (root / "index.html").read_text(encoding="utf-8"))
+        self.assertIn("data-generated-date", (root / "index.html").read_text(encoding="utf-8"))
+        self.assertNotIn("data-latest-briefing", (root / "archive/2026-08-09/index.html").read_text(encoding="utf-8"))
         json.loads((root / "data/latest.json").read_text(encoding="utf-8"))
 
     def test_user_view_hides_internal_ids_and_old_microcopy(self) -> None:
@@ -73,3 +85,6 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("전체 근거 보기", text)
         self.assertIn("근거 1곳", text)
         self.assertIn("key-fact-panel", text)
+        self.assertNotIn('class="hero"', text)
+        self.assertNotIn("selection_audit", (root / "data/latest.json").read_text(encoding="utf-8"))
+        self.assertIn("data-generated-date", text)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Callable
 
 from ..domain.models import CollectorStatus, KeywordGroup, Topic
 from ..security import redact_text
@@ -26,17 +25,29 @@ def collect_news(client: NaverApiClient, topics: tuple[Topic, ...]) -> NewsColle
     errors: list[str] = []
     attempted = 0
     succeeded = 0
-    seen_queries: set[str] = set()
+    seen_payloads: dict[str, dict[str, object]] = {}
     enabled_topics = [topic for topic in topics if topic.enabled]
     for topic in enabled_topics:
-        for query in topic.news_queries:
-            if query in seen_queries:
+        queries = topic.all_news_queries
+        if not queries:
+            continue
+        per_query = max(5, (topic.candidate_budget + len(queries) - 1) // len(queries))
+        for query in queries:
+            if query in seen_payloads:
+                # Reuse one network response while retaining every topic
+                # attribution for cross-interest deduplication.
+                raw.append((topic.id, query, seen_payloads[query]))
                 continue
-            seen_queries.add(query)
             attempted += 1
             try:
-                payload = client.search_news(query)
+                # Equal request budgets keep broad query families from becoming
+                # implicit editorial authority. The final cap is topic-local.
+                payload = client.search_news(query, display=min(100, per_query))
                 succeeded += 1
+                items = payload.get("items", [])
+                if isinstance(items, list):
+                    payload = {**payload, "items": items[:per_query]}
+                seen_payloads[query] = payload
                 raw.append((topic.id, query, payload))
             except NaverApiError as exc:
                 errors.append(redact_text(f"{topic.name}/{query}: {exc.kind} {exc}"))
