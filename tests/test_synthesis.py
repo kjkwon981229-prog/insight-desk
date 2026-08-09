@@ -91,6 +91,25 @@ class SynthesisTests(unittest.TestCase):
         self.assertEqual(certainty.value, "confirmed")
         self.assertEqual(watch, ("다음 월간 통계와 변동폭",))
 
+    def test_release_summary_preserves_subject_date_and_release_fact(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "bigbang-release",
+                    "빅뱅, 19일 데뷔 20주년 기념 BiiG 발매",
+                    "빅뱅이 19일 신곡을 발표한다고 전했다.",
+                    "music.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        self.assertIn("빅뱅이", summary)
+        self.assertIn("19일", summary)
+        self.assertIn("신곡", summary)
+        self.assertIn("발매", summary)
+        self.assertEqual(facts.date, "19일")
+
     def test_ndf_quote_preserves_the_full_supported_quote(self) -> None:
         cluster = StoryCluster(
             "topic",

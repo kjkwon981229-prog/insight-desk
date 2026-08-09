@@ -509,6 +509,16 @@ def _particle(value: str) -> str:
     return "는"
 
 
+def _subject_particle(value: str) -> str:
+    if not value:
+        return "가"
+    last = value[-1]
+    if "가" <= last <= "힣":
+        code = ord(last) - 0xAC00
+        return "이" if code % 28 else "가"
+    return "가"
+
+
 def _number_with_ro(value: str) -> str:
     """Attach the Korean instrumental marker without producing ``원로``."""
 
@@ -654,14 +664,19 @@ def _summary(
     elif event_type == "PRODUCT_RELEASE" and subject:
         release_subject = _clean_headline(title).split(",", 1)[0].strip() or subject
         if "앨범" in title:
-            release_fact = "앨범 발매"
-        elif "음원" in title or "싱글" in title:
-            release_fact = "음원 공개"
+            release_noun, release_verb, release_fact = "앨범", "발매", "앨범 발매"
+        elif any(marker in title for marker in ("음원", "싱글", "신곡", "발매")):
+            release_noun, release_verb, release_fact = "신곡", "발매", "신곡 발매"
         elif "도구" in title or "서비스" in title:
-            release_fact = "도구·서비스 출시"
+            release_noun, release_verb, release_fact = "도구·서비스", "출시", "도구·서비스 출시"
         else:
-            release_fact = "출시·발매"
-        sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
+            release_noun, release_verb, release_fact = "제품", "출시", "출시"
+        if date and release_verb == "발매":
+            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
+        elif date and release_verb == "출시":
+            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
+        else:
+            sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
     elif event_type == "AWARD_CHART" and subject:
         chart_number = next((value for value in numbers if value.endswith("위")), "")
         if chart_number:

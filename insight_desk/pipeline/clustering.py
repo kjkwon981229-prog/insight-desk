@@ -28,6 +28,7 @@ _EVENT_TERMS = {
     "규제", "정책", "발표", "공개", "출시", "투자", "유치", "인수", "실적", "공시",
     "경기", "승리", "패배", "부상", "트레이드", "선발", "엔트리", "시행", "일정",
     "컴백", "공연", "콘서트", "차트", "기록", "상승", "하락", "급등", "급락", "변동",
+    "발매", "협업", "프로젝트",
     "폭염", "중단", "멈춘", "논란",
 }
 _GENERIC_TERMS = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
@@ -38,9 +39,10 @@ _CLUSTER_GENERIC_ENTITIES = {
     "제품", "신제품", "사업", "시장", "업계", "리그", "경기", "선수", "구단",
     "kbo", "프로야구", "야구",
     "반도체", "메모리", "hbm", "hbf", "gpu", "ai", "증시", "주가", "첨단산업",
-    "모멘텀", "수혜", "초호황",
+    "모멘텀", "수혜", "초호황", "확정", "신보", "신곡", "기념", "데뷔", "만에",
 }
 _GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
+_RELEASE_ACTIONS = {"출시", "발매", "컴백"}
 _HEAT_INTERRUPTION_TERMS = {
     "중단", "멈춘", "휴식", "재개", "취소", "방학", "브레이크", "순연", "재편", "일정"
 }
@@ -107,7 +109,6 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
         for value in (
             item.metadata_title,
             item.title,
-            item.metadata_description,
         )
         if value
     ).lower()
@@ -157,10 +158,16 @@ def _similar(a: NewsItem, b: NewsItem) -> bool:
     shared_entities = left_entities & right_entities
     shared_actions = left_actions & right_actions
     shared_dates = left_dates & right_dates
+    actions_compatible = (
+        not left_actions
+        or not right_actions
+        or bool(left_actions & right_actions)
+        or (left_actions <= _RELEASE_ACTIONS and right_actions <= _RELEASE_ACTIONS)
+    )
     # A shared entity alone is not enough: the action/event or a concrete date
     # must also line up. This prevents two unrelated stories about one company
     # or artist from being over-merged.
-    return bool(shared_entities and (shared_actions or shared_dates))
+    return bool(shared_entities and (shared_actions or (shared_dates and actions_compatible)))
 
 
 def cluster_news(items: tuple[NewsItem, ...]) -> tuple[StoryCluster, ...]:

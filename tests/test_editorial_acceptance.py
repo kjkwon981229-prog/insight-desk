@@ -367,6 +367,67 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(len(clusters), 1)
         self.assertEqual(len(clusters[0].items), 2)
 
+    def test_same_date_different_artist_releases_do_not_merge(self) -> None:
+        first = _item(
+            "same-day-release-a",
+            "kpop",
+            "가요계",
+            "클유아, 9월 말 컴백 확정…신보 발매",
+            "클로즈 유어 아이즈가 9월 말 컴백한다.",
+            domain="a.example",
+        )
+        second = _item(
+            "same-day-release-b",
+            "kpop",
+            "가요계",
+            "몬스타엑스, 9월 가요계 컴백 확정…앨범 발매",
+            "몬스타엑스가 9월 4일 미니 앨범을 발매한다.",
+            domain="b.example",
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 2)
+
+    def test_metadata_tail_does_not_merge_yg_analysis_into_bigbang_release(self) -> None:
+        release = _item(
+            "bigbang-release",
+            "kpop",
+            "YG",
+            "빅뱅, 19일 데뷔 20주년 기념 BiiG 발매",
+            "빅뱅이 19일 신곡을 발표한다.",
+            domain="release.example",
+        )
+        analyst = _item(
+            "yg-analysis",
+            "kpop",
+            "YG",
+            "6년 만의 신인 보이그룹, YG냐 SM이냐",
+            "YG의 라인업과 실적을 분석했다.",
+            metadata_description="빅뱅 20주년 월드투어도 예정됐다고 덧붙였다.",
+            domain="analyst.example",
+        )
+        clusters = cluster_news((release, analyst))
+        self.assertEqual(len(clusters), 2)
+
+    def test_same_artist_release_and_anniversary_project_do_not_merge(self) -> None:
+        release = _item(
+            "bigbang-release-event",
+            "kpop",
+            "YG",
+            "빅뱅, 19일 데뷔 20주년 기념 BiiG 발매",
+            "빅뱅이 19일 신곡을 발표한다.",
+            domain="release.example",
+        )
+        project = _item(
+            "bigbang-project-event",
+            "kpop",
+            "YG",
+            "롯데백화점, YG와 협업…빅뱅 데뷔 20주년 기념 프로젝트",
+            "롯데백화점이 빅뱅 20주년 기념 전시 프로젝트를 추진한다.",
+            domain="project.example",
+        )
+        clusters = cluster_news((release, project))
+        self.assertEqual(len(clusters), 2)
+
     def test_date_only_breaking_event_can_pass(self) -> None:
         topic = _topic(
             "economy",
