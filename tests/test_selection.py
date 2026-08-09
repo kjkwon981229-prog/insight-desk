@@ -128,6 +128,22 @@ class SelectionTests(unittest.TestCase):
             result.audit[0]["selection_reasons"],
         )
 
+    def test_metadata_policy_tail_does_not_promote_analyst_commentary(self) -> None:
+        candidate = replace(
+            _item(
+                "analyst-commentary",
+                "ai",
+                score=100.0,
+                summary="메모리 반도체주의 조정이 마무리 단계이며 투자 재진입 기회라고 분석했다.",
+            ),
+            query="반도체",
+            title="모건스탠리 \"메모리 반도체주 조정 끝...지금이 재진입 기회\"",
+            metadata_title="모건스탠리 \"메모리 반도체주 조정 끝...지금이 재진입 기회\"",
+            metadata_description="주주환원 정책을 반등의 핵심으로 꼽으며 투자 매력을 강조했다.",
+        )
+        result = select_clusters((StoryCluster("ai", (candidate,)),), _topics(), limit=10)
+        self.assertEqual(result.selected, ())
+
     def test_cap_relaxes_when_only_one_topic_qualifies(self) -> None:
         result = select_clusters(tuple(_cluster(f"ai-{i}", "ai") for i in range(7)), _topics(), limit=10)
         self.assertEqual(len(result.selected), 7)

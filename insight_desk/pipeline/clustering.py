@@ -67,7 +67,16 @@ def _is_sports_heat_story(item: NewsItem) -> bool:
     one analytical headline masquerade as a second event.
     """
 
-    text = _item_text(item)
+    # A description can append a separate ceremonial event (for example a
+    # first-pitch notice) to an otherwise unrelated headline. Require the
+    # heat signal in the headline itself; use the lead only to establish the
+    # sports context for an analytical heat headline.
+    headline = " ".join(value for value in (item.metadata_title, item.title) if value).lower()
+    if not any(term in headline for term in ("폭염", "열파")):
+        return False
+    text = " ".join(
+        value for value in (headline, item.metadata_description, item.summary) if value
+    ).lower()
     return bool(
         any(term in text for term in ("폭염", "열파"))
         and any(term in text for term in ("kbo", "프로야구", "한국 야구", "야구"))

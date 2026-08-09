@@ -742,7 +742,10 @@ def synthesize_cluster(
     event_type = title_event_type if title_event_type != "OTHER" else (
         lead_event_type if lead_event_type != "OTHER" else _event_type(title_evidence, numbers)
     )
-    action = _action(title) or _action(effective_lead(headline_item)) or _action(title_evidence)
+    # Do not borrow an action from another headline in a broad cluster. A
+    # secondary article may describe a different event while sharing the
+    # same entity or theme.
+    action = _action(title) or _action(effective_lead(headline_item))
     subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
     change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
     repeated = _repeated_values(items, _numbers)

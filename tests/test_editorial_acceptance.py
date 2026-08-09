@@ -482,6 +482,26 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(len(clusters), 1)
         self.assertEqual(len(clusters[0].items), 2)
 
+    def test_heat_exception_does_not_use_snippet_tail_to_merge_first_pitch(self) -> None:
+        heat = _item(
+            "heat-tail",
+            "kbo",
+            "프로야구",
+            "프로야구 폭염으로 경기 중단",
+            "폭염으로 리그 일정이 중단됐다.",
+            domain="heat.example",
+        )
+        first_pitch = _item(
+            "pitch-tail",
+            "kbo",
+            "프로야구",
+            "아이들 민니, 11일 잠실 두산-한화전 시구",
+            "폭염으로 중단된 경기가 재개되며 시구자로 나선다.",
+            domain="pitch.example",
+        )
+        clusters = cluster_news((heat, first_pitch))
+        self.assertEqual(len(clusters), 2)
+
     def test_heat_analysis_headline_merges_into_interruption_event(self) -> None:
         first = _item(
             "heat-analysis",
