@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import shutil
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
@@ -277,8 +278,12 @@ MANIFEST = {
     "theme_color": "#c35b78",
     "background_color": "#f5f1ef",
     "description": "관심사별 뉴스와 검색 관심 흐름을 정리하는 모바일 브리핑",
-    "icons": [],
-    "x-icon-status": "ICON_ASSET_BLOCKED",
+    "icons": [
+        {"src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    ],
+    "x-icon-status": "APPROVED_CANDIDATE_5_EXTRACTED",
+    "x-icon-provenance": "인사이트 데스크 아이콘 탐구 보드의 Candidate 5 시안을 그대로 추출·리사이즈",
 }
 
 
@@ -687,6 +692,8 @@ def _freshness_script() -> str:
 def _pwa_head(asset_prefix: str) -> str:
     return (
         f'<link rel="manifest" href="{_esc(asset_prefix)}manifest.webmanifest">'
+        f'<link rel="icon" type="image/png" sizes="32x32" href="{_esc(asset_prefix)}assets/icons/favicon.png">'
+        f'<link rel="apple-touch-icon" sizes="180x180" href="{_esc(asset_prefix)}assets/icons/apple-touch-icon.png">'
         '<meta name="theme-color" content="#c35b78">'
         '<meta name="apple-mobile-web-app-capable" content="yes">'
         '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
@@ -775,6 +782,11 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
     (output_dir / "archive").mkdir(exist_ok=True)
     (output_dir / "data").mkdir(exist_ok=True)
     (output_dir / "assets/css/style.css").write_text(CSS, encoding="utf-8")
+    icon_source_dir = Path(__file__).resolve().parents[2] / "assets/icons"
+    icon_output_dir = output_dir / "assets/icons"
+    icon_output_dir.mkdir(parents=True, exist_ok=True)
+    for icon_name in ("icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.png"):
+        shutil.copyfile(icon_source_dir / icon_name, icon_output_dir / icon_name)
     (output_dir / "manifest.webmanifest").write_text(
         json.dumps(MANIFEST, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

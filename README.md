@@ -12,7 +12,8 @@ Insight Desk는 NAVER Search News API와 NAVER Search Trend API에서 받은 자
 
 - `insight_desk/`: 수집·분석·선택·상태 기계·정적 HTML 렌더러
 - `config/topics.json`: 다섯 관심사와 query family의 단일 설정 원본
-- `manifest.webmanifest`: standalone PWA 설정. 승인 아이콘은 현재 작업 공간에서 확보되지 않아 아이콘 상태를 별도로 표시한다.
+- `manifest.webmanifest`: standalone PWA 설정과 Candidate 5 아이콘 연결
+- `assets/icons/`: 승인 보드에서 추출한 Candidate 5의 192px·512px·Apple touch·favicon 세트
 - `.github/workflows/insight-desk-pages.yml`: 수동·매일 실행과 Pages 배포
 - `.github/workflows/ci.yml`: 컴파일·테스트·fixture artifact 검증
 - `tests/`: 핵심 회귀 테스트
@@ -96,7 +97,7 @@ fixture 실행은 실제 NAVER 연결 성공을 의미하지 않는다. 실제 �
 
 선택 계층에는 AI·테크 물량 우세, 경제 물량 우세, K-POP/KBO/PSAT 단독 이벤트, conditional 무후보, 교차 관심사 중복, syndicated source volume, 공식 근거, enrichment round-robin을 포함한 10일 회귀 행렬이 있다.
 
-현재 `manifest.webmanifest`는 `display: standalone`, `scope`, theme/background, safe-area, Apple web-app 메타를 연결한다. 승인된 Candidate 5 아이콘 파일은 이 작업 공간에서 확인되지 않아 `ICON_ASSET_BLOCKED`로 기록했으며 임의 아이콘은 만들지 않았다. 이 상태에서는 PWA 아이콘 완료나 `FINAL_PASS`를 주장하지 않는다.
+현재 `manifest.webmanifest`는 `display: standalone`, `scope`, theme/background, safe-area, Apple web-app 메타와 Candidate 5 아이콘을 연결한다. 별도 원본 파일이 아닌 승인 아이콘 보드의 Candidate 5 시안 영역을 그대로 추출·리사이즈했으며, 새로운 도형을 생성하지 않았다. manifest에는 `APPROVED_CANDIDATE_5_EXTRACTED` provenance를 기록한다.
 
 ## 공식 계약
 

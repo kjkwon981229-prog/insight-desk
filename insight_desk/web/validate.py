@@ -11,6 +11,10 @@ REQUIRED_FILES = (
     "data/latest.json",
     "assets/css/style.css",
     "manifest.webmanifest",
+    "assets/icons/icon-192.png",
+    "assets/icons/icon-512.png",
+    "assets/icons/apple-touch-icon.png",
+    "assets/icons/favicon.png",
 )
 _LOCAL_HREF = re.compile(r'href=["\']([^"\'#]+)["\']')
 
@@ -21,6 +25,8 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
         path = site_dir / relative
         if not path.is_file():
             errors.append(f"missing required file: {relative}")
+            continue
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".ico"}:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -37,6 +43,8 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
                 errors.append(f"missing mobile viewport: {relative}")
             for marker in (
                 "rel=\"manifest\"",
+                "rel=\"icon\"",
+                "rel=\"apple-touch-icon\"",
                 "theme-color",
                 "apple-mobile-web-app-capable",
             ):
@@ -50,8 +58,19 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
             for key, expected in (("display", "standalone"), ("name", "Insight Desk"), ("short_name", "Insight Desk")):
                 if manifest.get(key) != expected:
                     errors.append(f"invalid manifest {key}: {expected}")
-            if manifest.get("x-icon-status") != "ICON_ASSET_BLOCKED":
-                errors.append("manifest icon provenance is not explicit")
+            if manifest.get("x-icon-status") != "APPROVED_CANDIDATE_5_EXTRACTED":
+                errors.append("manifest icon provenance is not the approved Candidate 5 asset")
+            icons = manifest.get("icons")
+            if not isinstance(icons, list) or not icons:
+                errors.append("manifest icons are missing")
+            else:
+                for icon in icons:
+                    if not isinstance(icon, dict) or not isinstance(icon.get("src"), str):
+                        errors.append("manifest icon entry is invalid")
+                        continue
+                    icon_path = site_dir / icon["src"]
+                    if not icon_path.is_file():
+                        errors.append(f"missing manifest icon: {icon['src']}")
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             errors.append("invalid manifest.webmanifest")
 
