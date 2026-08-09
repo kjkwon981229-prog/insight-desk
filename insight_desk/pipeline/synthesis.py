@@ -6,10 +6,11 @@ from collections.abc import Callable
 
 from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
+from .editorial import effective_lead, effective_title, safe_evidence_text
 from .normalization import normalize_text
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|달러|원|%|퍼센트|명|건|배|개|곳|일|년|개월|분|시|위|점|대|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|년|개월|분|시|위|점|대|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -46,6 +47,16 @@ _ACTION_MARKERS = (
     "인수",
     "인상",
     "인하",
+    "규제",
+    "유치",
+    "투자",
+    "인수",
+    "트레이드",
+    "부상",
+    "승리",
+    "패배",
+    "컴백",
+    "전략",
 )
 _LOCATION_TERMS = (
     "잠실",
@@ -108,7 +119,7 @@ def _clean_headline(value: str) -> str:
     marker = _TRUNCATION_RE.search(text)
     if marker:
         text = text[: marker.start()]
-    text = re.sub(r"[\"“”‘’]", "", text)
+    text = re.sub(r"[\"'“”‘’]", "", text)
     text = re.sub(r"\s+", " ", text).strip(" .·-—")
     return text
 
@@ -194,12 +205,22 @@ def _repeated_terms(items: tuple[object, ...]) -> tuple[str, ...]:
 def _event_type(text: str, numbers: tuple[str, ...]) -> str:
     if any(word in text for word in ("실적", "매출", "영업이익", "순이익", "가이던스")):
         return "EARNINGS"
-    if any(word in text for word in ("정책", "시행", "고시", "법안", "대책", "규정", "기준금리")):
+    if any(word in text for word in ("1위", "차트", "관왕", "수상")):
+        return "AWARD_CHART"
+    if any(word in text for word in ("규제", "법안", "고시", "금지", "허용")):
+        return "REGULATION"
+    if any(word in text for word in ("정책", "시행", "대책", "규정", "기준금리")):
         return "POLICY"
-    if any(word in text for word in ("출시", "예약판매", "판매 개시", "사양 확정")):
+    if any(word in text for word in ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
-    if any(word in text for word in ("경기", "시구", "선발", "엔트리", "승리", "패배", "홈런")):
+    if any(word in text for word in ("부상", "트레이드", "엔트리", "선발")):
+        return "ROSTER_PERSONNEL"
+    if _DATE_RE.search(text) and any(word in text for word in ("시구", "개최", "예정")):
         return "SPORTS_EVENT"
+    if any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기 결과")) and any(word in text for word in ("중단", "멈춘", "폭염")):
+        return "SPORTS_INTERRUPTION"
+    if any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기 결과")) and any(word in text for word in ("경기", "승리", "패배", "홈런", "순위")):
+        return "SPORTS_RESULT"
     if any(word in text for word in ("콘서트", "공연", "앨범", "컴백", "배우", "가수", "시구")):
         return "ENTERTAINMENT_EVENT"
     if any(word in text for word in ("환율", "코스피", "주가", "증시", "금리")):
@@ -208,8 +229,12 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         return "STATISTIC"
     if _DATE_RE.search(text) and any(word in text for word in (*_ACTION_MARKERS, "예정")):
         return "SCHEDULED_EVENT"
-    if any(word in text for word in ("공식 발표", "발표", "공개", "확정")):
+    if any(word in text for word in ("공식 발표", "발표", "공지")):
         return "ANNOUNCEMENT"
+    if any(word in text for word in ("유치", "투자", "인수", "전략", "데이터센터")):
+        return "INDUSTRY_CHANGE"
+    if any(word in text for word in ("굿즈", "유니폼", "패션", "상품", "기념품")):
+        return "MERCHANDISE"
     return "OTHER"
 
 
@@ -229,6 +254,8 @@ def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
     if "," in candidate or "，" in candidate:
         candidate = re.split(r"[,，]", candidate, maxsplit=1)[0]
     candidate = re.sub(r"^(?:올해|지난해|이번|내년)\s+", "", candidate).strip(" ,·-")
+    if len(candidate) < 2:
+        candidate = cleaned.split(" · ", 1)[0].strip(" ,·-")
     return candidate[:48]
 
 
@@ -270,6 +297,15 @@ def _tail_after_first_number(title: str, numbers: tuple[str, ...]) -> str:
                     return value
             break
     return ""
+
+
+def _fact_subject(value: str) -> str:
+    """Keep the subject compact when a headline embeds comparison context."""
+
+    text = re.sub(r"\s+", " ", value).strip(" ,·-")
+    text = re.split(r"\s+(?:금융위기|코로나|전년|지난해|이후|대비|역대)", text, maxsplit=1)[0]
+    text = re.sub(r"\s+(?:최고|최대|최저|최소|급등|급락|상승|하락)$", "", text)
+    return text.strip(" ,·-")
 
 
 def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
@@ -356,6 +392,8 @@ def _headline(
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
+    if event_type in {"AWARD_CHART", "PRODUCT_RELEASE", "INDUSTRY_CHANGE", "REGULATION", "POLICY", "ANNOUNCEMENT"}:
+        return cleaned or subject or "주요 변화"
     if event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         # Keep event headlines factual and short; omit article-style hype
         # after the event verb.
@@ -381,19 +419,20 @@ def _summary(
 ) -> str:
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
+        summary_subject = _fact_subject(summary_subject)
         if change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
             if marker and summary_subject and numbers[0].endswith(("%", "달러")):
                 sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {marker}했다."
             else:
-                lead = f"{summary_subject} 관련 " if summary_subject else ""
-                sentence = f"{lead}{numbers[0]} 수치와 {change} 흐름이 "
+                lead = f"{summary_subject}의 " if summary_subject else ""
+                sentence = f"{lead}{numbers[0]} 수치가 "
                 sentence += "여러 보도에서 확인됐다." if source_count > 1 else "한 건의 보도에서 제시됐다. 추가 확인이 필요하다."
         elif source_count > 1:
-            lead = f"{summary_subject} 관련 " if summary_subject else ""
-            sentence = f"{lead}{numbers[0]} 수치가 여러 보도에서 반복됐지만 변화 방향은 추가 확인이 필요하다."
+            lead = f"{summary_subject}의 " if summary_subject else ""
+            sentence = f"{lead}{numbers[0]} 수치가 여러 보도에서 확인됐다."
         else:
-            lead = f"{summary_subject} 관련 " if summary_subject else ""
+            lead = f"{summary_subject}의 " if summary_subject else ""
             sentence = f"{lead}{numbers[0]} 수치가 한 건의 보도에서 제시돼 추가 확인이 필요하다."
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         event_phrase = action if action in _EVENT_ACTIONS else ""
@@ -405,11 +444,41 @@ def _summary(
         else:
             phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"
             sentence = f"{subject} {phrase} 공개됐다."
-    elif event_type == "POLICY" and subject:
-        policy_action = action if action in {"발표", "공개", "시행", "고시", "확정"} else "변경"
-        sentence = f"{subject} {policy_action}가 확인됐다."
+    elif event_type in {"POLICY", "REGULATION"} and subject:
+        policy_action = action if action in {"발표", "공개", "시행", "고시", "확정"} else "정책 변화"
+        sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
-        sentence = f"{subject} 출시 또는 판매 일정이 공개됐다."
+        release_subject = _clean_headline(title).split(",", 1)[0].strip() or subject
+        if "앨범" in title:
+            release_fact = "앨범 발매"
+        elif "음원" in title or "싱글" in title:
+            release_fact = "음원 공개"
+        elif "도구" in title or "서비스" in title:
+            release_fact = "도구·서비스 출시"
+        else:
+            release_fact = "출시·발매"
+        sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
+    elif event_type == "AWARD_CHART" and subject:
+        sentence = f"{subject}의 차트·수상 성과가 확인됐다."
+    elif event_type == "INDUSTRY_CHANGE" and subject:
+        change_action = {
+            "유치": "투자 유치",
+            "투자": "투자",
+            "인수": "인수",
+            "전략": "전략 변화",
+        }.get(action, action or "사업 변화")
+        if numbers:
+            sentence = f"{subject}의 {numbers[0]} 규모 {change_action} 소식이 보도됐다."
+        else:
+            sentence = f"{subject}의 {change_action} 소식이 보도됐다."
+    elif event_type == "ROSTER_PERSONNEL" and subject:
+        sentence = f"{subject}의 {action or '선수단 변동'}이 확인됐다."
+    elif event_type == "SPORTS_RESULT" and subject:
+        sentence = f"{subject}의 경기 결과 또는 기록 변화가 확인됐다."
+    elif event_type == "SPORTS_INTERRUPTION" and subject:
+        sentence = f"{subject} 경기가 폭염 영향으로 중단되거나 일정이 조정됐다."
+    elif event_type == "MERCHANDISE" and subject:
+        sentence = f"{subject} 관련 상품 소식이 보도됐다."
     elif event_type == "ANNOUNCEMENT":
         sentence = f"{subject or _clean_headline(title)} 발표가 확인됐다."
     else:
@@ -445,9 +514,9 @@ def synthesize_cluster(
     items = cluster.items
     representative = cluster.representative
     combined = " ".join(
-        f"{_clean_headline(getattr(item, 'title', ''))} {_safe_evidence_text(getattr(item, 'summary', ''))}" for item in items
+        f"{effective_title(item)} {effective_lead(item)}" for item in items
     )
-    title = _clean_headline(representative.title)
+    title = effective_title(representative) or _clean_headline(representative.title)
     numbers = _unique(list(_numbers(combined)))
     dates = _unique(list(_dates(combined)))
     times = _unique(list(_times(combined)))
@@ -505,7 +574,10 @@ def synthesize_cluster(
         next_known_event=next_signal,
         uncertainty=uncertainty,
     )
-    headline = _headline(representative.title, event_type, subject, numbers, change, date=date, action=action)
+    headline_source = effective_title(representative)
+    if not representative.metadata_title or not safe_evidence_text(representative.metadata_title):
+        headline_source = representative.title
+    headline = _headline(headline_source, event_type, subject, numbers, change, date=date, action=action)
     summary = _summary(
         title,
         event_type,
@@ -520,5 +592,10 @@ def synthesize_cluster(
     )
     evidence = _evidence_summary(source_count, repeated, official)
     watch = (next_signal,) if next_signal else ()
-    certainty = Certainty.CONFIRMED if source_count > 1 or official else Certainty.UNCERTAIN
+    if source_count > 1 or official:
+        certainty = Certainty.CONFIRMED
+    elif event_type != "OTHER" and (numbers or dates or action):
+        certainty = Certainty.SUPPORTED_SINGLE_SOURCE
+    else:
+        certainty = Certainty.UNCERTAIN
     return headline, summary, evidence, watch, facts, certainty
