@@ -319,6 +319,68 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(len(clusters), 1)
         self.assertEqual(len(clusters[0].items), 2)
 
+    def test_heat_analysis_headline_merges_into_interruption_event(self) -> None:
+        first = _item(
+            "heat-analysis",
+            "kbo",
+            "한화 야구",
+            "39~40도 폭염은 지났다→체력 충전+선발진 리셋",
+            "한국 야구 위원회(KBO)가 폭염 취소 규정을 세분화했다.",
+            domain="a.example",
+        )
+        second = _item(
+            "heat-event",
+            "kbo",
+            "KBO",
+            "극한 폭염에 멈춘 프로야구",
+            "기록적인 폭염으로 프로야구가 닷새 동안 멈춰섰다.",
+            domain="b.example",
+        )
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "KBO",
+            anchors=("KBO", "프로야구", "한화", "야구"),
+            events=("경기", "폭염", "중단"),
+            required=("KBO",),
+            conditional=True,
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 1)
+        assessment = assess_event(clusters[0], topic)
+        self.assertEqual(assessment.event_type, "SPORTS_INTERRUPTION")
+        self.assertTrue(assessment.passed)
+
+    def test_chart_summary_keeps_first_place_fact(self) -> None:
+        item = _item(
+            "chart-fact",
+            "kpop",
+            "음악 차트",
+            "스트레이 키즈, THIS & THAT 국내외 음악 차트 1위",
+            "컴백 당일 음악 방송 활동에 돌입했다.",
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kpop", (item,)), topic_name="K-POP", trend_metrics=()
+        )
+        self.assertIn("1위", headline)
+        self.assertIn("1위", summary)
+        self.assertEqual(facts.event_type, "AWARD_CHART")
+
+    def test_market_summary_keeps_supported_volatility_change(self) -> None:
+        item = _item(
+            "market-fact",
+            "economy",
+            "원달러 환율",
+            "이젠 1300원대 환율? 변동폭 금융위기 이후 최대",
+            "",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)), topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertIn("변동폭", summary)
+        self.assertIn("금융위기 이후 최대", summary)
+        self.assertEqual(facts.event_type, "MARKET")
+
     def test_novelty_states_do_not_fabricate_history(self) -> None:
         self.assertEqual(classify_novelty("MARKET|환율|47원", ()), "UNKNOWN_HISTORY")
         self.assertEqual(classify_novelty("MARKET|환율|47원", ("MARKET|환율|47원",)), "UNCHANGED")
