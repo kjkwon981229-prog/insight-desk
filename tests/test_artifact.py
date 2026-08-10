@@ -160,6 +160,30 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("https://kosis.kr/statHtml/statHtml.do?orgId=101&amp;tblId=DT_TEST", html_text)
         self.assertIn("통계청 KOSIS · 공식 자료", html_text)
 
+    def test_empty_public_payload_does_not_dump_rejected_news_candidates(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-empty-public-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        collection = CollectorStatus(1, 1, 0, False, 1)
+        state = RunState(
+            RunStatus.VALID_EMPTY_DAY,
+            True,
+            "2026-08-10T08:00:00+09:00",
+            "2026-07-11",
+            "fixture",
+            collection,
+            collection,
+        )
+        topic = Topic("t", "테스트", True, False, 50, ("q",))
+        rejected = NewsItem(
+            "REJECTED-001", "t", "q", "관련 보도", "검색 결과의 후보 설명", "https://example.com/rejected", "",
+            "https://example.com/rejected", "2026-08-10T07:00:00+09:00", "example.com", "rejected-hash", 1.0,
+        )
+        briefing = Briefing(state, (topic,), ("빈 브리핑", "검색 관심 · 비교 부족", "조건을 충족한 관심사만 표시했다."), (), (rejected,), (), ())
+        render_site(briefing, root)
+        payload = json.loads((root / "data/latest.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["stories"], [])
+        self.assertEqual(payload["news"], [])
+
     def test_live_acceptance_rejects_truncation_and_duplicate_events(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-live-qa-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
