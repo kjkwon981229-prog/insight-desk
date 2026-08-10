@@ -274,6 +274,24 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertTrue(payload.result.success)
         self.assertEqual(payload.evidence[0][1].unit, "2020100")
 
+    def test_kosis_accepts_base_index_separator_variant(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    [{"PRD_DE": "202606", "DT": "116.5", "UNIT_NM": "2020:100", "LST_CHN_DE": "20260702"}]
+                ),
+            )
+        )
+        item = _item("kosis-separator-unit", "소비자물가 6월 지수", "소비자물가 지수가 발표됐다.", query="물가")
+        payload = KosisAdapter(
+            api_key="placeholder-kosis-key",
+            datasets=(_kosis_dataset(),),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertTrue(payload.result.success)
+        self.assertEqual(payload.evidence[0][1].unit, "2020:100")
+
     def test_router_keeps_naver_path_alive_when_one_adapter_fails(self) -> None:
         transport = FakeTransport(
             (
