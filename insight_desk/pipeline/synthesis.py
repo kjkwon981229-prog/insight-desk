@@ -31,6 +31,8 @@ _CHANGE_MARKERS = (
     "역대",
     "급등",
     "급락",
+    "강세",
+    "약세",
 )
 _ACTION_MARKERS = (
     "시구",
@@ -111,7 +113,7 @@ _STOPWORDS = {
 _GENERIC_CHANGE_WORDS = {"기록", "발표", "공개", "확인"}
 _EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기", "컴백"}
 _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
-_DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락"}
+_DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
@@ -122,7 +124,7 @@ _GENERIC_SUMMARY_MARKERS = (
     "공통으로 확인되는 세부 사실은 제한적이다",
 )
 _EVENT_DATE_MARKERS = (
-    "발매", "출시", "컴백", "공개", "개최", "공연", "콘서트", "진행", "시작", "재개",
+    "발매", "출시", "컴백", "공개", "발표", "개최", "공연", "콘서트", "진행", "시작", "재개",
     "예정", "시구", "경기", "열렸다", "성료",
 )
 _COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
@@ -368,7 +370,7 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         )
     ):
         return "POLICY"
-    if any(word in text for word in ("출시", "발매", "선공개", "음원", "예약판매", "판매 개시", "사양 확정")):
+    if any(word in text for word in ("출시", "발매", "선공개", "음원", "신곡", "싱글", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
     sports_context = any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기", "시구"))
     if (
@@ -595,6 +597,10 @@ def _headline(
         # headline and can imply an unsupported comparison.
         if change and not _NUMBER_RE.search(cleaned):
             change = ""
+        if "강세" in change:
+            change = "강세"
+        elif "약세" in change:
+            change = "약세"
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
@@ -662,7 +668,8 @@ def _summary(
         elif change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
             if marker and summary_subject and numbers[0].endswith(("%", "달러")):
-                sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {marker}했다."
+                verb = {"강세": "상승", "약세": "하락"}.get(marker, marker)
+                sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
             else:
                 lead = f"{summary_subject}의 " if summary_subject else ""
                 sentence = f"{lead}{numbers[0]} 수치가 "

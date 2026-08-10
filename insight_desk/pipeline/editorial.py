@@ -350,6 +350,27 @@ def _is_low_value_fan_event(title_text: str) -> bool:
     return fan_context and event_context and not substantive_event
 
 
+def _is_low_value_kpop_institutional_event(title_text: str, topic: Topic) -> bool:
+    """Reject institutional K-POP mentions without a music subject/action."""
+
+    topic_key = _compact(f"{topic.id} {topic.name}")
+    if "kpop" not in topic_key and "케이팝" not in topic_key:
+        return False
+    institutional_context = any(
+        _contains(title_text, marker)
+        for marker in ("교육청", "학교", "청소년", "국제교류", "말하기대회", "축하공연")
+    )
+    music_subject_or_event = any(
+        _contains(title_text, marker)
+        for marker in (
+            "가수", "그룹", "아티스트", "기획사", "앨범", "음원", "차트", "컴백", "콘서트",
+            "월드투어", "팬미팅", "뮤직비디오", "발매", "신곡", "데뷔", "빌보드", "음악방송",
+            "수상", "계약",
+        )
+    )
+    return institutional_context and not music_subject_or_event
+
+
 def _is_routine_market_quote(title_text: str) -> bool:
     lowered = title_text.casefold()
     return any(marker in lowered for marker in ("ndf", "선물환")) and not any(
@@ -398,7 +419,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     # sports article) from changing the story's event type.
     if heat_interruption:
         event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
-    elif _is_low_value_fan_event(title_text):
+    elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
     else:
         event_type, significance, matched_terms = detect_event(title_text)

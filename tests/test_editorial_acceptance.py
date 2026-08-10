@@ -99,6 +99,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertFalse(assessment.relevance.passed)
         self.assertFalse(assessment.qualified)
 
+    def test_kpop_institutional_youth_performance_is_not_core_music_news(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "K-POP",
+            anchors=("K-POP", "케이팝", "공연", "앨범", "음원"),
+            events=("공연", "앨범", "음원", "컴백"),
+        )
+        item = _item(
+            "FP-KPOP-INSTITUTION-01",
+            "kpop",
+            "K-POP",
+            "경기도교육청, K-POP 댄스 합동 공연 한·일 청소년 협력 폭 확대",
+            "교육청이 청소년 국제교류 공연을 열었다.",
+            metadata_title="경기도교육청, K-POP 댄스 합동 공연 한·일 청소년 협력 폭 확대",
+            metadata_description="한국어 말하기대회 축하공연으로 청소년 교류를 진행했다.",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "LOW_VALUE_APPEARANCE")
+        self.assertFalse(assessment.qualified)
+
     def test_hanwha_merchandise_is_not_core_story(self) -> None:
         topic = _topic(
             "kbo",

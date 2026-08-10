@@ -227,6 +227,40 @@ class SynthesisTests(unittest.TestCase):
         headline, _, _, _, _, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
         self.assertNotIn("마감에 코스피", headline)
 
+    def test_market_strength_preserves_direction_in_headline_and_summary(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "kospi-strength",
+                    "코스피 美 훈풍에 장 초반 1%대 강세",
+                    "코스피가 장 초반 1%대 강세를 보였다.",
+                    "market.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, _, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
+        self.assertIn("강세", headline)
+        self.assertIn("상승했다", summary)
+
+    def test_song_announcement_preserves_release_date_and_fact(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "bigbang-announcement",
+                    "빅뱅, 데뷔 20주년 4년4개월만 신곡 빅 발표",
+                    "그룹 빅뱅이 데뷔 20주년을 맞는 오는 19일 새 디지털 싱글을 발표한다고 전했다.",
+                    "music.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        self.assertIn("신곡", headline)
+        self.assertIn("19일", summary)
+        self.assertIn("신곡", summary)
+        self.assertEqual(facts.event_type, "PRODUCT_RELEASE")
+
     def test_representative_headline_does_not_switch_to_secondary_market_fact(self) -> None:
         cluster = StoryCluster(
             "economy",
