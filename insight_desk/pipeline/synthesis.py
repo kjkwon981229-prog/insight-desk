@@ -709,11 +709,18 @@ def _summary(
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         event_phrase = action if action in _EVENT_ACTIONS else ""
         if any(marker in completion_evidence for marker in _COMPLETION_MARKERS):
-            when = f"{date} " if date else ""
-            where = f"{location} " if location else ""
-            event_noun = event_phrase or "행사"
-            particle = "이" if event_noun == "컴백" else "가"
-            sentence = f"{subject}의 {when}{where}{event_noun}{particle} 성황리에 진행됐다."
+            if event_type == "ENTERTAINMENT_EVENT" and event_phrase == "컴백":
+                duration_match = re.search(r"\d+\s?년만", title)
+                duration = duration_match.group(0).replace("만", " 만에") if duration_match else ""
+                season = "여름" if "여름" in title else ""
+                detail = " ".join(value for value in (duration, season) if value)
+                sentence = f"{subject}{_subject_particle(subject)} {detail + ' ' if detail else ''}컴백 활동을 마쳤다."
+            else:
+                when = f"{date} " if date else ""
+                where = f"{location} " if location else ""
+                event_noun = event_phrase or "행사"
+                particle = "이" if event_noun == "컴백" else "가"
+                sentence = f"{subject}의 {when}{where}{event_noun}{particle} 성황리에 진행됐다."
         elif event_type == "ENTERTAINMENT_EVENT" and ("컴백" in title or action == "컴백") and date:
             sentence = f"{subject}가 {date} 컴백한다."
         elif event_type == "ENTERTAINMENT_EVENT" and ("앨범" in title or action == "발매") and date:

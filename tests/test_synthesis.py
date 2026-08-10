@@ -166,6 +166,25 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("줄여라", headline + summary)
         self.assertNotIn("공개 내용이 확인됐다", summary)
 
+    def test_completed_comeback_summary_keeps_duration_and_activity_fact(self) -> None:
+        cluster = StoryCluster(
+            "kpop",
+            (
+                _item(
+                    "completed-comeback",
+                    "박진영, 6년만 여름 컴백 SWEAT 활동 성료",
+                    "박진영의 컴백 활동이 성료됐다.",
+                    "music.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        self.assertEqual(facts.event_type, "ENTERTAINMENT_EVENT")
+        self.assertIn("6년 만에", summary)
+        self.assertIn("컴백 활동", summary)
+        self.assertIn("마쳤다", summary)
+        self.assertNotIn("성황리에 진행됐다", summary)
+
     def test_ndf_quote_preserves_the_full_supported_quote(self) -> None:
         cluster = StoryCluster(
             "topic",
