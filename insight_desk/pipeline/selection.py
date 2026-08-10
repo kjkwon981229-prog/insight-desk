@@ -13,7 +13,7 @@ from .editorial import (
     why_selected,
 )
 from .novelty import classify_novelty
-from .synthesis import is_usable_synthesis, synthesize_cluster
+from .synthesis import earnings_summary_preserves_fact_binding, is_usable_synthesis, synthesize_cluster
 from .semantics import canonical_publisher, metric_summary_preserves_entity_binding
 
 
@@ -164,6 +164,8 @@ def _synthesis_is_editorial_ready(
         headline,
         summary,
     ):
+        return False
+    if event_type == "EARNINGS" and not earnings_summary_preserves_fact_binding(headline, summary):
         return False
     return is_usable_synthesis(
         headline,

@@ -175,6 +175,155 @@ class SelectionTests(unittest.TestCase):
         )
         result = select_clusters((StoryCluster("economy", (candidate,)),), _topics(), limit=10)
         self.assertEqual(result.selected, ())
+
+    def test_run80_positive_archetypes_survive_final_selection(self) -> None:
+        """Positive recall control: fact-rich families must reach selection.
+
+        These are structural archetypes, not production headlines.  The
+        fixture deliberately exercises the same synthesis gate used by the
+        final selector so a shared generic veto cannot silently collapse
+        valid recall again.
+        """
+
+        topics, _ = load_topics(Path("config/topics.json"))
+
+        def make_item(
+            key: str,
+            topic_id: str,
+            query: str,
+            title: str,
+            summary: str,
+            domain: str,
+            *,
+            official: bool = False,
+        ) -> NewsItem:
+            provenance = (EvidenceType.SEARCH_SNIPPET, EvidenceType.ENRICHED_METADATA)
+            if official:
+                provenance += (EvidenceType.OFFICIAL_SOURCE,)
+            return NewsItem(
+                evidence_id=key,
+                topic_id=topic_id,
+                query=query,
+                title=title,
+                summary=summary,
+                original_url=f"https://{domain}/{key}",
+                naver_url="",
+                canonical_url=f"https://{domain}/{key}",
+                published_at="2026-08-10T07:00:00+09:00",
+                source_domain=domain,
+                content_hash=key,
+                score=80.0,
+                metadata_title=title,
+                metadata_description=summary,
+                metadata_canonical_url=f"https://{domain}/{key}",
+                publisher=f"{domain} publisher",
+                metadata_published_at="2026-08-10T07:00:00+09:00",
+                provenance=provenance,
+                matched_topic_ids=(topic_id,),
+                retrieval_channels=("sim",),
+                retrieval_queries=(query,),
+            )
+
+        cases = (
+            (
+                "positive-sports-result",
+                "kbo_hanwha",
+                "한화 이글스",
+                "한화 이글스 5-3 승리, 노시환 2홈런으로 연승",
+                "한화 이글스가 5-3으로 승리했고 노시환이 2홈런을 기록해 연승을 이어갔다.",
+                "positive-sports.example",
+                False,
+            ),
+            (
+                "positive-sports-interruption",
+                "kbo_hanwha",
+                "프로야구",
+                "폭염으로 중단된 프로야구, 8월 10일 경기 재개",
+                "폭염으로 중단된 프로야구 경기가 8월 10일 재개됐다.",
+                "positive-interruption.example",
+                False,
+            ),
+            (
+                "positive-recruitment",
+                "psat_recruitment",
+                "7급 공채",
+                "지방공무원 7급 공채 경쟁률 71.5대1",
+                "38명 선발에 1,461명이 지원해 경쟁률 71.5대1을 기록했다.",
+                "positive-recruitment.example",
+                False,
+            ),
+            (
+                "positive-policy",
+                "economy",
+                "금융당국",
+                "금융당국 레버리지 ETF 투자한도 100만원 규제 시행",
+                "금융당국이 레버리지 ETF 투자한도를 100만원으로 제한하는 규제를 8월 10일부터 시행한다고 발표했다.",
+                "positive-policy.example",
+                True,
+            ),
+            (
+                "positive-product-release",
+                "ai_tech",
+                "OpenAI",
+                "OpenAI 새 모델 출시 발표",
+                "OpenAI가 새 모델을 8월 10일 출시한다고 발표했다.",
+                "positive-product.example",
+                True,
+            ),
+            (
+                "positive-earnings",
+                "economy",
+                "삼성전자",
+                "삼성전자 2분기 영업이익 10조원 실적 발표",
+                "삼성전자가 2분기 영업이익 10조원을 기록했다고 발표했다.",
+                "positive-earnings.example",
+                True,
+            ),
+            (
+                "positive-chart",
+                "kpop",
+                "차트",
+                "스트레이 키즈 국내외 차트 1위 기록",
+                "스트레이 키즈가 국내외 음악 차트에서 1위를 기록했다.",
+                "positive-chart.example",
+                False,
+            ),
+        )
+        clusters = tuple(
+            StoryCluster(
+                topic_id,
+                (make_item(key, topic_id, query, title, summary, domain, official=official),),
+            )
+            for key, topic_id, query, title, summary, domain, official in cases
+        )
+        result = select_clusters(clusters, topics, limit=10)
+        selected_ids = {cluster.representative.evidence_id for cluster in result.selected}
+        self.assertEqual(selected_ids, {case[0] for case in cases})
+        self.assertEqual(result.strong_rejected_candidates, 0)
+        self.assertFalse(result.filter_collapse)
+        for record in result.audit:
+            if record["candidate_key"] in {cluster.representative.canonical_url for cluster in clusters}:
+                self.assertTrue(record["qualifying"], record)
+                self.assertNotIn("SYNTHESIS_FACT_LOSS", record["selection_reasons"])
+
+    def test_earnings_without_bound_metric_is_rejected_even_when_official(self) -> None:
+        item = replace(
+            _item(
+                "earnings-no-fact",
+                "economy",
+                summary="삼성전자 실적 발표가 확인됐다.",
+                official=True,
+            ),
+            query="삼성전자",
+            title="삼성전자 실적 발표",
+            metadata_title="삼성전자 실적 발표",
+            metadata_description="삼성전자 실적 발표가 확인됐다.",
+        )
+        topics, _ = load_topics(Path("config/topics.json"))
+        result = select_clusters((StoryCluster("economy", (item,)),), topics, limit=10)
+        self.assertEqual(result.selected, ())
+        record = result.audit[0]
+        self.assertIn("SYNTHESIS_FACT_LOSS", record["selection_reasons"])
         self.assertIn(
             "SYNTHESIS_NOT_EDITORIAL_READY",
             result.audit[0]["selection_reasons"],

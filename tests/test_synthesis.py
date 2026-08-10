@@ -8,7 +8,7 @@ from pathlib import Path
 from insight_desk.domain.models import EvidenceType, NewsItem, TrendMetric
 from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.semantics import metric_summary_preserves_entity_binding
-from insight_desk.pipeline.synthesis import synthesize_cluster
+from insight_desk.pipeline.synthesis import earnings_summary_preserves_fact_binding, synthesize_cluster
 
 
 def _item(
@@ -113,6 +113,42 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("71.5대1", summary)
         self.assertIn("38명", summary)
         self.assertIn("1,461명", summary)
+
+    def test_recruitment_synthesis_keeps_counts_when_applicant_has_particle(self) -> None:
+        item = _item(
+            "recruitment-particle",
+            "부산시 지방공무원 7급 공채 경쟁률 71.5대1",
+            "38명 선발에 1,461명이 지원해 경쟁률 71.5대1을 기록했다.",
+            "recruitment.example",
+        )
+        _, summary, _, _, _, _ = synthesize_cluster(
+            StoryCluster("psat_recruitment", (item,)),
+            topic_name="PSAT·공채",
+            trend_metrics=(),
+            event_type_override="RECRUITMENT_COMPETITION",
+        )
+        self.assertIn("38명", summary)
+        self.assertIn("1,461명", summary)
+        self.assertIn("71.5대1", summary)
+
+    def test_earnings_synthesis_keeps_period_metric_and_value_bound(self) -> None:
+        item = _item(
+            "earnings-bound",
+            "삼성전자 2분기 영업이익 10조원 실적 발표",
+            "삼성전자가 2분기 영업이익 10조원을 기록했다고 발표했다.",
+            "finance.example",
+            provenance=(EvidenceType.SEARCH_SNIPPET, EvidenceType.ENRICHED_METADATA, EvidenceType.OFFICIAL_SOURCE),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (replace(item, metadata_title=item.title, metadata_description=item.summary),)),
+            topic_name="경제·투자",
+            trend_metrics=(),
+            event_type_override="EARNINGS",
+        )
+        self.assertIn("2분기 영업이익 10조원", headline)
+        self.assertIn("2분기 영업이익 10조원", summary)
+        self.assertTrue(earnings_summary_preserves_fact_binding(headline, summary))
+        self.assertEqual(facts.key_numbers, ("2분기", "10조원"))
 
     def test_representative_case_matrix_is_safe_to_synthesize(self) -> None:
         cases = json.loads(

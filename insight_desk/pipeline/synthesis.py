@@ -25,7 +25,7 @@ from .semantics import (
 from .trend_metrics import effective_trend_state
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|분기|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -165,6 +165,50 @@ _EVENT_DATE_MARKERS = (
     "예정", "상장", "시구", "경기", "열렸다", "성료",
 )
 _COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
+_EARNINGS_PERIOD_RE = re.compile(r"(?:20\d{2}\s?년\s?)?(?:[1-4]\s?분기|상반기|하반기|연간)")
+_EARNINGS_METRIC_RE = re.compile(
+    r"(?:영업이익|영업손실|매출액|매출|당기순이익|순이익|순손실|가이던스)"
+)
+_EARNINGS_VALUE_RE = re.compile(
+    r"(?<![A-Za-z가-힣])\d[\d,.]*\s?(?:조원|억원|만원|천만원|만\s?달러|억\s?달러|달러|원|%|퍼센트)"
+)
+
+
+def _earnings_fact_parts(text: str) -> tuple[str, str, str]:
+    """Extract one bound earnings observation from trusted text.
+
+    Period, metric, and value are kept as one observation.  This prevents a
+    title such as ``2분기 영업이익 10조원`` from being reduced to the first
+    number (or from combining a period from one clause with a value from
+    another event).
+    """
+
+    clean = _clean_headline(text)
+    metric_match = _EARNINGS_METRIC_RE.search(clean)
+    if metric_match is None:
+        return "", "", ""
+    value_match = _EARNINGS_VALUE_RE.search(clean, metric_match.end())
+    if value_match is None or value_match.start() - metric_match.end() > 32:
+        return "", "", ""
+    period_matches = list(_EARNINGS_PERIOD_RE.finditer(clean[: metric_match.start()]))
+    period = period_matches[-1].group(0).replace(" ", "") if period_matches else ""
+    metric = metric_match.group(0)
+    value = value_match.group(0).replace(" ", "")
+    return period, metric, value
+
+
+def earnings_summary_preserves_fact_binding(headline: str, summary: str) -> bool:
+    """Require an earnings display to retain period/metric/value together."""
+
+    period, metric, value = _earnings_fact_parts(headline)
+    if not metric or not value:
+        return False
+    compact_summary = normalize_text(summary).replace(" ", "")
+    if metric not in compact_summary or value not in compact_summary:
+        return False
+    if period and period not in compact_summary:
+        return False
+    return True
 
 
 def is_usable_synthesis(
@@ -592,6 +636,18 @@ def _domain_subject(title: str, subject: str, event_type: str) -> str:
     return subject
 
 
+def _award_subject(title: str, subject: str) -> str:
+    """Prefer the named artist/entity over a trailing chart descriptor."""
+
+    clean = _clean_headline(title)
+    marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", clean)
+    if marker:
+        candidate = clean[: marker.start()].strip(" ,·-—")
+        if len(candidate) >= 2:
+            return candidate
+    return subject
+
+
 def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     relevant = [metric for metric in metrics if metric.topic_id == topic_id]
     if not relevant:
@@ -697,6 +753,11 @@ def _headline(
     action: str = "",
 ) -> str:
     cleaned = _clean_headline(title)
+    if event_type == "EARNINGS" and subject:
+        period, metric, value = _earnings_fact_parts(cleaned)
+        if metric and value:
+            fact = " ".join(part for part in (period, metric, value) if part)
+            return f"{subject} {fact} 실적"
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject and numbers:
         run_phrase = _market_run_phrase(cleaned)
         if run_phrase:
@@ -755,6 +816,14 @@ def _summary(
     market_observation: MetricObservation | None = None,
     market_observations: tuple[MetricObservation, ...] = (),
 ) -> str:
+    if event_type == "EARNINGS" and subject:
+        period, metric, value = _earnings_fact_parts(completion_evidence or title)
+        if metric and value:
+            period_text = f"{period} " if period else ""
+            sentence = f"{subject}{_subject_particle(subject)} {period_text}{metric} {value}을 기록했다고 밝혔다."
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
         summary_subject = _fact_subject(summary_subject)
@@ -882,13 +951,27 @@ def _summary(
             else:
                 sentence = f"{subject}의 행사 소식이 확인됐다."
     elif event_type in {"POLICY", "REGULATION"} and subject:
+        detail = normalize_text(completion_evidence)
+        normalized_title = normalize_text(title)
+        if normalized_title and detail.startswith(normalized_title):
+            detail = detail[len(normalized_title) :].strip(" ,:·-—")
+        if (
+            len(detail) >= 20
+            and not _TRUNCATION_RE.search(detail)
+            and not any(marker in detail for marker in _GENERIC_SUMMARY_MARKERS)
+            and summary_information_gain(title, detail)
+        ):
+            sentence = detail.rstrip(" .!?。！") + "."
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
         policy_action = action if action in {"발표", "공개", "시행", "고시", "확정", "요구", "촉구", "줄여라"} else "정책 변화"
         if policy_action in {"요구", "촉구", "줄여라"}:
             sentence = f"{_clean_headline(title)}."
         else:
             sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
-        release_subject = _clean_headline(title).split(",", 1)[0].strip() or subject
+        release_subject = subject or _clean_headline(title).split(",", 1)[0].strip()
         listing = re.search(
             r"(?:오는\s*)?(\d{1,2}\s?일)\s*상장\s*예정인\s*([A-Za-z0-9가-힣·&+\- ]+?(?:ETF|펀드))",
             completion_evidence,
@@ -898,6 +981,8 @@ def _summary(
             sentence = f"{listing_product.strip()}{_subject_particle(listing_product.strip())} {listing_date} 상장될 예정이다."
         elif "상장" in title and date:
             sentence = f"{release_subject}{_subject_particle(release_subject)} {date} 상장될 예정이다."
+        elif date and not any(marker in title for marker in ("데뷔곡", "앨범", "음원", "싱글", "신곡", "발매")):
+            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} 출시된다."
         elif "일정" in completion_evidence and not date:
             sentence = f"{release_subject}의 출시 일정이 공개됐다."
         else:
@@ -931,7 +1016,7 @@ def _summary(
     elif event_type.startswith("RECRUITMENT") and subject:
         ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
         counts_match = re.search(
-            r"([\d,]+명)\s*선발.*?([\d,]+명)\s*지원",
+            r"([\d,]+명)\s*선발.*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
             completion_evidence,
         )
         if counts_match and ratio_match:
@@ -1127,6 +1212,8 @@ def synthesize_cluster(
             action = "중단"
     else:
         subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
+        if event_type == "AWARD_CHART":
+            subject = _award_subject(title, subject)
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         if market_observations:
             # Keep each metric bound to its own instrument and direction.
