@@ -90,7 +90,17 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("근거 1곳", text)
         self.assertIn("key-fact-panel", text)
         self.assertNotIn('class="hero"', text)
-        self.assertNotIn("selection_audit", (root / "data/latest.json").read_text(encoding="utf-8"))
+        public_payload = json.loads((root / "data/latest.json").read_text(encoding="utf-8"))
+        public_text = json.dumps(public_payload, ensure_ascii=False)
+        self.assertNotIn("selection_audit", public_text)
+        self.assertNotIn("candidate_budget", public_text)
+        self.assertNotIn("query_families", public_text)
+        self.assertNotIn("evidence_ids", public_text)
+        self.assertNotIn("event_signature", public_text)
+        self.assertNotIn("why_selected", public_text)
+        self.assertNotIn("N001", public_text)
+        self.assertIn("title", public_payload["stories"][0])
+        self.assertIn("original_url", public_payload["news"][0])
         self.assertIn("data-generated-date", text)
 
     def test_live_acceptance_rejects_truncation_and_duplicate_events(self) -> None:

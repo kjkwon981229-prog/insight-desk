@@ -793,6 +793,99 @@ def _archive_page(records: list[dict[str, str]]) -> str:
     return f'''<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="description" content="Insight Desk 날짜별 브리핑 아카이브"><title>Insight Desk · 아카이브</title>{_pwa_head("../")}<link rel="stylesheet" href="../assets/css/style.css"></head><body><main class="shell"><header class="site-header"><div class="brand-row"><a class="brand" href="../index.html">INSIGHT DESK</a><div class="header-meta"><span>날짜별 목록</span></div></div><nav class="site-nav" aria-label="브리핑 탐색"><a href="../index.html">오늘</a><a href="../index.html#stories">오늘 볼 뉴스</a><a href="../index.html#trends">검색 흐름</a><a href="index.html" aria-current="page">아카이브</a></nav></header><section class="archive-hero"><span class="eyebrow">기록 · 날짜별 목록</span><h1>브리핑 아카이브</h1><p>날짜별 실행 결과를 문서처럼 다시 확인한다. 각 페이지는 해당 시점에 게시된 정적 브리핑이다.</p><p class="archive-count">{len(records)}개의 기록</p></section><section class="content-section" aria-labelledby="archive-heading"><div class="section-heading"><div><span class="section-index">01 / 날짜별 기록</span><h2 id="archive-heading">날짜별 기록</h2></div><p class="meta">최근 순</p></div><ol class="archive-index">{links}</ol></section><footer>Insight Desk · 정적 브리핑 기록</footer></main></body></html>'''
 
 
+def _public_facts(facts: object) -> dict[str, object]:
+    """Return only facts that are meaningful to a public reader."""
+
+    fields = (
+        "subject",
+        "action",
+        "object",
+        "event_type",
+        "date",
+        "time",
+        "location",
+        "key_numbers",
+        "key_changes",
+        "official_source",
+        "trend_state",
+        "next_known_event",
+        "uncertainty",
+    )
+    return {field: to_jsonable(getattr(facts, field, "")) for field in fields}
+
+
+def _public_payload(briefing: Briefing) -> dict[str, object]:
+    """Build the public data contract without exposing selection internals."""
+
+    topics = [
+        {"name": topic.name, "enabled": topic.enabled, "conditional": topic.conditional}
+        for topic in briefing.topics
+    ]
+    stories = []
+    for story in briefing.stories:
+        stories.append(
+            {
+                "topic_name": story.topic_name,
+                "title": story.title,
+                "summary": story.summary,
+                "why_it_matters": story.why_it_matters,
+                "trend_relationship": story.trend_relationship,
+                "industry_impact": story.industry_impact,
+                "investment_relevance": story.investment_relevance,
+                "watch_next": list(story.watch_next),
+                "certainty": to_jsonable(story.certainty),
+                "source_count": story.source_count,
+                "provenance": to_jsonable(story.provenance),
+                "facts": _public_facts(story.facts),
+                "novelty": story.novelty,
+            }
+        )
+    news = []
+    for item in briefing.news:
+        news.append(
+            {
+                "title": item.title,
+                "summary": item.summary,
+                "original_url": item.original_url,
+                "naver_url": item.naver_url,
+                "canonical_url": item.canonical_url,
+                "published_at": item.published_at,
+                "source_domain": item.source_domain,
+                "metadata_title": item.metadata_title,
+                "metadata_description": item.metadata_description,
+                "metadata_canonical_url": item.metadata_canonical_url,
+                "publisher": item.publisher,
+                "metadata_published_at": item.metadata_published_at,
+                "metadata_modified_at": item.metadata_modified_at,
+                "provenance": to_jsonable(item.provenance),
+            }
+        )
+    topic_names = {topic.id: topic.name for topic in briefing.topics}
+    trend_metrics = []
+    for metric in briefing.trend_metrics:
+        trend_metrics.append(
+            {
+                "group_name": metric.group_name,
+                "topic_name": topic_names.get(metric.topic_id, ""),
+                "current_ratio": metric.current_ratio,
+                "previous_ratio": metric.previous_ratio,
+                "delta": metric.delta,
+                "change_percent": metric.change_percent,
+                "interpretation": metric.interpretation,
+                "points": [{"period": point.period, "ratio": point.ratio} for point in metric.points],
+            }
+        )
+    return {
+        "state": to_jsonable(briefing.state),
+        "topics": topics,
+        "three_line_summary": list(briefing.three_line_summary),
+        "stories": stories,
+        "news": news,
+        "trend_metrics": trend_metrics,
+        "limitations": list(briefing.limitations),
+    }
+
+
 def render_site(briefing: Briefing, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "assets/css").mkdir(parents=True, exist_ok=True)
@@ -812,12 +905,7 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
     date_value = briefing.state.generated_at[:10]
     date_dir = output_dir / "archive" / date_value
     date_dir.mkdir(parents=True, exist_ok=True)
-    payload = to_jsonable(briefing)
-    if isinstance(payload, dict):
-        # Selection reasoning is a build-time audit artifact, not public UI/data.
-        payload.pop("selection_audit", None)
-        payload.pop("selection_funnel", None)
-        payload.pop("selected_reviews", None)
+    payload = _public_payload(briefing)
     payload_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     (output_dir / "data/latest.json").write_text(payload_text, encoding="utf-8")
     (output_dir / "latest/data.json").write_text(payload_text, encoding="utf-8")
