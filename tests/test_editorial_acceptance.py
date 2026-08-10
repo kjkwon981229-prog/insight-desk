@@ -440,6 +440,34 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(assessment.event.passed)
         self.assertTrue(assessment.qualified)
 
+    def test_primary_etf_release_is_not_retyped_from_secondary_lead_context(self) -> None:
+        topic = _topic(
+            "ai",
+            "AI·테크",
+            "반도체",
+            anchors=("반도체", "ETF"),
+            events=("출시", "상장"),
+        )
+        primary = _item(
+            "etf-release",
+            "ai",
+            "반도체",
+            "반도체·조선·방산·원자력 하나로 묶은 ETF 출격",
+            "오는 11일 반도체 관련 신규 ETF가 출시된다.",
+            metadata_title="반도체·조선·방산·원자력 하나로 묶은 ETF 출격",
+            metadata_description="오는 11일 반도체 관련 신규 ETF가 출시된다.",
+        )
+        secondary = _item(
+            "etf-secondary-context",
+            "ai",
+            "반도체",
+            "반도체 ETF 투자 규제와 시장 전망",
+            "시장 규제와 제도 변화가 논의됐다.",
+            score=30.0,
+        )
+        assessment = assess_cluster(StoryCluster("ai", (primary, secondary)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "PRODUCT_RELEASE")
+
     def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
         topic = _topic(
             "kpop",

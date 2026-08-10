@@ -409,7 +409,9 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     # Synthesis and the public headline use the same best source headline.
     # Do not let a secondary cluster member's release word change the audited
     # event type of a primary announcement (or vice versa).
-    title_text = effective_title(best_headline_item(cluster.items))
+    headline_item = best_headline_item(cluster.items)
+    title_text = effective_title(headline_item)
+    lead_text = effective_lead(headline_item)
     event_type = "OTHER"
     significance = 0.0
     matched_terms: list[str] = []
@@ -464,7 +466,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     else:
         event_type, significance, matched_terms = detect_event(title_text)
         if event_type == "OTHER":
-            event_type, significance, matched_terms = detect_event(text)
+            event_type, significance, matched_terms = detect_event(lead_text)
     if event_type == "SCHEDULED_EVENT" and any(
         _contains(text, term) for term in ("블루카펫", "행사 참석", "행사 일정에 참석", "포토")
     ) and not any(_contains(text, term) for term in ("공연", "콘서트", "컴백", "앨범", "경기 결과", "시구")):
