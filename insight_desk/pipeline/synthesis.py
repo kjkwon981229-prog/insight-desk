@@ -144,6 +144,7 @@ _EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기",
 _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세", "강보합세"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
+_AWARD_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]+(?:[·&'’-][A-Za-z0-9가-힣]+)*")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
 _DATE_STAMP_RE = re.compile(r"^20\d{2}[./-]\d{1,2}[./-]\d{1,2}$")
@@ -656,11 +657,41 @@ def _domain_subject(title: str, subject: str, event_type: str) -> str:
     return subject
 
 
-def _award_subject(title: str, subject: str) -> str:
-    """Prefer the named artist/entity over a trailing chart descriptor."""
+def _award_subject(title: str, subject: str, *, titles: tuple[str, ...] = ()) -> str:
+    """Prefer a repeated named artist/entity over headline decoration.
+
+    Entertainment headlines sometimes prepend a descriptive phrase to the
+    artist, while corroborating headlines name the artist directly. A phrase
+    repeated across the cluster is safer than treating the whole first
+    headline prefix as the subject.
+    """
 
     clean = _clean_headline(title)
     marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", clean)
+    prefixes = []
+    for value in (title, *titles):
+        candidate = _clean_headline(value)
+        candidate_marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", candidate)
+        if candidate_marker:
+            candidate = candidate[: candidate_marker.start()]
+        tokens = _AWARD_TOKEN_RE.findall(candidate)
+        if tokens:
+            prefixes.append(tokens)
+    if len(prefixes) >= 2:
+        best: tuple[str, ...] = ()
+        first = prefixes[0]
+        for start in range(len(first)):
+            for end in range(len(first), start + 1, -1):
+                phrase = tuple(first[start:end])
+                if len(phrase) < 2:
+                    continue
+                if all(
+                    any(tokens[index : index + len(phrase)] == list(phrase) for index in range(len(tokens) - len(phrase) + 1))
+                    for tokens in prefixes[1:]
+                ) and len(phrase) > len(best):
+                    best = phrase
+        if best:
+            return " ".join(best)
     if marker:
         candidate = clean[: marker.start()].strip(" ,·-—")
         if len(candidate) >= 2:
@@ -1279,7 +1310,11 @@ def synthesize_cluster(
         if event_type.startswith("RECRUITMENT"):
             subject = _recruitment_subject(title, subject)
         if event_type == "AWARD_CHART":
-            subject = _award_subject(title, subject)
+            subject = _award_subject(
+                title,
+                subject,
+                titles=tuple(effective_title(item) for item in items if effective_title(item)),
+            )
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         if market_observations:
             # Keep each metric bound to its own instrument and direction.

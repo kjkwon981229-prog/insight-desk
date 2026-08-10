@@ -108,5 +108,41 @@ class Run83RegressionTests(unittest.TestCase):
         )
         self.assertEqual(targets, (item,))
 
+    def test_award_subject_uses_repeated_artist_not_headline_decoration(self) -> None:
+        titles = (
+            "음악 보부상 스트레이 키즈, 차트 휩쓰는 중",
+            "스트레이 키즈, THIS & THAT 국내외 음악 차트 1위",
+            "스트레이 키즈, 컴백부터 국내외 차트 1위",
+        )
+        items = tuple(
+            NewsItem(
+                f"kpop-{index}",
+                "kpop",
+                "음악 차트",
+                title,
+                title,
+                f"https://publisher-{index}.test/story",
+                f"https://publisher-{index}.test/story",
+                f"https://publisher-{index}.test/story",
+                None,
+                f"publisher-{index}.test",
+                f"kpop-{index}",
+                80.0,
+                provenance=(EvidenceType.SEARCH_SNIPPET,),
+                retrieval_channels=("SIM",),
+                retrieval_queries=("음악 차트",),
+            )
+            for index, title in enumerate(titles, 1)
+        )
+        cluster = StoryCluster("kpop", items)
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name="엔터·음악·K-POP",
+            trend_metrics=(),
+            event_type_override="AWARD_CHART",
+        )
+        self.assertEqual(facts.subject, "스트레이 키즈")
+        self.assertEqual(summary, "스트레이 키즈가 음악 차트 1위에 올랐다.")
+
 if __name__ == "__main__":
     unittest.main()
