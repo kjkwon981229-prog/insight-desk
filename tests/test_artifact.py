@@ -131,3 +131,30 @@ class ArtifactTests(unittest.TestCase):
         path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
         errors = validate_live_acceptance(path)
         self.assertTrue(any("low-value event type" in error for error in errors))
+
+    def test_live_acceptance_rejects_audit_synthesis_mismatch(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-audit-contract-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        story = {
+            "rank": 1,
+            "headline": "박진영 컴백",
+            "summary": "박진영이 컴백 활동을 마쳤다.",
+            "event_type": "SCHEDULED_EVENT",
+            "source_count": 1,
+            "concrete_fact_count": 2,
+            "topic_id": "kpop",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": "SCHEDULED_EVENT|박진영|컴백",
+            "facts": {"event_type": "ENTERTAINMENT_EVENT"},
+            "trend_relationship": "검색 관심 · 둔화",
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("event type disagrees" in error for error in errors))
+        self.assertTrue(any("trend label without matched trend groups" in error for error in errors))
+
+        story["trend_matches"] = []
+        path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("trend label without matched trend groups" in error for error in errors))

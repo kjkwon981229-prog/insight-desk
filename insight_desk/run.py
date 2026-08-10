@@ -11,7 +11,7 @@ from .collectors.collect import collect_news, collect_trends
 from .collectors.enrichment import EnrichmentReport, MetadataEnricher
 from .collectors.naver import NaverApiClient, NaverCredentials
 from .config import load_topics
-from .domain.models import CollectorStatus, RunState, RunStatus, to_jsonable
+from .domain.models import CollectorStatus, NewsItem, RunState, RunStatus, Topic, to_jsonable
 from .domain.status import is_publishable, resolve_status
 from .pipeline.analysis import build_briefing, make_failure_state
 from .pipeline.clustering import cluster_news
@@ -58,6 +58,60 @@ def _write_selection_audit(
     assert_no_secret_values(payload, secrets)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _build_retrieval_funnel(
+    *,
+    raw_items: tuple[tuple[str, str, str, dict[str, object]], ...],
+    normalized: tuple[NewsItem, ...],
+    deduplicated: tuple[NewsItem, ...],
+    bounded: tuple[NewsItem, ...],
+    clusters: tuple[object, ...],
+    topics: tuple[Topic, ...],
+) -> dict[str, dict[str, int]]:
+    """Record live funnel counts without conflating dedupe and clustering."""
+
+    funnel = {
+        topic.id: {
+            "retrieved_sim": 0,
+            "retrieved_date": 0,
+            "merged": 0,
+            "deduplicated": 0,
+            "budgeted": 0,
+            "clustered": 0,
+        }
+        for topic in topics
+        if topic.enabled
+    }
+
+    for topic_id, _, channel, payload in raw_items:
+        if topic_id not in funnel:
+            continue
+        items = payload.get("items", [])
+        if not isinstance(items, list):
+            continue
+        count = sum(isinstance(item, dict) for item in items)
+        key = f"retrieved_{channel.casefold()}"
+        if key in funnel[topic_id]:
+            funnel[topic_id][key] += count
+
+    for item in normalized:
+        if item.topic_id in funnel:
+            funnel[item.topic_id]["merged"] += 1
+
+    def add_unique_items(items: tuple[NewsItem, ...], key: str) -> None:
+        for item in items:
+            for topic_id in item.matched_topic_ids or (item.topic_id,):
+                if topic_id in funnel:
+                    funnel[topic_id][key] += 1
+
+    add_unique_items(deduplicated, "deduplicated")
+    add_unique_items(bounded, "budgeted")
+    for cluster in clusters:
+        topic_id = getattr(cluster, "topic_id", "")
+        if topic_id in funnel:
+            funnel[topic_id]["clustered"] += 1
+    return funnel
 
 
 def execute(
@@ -126,6 +180,14 @@ def execute(
             by_evidence_id = {item.evidence_id: item for item in enriched_targets}
             enriched = tuple(by_evidence_id.get(item.evidence_id, item) for item in bounded)
         clusters = cluster_news(enriched)
+        retrieval_funnel = _build_retrieval_funnel(
+            raw_items=news_collection.raw_items,
+            normalized=normalized,
+            deduplicated=deduplicated,
+            bounded=bounded,
+            clusters=clusters,
+            topics=topics,
+        )
         points = parse_trend_batches(trend_collection.raw_batches)
         metrics = compute_trend_metrics(points)
         state = RunState(
@@ -152,6 +214,7 @@ def execute(
             generated_at=current,
             enrichment=enrichment_report,
             previous_signatures=load_previous_signatures(output_dir),
+            retrieval_funnel=retrieval_funnel,
         )
         try:
             render_site(briefing, output_dir)

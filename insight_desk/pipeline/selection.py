@@ -37,6 +37,17 @@ def _publisher_count(cluster: StoryCluster) -> int:
     return len({item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain})
 
 
+def _summary_source(cluster: StoryCluster) -> str:
+    provenance = {evidence for item in cluster.items for evidence in item.provenance}
+    has_metadata = EvidenceType.ENRICHED_METADATA in provenance
+    has_search = EvidenceType.SEARCH_SNIPPET in provenance
+    if has_metadata and has_search:
+        return "mixed_evidence"
+    if has_metadata:
+        return "enriched_metadata"
+    return "search_evidence"
+
+
 def candidate_quality(cluster: StoryCluster, topic: Topic) -> float:
     """Legacy-compatible evidence-aware candidate quality helper.
 
@@ -297,6 +308,9 @@ def select_clusters(
                 "headline": effective_title(cluster.representative),
                 "source_count": cluster.source_count,
                 "publisher_diversity": assessment.evidence.publisher_diversity,
+                "metadata_enriched_count": sum(
+                    EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items
+                ),
                 "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
                 "query": cluster.representative.query,
                 "intent_relevance": assessment.relevance.score,
@@ -316,7 +330,7 @@ def select_clusters(
                 "final_score": assessment.final_score,
                 "why_selected": list(why_selected(assessment)),
                 "selection_reason": reason,
-                "summary_source": "metadata_or_search_evidence",
+                "summary_source": _summary_source(cluster),
             }
         )
 

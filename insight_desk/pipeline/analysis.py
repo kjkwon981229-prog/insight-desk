@@ -50,6 +50,12 @@ def _trend_label(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
 def _story_trend_label(cluster: StoryCluster, metrics: tuple[TrendMetric, ...]) -> str:
     """Attach a trend only when its group name matches the story evidence."""
 
+    return _trend_label(cluster.topic_id, _story_trend_matches(cluster, metrics))
+
+
+def _story_trend_matches(
+    cluster: StoryCluster, metrics: tuple[TrendMetric, ...]
+) -> tuple[TrendMetric, ...]:
     text = " ".join(
         value
         for item in cluster.items
@@ -61,7 +67,7 @@ def _story_trend_label(cluster: StoryCluster, metrics: tuple[TrendMetric, ...]) 
         for metric in _trend_for_topic(cluster.topic_id, metrics)
         if metric.group_name.casefold() in text or metric.group_id.casefold() in text
     )
-    return _trend_label(cluster.topic_id, matched)
+    return matched
 
 
 def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
@@ -115,6 +121,7 @@ def build_briefing(
     generated_at: datetime,
     enrichment: EnrichmentReport | None = None,
     previous_signatures: tuple[str, ...] = (),
+    retrieval_funnel: dict[str, dict[str, int]] | None = None,
 ) -> Briefing:
     topic_by_id = {topic.id: topic for topic in topics}
     # score_clusters is retained as a candidate-quality ordering. It is not the
@@ -128,6 +135,7 @@ def build_briefing(
     )
     stories: list[Story] = []
     selected_reviews = tuple(selection.selected_reviews)
+    story_trend_matches: list[tuple[TrendMetric, ...]] = []
     for cluster in selection.selected:
         topic_name = topic_by_id.get(cluster.topic_id, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ())).name
         provenance = tuple(
@@ -177,6 +185,7 @@ def build_briefing(
                 event_signature=assessment.event_signature,
             )
         )
+        story_trend_matches.append(_story_trend_matches(cluster, trend_metrics))
 
     represented_ids = tuple(dict.fromkeys(topic_id for story in stories for topic_id in (story.matched_topic_ids or (story.topic_id,))))
     represented_names = tuple(topic_by_id[topic_id].name for topic_id in represented_ids if topic_id in topic_by_id)
@@ -213,6 +222,7 @@ def build_briefing(
     final_reviews: list[dict[str, object]] = []
     for rank, story in enumerate(stories, 1):
         review = dict(selected_reviews[rank - 1]) if rank <= len(selected_reviews) else {}
+        trend_matches = story_trend_matches[rank - 1] if rank <= len(story_trend_matches) else ()
         review.update(
             {
                 "rank": rank,
@@ -223,12 +233,26 @@ def build_briefing(
                 "certainty": story.certainty.value,
                 "facts": to_jsonable(story.facts),
                 "trend_relationship": story.trend_relationship,
+                "trend_matches": [
+                    {
+                        "group_id": metric.group_id,
+                        "group_name": metric.group_name,
+                        "topic_id": metric.topic_id,
+                        "delta": metric.delta,
+                        "interpretation": metric.interpretation,
+                    }
+                    for metric in trend_matches
+                ],
                 "matched_topic_ids": list(story.matched_topic_ids),
                 "why_selected": list(story.why_selected),
                 "final_score": story.editorial_score,
             }
         )
         final_reviews.append(review)
+
+    final_funnel = {topic_id: dict(values) for topic_id, values in selection.funnel.items()}
+    for topic_id, counts in (retrieval_funnel or {}).items():
+        final_funnel.setdefault(topic_id, {}).update(counts)
 
     return Briefing(
         state=state,
@@ -242,7 +266,7 @@ def build_briefing(
         enrichment_succeeded=report.succeeded,
         enrichment_failed=report.failed,
         selection_audit=selection.audit,
-        selection_funnel=selection.funnel,
+        selection_funnel=final_funnel,
         selected_reviews=tuple(final_reviews),
     )
 

@@ -63,6 +63,21 @@ def validate(path: Path) -> list[str]:
         certainty = str(story.get("certainty", ""))
         source_count = int(story.get("source_count", 0) or 0)
         concrete = int(story.get("concrete_fact_count", 0) or 0)
+        facts = story.get("facts")
+        if isinstance(facts, dict):
+            audited_event_type = str(story.get("event_type", "")).strip()
+            synthesized_event_type = str(facts.get("event_type", "")).strip()
+            if audited_event_type and synthesized_event_type and audited_event_type != synthesized_event_type:
+                errors.append(
+                    f"story {index} event type disagrees with synthesized facts: "
+                    f"{audited_event_type} != {synthesized_event_type}"
+                )
+        trend_relationship = str(story.get("trend_relationship", "")).strip()
+        trend_matches = story.get("trend_matches")
+        if trend_relationship and (
+            not isinstance(trend_matches, list) or not trend_matches
+        ):
+            errors.append(f"story {index} has a trend label without matched trend groups")
         if certainty == "uncertain":
             metrics["uncertain_count"] += 1
         if source_count <= 1:

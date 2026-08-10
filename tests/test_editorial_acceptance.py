@@ -349,6 +349,26 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertIn("TRUNCATED_EVENT_WITHOUT_LEAD", assessment.reasons)
         self.assertFalse(assessment.qualified)
 
+    def test_completed_comeback_uses_the_same_event_type_as_synthesis(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "JYP",
+            anchors=("가수", "컴백", "그룹"),
+            events=("컴백", "공연"),
+        )
+        item = _item(
+            "completed-comeback-event",
+            "kpop",
+            "박진영",
+            "박진영, 6년만 여름 컴백 SWEAT 활동 성료",
+            "박진영의 컴백 활동이 성료됐다.",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "ENTERTAINMENT_EVENT")
+        self.assertTrue(assessment.event.passed)
+        self.assertTrue(assessment.qualified)
+
     def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
         topic = _topic(
             "kpop",

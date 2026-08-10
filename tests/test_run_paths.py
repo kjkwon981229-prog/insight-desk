@@ -10,7 +10,10 @@ from pathlib import Path
 from insight_desk.collectors.naver import NaverApiError, NaverCredentials
 from insight_desk.config import load_topics
 from insight_desk.domain.models import KeywordGroup, RunStatus
-from insight_desk.run import execute
+from insight_desk.pipeline.clustering import cluster_news
+from insight_desk.pipeline.deduplication import deduplicate_news
+from insight_desk.pipeline.normalization import normalize_news_payloads
+from insight_desk.run import _build_retrieval_funnel, execute
 
 
 class ScenarioClient:
@@ -90,3 +93,36 @@ class RunPathTests(unittest.TestCase):
         self.assertEqual(state.status, RunStatus.VALIDATION_FAILURE)
         self.assertFalse(state.publish)
 
+    def test_live_funnel_keeps_retrieval_and_dedupe_stages_distinct(self) -> None:
+        raw = (
+            (
+                "ai_tech",
+                "AI",
+                "SIM",
+                {"items": [{"title": "AI 발표", "description": "AI 발표 내용", "originallink": "https://example.com/a", "link": "https://n.news/a", "pubDate": "Sun, 09 Aug 2026 08:00:00 +0900"}]},
+            ),
+            (
+                "ai_tech",
+                "AI",
+                "DATE",
+                {"items": [{"title": "AI 발표", "description": "AI 발표 내용", "originallink": "https://example.com/a", "link": "https://n.news/a", "pubDate": "Sun, 09 Aug 2026 08:00:00 +0900"}]},
+            ),
+        )
+        topics, _ = load_topics(self.config)
+        normalized = normalize_news_payloads(raw)
+        deduplicated = deduplicate_news(normalized)
+        clusters = cluster_news(deduplicated)
+        funnel = _build_retrieval_funnel(
+            raw_items=raw,
+            normalized=normalized,
+            deduplicated=deduplicated,
+            bounded=deduplicated,
+            clusters=clusters,
+            topics=topics,
+        )
+        self.assertEqual(funnel["ai_tech"]["retrieved_sim"], 1)
+        self.assertEqual(funnel["ai_tech"]["retrieved_date"], 1)
+        self.assertEqual(funnel["ai_tech"]["merged"], 2)
+        self.assertEqual(funnel["ai_tech"]["deduplicated"], 1)
+        self.assertEqual(funnel["ai_tech"]["budgeted"], 1)
+        self.assertEqual(funnel["ai_tech"]["clustered"], 1)

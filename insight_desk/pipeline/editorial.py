@@ -47,6 +47,25 @@ _ROUTINE_MARKET_QUALIFIERS = (
     "변동성", "변동폭", "금융위기", "사상", "최대", "최고", "최저", "급등", "급락",
     "개입", "정책", "기준금리", "결정",
 )
+_COMPLETED_ENTERTAINMENT_MARKERS = (
+    "성료",
+    "대성황",
+    "성황",
+    "마쳤다",
+    "진행했다",
+    "진행됐다",
+    "열렸다",
+)
+_ENTERTAINMENT_EVENT_MARKERS = (
+    "컴백",
+    "콘서트",
+    "공연",
+    "앨범",
+    "음원",
+    "발매",
+    "가수",
+    "그룹",
+)
 _HEADLINE_ACTION_MARKERS = (
     "시구", "개최", "공연", "콘서트", "출시", "발매", "발표", "공개", "시행",
     "선발", "중단", "멈춘", "재개", "취소", "경기", "매각", "인수", "인상", "인하",
@@ -378,6 +397,13 @@ def _is_routine_market_quote(title_text: str) -> bool:
     )
 
 
+def _is_completed_entertainment_event(title_text: str) -> bool:
+    return (
+        any(_contains(title_text, marker) for marker in _COMPLETED_ENTERTAINMENT_MARKERS)
+        and any(_contains(title_text, marker) for marker in _ENTERTAINMENT_EVENT_MARKERS)
+    )
+
+
 def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     text = " ".join(effective_text(item) for item in cluster.items)
     title_text = " ".join(effective_title(item) for item in cluster.items)
@@ -421,6 +447,11 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
     elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
+    elif _is_completed_entertainment_event(title_text):
+        # ``컴백`` and ``공연`` are also used for future schedules. A completed
+        # activity must not be recorded as a scheduled event when synthesis
+        # already classifies the same evidence as an entertainment event.
+        event_type, significance, matched_terms = "ENTERTAINMENT_EVENT", 64.0, ["ENTERTAINMENT_EVENT"]
     else:
         event_type, significance, matched_terms = detect_event(title_text)
         if event_type == "OTHER":
