@@ -1,6 +1,11 @@
 name: Insight Desk Daily Pages
 
 on:
+  # One-run source-layer acceptance trigger. The build guard below limits it
+  # to the first push after the authoritative-layer commit; the regular
+  # schedule and manual dispatch remain the production triggers.
+  push:
+    branches: [main]
   workflow_dispatch:
   schedule:
     # 07:30 Asia/Seoul = 22:30 UTC on the previous day.
@@ -12,6 +17,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'push' || github.event.before == '5e1b90bb12560cdd83eeb81eb2f8e48045372fc7'
     runs-on: ubuntu-latest
     permissions:
       contents: read
