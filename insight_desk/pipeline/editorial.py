@@ -807,6 +807,22 @@ def _fact_bearing_discovery(item: NewsItem) -> bool:
     return _fact_bearing_text(effective_title(item), effective_lead(item))
 
 
+def _syndication_key(item: NewsItem) -> str:
+    """Fingerprint repeated source copy without merging distinct reporting.
+
+    A rewritten headline can still carry the exact same complete lead.  Use
+    that lead when it is available; otherwise retain the existing exact-title
+    behavior.  Broader semantic similarity remains corroboration evidence,
+    not a syndication claim, so independently reported major events are not
+    discounted merely for sharing entities and numbers.
+    """
+
+    lead = safe_evidence_text(effective_lead(item))
+    if len(compact(lead)) >= 24:
+        return f"lead:{compact(lead)}"
+    return f"title:{compact(effective_title(item)) or item.content_hash}"
+
+
 def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
     """Return (same-core-fact corroborated, syndicated-copy-present)."""
 
@@ -819,7 +835,7 @@ def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
         return False, False
     copy_groups: dict[str, set[str]] = {}
     for item in items:
-        key = compact(effective_title(item)) or item.content_hash
+        key = _syndication_key(item)
         copy_groups.setdefault(key, set()).add(canonical_publisher(item.publisher, item.source_domain))
     syndicated_groups = [group for group in copy_groups.values() if len(group) > 1]
     syndicated = bool(syndicated_groups)
@@ -827,7 +843,7 @@ def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
         item
         for item in items
         if not syndicated
-        or len(copy_groups.get(compact(effective_title(item)) or item.content_hash, ())) == 1
+        or len(copy_groups.get(_syndication_key(item), ())) == 1
     ]
     fact_sets = [_evidence_fact_tokens(item) for item in independent_items]
     corroborated = any(
@@ -849,7 +865,7 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
     if syndicated:
         copy_groups: dict[str, set[str]] = {}
         for item in cluster.items:
-            key = compact(effective_title(item)) or item.content_hash
+            key = _syndication_key(item)
             copy_groups.setdefault(key, set()).add(canonical_publisher(item.publisher, item.source_domain))
         syndicated_publishers = {
             publisher

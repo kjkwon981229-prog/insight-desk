@@ -531,6 +531,41 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(any(entry["selected"] is False for entry in result.audit))
         self.assertTrue(all("reason" in entry and "source_diversity" in entry for entry in result.audit))
 
+    def test_selected_review_conflict_state_belongs_to_each_story(self) -> None:
+        first = replace(
+            _item("review-a", "ai", score=90.0),
+            title="AI 모델 출시 발표 review-a",
+            summary="AI 모델이 8월 10일 출시됐다는 구체적인 발표가 확인됐다.",
+        )
+        second = replace(
+            _item("review-b", "kpop", score=89.0),
+            title="K-POP 앨범 출시 발표 review-b",
+            summary="K-POP 앨범이 8월 10일 출시됐다는 구체적인 발표가 확인됐다.",
+            authority_conflict="CONFIRMED_MATCH",
+        )
+        status = CollectorStatus(1, 1, 0, False, 2)
+        state = RunState(
+            RunStatus.COMPLETE,
+            True,
+            "2026-08-10T07:00:00+09:00",
+            "2026-08-10",
+            "fixture",
+            status,
+            status,
+        )
+        briefing = build_briefing(
+            state=state,
+            topics=_topics(),
+            news=(first, second),
+            clusters=(StoryCluster("ai", (first,)), StoryCluster("kpop", (second,))),
+            trend_metrics=(),
+            generated_at=datetime.fromisoformat("2026-08-10T07:00:00+09:00"),
+        )
+        self.assertEqual(len(briefing.stories), 2)
+        reviews_by_headline = {review["headline"]: review for review in briefing.selected_reviews}
+        self.assertEqual(reviews_by_headline[briefing.stories[0].title]["conflict_state"], briefing.stories[0].facts.conflict_state)
+        self.assertEqual(reviews_by_headline[briefing.stories[1].title]["conflict_state"], briefing.stories[1].facts.conflict_state)
+
     def test_overview_is_lineup_level_not_first_story_summary(self) -> None:
         status = CollectorStatus(1, 1, 0, False, 2)
         state = RunState(RunStatus.COMPLETE, True, "2026-08-09T08:00:00+09:00", "2026-07-10", "fixture", status, status)

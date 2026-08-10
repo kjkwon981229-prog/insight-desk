@@ -125,6 +125,29 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(evidence.syndicated_copy)
         self.assertNotIn("INDEPENDENT_PUBLISHERS", evidence.reasons)
 
+    def test_rewritten_headline_with_same_complete_lead_is_still_syndicated(self) -> None:
+        lead = "하이브가 1조원 규모 계약을 체결했다고 공식 발표했다. 시장에 관련 세부 내용도 공개됐다."
+        first = _item(
+            "copy-rewritten-a",
+            "economy",
+            "반도체",
+            "하이브, 1조원 공급계약 체결",
+            lead,
+            domain="first.example",
+        )
+        second = _item(
+            "copy-rewritten-b",
+            "economy",
+            "반도체",
+            "하이브 공급계약 규모 1조원",
+            lead,
+            domain="second.example",
+        )
+        evidence = assess_evidence(StoryCluster("economy", (first, second)))
+        self.assertTrue(evidence.syndicated_copy)
+        self.assertEqual(evidence.publisher_diversity, 1)
+        self.assertFalse(evidence.corroborated)
+
     def test_independent_publishers_must_share_core_facts_to_corroborate(self) -> None:
         first = _item(
             "independent-a",

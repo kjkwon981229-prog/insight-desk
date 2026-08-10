@@ -217,6 +217,36 @@ class ArtifactTests(unittest.TestCase):
         errors = validate_live_acceptance(path)
         self.assertIn("zero-story result is a filter collapse, not a valid empty day", errors)
 
+    def test_live_acceptance_rejects_strong_rejection_even_with_other_stories(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-strong-reject-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        path = root / "live-acceptance.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "selected_stories": [
+                        {
+                            "rank": 1,
+                            "headline": "구체적인 정책 발표",
+                            "summary": "정책이 8월 10일부터 시행된다는 구체적인 발표가 나왔다.",
+                            "event_type": "POLICY",
+                            "source_count": 1,
+                            "concrete_fact_count": 3,
+                            "topic_id": "economy",
+                            "why_selected": ["CONCRETE_EVENT"],
+                            "event_signature": "POLICY|구체적인정책|2026-08-10",
+                            "final_score": 72.0,
+                        }
+                    ],
+                    "strong_rejected_candidates": 1,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        errors = validate_live_acceptance(path)
+        self.assertIn("strong upstream candidates were rejected by a downstream gate", errors)
+
     def test_live_acceptance_detects_zero_story_funnel_collapse_without_strong_counter(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-funnel-collapse-qa-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

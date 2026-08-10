@@ -275,7 +275,7 @@ def build_briefing(
                     }
                     for metric in trend_matches
                 ],
-                "conflict_state": facts.conflict_state,
+                "conflict_state": story.facts.conflict_state,
                 "matched_topic_ids": list(story.matched_topic_ids),
                 "why_selected": list(story.why_selected),
                 "final_score": story.editorial_score,

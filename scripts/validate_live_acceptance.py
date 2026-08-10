@@ -72,6 +72,8 @@ def validate(path: Path) -> list[str]:
             strong_rejected_from_funnel += int(topic_funnel.get("strong_rejected", 0) or 0)
             qualified_from_funnel += int(topic_funnel.get("qualified", 0) or 0)
     strong_rejected = max(int(payload.get("strong_rejected_candidates", 0) or 0), strong_rejected_from_funnel)
+    if strong_rejected > 0:
+        errors.append("strong upstream candidates were rejected by a downstream gate")
     if not stories:
         health = str(payload.get("editorial_health", "") or "")
         if health == "FILTER_COLLAPSE" or strong_rejected > 0 or qualified_from_funnel > 0:
