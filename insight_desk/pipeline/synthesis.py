@@ -36,6 +36,9 @@ _CHANGE_MARKERS = (
     "강보합세",
 )
 _ACTION_MARKERS = (
+    "요구",
+    "촉구",
+    "줄여라",
     "시구",
     "개최",
     "공연",
@@ -368,10 +371,13 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
             "대책 시행",
             "규정",
             "기준금리",
+            "요구",
+            "촉구",
+            "줄여라",
         )
     ):
         return "POLICY"
-    if any(word in text for word in ("출시", "발매", "선공개", "음원", "신곡", "싱글", "예약판매", "판매 개시", "사양 확정")):
+    if any(word in text for word in ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
     sports_context = any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기", "시구"))
     if (
@@ -722,11 +728,16 @@ def _summary(
             else:
                 sentence = f"{subject}의 행사 소식이 확인됐다."
     elif event_type in {"POLICY", "REGULATION"} and subject:
-        policy_action = action if action in {"발표", "공개", "시행", "고시", "확정"} else "정책 변화"
-        sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
+        policy_action = action if action in {"발표", "공개", "시행", "고시", "확정", "요구", "촉구", "줄여라"} else "정책 변화"
+        if policy_action in {"요구", "촉구", "줄여라"}:
+            sentence = f"{_clean_headline(title)}."
+        else:
+            sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
         release_subject = _clean_headline(title).split(",", 1)[0].strip() or subject
-        if "앨범" in title:
+        if "데뷔곡" in title:
+            release_noun, release_verb, release_fact = "데뷔곡", "발매", "데뷔곡 발매"
+        elif "앨범" in title:
             release_noun, release_verb, release_fact = "앨범", "발매", "앨범 발매"
         elif any(marker in title for marker in ("음원", "싱글", "신곡", "발매")):
             release_noun, release_verb, release_fact = "신곡", "발매", "신곡 발매"

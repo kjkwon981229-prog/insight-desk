@@ -111,6 +111,41 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("발매", summary)
         self.assertEqual(facts.date, "19일")
 
+    def test_debut_song_release_does_not_become_product_launch(self) -> None:
+        cluster = StoryCluster(
+            "kpop",
+            (
+                _item(
+                    "debut-song",
+                    "구다희, 10일 데뷔곡 기분 UP 으로 가요계 출사표",
+                    "가수 구다희가 10일 정오 데뷔곡을 발매한다.",
+                    "music.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        self.assertEqual(facts.event_type, "PRODUCT_RELEASE")
+        self.assertIn("데뷔곡", summary)
+        self.assertIn("발매", summary)
+        self.assertNotIn("제품", summary)
+
+    def test_policy_directive_preserves_supported_action(self) -> None:
+        cluster = StoryCluster(
+            "ai_tech",
+            (
+                _item(
+                    "semiconductor-directive",
+                    "추미애 삼성·SK하이닉스, 반도체 폐수 방류 줄여라",
+                    "추미애 지사가 반도체 기업에 방류량을 줄이라고 요구했다.",
+                    "policy.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="AI·테크", trend_metrics=())
+        self.assertEqual(facts.event_type, "POLICY")
+        self.assertIn("줄여라", headline + summary)
+        self.assertNotIn("공개 내용이 확인됐다", summary)
+
     def test_ndf_quote_preserves_the_full_supported_quote(self) -> None:
         cluster = StoryCluster(
             "topic",
