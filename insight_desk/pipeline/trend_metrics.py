@@ -16,8 +16,10 @@ _MIN_MATERIAL_RELATIVE = 0.05
 def _trend_state(delta: float | None, previous: float | None) -> str:
     if delta is None or previous is None:
         return "INSUFFICIENT_COMPARISON"
-    material = abs(delta) >= _MIN_MATERIAL_DELTA or (
-        previous > 0 and abs(delta) / previous >= _MIN_MATERIAL_RELATIVE
+    # Both floors are required.  Relative percentage alone is unstable near
+    # zero, while an absolute one-index move can be noise on a high baseline.
+    material = abs(delta) >= _MIN_MATERIAL_DELTA and (
+        previous <= 0 or abs(delta) / previous >= _MIN_MATERIAL_RELATIVE
     )
     if not material:
         return "NO_MEANINGFUL_CHANGE"

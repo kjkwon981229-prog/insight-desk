@@ -62,6 +62,18 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(metrics["flat"].state, "NO_MEANINGFUL_CHANGE")
         self.assertEqual(metrics["rise"].state, "RISE")
 
+        boundary = compute_trend_metrics(
+            (
+                TrendPoint("high", "High baseline", "t", "2026-08-08", 100.0, "batch-high"),
+                TrendPoint("high", "High baseline", "t", "2026-08-09", 101.0, "batch-high"),
+                TrendPoint("low", "Low baseline", "t", "2026-08-08", 10.0, "batch-low"),
+                TrendPoint("low", "Low baseline", "t", "2026-08-09", 11.0, "batch-low"),
+            )
+        )
+        states = {metric.group_id: metric.state for metric in boundary}
+        self.assertEqual(states["high"], "NO_MEANINGFUL_CHANGE")
+        self.assertEqual(states["low"], "RISE")
+
     def test_trend_points_preserve_configured_aliases(self) -> None:
         groups = (KeywordGroup("group", "t", "Internal group label", ("actual term", "alternate")),)
         points = parse_trend_batches(
