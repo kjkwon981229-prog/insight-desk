@@ -7,6 +7,11 @@ const SUBSCRIPTION_PREFIX = "sub:";
 const NOTIFICATION_PREFIX = "notify:";
 const READY_STATE_PREFIX = "state:ready:";
 const MARKER_TTL_SECONDS = 3 * 24 * 60 * 60;
+// KV has no compare-and-set operation.  This isolate-local registry closes
+// the same-isolate race; the deterministic KV marker remains the guard across
+// requests and isolates.  The workflow concurrency group limits the producer
+// side to one active daily run.
+const inFlightNotifications = new Map();
 
 const encoder = new TextEncoder();
 
@@ -268,7 +273,7 @@ async function listSubscriptionKeys(kv, maxSubscriptions) {
   return keys;
 }
 
-async function dispatchNotification(env, requestPayload, dependencies = {}) {
+async function dispatchNotificationOnce(env, requestPayload, dependencies = {}) {
   if (!hasKv(env)) {
     throw new Error("KV_NOT_CONFIGURED");
   }
@@ -392,6 +397,25 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
   } catch (error) {
     await env.PUSH_SUBSCRIPTIONS.delete(markerKey);
     throw error;
+  }
+}
+
+async function dispatchNotification(env, requestPayload, dependencies = {}) {
+  const { date, run_id: runId, type, source } = requestPayload;
+  const markerKey = notificationMarkerKey(date, type, source);
+  const active = inFlightNotifications.get(markerKey);
+  if (active) {
+    const result = await active;
+    return { ...result, duplicate: true };
+  }
+  const operation = dispatchNotificationOnce(env, requestPayload, dependencies);
+  inFlightNotifications.set(markerKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (inFlightNotifications.get(markerKey) === operation) {
+      inFlightNotifications.delete(markerKey);
+    }
   }
 }
 

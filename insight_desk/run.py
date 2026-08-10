@@ -20,7 +20,7 @@ from .pipeline.deduplication import deduplicate_news
 from .pipeline.normalization import normalize_news_payloads
 from .pipeline.scoring import score_news
 from .pipeline.novelty import load_previous_signatures, write_publication_signatures
-from .pipeline.selection import cap_topic_candidates, topic_diverse_enrichment_candidates
+from .pipeline.selection import cap_topic_candidates, select_clusters, topic_diverse_enrichment_candidates
 from .pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 from .security import assert_no_secret_values, configured_secret_values, redact_error, scan_secret_values
 from .web.render import render_site
@@ -193,6 +193,14 @@ def execute(
         deduplicated = deduplicate_news(normalized)
         scored = score_news(deduplicated, topics, now=current)
         bounded = cap_topic_candidates(scored, topics)
+        previous_signatures = load_previous_signatures(output_dir)
+        preliminary_clusters = cluster_news(bounded)
+        preliminary_selection = select_clusters(
+            preliminary_clusters,
+            topics,
+            limit=10,
+            previous_signatures=previous_signatures,
+        )
         enriched = bounded
         enrichment_report: EnrichmentReport | None = None
         transport = getattr(client, "transport", None)
@@ -204,6 +212,7 @@ def execute(
                 bounded,
                 topics,
                 limit=METADATA_ENRICHMENT_LIMIT,
+                priority_clusters=preliminary_selection.selected,
             )
             enriched_targets, enrichment_report = MetadataEnricher(
                 transport=transport,
@@ -262,7 +271,7 @@ def execute(
             trend_metrics=metrics,
             generated_at=current,
             enrichment=enrichment_report,
-            previous_signatures=load_previous_signatures(output_dir),
+            previous_signatures=previous_signatures,
             retrieval_funnel=retrieval_funnel,
             authoritative_audit=authoritative_audit,
         )

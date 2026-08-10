@@ -44,6 +44,19 @@ class KosisDataset:
 
 
 @dataclass(frozen=True)
+class PublicSourceConfig:
+    id: str
+    url: str
+    topic_ids: tuple[str, ...]
+    source_type: str
+    publisher: str
+    trusted_domains: tuple[str, ...]
+    entity_aliases: tuple[str, ...]
+    event_markers: tuple[str, ...]
+    max_requests: int = 1
+
+
+@dataclass(frozen=True)
 class KosisConfig:
     enabled: bool
     max_requests: int
@@ -55,6 +68,7 @@ class AuthorityConfig:
     schema_version: int
     open_dart: OpenDartConfig
     kosis: KosisConfig
+    public_sources: tuple[PublicSourceConfig, ...] = ()
 
 
 def _text(raw: object, field: str) -> str:
@@ -143,4 +157,31 @@ def load_authority_config(path: Path) -> AuthorityConfig:
         max_requests=_bounded_int(kosis_raw.get("max_requests", 2), "kosis.max_requests", minimum=1, maximum=4),
         datasets=tuple(datasets),
     )
-    return AuthorityConfig(schema_version=1, open_dart=dart, kosis=kosis)
+    public_sources: list[PublicSourceConfig] = []
+    for source_raw in raw.get("public_sources", []):
+        if not isinstance(source_raw, dict):
+            raise AuthorityConfigError("public source must be an object")
+        source_id = _text(source_raw.get("id"), "public_sources.id")
+        url = _text(source_raw.get("url"), "public_sources.url")
+        if not url.startswith("https://"):
+            raise AuthorityConfigError("public source URL must use HTTPS")
+        topic_ids = tuple(_text(value, "public_sources.topic_ids") for value in source_raw.get("topic_ids", []))
+        trusted_domains = tuple(_text(value, "public_sources.trusted_domains") for value in source_raw.get("trusted_domains", []))
+        entity_aliases = tuple(_text(value, "public_sources.entity_aliases") for value in source_raw.get("entity_aliases", []))
+        event_markers = tuple(_text(value, "public_sources.event_markers") for value in source_raw.get("event_markers", []))
+        if not topic_ids or not trusted_domains or not entity_aliases or not event_markers:
+            raise AuthorityConfigError(f"public source is missing matching contract: {source_id}")
+        public_sources.append(
+            PublicSourceConfig(
+                id=source_id,
+                url=url,
+                topic_ids=topic_ids,
+                source_type=_text(source_raw.get("source_type"), "public_sources.source_type"),
+                publisher=_text(source_raw.get("publisher"), "public_sources.publisher"),
+                trusted_domains=trusted_domains,
+                entity_aliases=entity_aliases,
+                event_markers=event_markers,
+                max_requests=_bounded_int(source_raw.get("max_requests", 1), "public_sources.max_requests", minimum=1, maximum=2),
+            )
+        )
+    return AuthorityConfig(schema_version=1, open_dart=dart, kosis=kosis, public_sources=tuple(public_sources))

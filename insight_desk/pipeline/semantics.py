@@ -172,6 +172,35 @@ _MARKET_DIRECTION_ALIASES: tuple[tuple[str, str], ...] = (
     ("내린", "하락"),
 )
 
+TRUSTED_OFFICIAL_DOMAINS = frozenset(
+    {
+        "bok.or.kr",
+        "kosis.kr",
+        "opendart.fss.or.kr",
+        "dart.fss.or.kr",
+        "fss.or.kr",
+        "kostat.go.kr",
+        "mpm.go.kr",
+        "gosi.kr",
+        "koreabaseball.com",
+    }
+)
+
+
+def is_trusted_official_domain(domain: str) -> bool:
+    """Accept only explicitly registered official hosts.
+
+    Government TLDs alone are not an authority proof: a random ``.go.kr`` or
+    ``.or.kr`` host must not turn a news item into official evidence.
+    """
+
+    raw = normalize_text(domain).casefold()
+    if not raw:
+        return False
+    candidate = raw if "://" in raw else f"https://{raw}"
+    host = (urlsplit(candidate).hostname or raw).removeprefix("www.").rstrip(".")
+    return any(host == trusted or host.endswith(f".{trusted}") for trusted in TRUSTED_OFFICIAL_DOMAINS)
+
 _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "REGULATION": ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"),
     "POLICY": ("정책 발표", "정책 결정", "정책 시행", "정책 개편", "대책 발표", "기준금리", "공고", "요구", "촉구", "줄여라"),

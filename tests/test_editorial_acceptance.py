@@ -167,6 +167,18 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertFalse(assess_cluster(StoryCluster("economy", (random_org,)), topic).evidence.official)
         self.assertTrue(assess_cluster(StoryCluster("economy", (known_org,)), topic).evidence.official)
 
+    def test_unregistered_go_kr_domain_is_not_official(self) -> None:
+        topic = _topic("economy", "경제·투자", "투자", anchors=("투자",), events=("계약",))
+        item = _item(
+            "random-government-domain",
+            "economy",
+            "투자",
+            "기업 투자 계약 체결",
+            "기업이 투자 계약을 체결했다.",
+            domain="random.go.kr",
+        )
+        self.assertFalse(assess_cluster(StoryCluster("economy", (item,)), topic).evidence.official)
+
     def test_explicit_official_claim_fails_closed_without_authority(self) -> None:
         topic = _topic(
             "economy",

@@ -684,7 +684,7 @@ def _methodology(briefing: Briefing, limitation_html: str) -> str:
         '<div class="method-body">'
         '<dl class="definition-list">'
         f'<div class="definition-row"><dt>생성 시각</dt><dd>{_esc(_format_timestamp(state.generated_at))}</dd></div>'
-        f'<div class="definition-row"><dt>대상 기간</dt><dd>{_esc(_format_date(state.data_cutoff))}</dd></div>'
+        f'<div class="definition-row"><dt>검색 관심 분석 기간</dt><dd>{_esc(_format_date(state.data_cutoff))} ~ {_esc(_format_date(state.generated_at))}</dd></div>'
         '<div class="definition-row"><dt>뉴스 근거</dt><dd>NAVER 검색 결과의 제목·요약·원문 링크를 기본으로 사용한다.</dd></div>'
         f'<div class="definition-row"><dt>원문 보강</dt><dd>{_esc(enrichment)} 실패해도 검색 결과를 유지한다.</dd></div>'
         '<div class="definition-row"><dt>검색 관심지수</dt><dd>원시 검색량이 아닌 상대 지수다. 같은 키워드 그룹 안에서 직전 구간과 비교한다.</dd></div>'
@@ -824,7 +824,7 @@ def _document(
 <meta name="description" content="Insight Desk 모바일 뉴스·검색 관심 흐름 브리핑"><title>{_esc(title)}</title>
 {_pwa_head(asset_prefix)}<link rel="stylesheet" href="{_esc(asset_prefix)}assets/css/style.css"></head>
 <body><main class="shell"{latest_attrs}>
-<header class="site-header"><div class="brand-row"><a class="brand" href="{_esc(nav_prefix)}index.html">INSIGHT DESK</a><div class="header-meta"><span>{_esc(_format_date(state.generated_at))}</span><span>기준 {_esc(_format_date(state.data_cutoff))}</span></div></div>
+<header class="site-header"><div class="brand-row"><a class="brand" href="{_esc(nav_prefix)}index.html">INSIGHT DESK</a><div class="header-meta"><span>{_esc(_format_date(state.generated_at))}</span><span>검색 관심 분석 시작일 {_esc(_format_date(state.data_cutoff))}</span></div></div>
 <nav class="site-nav" aria-label="브리핑 탐색">{nav_html}</nav></header>
 <section class="briefing-overview" id="today" aria-labelledby="briefing-heading"><span class="eyebrow">오늘의 개인 브리핑 · {_esc(_format_date(state.generated_at))}</span><h1 id="briefing-heading">오늘의 브리핑</h1><p class="overview-lede">{_esc(briefing.three_line_summary[0] if briefing.three_line_summary else _status_sentence(state.status))}</p><p class="overview-status {status_class}"><strong>{_esc(status_label)}</strong> · {_esc(_status_sentence(state.status))}</p><div class="freshness-banner" id="freshness-banner" hidden role="status"></div><ul class="lead-signals" aria-label="관심사별 주요 신호">{_lead_signals(briefing, nav_prefix)}</ul></section>
 {freshness_html}

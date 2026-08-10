@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 
 from insight_desk.collectors.enrichment import MetadataEnricher, parse_html_metadata
 from insight_desk.collectors.transport import HttpResponse
-from insight_desk.domain.models import EvidenceType, NewsItem
+from insight_desk.domain.models import EvidenceType, NewsItem, Topic
+from insight_desk.pipeline.selection import topic_diverse_enrichment_candidates
+from insight_desk.pipeline.clustering import StoryCluster
 
 
 class MetadataTransport:
@@ -37,6 +40,21 @@ def _item(url: str = "https://publisher.test/story") -> NewsItem:
 
 
 class EnrichmentTests(unittest.TestCase):
+    def test_selection_aware_targets_preliminary_winner_before_round_robin_fill(self) -> None:
+        topics = (
+            Topic("a", "A", True, False, 50, ("A",), intent_anchors=("A",), event_terms=("출시",)),
+            Topic("b", "B", True, False, 50, ("B",), intent_anchors=("B",), event_terms=("출시",)),
+        )
+        a = replace(_item("https://publisher.test/a"), evidence_id="a", topic_id="a", query="A", title="A 모델 출시 발표")
+        b = replace(_item("https://publisher.test/b"), evidence_id="b", topic_id="b", query="B", title="B 모델 출시 발표")
+        targets = topic_diverse_enrichment_candidates(
+            (a, b),
+            topics,
+            limit=1,
+            priority_clusters=(StoryCluster("b", (b,)),),
+        )
+        self.assertEqual(tuple(item.evidence_id for item in targets), ("b",))
+
     def test_metadata_parser_extracts_public_fields_and_canonical(self) -> None:
         body = """
         <html><head>

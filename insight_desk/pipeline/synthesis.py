@@ -20,6 +20,7 @@ from .semantics import (
     MetricObservation,
     recruitment_event_type,
     summary_information_gain,
+    is_trusted_official_domain,
 )
 from .trend_metrics import effective_trend_state
 
@@ -618,8 +619,8 @@ def _official_source(items: tuple[object, ...]) -> str:
                 return "공식 자료"
         if EvidenceType.OFFICIAL_SOURCE in getattr(item, "provenance", ()):
             return "공식 자료"
-        domain = str(getattr(item, "source_domain", "")).lower()
-        if domain.endswith(".go.kr") or domain.endswith(".gov") or "bok.or.kr" in domain:
+        domain = str(getattr(item, "source_domain", ""))
+        if is_trusted_official_domain(domain):
             return "공식 자료"
     return ""
 

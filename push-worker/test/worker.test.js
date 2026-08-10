@@ -203,6 +203,41 @@ test("manual READY and scheduled READY have separate idempotency identities", as
   assert.equal(calls, 2);
 });
 
+test("same-isolate concurrent retries share one delivery operation", async () => {
+  const env = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  let calls = 0;
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  const auth = { Authorization: `Bearer ${sendToken}` };
+  const dependencies = {
+    sendNotification: async () => {
+      calls += 1;
+      await blocked;
+    },
+  };
+  const firstPromise = handleRequest(
+    request("/send", { method: "POST", body: { date: "2026-08-19", run_id: "run-a", type: "READY", source: "schedule" }, headers: auth }),
+    env,
+    undefined,
+    dependencies,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const secondPromise = handleRequest(
+    request("/send", { method: "POST", body: { date: "2026-08-19", run_id: "run-b", type: "READY", source: "schedule" }, headers: auth }),
+    env,
+    undefined,
+    dependencies,
+  );
+  release();
+  const [first, second] = await Promise.all([firstPromise, secondPromise]);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(calls, 1);
+  assert.equal((await first.json()).duplicate, false);
+  assert.equal((await second.json()).duplicate, true);
+});
+
 test("legacy delivery markers are normalized without an invalid response state", async () => {
   const env = environment();
   await env.PUSH_SUBSCRIPTIONS.put(

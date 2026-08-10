@@ -12,7 +12,9 @@ from insight_desk.authoritative.config import (
     KosisDataset,
     OpenDartConfig,
     OpenDartEntity,
+    PublicSourceConfig,
 )
+from insight_desk.authoritative.public import PublicOfficialAdapter
 from insight_desk.authoritative.router import AuthoritativeRouter
 from insight_desk.collectors.transport import HttpResponse
 from insight_desk.domain.models import AuthoritySourceType, NewsItem
@@ -86,6 +88,54 @@ def _kosis_dataset() -> KosisDataset:
 
 
 class AuthoritativeAdapterTests(unittest.TestCase):
+    def test_public_official_page_requires_same_entity_event_and_fact(self) -> None:
+        source = PublicSourceConfig(
+            id="kbo-public",
+            url="https://official.example/schedule",
+            topic_ids=("kbo",),
+            source_type="OFFICIAL_SPORTS",
+            publisher="KBO",
+            trusted_domains=("official.example",),
+            entity_aliases=("한화 이글스", "KBO"),
+            event_markers=("경기", "결과"),
+        )
+        page = """
+        <html><head><title>KBO 공식 일정</title></head><body>
+          <a href="/game/20260810">한화 이글스 8월 10일 경기 결과 5-3 승리</a>
+        </body></html>
+        """.encode("utf-8")
+        item = _item(
+            "public-match",
+            "한화 이글스 8월 10일 경기 결과 5-3 승리",
+            "한화 이글스가 8월 10일 경기에서 5-3으로 승리했다.",
+            query="KBO",
+            topic_id="kbo",
+        )
+        payload = PublicOfficialAdapter(
+            config=source,
+            transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+        ).fetch((item,))
+        self.assertTrue(payload.result.success)
+        self.assertEqual(payload.result.events_augmented, 1)
+        evidence = payload.evidence[0][1]
+        self.assertEqual(evidence.source_type, AuthoritySourceType.OFFICIAL_SPORTS)
+        self.assertEqual(evidence.canonical_url, "https://official.example/game/20260810")
+
+        unrelated = _item(
+            "public-unrelated",
+            "한화 기업 투자 발표",
+            "한화의 투자 계획이 발표됐다.",
+            query="한화",
+            topic_id="kbo",
+        )
+        self.assertEqual(
+            PublicOfficialAdapter(
+                config=source,
+                transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+            ).fetch((unrelated,)).evidence,
+            (),
+        )
+
     def test_opendart_matches_event_category_and_caps_candidate_attachments(self) -> None:
         item = _item(
             "dart-category",

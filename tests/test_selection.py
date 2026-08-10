@@ -275,6 +275,27 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(bounded), 1)
         self.assertEqual(bounded[0].matched_topic_ids, ("alpha",))
 
+    def test_semantic_attribution_does_not_use_another_topic_query_as_evidence(self) -> None:
+        topic_a = Topic(
+            "alpha", "Alpha", True, False, 60, ("Alpha",), candidate_budget=1,
+            intent_anchors=("Alpha",), event_terms=("발표",),
+        )
+        # The two topics deliberately share the retrieval query.  Beta must
+        # not inherit an Alpha story merely because that query was used for
+        # discovery.
+        topic_b = Topic(
+            "beta", "Beta", True, False, 60, ("Alpha",), candidate_budget=1,
+            intent_anchors=("Beta",), event_terms=("발표",),
+        )
+        candidate = replace(
+            _item("shared-query", "alpha", matched=("alpha", "beta")),
+            query="Alpha",
+            title="Alpha 모델 출시 발표",
+            summary="Alpha 모델 출시 일정과 적용 범위가 발표됐다.",
+        )
+        bounded = cap_topic_candidates((candidate,), (topic_a, topic_b))
+        self.assertEqual(bounded[0].matched_topic_ids, ("alpha",))
+
     def test_story_attribution_rechecks_cross_topic_intent(self) -> None:
         economy = Topic(
             "economy",

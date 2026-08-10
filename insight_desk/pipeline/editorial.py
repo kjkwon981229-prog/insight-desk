@@ -17,6 +17,7 @@ from .semantics import (
     contains_intent_term,
     canonical_publisher,
     event_action_signal,
+    is_trusted_official_domain,
     market_direction_class,
     metric_observations,
     recruitment_event_type,
@@ -202,13 +203,20 @@ def best_headline_item(items: tuple[NewsItem, ...]) -> NewsItem:
     return max(items, key=quality)
 
 
-def topic_anchor_terms(topic: Topic) -> tuple[str, ...]:
-    """Return configured intent vocabulary plus a narrow test/config fallback."""
+def topic_anchor_terms(topic: Topic, *, include_queries: bool = True) -> tuple[str, ...]:
+    """Return topic vocabulary, optionally including retrieval queries.
+
+    A query is useful for the initial discovery relevance assessment, but it
+    is not semantic evidence when a deduplicated item is being attributed to a
+    second topic.  Callers performing that recheck must opt out explicitly so
+    a shared scalar query cannot consume another topic's budget or coverage.
+    """
 
     values = list(topic.intent_anchors)
     values.extend(_TOKEN_RE.findall(topic.name))
     values.extend(_TOKEN_RE.findall(topic.id.replace("_", " ")))
-    values.extend(topic.all_news_queries)
+    if include_queries:
+        values.extend(topic.all_news_queries)
     return tuple(dict.fromkeys(value for value in values if value.strip()))
 
 
@@ -260,9 +268,14 @@ class EditorialAssessment:
     reasons: tuple[str, ...]
 
 
-def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment:
+def assess_relevance(
+    cluster: StoryCluster,
+    topic: Topic,
+    *,
+    include_queries: bool = True,
+) -> RelevanceAssessment:
     best: RelevanceAssessment | None = None
-    anchors = topic_anchor_terms(topic)
+    anchors = topic_anchor_terms(topic, include_queries=include_queries)
     for item in cluster.items:
         title = effective_title(item)
         lead = effective_lead(item)
@@ -381,6 +394,7 @@ def assess_semantic_relevance(item: NewsItem, topic: Topic) -> RelevanceAssessme
     return assess_relevance(
         StoryCluster(topic.id, (replace(item, query=""),)),
         topic,
+        include_queries=False,
     )
 
 
@@ -613,7 +627,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(f"{title_text} {lead_text}")))
     dates = tuple(dict.fromkeys(_DATE_RE.findall(f"{title_text} {lead_text}")))
     event_terms = _event_terms_for(topic)
-    topic_terms = topic_anchor_terms(topic)
+    topic_terms = topic_anchor_terms(topic, include_queries=False)
     title_subject = any(_contains_intent_term(title_text, term) for term in topic_terms)
     action_term = event_action_signal(event_type, title_text, lead_text)
     action = bool(action_term)
@@ -688,17 +702,6 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     )
 
 
-_TRUSTED_OFFICIAL_DOMAINS = frozenset(
-    {
-        "bok.or.kr",
-        "kosis.kr",
-        "opendart.fss.or.kr",
-        "dart.fss.or.kr",
-        "fss.or.kr",
-        "kostat.go.kr",
-    }
-)
-
 # Only explicit claims of official provenance require an authoritative
 # confirmation.  Ordinary news reporting remains eligible when the optional
 # adapter is unavailable; this is a claim-level fail-closed rule, not a
@@ -723,8 +726,7 @@ _AUTHORITY_REQUIRED_MARKERS = (
 def _is_official(item: NewsItem) -> bool:
     if EvidenceType.OFFICIAL_SOURCE in item.provenance:
         return True
-    domain = canonical_publisher(domain=item.source_domain)
-    return domain in _TRUSTED_OFFICIAL_DOMAINS or domain.endswith(".go.kr")
+    return is_trusted_official_domain(item.source_domain)
 
 
 def requires_authoritative_evidence(item: NewsItem) -> bool:

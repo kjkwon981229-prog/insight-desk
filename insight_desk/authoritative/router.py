@@ -9,6 +9,7 @@ from ..collectors.transport import Transport
 from ..domain.models import AuthorityEvidence, EvidenceType, NewsItem
 from .adapters import AdapterPayload, AdapterResult, KosisAdapter, OpenDartAdapter
 from .config import AuthorityConfig
+from .public import PublicOfficialAdapter
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,19 @@ class AuthoritativeRouter:
             )
         else:
             payloads.append(AdapterPayload(AdapterResult("kosis", failure_reason="DISABLED")))
+        for source in self.config.public_sources:
+            try:
+                payloads.append(PublicOfficialAdapter(config=source, transport=self.transport).fetch(items))
+            except (ValueError, OSError, TimeoutError) as exc:
+                payloads.append(
+                    AdapterPayload(
+                        AdapterResult(
+                            source.id,
+                            attempted=0,
+                            failure_reason=f"{type(exc).__name__.upper()}",
+                        )
+                    )
+                )
 
         augmented, conflicts = _attach(items, tuple(payloads))
         audits: list[dict[str, object]] = []

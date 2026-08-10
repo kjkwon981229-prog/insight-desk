@@ -452,8 +452,16 @@ def topic_diverse_enrichment_candidates(
     topics: tuple[Topic, ...],
     *,
     limit: int,
+    priority_clusters: tuple[object, ...] = (),
 ) -> tuple[NewsItem, ...]:
-    """Choose cheap-intent-passing enrichment targets round-robin by topic."""
+    """Choose bounded enrichment targets with a preliminary-selection hint.
+
+    Metadata enrichment happens before the authoritative and final editorial
+    gates, so a fixed topic round-robin can starve a candidate that the
+    preliminary selector already considers worth reviewing.  Prefer those
+    candidates first, then use the existing topic-diverse fill.  ``limit`` is
+    still a hard upper bound and no extra network request is implied.
+    """
 
     by_topic: dict[str, list[tuple[NewsItem, float]]] = {topic.id: [] for topic in topics if topic.enabled}
     for item in items:
@@ -468,6 +476,25 @@ def topic_diverse_enrichment_candidates(
         values.sort(key=lambda value: (-value[1], -value[0].score, effective_title(value[0])))
     selected: list[NewsItem] = []
     seen: set[str] = set()
+
+    by_key = {
+        item.canonical_url or item.content_hash or item.evidence_id: item
+        for item in items
+    }
+    for cluster in priority_clusters:
+        if len(selected) >= limit:
+            break
+        for item in getattr(cluster, "items", ()):
+            key = item.canonical_url or item.content_hash or item.evidence_id
+            if key in seen or key not in by_key:
+                continue
+            if any(
+                topic_id in by_topic and assess_semantic_relevance(item, next(topic for topic in topics if topic.id == topic_id)).passed
+                for topic_id in topic_ids_for_item(item)
+            ):
+                selected.append(by_key[key])
+                seen.add(key)
+                break
     while len(selected) < limit:
         changed = False
         for topic in topics:
