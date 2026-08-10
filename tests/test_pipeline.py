@@ -5,11 +5,12 @@ from datetime import datetime
 
 from insight_desk.domain.models import KeywordGroup, NewsItem, TrendPoint
 from insight_desk.domain.models import Topic
-from insight_desk.pipeline.clustering import cluster_news
+from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.normalization import normalize_news_item, normalize_url
 from insight_desk.pipeline.scoring import score_news
-from insight_desk.pipeline.semantics import metric_observations
+from insight_desk.pipeline.editorial import assess_event
+from insight_desk.pipeline.semantics import earnings_observations, metric_observations
 from insight_desk.pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 
 
@@ -86,6 +87,50 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(
             [(value.instrument, value.value, value.direction, value.period) for value in observations],
             [("코스닥", "+6.97%", "급등", "2026년6월"), ("코스피", "+0.65%", "상승", "2026년6월")],
+        )
+
+    def test_metric_period_does_not_cross_bind_explicit_later_clause(self) -> None:
+        observations = metric_observations("6월 코스닥 +6.97% 급등, 5월 코스피 +0.65% 상승")
+        self.assertEqual(
+            [(value.instrument, value.value, value.period) for value in observations],
+            [("코스닥", "+6.97%", "6월"), ("코스피", "+0.65%", "5월")],
+        )
+
+    def test_earnings_are_not_misread_as_market_metrics(self) -> None:
+        title = "삼성전자 2026년 2분기 영업이익 10조원 기록"
+        self.assertEqual(metric_observations(title), ())
+        earnings = earnings_observations(title)
+        self.assertEqual(
+            [(value.instrument, value.metric, value.value, value.period) for value in earnings],
+            [("삼성전자", "영업이익", "10조원", "2026년2분기")],
+        )
+        item = NewsItem(
+            "earnings-semantic",
+            "economy",
+            "경제",
+            title,
+            "삼성전자가 2분기 영업이익 10조원을 기록했다고 밝혔다.",
+            "https://example.test/earnings-semantic",
+            "",
+            "https://example.test/earnings-semantic",
+            "2026-08-10T00:00:00+09:00",
+            "example.test",
+            "earnings-semantic",
+        )
+        event = assess_event(
+            StoryCluster("economy", (item,)),
+            Topic("economy", "경제", True, False, 50, ("경제", "삼성전자")),
+        )
+        self.assertEqual(event.canonical_event.subject, "삼성전자")
+        self.assertEqual(event.canonical_event.metric, "영업이익")
+        self.assertEqual(event.canonical_event.value, "10조원")
+        self.assertEqual(event.canonical_event.period, "2026년2분기")
+
+    def test_corporate_market_metric_still_survives_with_market_context(self) -> None:
+        observations = metric_observations("삼성전자 주가 +3.2% 상승")
+        self.assertEqual(
+            [(value.instrument, value.value, value.direction) for value in observations],
+            [("삼성전자", "+3.2%", "상승")],
         )
 
     def test_clustering_and_scoring_are_deterministic(self) -> None:

@@ -17,6 +17,8 @@ from .semantics import (
     contains_intent_term,
     canonical_publisher,
     event_action_signal,
+    event_observations,
+    earnings_observations,
     is_trusted_official_domain,
     market_direction_class,
     metric_observations,
@@ -670,7 +672,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and metric_signal
         and not metric_direction_conflict
     )
-    observations = metric_observations(title_text)
+    observations = event_observations(event_type, title_text)
     canonical_subject = observations[0].instrument if observations else title_text.split(" · ", 1)[0][:48]
     canonical_event = CanonicalEvent(
         event_type=event_type,
@@ -740,7 +742,11 @@ def requires_authoritative_evidence(item: NewsItem) -> bool:
 
 def _evidence_fact_tokens(item: NewsItem) -> set[str]:
     text = " ".join(value for value in (effective_title(item), effective_lead(item)) if value)
-    observations = metric_observations(text)
+    observations = (
+        earnings_observations(text)
+        if any(marker in text for marker in ("실적", "매출", "영업이익", "순이익", "가이던스"))
+        else metric_observations(text)
+    )
     if observations:
         return {
             compact(value)

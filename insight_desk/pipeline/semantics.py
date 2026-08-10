@@ -130,6 +130,13 @@ _NUMBER_RE = re.compile(
 _PERIOD_RE = re.compile(
     r"(?:20\d{2}\s?년\s?)?(?:\d{1,2}\s?월|[1-4]\s?분기|상반기|하반기|연간|월간|분기|전년(?:동월)?|전월)"
 )
+_EARNINGS_PERIOD_RE = re.compile(r"(?:20\d{2}\s?년\s?)?(?:[1-4]\s?분기|상반기|하반기|연간)")
+_EARNINGS_METRIC_RE = re.compile(
+    r"(?:영업이익|영업손실|매출액|매출|당기순이익|순이익|순손실|가이던스)"
+)
+_EARNINGS_VALUE_RE = re.compile(
+    r"(?<![A-Za-z가-힣])\d[\d,.]*\s?(?:조원|억원|만원|천만원|만\s?달러|억\s?달러|달러|원|%|퍼센트)"
+)
 _DIRECTION_RE = re.compile(
     r"(?:소폭\s*)?(?:급등|급락|상승|하락|강세|약세|강보합세|보합|증가|감소|확대|축소|돌파|변동)"
 )
@@ -145,6 +152,23 @@ _MARKET_INSTRUMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("S&P500", ("S&P500", "S&P 500")),
     ("삼성전자", ("삼성전자",)),
     ("SK하이닉스", ("SK하이닉스", "하이닉스")),
+)
+_CORPORATE_MARKET_INSTRUMENTS = frozenset({"삼성전자", "SK하이닉스"})
+_CORPORATE_MARKET_CONTEXT = (
+    "주가",
+    "주식",
+    "증시",
+    "시가총액",
+    "시총",
+    "거래",
+    "코스피",
+    "코스닥",
+    "상승",
+    "하락",
+    "급등",
+    "급락",
+    "강세",
+    "약세",
 )
 
 _MARKET_DIRECTION_TERMS: tuple[str, ...] = (
@@ -320,11 +344,66 @@ class CanonicalEvent:
     conflict_state: str = "NO_CONFLICT"
 
 
+def earnings_fact_parts(text: str) -> tuple[str, str, str]:
+    """Return one bound ``(period, metric, value)`` earnings observation."""
+
+    clean = normalize_text(text)
+    marker = re.search(r"\.{2,}|…|·{2,}", clean)
+    if marker:
+        clean = clean[: marker.start()].strip()
+    metric_match = _EARNINGS_METRIC_RE.search(clean)
+    if metric_match is None:
+        return "", "", ""
+    value_match = _EARNINGS_VALUE_RE.search(clean, metric_match.end())
+    if value_match is None or value_match.start() - metric_match.end() > 32:
+        return "", "", ""
+    period_matches = list(_EARNINGS_PERIOD_RE.finditer(clean[: metric_match.start()]))
+    period = period_matches[-1].group(0).replace(" ", "") if period_matches else ""
+    metric = metric_match.group(0)
+    value = value_match.group(0).replace(" ", "")
+    return period, metric, value
+
+
+def earnings_observations(text: str) -> tuple[MetricObservation, ...]:
+    """Represent a fact-rich earnings claim using the shared observation type."""
+
+    period, metric, value = earnings_fact_parts(text)
+    if not metric or not value:
+        return ()
+    clean = normalize_text(text)
+    metric_start = clean.find(metric)
+    subject = clean[:metric_start] if metric_start >= 0 else ""
+    for period_marker in _EARNINGS_PERIOD_RE.finditer(subject):
+        subject = subject[: period_marker.start()]
+    subject = subject.strip(" ,·-—")
+    if not subject:
+        return ()
+    return (
+        MetricObservation(
+            instrument=subject,
+            metric=metric,
+            value=value,
+            direction="",
+            period=period,
+            raw=clean,
+        ),
+    )
+
+
 def _instrument_matches(text: str) -> list[tuple[int, int, str]]:
+    normalized = normalize_text(text)
     matches: list[tuple[int, int, str]] = []
     for instrument, aliases in _MARKET_INSTRUMENTS:
+        # Company names are market instruments only when the text also
+        # carries explicit market context.  Without this guard, an earnings
+        # headline such as ``삼성전자 2분기 영업이익 10조원`` is misread as a
+        # market observation whose value is ``2분``.
+        if instrument in _CORPORATE_MARKET_INSTRUMENTS and not any(
+            marker in normalized for marker in _CORPORATE_MARKET_CONTEXT
+        ):
+            continue
         for alias in aliases:
-            for match in re.finditer(re.escape(alias), text, re.IGNORECASE):
+            for match in re.finditer(re.escape(alias), normalized, re.IGNORECASE):
                 matches.append((match.start(), match.end(), instrument))
     # Prefer the longest alias at a position (``원·달러 환율`` over ``환율``)
     # and keep the input order for different instruments.
@@ -343,6 +422,7 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
     value = normalize_text(text)
     instruments = _instrument_matches(value)
     observations: list[MetricObservation] = []
+    shared_period = ""
     for index, (start, end, instrument) in enumerate(instruments):
         segment_end = instruments[index + 1][0] if index + 1 < len(instruments) else len(value)
         segment = value[end:segment_end]
@@ -357,8 +437,21 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
         if direction_match is None:
             direction_match = _DIRECTION_RE.search(segment[:80])
         direction = direction_match.group(0).replace(" ", "") if direction_match else ""
-        period_match = _PERIOD_RE.search(segment[:80]) or _PERIOD_RE.search(value)
-        period = re.sub(r"\s+", "", period_match.group(0)) if period_match else ""
+        # Bind a period to the observation's own clause.  The old fallback to
+        # the whole headline could attach a later instrument's month to an
+        # earlier value (or copy an unrelated first month to every metric).
+        prefix_start = instruments[index - 1][1] if index else 0
+        prefix = value[prefix_start:start]
+        prefix_periods = list(_PERIOD_RE.finditer(prefix))
+        segment_periods = list(_PERIOD_RE.finditer(segment[: number_match.start()]))
+        period_match = (segment_periods or prefix_periods)
+        period = re.sub("\\s+", "", period_match[-1].group(0)) if period_match else ""
+        if index == 0 and period:
+            shared_period = period
+        elif index > 0 and not period and shared_period and not prefix_periods:
+            # A single period placed before a comma-separated metric list is
+            # safe to inherit; an explicit period in this clause is not.
+            period = shared_period
         observations.append(
             MetricObservation(
                 instrument=instrument,
@@ -370,6 +463,16 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
             )
         )
     return tuple(observations)
+
+
+def event_observations(event_type: str, text: str) -> tuple[MetricObservation, ...]:
+    """Return typed observations for the event family being assessed."""
+
+    if event_type == "EARNINGS":
+        return earnings_observations(text)
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+        return metric_observations(text)
+    return ()
 
 
 def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
@@ -528,8 +631,8 @@ def canonical_event_signature(
     """Build a stable, fact-bound signature for novelty and audit."""
 
     date, date_conflict = canonical_event_date(title, lead)
-    observations = metric_observations(title)
-    if observations and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+    observations = event_observations(event_type, title)
+    if observations and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"}:
         bound = ";".join(
             ":".join(
                 part

@@ -14,6 +14,7 @@ from .semantics import (
     canonical_event_signature,
     contains_action,
     contains_boundary_term,
+    earnings_fact_parts,
     first_action,
     market_direction,
     metric_observations,
@@ -165,36 +166,10 @@ _EVENT_DATE_MARKERS = (
     "예정", "상장", "시구", "경기", "열렸다", "성료",
 )
 _COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
-_EARNINGS_PERIOD_RE = re.compile(r"(?:20\d{2}\s?년\s?)?(?:[1-4]\s?분기|상반기|하반기|연간)")
-_EARNINGS_METRIC_RE = re.compile(
-    r"(?:영업이익|영업손실|매출액|매출|당기순이익|순이익|순손실|가이던스)"
-)
-_EARNINGS_VALUE_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*\s?(?:조원|억원|만원|천만원|만\s?달러|억\s?달러|달러|원|%|퍼센트)"
-)
-
-
 def _earnings_fact_parts(text: str) -> tuple[str, str, str]:
-    """Extract one bound earnings observation from trusted text.
+    """Keep synthesis on the same fact-bound earnings parser as the event model."""
 
-    Period, metric, and value are kept as one observation.  This prevents a
-    title such as ``2분기 영업이익 10조원`` from being reduced to the first
-    number (or from combining a period from one clause with a value from
-    another event).
-    """
-
-    clean = _clean_headline(text)
-    metric_match = _EARNINGS_METRIC_RE.search(clean)
-    if metric_match is None:
-        return "", "", ""
-    value_match = _EARNINGS_VALUE_RE.search(clean, metric_match.end())
-    if value_match is None or value_match.start() - metric_match.end() > 32:
-        return "", "", ""
-    period_matches = list(_EARNINGS_PERIOD_RE.finditer(clean[: metric_match.start()]))
-    period = period_matches[-1].group(0).replace(" ", "") if period_matches else ""
-    metric = metric_match.group(0)
-    value = value_match.group(0).replace(" ", "")
-    return period, metric, value
+    return earnings_fact_parts(_clean_headline(text))
 
 
 def earnings_summary_preserves_fact_binding(headline: str, summary: str) -> bool:

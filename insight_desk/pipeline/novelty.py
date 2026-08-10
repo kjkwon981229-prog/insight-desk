@@ -77,7 +77,7 @@ def _signature_profile(signature: str) -> tuple[str, set[str], set[str]]:
         if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", part):
             dates.add(part)
             continue
-        if ":" in part and event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
+        if ":" in part and event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
             for observation in part.split(";"):
                 values = observation.split(":")
                 if values:
