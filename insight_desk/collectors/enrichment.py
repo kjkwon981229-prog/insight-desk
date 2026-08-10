@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
@@ -13,6 +15,9 @@ from .transport import Transport, UrlLibTransport
 
 
 _CHARSET_RE = re.compile(r"charset\s*=\s*[\"']?([\w.-]+)", re.IGNORECASE)
+_JSONLD_LINE_COMMENT_RE = re.compile(r"(?m)^[ \t]*//[^\r\n]*(?:\r?\n|$)")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _META_KEYS = {
     "og:title",
     "og:description",
@@ -92,11 +97,19 @@ class _MetadataParser(HTMLParser):
         self.meta: dict[str, str] = {}
         self._inside_title = False
         self._title_parts: list[str] = []
+        self.jsonld_scripts: list[str] = []
+        self._inside_jsonld = False
+        self._jsonld_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {key.lower(): value or "" for key, value in attrs}
         tag_name = tag.lower()
-        if tag_name == "title":
+        if tag_name == "script":
+            script_type = values.get("type", "").split(";", 1)[0].strip().lower()
+            if script_type == "application/ld+json":
+                self._inside_jsonld = True
+                self._jsonld_parts = []
+        elif tag_name == "title":
             self._inside_title = True
         elif tag_name == "meta":
             key = (values.get("property") or values.get("name") or values.get("itemprop") or "").lower()
@@ -113,12 +126,25 @@ class _MetadataParser(HTMLParser):
         self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "title" and self._inside_title:
+        tag_name = tag.lower()
+        if tag_name == "script" and self._inside_jsonld:
+            value = "".join(self._jsonld_parts).strip()
+            if value:
+                self.jsonld_scripts.append(value)
+            self._inside_jsonld = False
+            self._jsonld_parts = []
+        elif tag_name == "title" and self._inside_title:
             self.document_title = " ".join(self._title_parts).strip()
             self._inside_title = False
 
     def close(self) -> None:
         super().close()
+        if self._inside_jsonld:
+            value = "".join(self._jsonld_parts).strip()
+            if value:
+                self.jsonld_scripts.append(value)
+            self._inside_jsonld = False
+            self._jsonld_parts = []
         if self._inside_title:
             self.document_title = " ".join(self._title_parts).strip()
             self._inside_title = False
@@ -126,6 +152,97 @@ class _MetadataParser(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._inside_title:
             self._title_parts.append(data)
+        if self._inside_jsonld:
+            self._jsonld_parts.append(data)
+
+
+def _clean_structured_text(value: object) -> str:
+    """Normalize a short JSON-LD description without retaining page markup."""
+
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<\s*br\s*/?\s*>", " ", text, flags=re.IGNORECASE)
+    text = _HTML_TAG_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _jsonld_objects(value: object) -> tuple[dict[str, object], ...]:
+    """Flatten JSON-LD objects and @graph members without retaining payloads."""
+
+    objects: list[dict[str, object]] = []
+    if isinstance(value, dict):
+        objects.append(value)
+        graph = value.get("@graph")
+        if isinstance(graph, list):
+            for member in graph:
+                objects.extend(_jsonld_objects(member))
+    elif isinstance(value, list):
+        for member in value:
+            objects.extend(_jsonld_objects(member))
+    return tuple(objects)
+
+
+def _jsonld_type_names(value: object) -> set[str]:
+    if isinstance(value, str):
+        return {value.casefold()}
+    if isinstance(value, list):
+        return {str(item).casefold() for item in value if item}
+    return set()
+
+
+def _jsonld_publisher(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return str(value.get("name") or "").strip()
+    return ""
+
+
+def _structured_metadata(parser: _MetadataParser) -> dict[str, str]:
+    """Read only article metadata from valid JSON-LD blocks.
+
+    Some publishers include harmless JavaScript-style line comments in their
+    JSON-LD. Only full-line comments are removed; values and URLs are never
+    rewritten or evaluated as JavaScript.
+    """
+
+    candidates: list[tuple[int, dict[str, object]]] = []
+    for raw in parser.jsonld_scripts:
+        cleaned = _JSONLD_LINE_COMMENT_RE.sub("", raw).strip()
+        try:
+            value = json.loads(cleaned)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        for obj in _jsonld_objects(value):
+            types = _jsonld_type_names(obj.get("@type"))
+            headline = obj.get("headline") or obj.get("name")
+            description = obj.get("description")
+            if not isinstance(headline, str) and not isinstance(description, str):
+                continue
+            priority = 2 if types & {"newsarticle", "article", "report"} else 1
+            candidates.append((priority, obj))
+    if not candidates:
+        return {}
+
+    _, selected = max(
+        candidates,
+        key=lambda value: (
+            value[0],
+            len(_clean_structured_text(value[1].get("description"))),
+            bool(value[1].get("headline")),
+        ),
+    )
+    main_page = selected.get("mainEntityOfPage")
+    structured_url = str(selected.get("url") or "").strip()
+    if not structured_url and isinstance(main_page, dict):
+        structured_url = str(main_page.get("@id") or main_page.get("url") or "").strip()
+    return {
+        "title": _clean_structured_text(selected.get("headline") or selected.get("name")),
+        "description": _clean_structured_text(selected.get("description")),
+        "canonical_url": structured_url,
+        "publisher": _jsonld_publisher(selected.get("publisher")),
+        "published_at": str(selected.get("datePublished") or "").strip(),
+        "modified_at": str(selected.get("dateModified") or "").strip(),
+    }
 
 
 def _decode_html(body: bytes, headers: dict[str, str]) -> str:
@@ -155,15 +272,28 @@ def parse_html_metadata(
     except Exception:  # noqa: BLE001 - malformed HTML is an optional fallback path
         return MetadataResult(url=url, reason="MALFORMED_HTML")
 
-    title = parser.meta.get("og:title") or parser.document_title
-    description = parser.meta.get("og:description") or parser.meta.get("description", "")
+    structured = _structured_metadata(parser)
+    title = parser.meta.get("og:title") or structured.get("title") or parser.document_title
+    meta_description = parser.meta.get("og:description") or parser.meta.get("description", "")
+    structured_description = structured.get("description", "")
+    # Prefer a fact-bearing structured description when the social metadata is
+    # visibly truncated or shorter. This recovers article facts without
+    # retaining or scraping the page body.
+    description = (
+        structured_description
+        if structured_description
+        and (not meta_description or _TRUNCATION_RE.search(meta_description) or len(structured_description) > len(meta_description))
+        else meta_description
+    )
     publisher = (
         parser.meta.get("og:site_name")
         or parser.meta.get("publisher")
         or parser.meta.get("application-name", "")
+        or structured.get("publisher", "")
     )
     try:
-        canonical = normalize_url(parser.canonical) if parser.canonical else ""
+        raw_canonical = parser.canonical or structured.get("canonical_url", "")
+        canonical = normalize_url(raw_canonical) if raw_canonical else ""
     except ValueError:
         canonical = ""
     published = parse_datetime(
@@ -171,10 +301,12 @@ def parse_html_metadata(
         or parser.meta.get("datepublished")
         or parser.meta.get("pubdate")
         or parser.meta.get("date")
+        or structured.get("published_at")
     )
     modified = parse_datetime(
         parser.meta.get("article:modified_time")
         or parser.meta.get("datemodified")
+        or structured.get("modified_at")
     )
     result = MetadataResult(
         url=url,

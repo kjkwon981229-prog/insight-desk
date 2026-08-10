@@ -524,15 +524,35 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
 
 def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
     cleaned = _clean_headline(title)
-    first_number = next((cleaned.find(value) for value in numbers if cleaned.find(value) >= 0), -1)
+    compact_cleaned = re.sub(r"\s+", "", cleaned)
+    compact_positions = [index for index, value in enumerate(cleaned) if not value.isspace()]
+    first_number = -1
+    for value in numbers:
+        compact_value = re.sub(r"\s+", "", value)
+        compact_index = compact_cleaned.find(compact_value)
+        if compact_index < 0 or compact_index >= len(compact_positions):
+            continue
+        original_index = compact_positions[compact_index]
+        if first_number < 0 or original_index < first_number:
+            first_number = original_index
     if first_number > 0:
         candidate = cleaned[:first_number]
     elif action and action in cleaned:
         candidate = cleaned[: cleaned.find(action)]
     else:
-        marker = next((value for value in _SUBJECT_END_MARKERS if value in cleaned), "")
-        if marker:
-            candidate = cleaned[: cleaned.find(marker) + len(marker)]
+        marker_match = next(
+            (
+                match
+                for value in _SUBJECT_END_MARKERS
+                for match in (
+                    re.search(rf"(?<![A-Za-z가-힣]){re.escape(value)}(?![A-Za-z가-힣])", cleaned),
+                )
+                if match
+            ),
+            None,
+        )
+        if marker_match:
+            candidate = cleaned[: marker_match.end()]
         else:
             candidate = cleaned.split(" · ", 1)[0]
     if "," in candidate or "，" in candidate:
@@ -1046,7 +1066,7 @@ def _summary(
     elif event_type.startswith("RECRUITMENT") and subject:
         ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
         counts_match = re.search(
-            r"([\d,]+명)\s*(선발|모집).*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
+            r"([\d,]+명)\s*(?:이|가|을|를)?\s*(선발|모집).*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
             completion_evidence,
         )
         if counts_match and ratio_match:
