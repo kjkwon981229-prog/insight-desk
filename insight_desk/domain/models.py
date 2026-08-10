@@ -7,6 +7,7 @@ from typing import Any
 
 class RunStatus(str, Enum):
     COMPLETE = "COMPLETE"
+    VALID_EMPTY_DAY = "VALID_EMPTY_DAY"
     NEWS_ONLY = "NEWS_ONLY"
     TRENDS_ONLY = "TRENDS_ONLY"
     PARTIAL = "PARTIAL"
@@ -121,6 +122,10 @@ class NewsItem:
     provenance: tuple[EvidenceType, ...] = field(default_factory=lambda: (EvidenceType.SEARCH_SNIPPET,))
     matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     retrieval_channels: tuple[str, ...] = field(default_factory=tuple)
+    # Every query that contributed this normalized item. ``matched_topic_ids``
+    # is semantic attribution; this field preserves raw retrieval provenance
+    # across cross-query/cross-topic deduplication.
+    retrieval_queries: tuple[str, ...] = field(default_factory=tuple)
     authoritative_evidence: tuple[AuthorityEvidence, ...] = field(default_factory=tuple)
     authority_conflict: str = "NO_CONFLICT"
 

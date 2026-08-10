@@ -17,7 +17,7 @@ from ..domain.models import (
     to_jsonable,
 )
 from .clustering import StoryCluster
-from .editorial import assess_relevance, effective_lead, effective_title, why_selected
+from .editorial import assess_semantic_relevance, effective_lead, effective_title, why_selected
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
 from .synthesis import synthesize_cluster
@@ -118,7 +118,7 @@ def _story_topic_ids(cluster: StoryCluster, topics: tuple[Topic, ...]) -> tuple[
             topic = topic_by_id.get(topic_id)
             if topic is None:
                 continue
-            if assess_relevance(StoryCluster(topic_id, (item,)), topic).passed:
+            if assess_semantic_relevance(item, topic).passed:
                 matched.append(topic_id)
     return tuple(matched)
 
@@ -146,9 +146,20 @@ def build_briefing(
         limit=10,
         previous_signatures=previous_signatures,
     )
-    editorial_health = "FILTER_COLLAPSE" if selection.filter_collapse else "OK"
+    editorial_health = "FILTER_COLLAPSE" if selection.filter_collapse else (
+        "VALID_EMPTY_DAY"
+        if not selection.selected and state.status == RunStatus.COMPLETE
+        else "INCOMPLETE_EMPTY"
+        if not selection.selected
+        else "OK"
+    )
     if selection.filter_collapse:
         state = replace(state, status=RunStatus.FILTER_COLLAPSE, publish=False)
+    elif not selection.selected and state.status == RunStatus.COMPLETE:
+        # A collector can complete successfully while the editorial result is
+        # intentionally empty. Keep that state distinct from a normal filled
+        # briefing so empty-day acceptance cannot mask funnel collapse.
+        state = replace(state, status=RunStatus.VALID_EMPTY_DAY, publish=True)
     stories: list[Story] = []
     selected_reviews = tuple(selection.selected_reviews)
     story_trend_matches: list[tuple[TrendMetric, ...]] = []

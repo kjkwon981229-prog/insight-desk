@@ -168,7 +168,28 @@ def execute(
         )
         initial_status = resolve_status(news_collection.status, trend_collection.status)
         warnings = tuple(news_collection.status.errors + trend_collection.status.errors)
+
+        def security_failure() -> RunState:
+            failure = make_failure_state(
+                status=RunStatus.VALIDATION_FAILURE,
+                generated_at=generated_at,
+                data_cutoff=cutoff,
+                source_mode=source_mode,
+                news=news_collection.status,
+                trends=trend_collection.status,
+                errors=("secret value detected before publication.",),
+            )
+            _write_state(state_path, failure, secrets)
+            return failure
+
         normalized = normalize_news_payloads(news_collection.raw_items)
+        # Reject a secret before editorial filtering can silently discard it.
+        # This keeps security fail-closed even when the leaked value appears
+        # only in a rejected candidate and therefore would not reach HTML.
+        try:
+            assert_no_secret_values(normalized, secrets)
+        except ValueError:
+            return security_failure()
         deduplicated = deduplicate_news(normalized)
         scored = score_news(deduplicated, topics, now=current)
         bounded = cap_topic_candidates(scored, topics)
@@ -202,6 +223,11 @@ def execute(
             warnings = tuple(dict.fromkeys((*warnings, *authority_report.warnings)))
         except Exception as exc:  # noqa: BLE001 - optional source config cannot stop NAVER publication
             warnings = tuple(dict.fromkeys((*warnings, f"authoritative source layer unavailable: {type(exc).__name__}.")))
+        try:
+            assert_no_secret_values(enriched, secrets)
+            assert_no_secret_values(authoritative_audit, secrets)
+        except ValueError:
+            return security_failure()
         clusters = cluster_news(enriched)
         retrieval_funnel = _build_retrieval_funnel(
             raw_items=news_collection.raw_items,
@@ -323,8 +349,8 @@ def execute(
             )
             _write_state(state_path, failure, secrets)
             return failure
-        _write_state(state_path, state, secrets)
-        return state
+        _write_state(state_path, briefing.state, secrets)
+        return briefing.state
     except Exception as exc:  # noqa: BLE001 - the workflow receives a sanitized failure state
         failure = make_failure_state(
             status=RunStatus.TOTAL_FAILURE,

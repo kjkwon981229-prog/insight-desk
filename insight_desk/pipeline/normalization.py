@@ -94,6 +94,7 @@ def normalize_news_item(
         content_hash=digest,
         matched_topic_ids=(topic_id,),
         retrieval_channels=tuple(dict.fromkeys(retrieval_channels)),
+        retrieval_queries=(query,),
     )
 
 

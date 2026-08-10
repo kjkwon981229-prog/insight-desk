@@ -308,7 +308,7 @@ def _esc(value: object) -> str:
 
 
 def _status_class(status: RunStatus) -> str:
-    if status == RunStatus.COMPLETE:
+    if status in {RunStatus.COMPLETE, RunStatus.VALID_EMPTY_DAY}:
         return "complete"
     if status in {RunStatus.PARTIAL, RunStatus.NEWS_ONLY, RunStatus.TRENDS_ONLY}:
         return str(status.value).lower().replace("_", "-")
@@ -319,6 +319,7 @@ def _status_label(status: RunStatus | str) -> str:
     raw = getattr(status, "value", status)
     return {
         "COMPLETE": "정상 확인",
+        "VALID_EMPTY_DAY": "유효한 빈 결과",
         "NEWS_ONLY": "뉴스만 확인",
         "TRENDS_ONLY": "관심도만 확인",
         "PARTIAL": "일부 확인",
@@ -332,6 +333,7 @@ def _status_label(status: RunStatus | str) -> str:
 def _status_sentence(status: RunStatus) -> str:
     return {
         RunStatus.COMPLETE: "뉴스와 검색 관심 흐름을 함께 확인할 수 있다.",
+        RunStatus.VALID_EMPTY_DAY: "편집 기준을 충족한 새 변화가 없어 빈 브리핑을 게시했다.",
         RunStatus.NEWS_ONLY: "뉴스는 확인했지만 검색 관심 흐름은 이번 실행에서 빠졌다.",
         RunStatus.TRENDS_ONLY: "검색 관심 흐름은 확인했지만 뉴스는 이번 실행에서 빠졌다.",
         RunStatus.PARTIAL: "일부 관심사만 반영했다. 표시된 범위 안에서 읽는다.",

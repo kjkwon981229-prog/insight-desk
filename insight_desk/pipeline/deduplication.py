@@ -20,6 +20,16 @@ def _merge_items(existing: NewsItem, incoming: NewsItem) -> NewsItem:
     retrieval_channels = tuple(
         dict.fromkeys((*existing.retrieval_channels, *incoming.retrieval_channels))
     )
+    retrieval_queries = tuple(
+        dict.fromkeys(
+            (
+                *existing.retrieval_queries,
+                *incoming.retrieval_queries,
+                existing.query,
+                incoming.query,
+            )
+        )
+    )
     metadata_source = incoming if "ENRICHED_METADATA" in {getattr(v, "value", v) for v in incoming.provenance} else existing
     return replace(
         base,
@@ -33,6 +43,7 @@ def _merge_items(existing: NewsItem, incoming: NewsItem) -> NewsItem:
         provenance=provenance,
         matched_topic_ids=topic_ids,
         retrieval_channels=retrieval_channels,
+        retrieval_queries=retrieval_queries,
     )
 
 

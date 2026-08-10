@@ -18,7 +18,9 @@ from insight_desk.domain.models import (
 from insight_desk.pipeline.analysis import build_briefing
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
+from insight_desk.pipeline.normalization import normalize_news_payloads
 from insight_desk.pipeline.selection import (
+    cap_topic_candidates,
     candidate_quality,
     select_clusters,
     topic_diverse_enrichment_candidates,
@@ -99,6 +101,35 @@ class SelectionTests(unittest.TestCase):
         self.assertNotIn("kbo", {cluster.topic_id for cluster in result.selected})
         self.assertNotIn("psat", {cluster.topic_id for cluster in result.selected})
         self.assertEqual(len(result.selected), 4)
+
+    def test_zero_story_result_is_explicitly_valid_empty_day(self) -> None:
+        status = CollectorStatus(1, 1, 0, False, 1)
+        state = RunState(
+            RunStatus.COMPLETE,
+            True,
+            "2026-08-10T07:00:00+09:00",
+            "2026-08-10",
+            "fixture",
+            status,
+            status,
+        )
+        weak = replace(
+            _item("empty", "ai", score=10.0),
+            title="일반 소식",
+            summary="추가 사실이 없는 짧은 안내다.",
+        )
+        briefing = build_briefing(
+            state=state,
+            topics=_topics(),
+            news=(weak,),
+            clusters=(StoryCluster("ai", (weak,)),),
+            trend_metrics=(),
+            generated_at=datetime.fromisoformat("2026-08-10T07:00:00+09:00"),
+        )
+        self.assertEqual(briefing.stories, ())
+        self.assertEqual(briefing.editorial_health, "VALID_EMPTY_DAY")
+        self.assertEqual(briefing.state.status, RunStatus.VALID_EMPTY_DAY)
+        self.assertTrue(briefing.state.publish)
 
     def test_irrelevant_low_signal_candidate_is_not_used_as_filler(self) -> None:
         candidate = replace(
@@ -184,6 +215,44 @@ class SelectionTests(unittest.TestCase):
         result = select_clusters(clusters, _topics(), limit=10)
         self.assertEqual(len(result.selected), 1)
         self.assertEqual(set(result.selected[0].items[0].matched_topic_ids), {"ai", "economy"})
+
+    def test_cross_query_dedupe_preserves_retrieval_provenance(self) -> None:
+        payload = {
+            "items": [
+                {
+                    "title": "AI 모델 출시 발표",
+                    "description": "새 모델 출시 일정이 발표됐다.",
+                    "originallink": "https://example.com/event",
+                    "link": "",
+                    "pubDate": "Mon, 10 Aug 2026 07:00:00 +0900",
+                }
+            ]
+        }
+        normalized = normalize_news_payloads(
+            (("ai", "AI", "SIM", payload), ("ai", "생성형 AI", "DATE", payload))
+        )
+        merged = deduplicate_news(normalized)
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(set(merged[0].retrieval_queries), {"AI", "생성형 AI"})
+
+    def test_candidate_budget_uses_semantic_topic_match_not_incidental_attribution(self) -> None:
+        topic_a = Topic(
+            "alpha", "Alpha", True, False, 60, ("Alpha",), candidate_budget=1,
+            intent_anchors=("Alpha",), event_terms=("발표",),
+        )
+        topic_b = Topic(
+            "beta", "Beta", True, False, 60, ("Beta",), candidate_budget=1,
+            intent_anchors=("Beta",), event_terms=("발표",),
+        )
+        candidate = replace(
+            _item("budget", "alpha", matched=("alpha", "beta")),
+            query="Alpha",
+            title="Alpha 모델 출시 발표",
+            summary="Alpha 모델 출시 일정과 적용 범위가 발표됐다.",
+        )
+        bounded = cap_topic_candidates((candidate,), (topic_a, topic_b))
+        self.assertEqual(len(bounded), 1)
+        self.assertEqual(bounded[0].matched_topic_ids, ("alpha",))
 
     def test_story_attribution_rechecks_cross_topic_intent(self) -> None:
         economy = Topic(

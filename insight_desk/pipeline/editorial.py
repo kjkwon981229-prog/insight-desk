@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster, market_primary_text
@@ -20,6 +20,7 @@ from .semantics import (
     market_direction_class,
     metric_observations,
     recruitment_event_type,
+    summary_information_gain,
 )
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
@@ -332,7 +333,8 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         # AI cost-management tool.  Broad topic queries still match through
         # their own title token.
         supporting_only_mismatch = bool(
-            not query_title_match
+            query.strip()
+            and not query_title_match
             and core_anchor_title
             and not any(_compact(query) == _compact(anchor) for anchor in topic.intent_anchors)
         )
@@ -365,6 +367,21 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         if best is None or assessment.score > best.score:
             best = assessment
     return best or RelevanceAssessment(0.0, False, False, False, True, False, ("NO_EVIDENCE",))
+
+
+def assess_semantic_relevance(item: NewsItem, topic: Topic) -> RelevanceAssessment:
+    """Recheck topic attribution without treating retrieval as article intent.
+
+    A query explains why an item was retrieved, but it is not evidence that a
+    cross-topic item is actually about the topic.  This narrow helper keeps
+    the discovery-time query signal for the primary assessment while removing
+    it from budget, coverage, and attribution rechecks.
+    """
+
+    return assess_relevance(
+        StoryCluster(topic.id, (replace(item, query=""),)),
+        topic,
+    )
 
 
 def _event_terms_for(topic: Topic) -> tuple[str, ...]:
@@ -713,6 +730,52 @@ def _evidence_fact_tokens(item: NewsItem) -> set[str]:
     }
 
 
+def _fact_bearing_text(title: str, lead: str) -> bool:
+    """Return whether a title/lead pair contains a concrete fact signal."""
+
+    if len(title) < 12 or len(lead) < 24:
+        return False
+    if not summary_information_gain(title, lead):
+        return False
+    text = f"{title} {lead}"
+    observations = metric_observations(text)
+    has_number_or_date = bool(_NUMBER_RE.search(text) or _DATE_RE.search(text))
+    has_action = any(
+        _contains(text, marker)
+        for marker in (
+            "발표", "공개", "출시", "발매", "개최", "재개", "중단", "취소", "선발",
+            "지원", "합격", "체결", "계약", "투자", "인수", "시행", "규제", "수상",
+            "1위", "우승", "승리", "패배", "상승", "하락", "증가", "감소", "최고",
+        )
+    )
+    return bool(observations or has_number_or_date or has_action)
+
+
+def _fact_bearing_metadata(item: NewsItem) -> bool:
+    """Require complete metadata to carry a concrete, source-backed fact.
+
+    Length alone is not completeness: a long analyst boilerplate or a
+    repeated generic lead must not turn a weak single-source candidate into
+    trusted evidence.  This helper deliberately reads metadata fields only;
+    the NAVER query and fallback snippet cannot satisfy the contract.
+    """
+
+    title = safe_evidence_text(item.metadata_title)
+    lead = safe_evidence_text(item.metadata_description)
+    return _fact_bearing_text(title, lead)
+
+
+def _fact_bearing_discovery(item: NewsItem) -> bool:
+    """Allow a complete search title/lead to support a concrete event.
+
+    This is separate from metadata completeness: an enriched metadata claim
+    must come from the metadata fields, while a strong, non-truncated search
+    result may still be a supported single-source event.
+    """
+
+    return _fact_bearing_text(effective_title(item), effective_lead(item))
+
+
 def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
     """Return (same-core-fact corroborated, syndicated-copy-present)."""
 
@@ -775,9 +838,7 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
     )
     if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
         official = False
-    metadata_complete = any(
-        len(effective_title(item)) >= 12 and len(effective_lead(item)) >= 24 for item in cluster.items
-    )
+    metadata_complete = any(_fact_bearing_metadata(item) for item in cluster.items)
     repeated = max(0, len(cluster.items) - publisher_diversity)
     strength = min(40.0, publisher_diversity * 14.0) + (42.0 if official else 0.0)
     if metadata_complete:
@@ -950,9 +1011,16 @@ def assess_cluster(
         and not evidence.metadata_complete
         and event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
         and (
-            not effective_lead(representative)
-            or _TRUNCATION_RE.search(representative.title)
-            or _TRUNCATION_RE.search(representative.summary)
+            not _fact_bearing_discovery(representative)
+            or (
+                _fact_bearing_discovery(representative)
+                and (
+                    _TRUNCATION_RE.search(representative.title)
+                    and not effective_lead(representative)
+                    or _TRUNCATION_RE.search(representative.summary)
+                    and not representative.metadata_description
+                )
+            )
         )
     )
     synthesis_ready = not (

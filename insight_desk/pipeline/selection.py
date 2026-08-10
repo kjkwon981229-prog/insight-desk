@@ -8,6 +8,7 @@ from .editorial import (
     EditorialAssessment,
     assess_cluster,
     assess_relevance,
+    assess_semantic_relevance,
     effective_title,
     why_selected,
 )
@@ -85,7 +86,7 @@ def _coverage(cluster: StoryCluster, topic_by_id: dict[str, Topic]) -> set[str]:
             if topic_id == cluster.topic_id:
                 continue
             topic = topic_by_id.get(topic_id)
-            if topic is not None and assess_relevance(StoryCluster(topic_id, (item,)), topic).passed:
+            if topic is not None and assess_semantic_relevance(item, topic).passed:
                 covered.add(topic_id)
     return covered
 
@@ -199,7 +200,7 @@ def select_clusters(
         provisional = assess_cluster(cluster, topic)
         novelty = classify_novelty(provisional.event_signature, previous_signatures)
         assessment = assess_cluster(cluster, topic, novelty=novelty)
-        if assessment.qualified and not _synthesis_is_editorial_ready(
+        if (assessment.qualified or (assessment.relevance.passed and assessment.event.passed)) and not _synthesis_is_editorial_ready(
             cluster,
             topic,
             official_source=assessment.evidence.official,
@@ -273,6 +274,12 @@ def select_clusters(
             "source_count": cluster.source_count,
             "source_diversity": assessment.evidence.publisher_diversity,
             "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
+            "retrieval_queries": sorted({
+                query
+                for item in cluster.items
+                for query in (item.retrieval_queries or (item.query,))
+                if query
+            }),
             "intent_relevance": assessment.relevance.score,
             "event_type": assessment.event.event_type,
             "event_significance": assessment.event.significance,
@@ -389,6 +396,12 @@ def select_clusters(
                     EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items
                 ),
                 "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
+                "retrieval_queries": sorted({
+                    query
+                    for item in cluster.items
+                    for query in (item.retrieval_queries or (item.query,))
+                    if query
+                }),
                 "query": cluster.representative.query,
                 "intent_relevance": assessment.relevance.score,
                 "event_type": assessment.event.event_type,
@@ -444,7 +457,7 @@ def topic_diverse_enrichment_candidates(
             topic = next((topic for topic in topics if topic.id == topic_id and topic.enabled), None)
             if topic is None:
                 continue
-            assessment = assess_relevance(StoryCluster(topic_id, (item,)), topic)
+            assessment = assess_semantic_relevance(item, topic)
             if assessment.passed:
                 by_topic[topic_id].append((item, assessment.score))
     for values in by_topic.values():
@@ -508,14 +521,27 @@ def cap_topic_candidates(
                 if key in seen:
                     continue
                 matched = topic_ids_for_item(item)
+                semantic_matched = tuple(
+                    topic_id
+                    for topic_id in matched
+                    if topic_id in topic_caps
+                    and assess_semantic_relevance(
+                        item,
+                        next(topic for topic in enabled if topic.id == topic_id),
+                    ).passed
+                )
+                if not semantic_matched:
+                    continue
                 if any(
                     other_id in topic_caps and counts.get(other_id, 0) >= topic_caps[other_id]
-                    for other_id in matched
+                    for other_id in semantic_matched
                 ):
                     continue
                 seen.add(key)
-                selected.append(item)
-                for other_id in matched:
+                # Raw retrieval provenance remains on the item; matched topic
+                # ids here are semantic attributions that may consume budget.
+                selected.append(replace(item, matched_topic_ids=semantic_matched))
+                for other_id in semantic_matched:
                     if other_id in counts:
                         counts[other_id] += 1
                 changed = True

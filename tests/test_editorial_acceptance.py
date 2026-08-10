@@ -370,6 +370,20 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(assessment.event.event_type, "STATISTIC")
         self.assertTrue(assessment.qualified)
 
+    def test_long_generic_metadata_is_not_fact_bearing_completeness(self) -> None:
+        item = _item(
+            "generic-metadata",
+            "economy",
+            "경제",
+            "경제 관련 주요 소식",
+            "오늘 확인된 경제 관련 내용을 정리했다.",
+            metadata_title="오늘의 경제 주요 소식과 시장 관련 내용 정리",
+            metadata_description="이번 기사에서는 여러 흐름과 관련된 일반적인 내용을 종합적으로 소개하며 독자가 참고할 수 있는 배경을 설명한다.",
+        )
+        evidence = assess_evidence(StoryCluster("economy", (item,)))
+        self.assertFalse(evidence.metadata_complete)
+        self.assertNotIn("COMPLETE_METADATA", evidence.reasons)
+
     def test_single_official_source_can_pass(self) -> None:
         topic = _topic(
             "psat", "PSAT·공채 일정", "7급 공채", anchors=("7급 공채", "공고"), events=("일정", "공고", "발표")
