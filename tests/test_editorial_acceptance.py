@@ -369,6 +369,26 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(assessment.event.passed)
         self.assertTrue(assessment.qualified)
 
+    def test_new_song_announcement_uses_product_release_event_type(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "YG",
+            anchors=("YG", "그룹", "신곡", "앨범"),
+            events=("발표", "신곡", "앨범"),
+        )
+        item = _item(
+            "bigbang-new-song",
+            "kpop",
+            "YG",
+            "데뷔 20주년 빅뱅, 완전체로 신곡 빅(BiiiG) 발표",
+            "빅뱅이 신곡을 발표했다.",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "PRODUCT_RELEASE")
+        self.assertTrue(assessment.event.passed)
+        self.assertTrue(assessment.qualified)
+
     def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
         topic = _topic(
             "kpop",
