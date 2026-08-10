@@ -136,6 +136,37 @@ class AuthoritativeAdapterTests(unittest.TestCase):
             (),
         )
 
+    def test_public_page_does_not_attach_generic_navigation_to_event(self) -> None:
+        source = PublicSourceConfig(
+            id="psat-public",
+            url="https://official.example/recruitment",
+            topic_ids=("psat",),
+            source_type="OFFICIAL_GOVERNMENT",
+            publisher="공식 채용시스템",
+            trusted_domains=("official.example",),
+            entity_aliases=("해양경찰청", "시험"),
+            event_markers=("채용", "공고", "시험"),
+        )
+        page = """
+        <html><body>
+          <a href="/faq">채용시험종합안내(FAQ)</a>
+          <div>2026년 3차 해양경찰공무원 채용시험 공고(해양경찰청)</div>
+        </body></html>
+        """.encode("utf-8")
+        item = _item(
+            "psat-public-match",
+            "2026년 3차 해양경찰공무원 채용시험 공고(해양경찰청)",
+            "해양경찰청 채용시험 공고가 게시됐다.",
+            query="PSAT",
+            topic_id="psat",
+        )
+        payload = PublicOfficialAdapter(
+            config=source,
+            transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+        ).fetch((item,))
+        self.assertEqual(payload.result.events_augmented, 1)
+        self.assertEqual(payload.evidence[0][1].canonical_url, "https://official.example/recruitment")
+
     def test_opendart_matches_event_category_and_caps_candidate_attachments(self) -> None:
         item = _item(
             "dart-category",

@@ -174,7 +174,6 @@ def _same_event_match(item: NewsItem, source: PublicSourceConfig, page: _Page) -
     shared_facts = tuple(sorted(article_facts.intersection(page_facts)))
     article_tokens = _tokens(title)
     page_tokens = _tokens(page_text)
-    shared_tokens = article_tokens.intersection(page_tokens)
     link_text = ""
     link_url = ""
     for link in page.links:
@@ -189,9 +188,16 @@ def _same_event_match(item: NewsItem, source: PublicSourceConfig, page: _Page) -
     # times.  Require an event-specific anchor and either an explicit
     # date/number match or several concrete title tokens in that anchor.
     link_tokens = _tokens(link_text)
-    if not link_text or (not shared_facts and len(article_tokens.intersection(link_tokens)) < 3):
-        return False, "", (), ""
-    return True, link_text or page.title or source.publisher, shared_facts[:6], link_url
+    title_in_link = compact(title) in compact(link_text)
+    token_overlap = len(article_tokens.intersection(link_tokens))
+    if link_text and (title_in_link or (shared_facts and token_overlap >= 3)):
+        return True, link_text, shared_facts[:6], link_url
+    # Some official portals render the actual record title in a visible card
+    # whose JavaScript link has an empty href.  An exact fact-bearing title in
+    # the page body is stronger evidence than a generic navigation link.
+    if compact(title) in compact(page_text):
+        return True, title, shared_facts[:6], ""
+    return False, "", (), ""
 
 
 class PublicOfficialAdapter:
