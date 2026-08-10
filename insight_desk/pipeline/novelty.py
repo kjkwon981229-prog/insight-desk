@@ -56,6 +56,48 @@ def _family(signature: str) -> tuple[str, ...]:
     return parts[:4]
 
 
+def _signature_profile(signature: str) -> tuple[str, set[str], set[str]]:
+    """Return (event family, identity features, explicit dates).
+
+    Canonical metric observations use a bound ``instrument:metric:value``
+    segment; compare the instrument/metric/direction/period identity while
+    treating a changed value as an update.  General events retain their
+    canonical subject/action positions and title facts.  This avoids the old
+    one-token family heuristic, which confused same-entity different-action
+    stories with updates.
+    """
+
+    parts = tuple(part for part in signature.split("|") if part)
+    if not parts:
+        return "", set(), set()
+    event_type = parts[0]
+    features: set[str] = set()
+    dates: set[str] = set()
+    for part in parts[1:]:
+        if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", part):
+            dates.add(part)
+            continue
+        if ":" in part and event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
+            for observation in part.split(";"):
+                values = observation.split(":")
+                if values:
+                    features.add(f"instrument:{values[0]}")
+                if len(values) > 1:
+                    features.add(f"metric:{values[1]}")
+                if len(values) > 3 and values[3]:
+                    features.add(f"direction:{values[3]}")
+                if len(values) > 4 and values[4]:
+                    features.add(f"period:{values[4]}")
+            continue
+        if re.fullmatch(r"\d{1,2}일", part):
+            dates.add(part)
+            continue
+        if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"} and re.search(r"\d", part):
+            continue
+        features.add(part)
+    return event_type, features, dates
+
+
 def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
     """Read the private durable history before falling back to legacy output.
 
@@ -111,6 +153,12 @@ def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
 def write_publication_signatures(path: Path, stories: tuple[object, ...], *, generated_at: str | datetime) -> None:
     """Persist the exact canonical signatures of the successfully rendered run."""
 
+    # A valid empty day is not evidence that prior events disappeared.  Keep
+    # the last successful publication history so the next run can classify an
+    # unchanged event truthfully; FILTER_COLLAPSE returns before this function.
+    if not stories:
+        return
+
     signatures = []
     for story in stories:
         signature = str(
@@ -135,11 +183,30 @@ def classify_novelty(signature: str, previous: tuple[str, ...]) -> str:
         return "UNKNOWN_HISTORY"
     if signature in previous:
         return "UNCHANGED"
-    family = _family(signature)
+    event_type, features, dates = _signature_profile(signature)
     for old in previous:
-        old_family = _family(old)
-        if family and old_family and family[0] == old_family[0]:
-            overlap = len(set(family[1:]) & set(old_family[1:]))
-            if overlap >= 1:
+        old_type, old_features, old_dates = _signature_profile(old)
+        if not event_type or event_type != old_type:
+            continue
+        if dates and old_dates and dates.isdisjoint(old_dates):
+            continue
+        overlap = len(features & old_features)
+        metric_features = {value for value in features if value.startswith("metric:")}
+        old_metric_features = {value for value in old_features if value.startswith("metric:")}
+        instrument_features = {value for value in features if value.startswith("instrument:")}
+        old_instrument_features = {value for value in old_features if value.startswith("instrument:")}
+        if metric_features and old_metric_features:
+            if metric_features.isdisjoint(old_metric_features):
+                continue
+            if instrument_features and old_instrument_features and not instrument_features.isdisjoint(old_instrument_features):
                 return "UPDATE"
+        # A same subject/action pair or two bound metric identity features is
+        # an update; one incidental shared token is not enough.
+        if overlap >= 2 or (
+            event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}
+            and overlap >= 1
+            and not metric_features
+            and not old_metric_features
+        ):
+            return "UPDATE"
     return "NEW"

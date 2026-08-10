@@ -8,7 +8,7 @@ from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_evidence, assess_relevance, event_signature
 from insight_desk.pipeline.normalization import normalize_news_payloads
-from insight_desk.pipeline.novelty import classify_novelty
+from insight_desk.pipeline.novelty import classify_novelty, load_previous_signatures, write_publication_signatures
 from insight_desk.pipeline.scoring import score_news
 from insight_desk.pipeline.selection import cap_topic_candidates, select_clusters
 from insight_desk.pipeline.semantics import contains_action, metric_observations, summary_information_gain
@@ -1557,6 +1557,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(classify_novelty("MARKET|환율|47원", ("MARKET|환율|47원",)), "UNCHANGED")
         self.assertEqual(classify_novelty("MARKET|환율|50원", ("MARKET|환율|47원",)), "UPDATE")
         self.assertEqual(classify_novelty("POLICY|PSAT|일정", ("MARKET|환율|47원",)), "NEW")
+
+    def test_canonical_metric_update_requires_bound_identity(self) -> None:
+        old = "MARKET|코스피:CHANGE:6320선:상승:"
+        new_value = "MARKET|코스피:CHANGE:6400선:상승:"
+        different_action = "MARKET|코스피:LEVEL:6400선:상승:"
+        self.assertEqual(classify_novelty(new_value, (old,)), "UPDATE")
+        self.assertEqual(classify_novelty(different_action, (old,)), "NEW")
+
+    def test_valid_empty_publication_does_not_erase_history(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        class StoryWithSignature:
+            event_signature = "POLICY|psat|공고|2026-08-10"
+            facts = None
+
+        with TemporaryDirectory() as root:
+            path = Path(root) / "history" / "publication-signatures.json"
+            write_publication_signatures(path, (StoryWithSignature(),), generated_at="2026-08-10T07:00:00+09:00")
+            write_publication_signatures(path, (), generated_at="2026-08-11T07:00:00+09:00")
+            self.assertEqual(load_previous_signatures(Path(root) / "site"), ("POLICY|psat|공고|2026-08-10",))
 
     def test_story_count_is_variable_and_zero_is_valid(self) -> None:
         topic = _topic("ai", "AI", "AI", anchors=("AI",), events=("발표",))
