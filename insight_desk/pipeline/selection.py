@@ -24,6 +24,7 @@ class SelectionResult:
     funnel: dict[str, dict[str, int]]
     assessments: dict[str, EditorialAssessment]
     selected_reviews: tuple[dict[str, object], ...]
+    enrichment_candidates: tuple[StoryCluster, ...] = ()
     strong_rejected_candidates: int = 0
     filter_collapse: bool = False
 
@@ -209,6 +210,7 @@ def select_clusters(
     }
     funnel: dict[str, dict[str, int]] = {topic.id: _funnel_template() for topic in enabled_topics}
     assessments: dict[str, EditorialAssessment] = {}
+    enrichment_candidates: list[StoryCluster] = []
     strong_rejected_candidates = 0
 
     for cluster in clusters:
@@ -248,6 +250,7 @@ def select_clusters(
         if _is_strong_rejected(assessment):
             strong_rejected_candidates += 1
             funnel[topic.id]["strong_rejected"] += 1
+            enrichment_candidates.append(cluster)
 
     for values in grouped.values():
         values.sort(key=lambda value: (-value[1].final_score, effective_title(value[0].representative)))
@@ -457,6 +460,7 @@ def select_clusters(
         funnel=funnel,
         assessments={candidate_key(cluster): assessment for cluster, assessment, _, _ in selected},
         selected_reviews=tuple(selected_reviews),
+        enrichment_candidates=tuple(enrichment_candidates),
         strong_rejected_candidates=strong_rejected_candidates,
         filter_collapse=filter_collapse,
     )

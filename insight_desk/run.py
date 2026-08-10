@@ -212,7 +212,10 @@ def execute(
                 bounded,
                 topics,
                 limit=METADATA_ENRICHMENT_LIMIT,
-                priority_clusters=preliminary_selection.selected,
+                priority_clusters=(
+                    *preliminary_selection.selected,
+                    *preliminary_selection.enrichment_candidates,
+                ),
             )
             enriched_targets, enrichment_report = MetadataEnricher(
                 transport=transport,

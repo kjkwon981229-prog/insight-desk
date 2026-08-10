@@ -9,7 +9,7 @@ from insight_desk.config import load_topics
 from insight_desk.domain.models import EvidenceType, NewsItem
 from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.editorial import assess_relevance
-from insight_desk.pipeline.selection import select_clusters
+from insight_desk.pipeline.selection import select_clusters, topic_diverse_enrichment_candidates
 from insight_desk.pipeline.synthesis import synthesize_cluster
 
 
@@ -86,6 +86,27 @@ class Run83RegressionTests(unittest.TestCase):
         self.assertTrue(assess_relevance(StoryCluster("psat_recruitment", (positive,)), topic).passed)
         self.assertFalse(assess_relevance(StoryCluster("psat_recruitment", (negative,)), topic).passed)
 
+
+    def test_strong_synthesis_veto_is_prioritized_for_bounded_enrichment(self) -> None:
+        topics, _ = load_topics(Path("config/topics.json"))
+        item = replace(
+            _item(
+                "경기도, 지방노동감독관 7급 공채 경쟁률 11.7 대 1",
+                "경기도의 첫 지방노동감독관 7급 공개경쟁 채용시험 경쟁률이 11대 1을 넘은 것으로 나타났습니다. 오늘...",
+            ),
+            provenance=(EvidenceType.SEARCH_SNIPPET,),
+        )
+        cluster = StoryCluster("psat_recruitment", (item,))
+        preliminary = select_clusters((cluster,), topics, limit=10)
+        self.assertEqual(preliminary.strong_rejected_candidates, 1)
+        self.assertEqual(preliminary.enrichment_candidates, (cluster,))
+        targets = topic_diverse_enrichment_candidates(
+            (item,),
+            topics,
+            limit=5,
+            priority_clusters=preliminary.enrichment_candidates,
+        )
+        self.assertEqual(targets, (item,))
 
 if __name__ == "__main__":
     unittest.main()
