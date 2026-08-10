@@ -14,7 +14,7 @@ from .config import KosisDataset, OpenDartConfig, OpenDartEntity
 
 _DART_URL = "https://opendart.fss.or.kr/api/list.json"
 _KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
-_TRUNCATION_RE = re.compile(r"\.{2,}|…")
+_TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _DART_ROUTINE_MARKERS = (
     "사업보고서",
     "반기보고서",
@@ -372,6 +372,8 @@ class KosisAdapter:
                 "prdSe": dataset.prd_se,
                 "newEstPrdCnt": str(dataset.max_periods),
             }
+            if dataset.obj_l2:
+                query["objL2"] = dataset.obj_l2
             url = f"{_KOSIS_URL}?{urlencode(query)}"
             try:
                 response = self.transport.request(

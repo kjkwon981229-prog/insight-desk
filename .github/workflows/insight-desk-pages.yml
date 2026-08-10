@@ -2,7 +2,7 @@ name: Insight Desk Daily Pages
 
 on:
   # One-run source-layer acceptance trigger. The build guard below limits it
-  # to the first push after the current editorial-alignment fix; the regular
+  # to the first push after the current source-layer fix; the regular
   # schedule and manual dispatch remain the production triggers.
   push:
     branches: [main]
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || github.event.before == '9433f11b78615af87586914e270825b21eee8726'
+    if: github.event_name != 'push' || github.event.before == '6894d7ccfc025c85ec643f21820c8917e00f54f2'
     runs-on: ubuntu-latest
     permissions:
       contents: read

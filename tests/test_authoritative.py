@@ -81,6 +81,7 @@ def _kosis_dataset() -> KosisDataset:
         keywords=("물가", "소비자물가"),
         expected_unit="2020=100",
         publisher="통계청 KOSIS",
+        obj_l2="0",
     )
 
 
@@ -213,6 +214,10 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertIn("상승", evidence.description)
         self.assertEqual(evidence.fact_values[0], "202606=116.5 2020 = 100")
         self.assertIn("/openapi/Param/statisticsParameterData.do", transport.urls[0])
+        query = parse_qs(urlparse(transport.urls[0]).query)
+        self.assertEqual(query["objL1"], ["00"])
+        self.assertEqual(query["objL2"], ["0"])
+        self.assertEqual(query["itmId"], ["1000"])
 
     def test_kosis_rejects_unexpected_unit(self) -> None:
         transport = FakeTransport(

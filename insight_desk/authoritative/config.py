@@ -39,6 +39,7 @@ class KosisDataset:
     keywords: tuple[str, ...]
     expected_unit: str
     publisher: str
+    obj_l2: str = ""
     max_periods: int = 2
 
 
@@ -133,6 +134,7 @@ def load_authority_config(path: Path) -> AuthorityConfig:
                 keywords=keywords,
                 expected_unit=_text(dataset_raw.get("expected_unit"), "kosis.datasets.expected_unit"),
                 publisher=_text(dataset_raw.get("publisher"), "kosis.datasets.publisher"),
+                obj_l2=str(dataset_raw.get("obj_l2") or "").strip(),
                 max_periods=_bounded_int(dataset_raw.get("max_periods", 2), "kosis.datasets.max_periods", minimum=2, maximum=4),
             )
         )

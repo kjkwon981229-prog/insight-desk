@@ -8,7 +8,7 @@ from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster, market_primary_text
 from .normalization import normalize_text
 
-_TRUNCATION_RE = re.compile(r"\.{2,}|…")
+_TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
 _NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?")
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
@@ -732,6 +732,21 @@ def assess_cluster(
             )
         )
     )
+    # A metric or market headline with no trusted lead is not safe to carry
+    # as a single-source briefing fact. This keeps strong complete headlines,
+    # enriched metadata, official evidence, and multi-source corroboration
+    # eligible while rejecting fallback summaries built from a cut-off result.
+    unresolved_single_source_metric = (
+        cluster.source_count == 1
+        and not evidence.official
+        and not evidence.metadata_complete
+        and event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
+        and (
+            not effective_lead(representative)
+            or _TRUNCATION_RE.search(representative.title)
+            or _TRUNCATION_RE.search(representative.summary)
+        )
+    )
     synthesis_ready = not (
         event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
         and not (
@@ -750,6 +765,8 @@ def assess_cluster(
         reasons.append("GENERIC_SUMMARY")
     if thin_truncated_schedule:
         reasons.append("TRUNCATED_EVENT_WITHOUT_LEAD")
+    if unresolved_single_source_metric:
+        reasons.append("SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD")
     if novelty == "NEW":
         novelty_value = 100.0
         reasons.append("NEW")
@@ -784,6 +801,7 @@ def assess_cluster(
         or (event.event_type == "MERCHANDISE" and not evidence.official)
         or event.event_type in _LOW_VALUE_EVENT_TYPES
         or not synthesis_ready
+        or unresolved_single_source_metric
         or (cluster.source_count == 1 and not single_source_supported)
         or (event.event_type == "OTHER" and cluster.source_count == 1 and event.concrete_fact_count == 0)
     )

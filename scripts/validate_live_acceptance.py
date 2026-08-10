@@ -51,7 +51,7 @@ def validate(path: Path) -> list[str]:
         if not summary or any(marker in summary for marker in generic_summary_markers):
             metrics["generic_summary_count"] += 1
             errors.append(f"story {index} has a generic summary")
-        if any(marker in headline or marker in summary for marker in ("...", "…")):
+        if any(marker in headline or marker in summary for marker in ("...", "…", "··")):
             metrics["truncated_copy_count"] += 1
             errors.append(f"story {index} leaks truncated source copy")
         event_type = str(story.get("event_type", "OTHER"))

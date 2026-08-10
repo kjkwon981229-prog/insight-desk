@@ -263,6 +263,48 @@ class EditorialAcceptanceTests(unittest.TestCase):
         assessment = assess_cluster(StoryCluster("ai", (item,)), topic)
         self.assertFalse(assessment.qualified)
 
+    def test_truncated_single_source_metric_without_trusted_lead_is_rejected(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "한국은행",
+            anchors=("한국은행", "환율", "원·달러"),
+            events=("변동성", "최고", "환율"),
+        )
+        item = _item(
+            "single-source-metric-fallback",
+            "economy",
+            "한국은행",
+            "원·달러 환율 스터 변동성···금융위기 이후 최고",
+            "원·달러 환율의 1300원 수치가 한 건의 보도에서 제시됐다...",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        self.assertIn(assessment.event.event_type, {"STATISTIC", "MARKET_MOVE"})
+        self.assertIn("SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD", assessment.reasons)
+        self.assertFalse(assessment.qualified)
+
+    def test_complete_single_source_metric_remains_eligible(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "물가",
+            anchors=("물가", "소비자물가"),
+            events=("상승", "지표"),
+        )
+        item = _item(
+            "single-source-metric-complete",
+            "economy",
+            "물가",
+            "6월 소비자물가 2.7% 상승",
+            "통계청에 따르면 6월 소비자물가는 전년 동월보다 2.7% 상승했다.",
+            metadata_title="6월 소비자물가 2.7% 상승",
+            metadata_description="통계청에 따르면 6월 소비자물가는 전년 동월보다 2.7% 상승했다.",
+            score=72.0,
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "STATISTIC")
+        self.assertTrue(assessment.qualified)
+
     def test_single_official_source_can_pass(self) -> None:
         topic = _topic(
             "psat", "PSAT·공채 일정", "7급 공채", anchors=("7급 공채", "공고"), events=("일정", "공고", "발표")

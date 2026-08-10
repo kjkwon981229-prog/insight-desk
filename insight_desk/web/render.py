@@ -521,7 +521,7 @@ def _key_fact_panel(story: object) -> str:
         facts_to_render.append(("핵심 수치", numbers[0]))
         if changes:
             value = " ".join(str(changes[0]).split())
-            if "..." in value or "…" in value:
+            if "..." in value or "…" in value or "··" in value:
                 value = ""
             if len(value) > 30:
                 value = ""

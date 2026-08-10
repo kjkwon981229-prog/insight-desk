@@ -74,7 +74,7 @@ def _item_text(item: NewsItem) -> str:
             item.metadata_title,
             item.title,
             item.metadata_description,
-            item.summary if not re.search(r"\.{2,}|…", item.summary) else "",
+            item.summary if not re.search(r"\.{2,}|…|·{2,}", item.summary) else "",
         )
         if value
     ).lower()
@@ -99,7 +99,7 @@ def _is_sports_heat_story(item: NewsItem) -> bool:
     trusted_lead = " ".join(
         value
         for value in (item.metadata_description, item.summary)
-        if value and not re.search(r"\.{2,}|…", value)
+        if value and not re.search(r"\.{2,}|…|·{2,}", value)
     ).lower()
     return bool(
         any(term in headline for term in ("폭염", "열파"))
