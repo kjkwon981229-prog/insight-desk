@@ -74,7 +74,8 @@ class RunPathTests(unittest.TestCase):
 
     def test_total_failure_does_not_replace_existing_site(self) -> None:
         first = self.run_case(ScenarioClient(news_ok=True, trend_ok=True))
-        self.assertEqual(first.status, RunStatus.COMPLETE)
+        self.assertEqual(first.status, RunStatus.VALID_EMPTY_DAY)
+        self.assertTrue(first.publish)
         index = self.root / "site/index.html"
         before = index.read_bytes()
         second = self.run_case(ScenarioClient(news_ok=False, trend_ok=False))
