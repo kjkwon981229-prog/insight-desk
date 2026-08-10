@@ -16,6 +16,7 @@ from insight_desk.domain.models import (
     Topic,
 )
 from insight_desk.pipeline.analysis import build_briefing
+from insight_desk.pipeline.analysis import _story_trend_matches
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.normalization import normalize_news_payloads
@@ -130,6 +131,26 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(briefing.editorial_health, "VALID_EMPTY_DAY")
         self.assertEqual(briefing.state.status, RunStatus.VALID_EMPTY_DAY)
         self.assertTrue(briefing.state.publish)
+
+    def test_story_trend_requires_configured_alias_not_group_label(self) -> None:
+        from insight_desk.domain.models import TrendMetric
+
+        metric = TrendMetric(
+            "internal-id", "Internal group label", "ai", "batch", 20.0, 10.0,
+            None, 10.0, 100.0, None, "직전 구간보다 상승", aliases=("actual term",),
+        )
+        matching = replace(
+            _item("trend-match", "ai"),
+            title="Actual term 모델 발표",
+            summary="Actual term 모델의 발표 내용이 공개됐다.",
+        )
+        label_only = replace(
+            _item("trend-label-only", "ai"),
+            title="Internal group label 모델 발표",
+            summary="내부 그룹 이름만 언급된 발표다.",
+        )
+        self.assertEqual(_story_trend_matches(StoryCluster("ai", (matching,)), (metric,)), (metric,))
+        self.assertEqual(_story_trend_matches(StoryCluster("ai", (label_only,)), (metric,)), ())
 
     def test_irrelevant_low_signal_candidate_is_not_used_as_filler(self) -> None:
         candidate = replace(

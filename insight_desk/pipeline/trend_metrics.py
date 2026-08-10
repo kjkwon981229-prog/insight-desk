@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..domain.models import KeywordGroup, TrendMetric, TrendPoint
+from .semantics import contains_intent_term
 
 
 # Naver Trend ratios are relative indices, not measurements with arbitrary
@@ -74,6 +75,7 @@ def parse_trend_batches(
                         period=period,
                         ratio=ratio,
                         batch_id=batch_id,
+                        aliases=tuple(group.keywords),
                     )
                 )
     return tuple(points)
@@ -122,6 +124,7 @@ def compute_trend_metrics(points: tuple[TrendPoint, ...]) -> tuple[TrendMetric, 
                 interpretation=interpretation,
                 points=tuple(ordered),
                 state=state,
+                aliases=tuple(dict.fromkeys(alias for point in ordered for alias in point.aliases)),
             )
         )
     # Never sort by absolute ratio: batches are independent and ratio is relative.

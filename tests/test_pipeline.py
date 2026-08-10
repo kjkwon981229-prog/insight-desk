@@ -10,7 +10,7 @@ from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.normalization import normalize_news_item, normalize_url
 from insight_desk.pipeline.scoring import score_news
 from insight_desk.pipeline.semantics import metric_observations
-from insight_desk.pipeline.trend_metrics import compute_trend_metrics
+from insight_desk.pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 
 
 class PipelineTests(unittest.TestCase):
@@ -61,6 +61,13 @@ class PipelineTests(unittest.TestCase):
         metrics = {metric.group_id: metric for metric in compute_trend_metrics(points)}
         self.assertEqual(metrics["flat"].state, "NO_MEANINGFUL_CHANGE")
         self.assertEqual(metrics["rise"].state, "RISE")
+
+    def test_trend_points_preserve_configured_aliases(self) -> None:
+        groups = (KeywordGroup("group", "t", "Internal group label", ("actual term", "alternate")),)
+        points = parse_trend_batches(
+            (("batch", groups, {"results": [{"title": "Internal group label", "data": [{"period": "2026-08-09", "ratio": 10}]}]}),)
+        )
+        self.assertEqual(points[0].aliases, ("actual term", "alternate"))
 
     def test_metric_observation_binds_period_to_each_instrument(self) -> None:
         observations = metric_observations("2026년 6월 코스닥 +6.97% 급등, 코스피 +0.65% 상승")

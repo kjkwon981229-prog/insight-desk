@@ -138,6 +138,7 @@ class TrendPoint:
     period: str
     ratio: float
     batch_id: str
+    aliases: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ class TrendMetric:
     interpretation: str
     points: tuple[TrendPoint, ...] = field(default_factory=tuple)
     state: str = "INSUFFICIENT_COMPARISON"
+    aliases: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

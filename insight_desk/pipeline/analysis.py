@@ -18,6 +18,7 @@ from ..domain.models import (
 )
 from .clustering import StoryCluster
 from .editorial import assess_semantic_relevance, effective_lead, effective_title, why_selected
+from .semantics import contains_intent_term
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
 from .synthesis import synthesize_cluster
@@ -76,7 +77,7 @@ def _story_trend_matches(
     matched = tuple(
         metric
         for metric in _trend_for_topic(cluster.topic_id, metrics)
-        if metric.group_name.casefold() in text or metric.group_id.casefold() in text
+        if any(contains_intent_term(text, alias) for alias in metric.aliases)
     )
     return matched
 
