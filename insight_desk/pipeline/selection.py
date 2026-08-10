@@ -565,16 +565,20 @@ def cap_topic_candidates(
                 )
                 if not semantic_matched:
                     continue
-                if any(
-                    other_id in topic_caps and counts.get(other_id, 0) >= topic_caps[other_id]
-                    for other_id in semantic_matched
-                ):
+                available_matched = tuple(
+                    topic_id
+                    for topic_id in semantic_matched
+                    if counts.get(topic_id, 0) < topic_caps[topic_id]
+                )
+                if not available_matched:
                     continue
                 seen.add(key)
                 # Raw retrieval provenance remains on the item; matched topic
                 # ids here are semantic attributions that may consume budget.
-                selected.append(replace(item, matched_topic_ids=semantic_matched))
-                for other_id in semantic_matched:
+                # A full incidental topic must not discard a shared event that
+                # still has budget in another semantically matched topic.
+                selected.append(replace(item, matched_topic_ids=available_matched))
+                for other_id in available_matched:
                     if other_id in counts:
                         counts[other_id] += 1
                 changed = True

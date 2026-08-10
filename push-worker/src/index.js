@@ -12,6 +12,7 @@ const MARKER_TTL_SECONDS = 3 * 24 * 60 * 60;
 // requests and isolates.  The workflow concurrency group limits the producer
 // side to one active daily run.
 const inFlightNotifications = new Map();
+const inFlightSubscriptionWrites = new Map();
 
 const encoder = new TextEncoder();
 
@@ -419,6 +420,25 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
   }
 }
 
+async function serializeSubscriptionWrite(operation) {
+  // KV cannot perform an atomic conditional write.  Serialize the local
+  // count/read/write window so concurrent requests in one isolate cannot
+  // exceed MAX_SUBSCRIPTIONS; cross-isolate enforcement still relies on the
+  // platform's KV consistency and remains deliberately bounded.
+  const key = "subscription-write";
+  const previous = inFlightSubscriptionWrites.get(key);
+  const waitForPrevious = previous ? previous.catch(() => undefined) : Promise.resolve();
+  const current = waitForPrevious.then(operation);
+  inFlightSubscriptionWrites.set(key, current);
+  try {
+    return await current;
+  } finally {
+    if (inFlightSubscriptionWrites.get(key) === current) {
+      inFlightSubscriptionWrites.delete(key);
+    }
+  }
+}
+
 function validateSendPayload(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -517,16 +537,20 @@ export async function handleRequest(request, env, _context, dependencies = {}) {
     }
     const key = await endpointKey(subscription.endpoint);
     if (method === "DELETE") {
-      await env.PUSH_SUBSCRIPTIONS.delete(key);
-      return jsonResponse(request, env, { ok: true, subscribed: false });
+      return serializeSubscriptionWrite(async () => {
+        await env.PUSH_SUBSCRIPTIONS.delete(key);
+        return jsonResponse(request, env, { ok: true, subscribed: false });
+      });
     }
-    const maxSubscriptions = Math.max(1, Math.min(100, Number(env.MAX_SUBSCRIPTIONS || DEFAULT_MAX_SUBSCRIPTIONS)));
-    const existing = await env.PUSH_SUBSCRIPTIONS.get(key);
-    if (!existing && (await listSubscriptionKeys(env.PUSH_SUBSCRIPTIONS, maxSubscriptions + 1)).length >= maxSubscriptions) {
-      return errorResponse(request, env, 429, "SUBSCRIPTION_LIMIT");
-    }
-    await env.PUSH_SUBSCRIPTIONS.put(key, JSON.stringify(subscription));
-    return jsonResponse(request, env, { ok: true, subscribed: true }, 201);
+    return serializeSubscriptionWrite(async () => {
+      const maxSubscriptions = Math.max(1, Math.min(100, Number(env.MAX_SUBSCRIPTIONS || DEFAULT_MAX_SUBSCRIPTIONS)));
+      const existing = await env.PUSH_SUBSCRIPTIONS.get(key);
+      if (!existing && (await listSubscriptionKeys(env.PUSH_SUBSCRIPTIONS, maxSubscriptions + 1)).length >= maxSubscriptions) {
+        return errorResponse(request, env, 429, "SUBSCRIPTION_LIMIT");
+      }
+      await env.PUSH_SUBSCRIPTIONS.put(key, JSON.stringify(subscription));
+      return jsonResponse(request, env, { ok: true, subscribed: true }, 201);
+    });
   }
 
   if (path === "/send" && method === "POST") {

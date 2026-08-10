@@ -424,6 +424,32 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(bounded), 1)
         self.assertEqual(bounded[0].matched_topic_ids, ("alpha",))
 
+    def test_shared_event_keeps_available_topic_when_another_topic_budget_is_full(self) -> None:
+        topic_a = Topic(
+            "alpha", "Alpha", True, False, 60, ("Alpha",), candidate_budget=1,
+            intent_anchors=("Alpha",), event_terms=("발표",),
+        )
+        topic_b = Topic(
+            "beta", "Beta", True, False, 60, ("Beta",), candidate_budget=1,
+            intent_anchors=("Beta",), event_terms=("발표",),
+        )
+        alpha_only = replace(
+            _item("alpha-only", "alpha", score=90.0),
+            title="Alpha 모델 출시 발표",
+            summary="Alpha 모델 출시 일정과 적용 범위가 발표됐다.",
+            matched_topic_ids=("alpha",),
+        )
+        shared = replace(
+            _item("alpha-beta", "alpha", score=80.0),
+            title="Alpha Beta 공동 모델 출시 발표",
+            summary="Alpha와 Beta가 공동 모델 출시 일정과 적용 범위를 발표했다.",
+            matched_topic_ids=("alpha", "beta"),
+        )
+        bounded = cap_topic_candidates((alpha_only, shared), (topic_a, topic_b))
+        self.assertEqual(len(bounded), 2)
+        shared_bounded = next(item for item in bounded if item.evidence_id == shared.evidence_id)
+        self.assertEqual(shared_bounded.matched_topic_ids, ("beta",))
+
     def test_semantic_attribution_does_not_use_another_topic_query_as_evidence(self) -> None:
         topic_a = Topic(
             "alpha", "Alpha", True, False, 60, ("Alpha",), candidate_budget=1,

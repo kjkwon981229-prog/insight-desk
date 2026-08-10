@@ -403,3 +403,13 @@ test("subscription writes enforce the configured maximum", async () => {
   const update = await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
   assert.equal(update.status, 201);
 });
+
+test("concurrent subscription writes serialize the local capacity check", async () => {
+  const env = environment();
+  env.MAX_SUBSCRIPTIONS = 1;
+  const [first, second] = await Promise.all([
+    handleRequest(request("/subscribe", { method: "POST", body: subscription }), env),
+    handleRequest(request("/subscribe", { method: "POST", body: subscriptionTwo }), env),
+  ]);
+  assert.deepEqual([first.status, second.status].sort(), [201, 429]);
+});
