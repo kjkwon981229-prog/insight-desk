@@ -310,6 +310,68 @@ def _kosis_records(payload: object) -> tuple[dict[str, object], ...]:
     return records
 
 
+def _kosis_period_keys(value: str) -> set[str]:
+    """Extract only explicit monthly period labels from article evidence."""
+
+    text = re.sub(r"\s+", "", value)
+    keys: set[str] = set()
+    for match in re.finditer(r"(20\d{2})년?(\d{1,2})월", text):
+        keys.add(f"{match.group(1)}{int(match.group(2)):02d}")
+    for match in re.finditer(r"(20\d{2})[./-](\d{1,2})", text):
+        keys.add(f"{match.group(1)}{int(match.group(2)):02d}")
+    for match in re.finditer(r"(?<!\d)(\d{1,2})월", text):
+        keys.add(f"{int(match.group(1)):02d}")
+    for match in re.finditer(r"(?<!\d)(20\d{4})(?!\d)", text):
+        keys.add(match.group(1))
+    return keys
+
+
+def _kosis_title_candidate(item: NewsItem, dataset: KosisDataset) -> bool:
+    """Cheap pre-request gate using article evidence only, never the query."""
+
+    title = " ".join(
+        value
+        for value in (item.metadata_title, item.title)
+        if value and not _TRUNCATION_RE.search(value)
+    )
+    lead = " ".join(
+        value
+        for value in (item.metadata_description,)
+        if value and not _TRUNCATION_RE.search(value)
+    )
+    if not title:
+        return False
+    title_folded = title.casefold()
+    subject_match = any(keyword.casefold() in title_folded for keyword in (dataset.label, *dataset.keywords))
+    if not subject_match:
+        return False
+    statistic_signal = any(
+        marker in f"{title} {lead}"
+        for marker in ("지수", "통계", "CPI", "상승", "하락", "증가", "감소", "발표", "전년", "전월", "기록")
+    )
+    if not statistic_signal:
+        return False
+    return True
+
+
+def _kosis_item_matches(item: NewsItem, dataset: KosisDataset, evidence: AuthorityEvidence) -> bool:
+    """Require same statistical subject and explicit period before attaching."""
+
+    if not _kosis_title_candidate(item, dataset):
+        return False
+    title = " ".join(
+        value
+        for value in (item.metadata_title, item.title)
+        if value and not _TRUNCATION_RE.search(value)
+    )
+    article_periods = _kosis_period_keys(title)
+    official_period = str(evidence.period or "").strip()
+    if not article_periods or not official_period:
+        return False
+    official_keys = {official_period, official_period[-2:]}
+    return bool(article_periods.intersection(official_keys))
+
+
 def _kosis_evidence(dataset: KosisDataset, records: tuple[dict[str, object], ...]) -> AuthorityEvidence:
     ordered = sorted(records, key=lambda row: str(row.get("PRD_DE") or ""))
     current = ordered[-1]
@@ -369,12 +431,8 @@ class KosisAdapter:
         for dataset in self.datasets:
             if attempted >= self.max_requests:
                 break
-            candidate_ids = tuple(
-                item.evidence_id
-                for item in items
-                if any(keyword.casefold() in _item_text(item) for keyword in dataset.keywords)
-            )
-            if not candidate_ids:
+            candidate_items = tuple(item for item in items if _kosis_title_candidate(item, dataset))
+            if not candidate_items:
                 continue
             attempted += 1
             query = {
@@ -412,8 +470,9 @@ class KosisAdapter:
                 failure_reason = str(exc)
                 continue
             success_count += 1
-            for candidate_id in candidate_ids:
-                matches.append((candidate_id, evidence))
+            for item in candidate_items:
+                if _kosis_item_matches(item, dataset, evidence):
+                    matches.append((item.evidence_id, evidence))
         result = AdapterResult(
             "kosis",
             attempted=attempted,

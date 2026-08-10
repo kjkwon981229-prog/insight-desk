@@ -36,9 +36,7 @@ def _comparable_numbers(value: str) -> set[str]:
         raw = match.group(1).replace(",", "")
         unit = match.group(2) or ""
         # Period labels and index bases are metadata, not observations.
-        if not unit and raw.isdigit() and len(raw) in {4, 6, 8}:
-            continue
-        if "." not in raw and not unit and raw in {"100", "2020"}:
+        if not unit and raw.isdigit():
             continue
         numbers.add(raw)
     return numbers

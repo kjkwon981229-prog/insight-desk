@@ -253,7 +253,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
                 ),
             )
         )
-        item = _item("kosis-2", "소비자물가 변화", "물가 변화가 발표됐다.", query="물가")
+        item = _item("kosis-2", "소비자물가 6월 상승", "물가 변화가 발표됐다.", query="물가")
         payload = KosisAdapter(
             api_key="placeholder-kosis-key",
             datasets=(_kosis_dataset(),),
@@ -262,6 +262,24 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         ).fetch((item,))
         self.assertFalse(payload.result.success)
         self.assertTrue(payload.result.failure_reason.startswith("UNIT_MISMATCH:"))
+        self.assertEqual(payload.evidence, ())
+
+    def test_kosis_rejects_same_subject_with_mismatched_period(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    [{"PRD_DE": "202606", "DT": "116.5", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260702"}]
+                ),
+            )
+        )
+        item = _item("kosis-period", "소비자물가 5월 상승", "5월 물가가 올랐다.", query="물가")
+        payload = KosisAdapter(
+            api_key="placeholder-kosis-key",
+            datasets=(_kosis_dataset(),),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertTrue(payload.result.success)
         self.assertEqual(payload.evidence, ())
 
     def test_kosis_accepts_official_base_index_punctuation_variant(self) -> None:
@@ -337,7 +355,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         )
         item = _item(
             "router-1",
-            "하이브 소비자물가 관련 기사",
+            "하이브 6월 소비자물가 지수 상승",
             "하이브와 물가가 함께 언급된 후보.",
             query="물가",
             topic_id="kpop",
@@ -372,7 +390,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
             open_dart=OpenDartConfig(False, 7, 50, "B", 1, ()),
             kosis=KosisConfig(enabled=True, max_requests=1, datasets=(_kosis_dataset(),)),
         )
-        item = _item("router-conflict", "소비자물가 116.4", "소비자물가 수치가 제시됐다.", query="물가")
+        item = _item("router-conflict", "소비자물가 6월 116.4 상승", "소비자물가 수치가 제시됐다.", query="물가")
         report = AuthoritativeRouter(
             config=config,
             transport=transport,
