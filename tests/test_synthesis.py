@@ -261,6 +261,23 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("신곡", summary)
         self.assertEqual(facts.event_type, "PRODUCT_RELEASE")
 
+    def test_recruitment_summary_preserves_selection_and_application_counts(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (
+                _item(
+                    "recruitment-counts",
+                    "서울시, 올 지방공무원 7급 공채 272명 선발에 11,187명 지원",
+                    "서울시의 7급 공채 지원자와 선발 규모가 공개됐다.",
+                    "recruitment.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="PSAT·공채", trend_metrics=())
+        self.assertIn("272명", summary)
+        self.assertIn("11,187명", summary)
+        self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
+
     def test_representative_headline_does_not_switch_to_secondary_market_fact(self) -> None:
         cluster = StoryCluster(
             "economy",

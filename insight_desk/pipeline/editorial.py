@@ -10,7 +10,7 @@ from .normalization import normalize_text
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
-_NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|km))?")
+_NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?")
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _GENERIC_HEADLINE_RE = re.compile(r"^(?:.+\s)?관련\s*(?:보도|소식|기사)$")
 _GENERIC_SUMMARY_MARKERS = (

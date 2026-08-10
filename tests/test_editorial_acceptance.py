@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from insight_desk.domain.models import EvidenceType, NewsItem, Topic
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
@@ -707,6 +708,32 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((hbf, china, morgan))
         self.assertEqual(len(clusters), 3)
 
+    def test_generic_support_term_does_not_merge_unrelated_psat_event(self) -> None:
+        incidental = replace(
+            _item(
+                "psat-incidental-support",
+                "psat",
+                "공무원 시험",
+                "한경협, 창업팀 100개 선발·투자 연계 지원 나선다",
+                "창업팀 지원과 투자 연계 프로그램을 소개했다.",
+            ),
+            matched_topic_ids=("psat",),
+        )
+        real = replace(
+            _item(
+                "psat-real-recruitment",
+                "psat",
+                "PSAT",
+                "서울시, 올 지방공무원 7급 공채 272명 선발에 11,187명 지원",
+                "서울시 지방공무원 7급 공채와 PSAT 대체 방식을 안내했다.",
+            ),
+            matched_topic_ids=("psat",),
+        )
+        clusters = cluster_news((incidental, real))
+        psat_clusters = [cluster for cluster in clusters if cluster.topic_id == "psat"]
+        self.assertEqual(len(psat_clusters), 2)
+        self.assertTrue(all(len(cluster.items) == 1 for cluster in psat_clusters))
+
     def test_event_clustering_merges_same_sports_interruption_theme(self) -> None:
         first = _item(
             "heat-a",
@@ -913,6 +940,21 @@ class EditorialAcceptanceTests(unittest.TestCase):
         )
         self.assertIn("변동성이", summary)
         self.assertNotIn("1300원으로", summary)
+
+    def test_market_level_is_not_replaced_by_secondary_market_change(self) -> None:
+        item = _item(
+            "kospi-level-secondary-change",
+            "economy",
+            "미국 증시",
+            "코스피 기관 매수세에 장중 6300선 강보합세, 코스닥 4%대 오른 830선",
+            "코스피가 6300선에서 강보합세를 보였고 코스닥은 4%대 올랐다.",
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)), topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertIn("6300선", headline)
+        self.assertNotEqual(facts.key_numbers[0], "4%")
+        self.assertIn("강보합세", summary)
 
     def test_snippet_tail_does_not_merge_unrelated_events(self) -> None:
         first = _item(

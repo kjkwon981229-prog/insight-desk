@@ -10,7 +10,7 @@ from .editorial import best_headline_item, effective_lead, effective_title, safe
 from .normalization import normalize_text
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -33,6 +33,7 @@ _CHANGE_MARKERS = (
     "급락",
     "강세",
     "약세",
+    "강보합세",
 )
 _ACTION_MARKERS = (
     "시구",
@@ -113,7 +114,7 @@ _STOPWORDS = {
 _GENERIC_CHANGE_WORDS = {"기록", "발표", "공개", "확인"}
 _EVENT_ACTIONS = {"시구", "개최", "공연", "콘서트", "선발", "경기", "컴백"}
 _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "출시", "공지")
-_DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세"}
+_DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세", "강보합세"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
@@ -601,6 +602,8 @@ def _headline(
             change = "강세"
         elif "약세" in change:
             change = "약세"
+        elif "강보합세" in change:
+            change = "강보합세"
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
@@ -667,7 +670,9 @@ def _summary(
                 sentence = f"{summary_subject} 변동성이 {change} 수준으로 확대됐다."
         elif change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
-            if marker and summary_subject and numbers[0].endswith(("%", "달러")):
+            if marker == "강보합세" and summary_subject:
+                sentence = f"{summary_subject}{_particle(summary_subject)} {numbers[0]}에서 강보합세를 보였다."
+            elif marker and summary_subject and numbers[0].endswith(("%", "달러")):
                 verb = {"강세": "상승", "약세": "하락"}.get(marker, marker)
                 sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
             else:
@@ -748,7 +753,11 @@ def _summary(
         else:
             sentence = f"{subject}의 {change_action} 소식이 보도됐다."
     elif event_type == "ROSTER_PERSONNEL" and subject:
-        sentence = f"{subject}의 {action or '선수단 변동'}이 확인됐다."
+        clean_title = _clean_headline(title)
+        if numbers and clean_title:
+            sentence = f"{clean_title}."
+        else:
+            sentence = f"{subject}의 {action or '선수단 변동'}이 확인됐다."
     elif event_type == "SPORTS_RESULT" and subject:
         sentence = f"{subject}의 경기 결과 또는 기록 변화가 확인됐다."
     elif event_type == "SPORTS_INTERRUPTION" and subject:
