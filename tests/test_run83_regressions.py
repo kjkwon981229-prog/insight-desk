@@ -11,6 +11,7 @@ from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.editorial import assess_relevance
 from insight_desk.pipeline.selection import select_clusters, topic_diverse_enrichment_candidates
 from insight_desk.pipeline.synthesis import synthesize_cluster
+from insight_desk.pipeline.semantics import summary_information_gain
 
 
 def _item(title: str, summary: str, *, metadata_title: str = "", metadata_description: str = "") -> NewsItem:
@@ -142,7 +143,42 @@ class Run83RegressionTests(unittest.TestCase):
             event_type_override="AWARD_CHART",
         )
         self.assertEqual(facts.subject, "스트레이 키즈")
-        self.assertEqual(summary, "스트레이 키즈가 음악 차트 1위에 올랐다.")
+        self.assertIn("스트레이 키즈", summary)
+        self.assertIn("1위", summary)
+        self.assertIn("컴백부터", summary)
+        self.assertTrue(summary_information_gain("스트레이 키즈, THIS & THAT 국내외 음악 차트 1위", summary))
+
+    def test_award_cluster_survives_when_result_headline_beats_supporting_headline(self) -> None:
+        titles = (
+            "음악 보부상 스트레이 키즈, 차트 휩쓰는 중",
+            "스트레이 키즈, THIS & THAT 국내외 음악 차트 1위",
+            "스트레이 키즈, 컴백부터 국내외 차트 1위",
+        )
+        items = tuple(
+            NewsItem(
+                f"kpop-score-{index}",
+                "kpop",
+                "음악 차트",
+                title,
+                title,
+                f"https://score-publisher-{index}.test/story",
+                f"https://score-publisher-{index}.test/story",
+                f"https://score-publisher-{index}.test/story",
+                None,
+                f"score-publisher-{index}.test",
+                f"kpop-score-{index}",
+                float(60 + index * 10),
+                provenance=(EvidenceType.SEARCH_SNIPPET,),
+                retrieval_channels=("SIM",),
+                retrieval_queries=("음악 차트",),
+            )
+            for index, title in enumerate(titles)
+        )
+        topics, _ = load_topics(Path("config/topics.json"))
+        result = select_clusters((StoryCluster("kpop", items),), topics, limit=10)
+        self.assertEqual(len(result.selected), 1)
+        self.assertFalse(result.filter_collapse)
+        self.assertNotIn("SYNTHESIS_FACT_LOSS", result.audit[0]["selection_reasons"])
 
 if __name__ == "__main__":
     unittest.main()

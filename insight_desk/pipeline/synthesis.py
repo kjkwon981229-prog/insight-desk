@@ -145,6 +145,7 @@ _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "�
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세", "강보합세"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _AWARD_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]+(?:[·&'’-][A-Za-z0-9가-힣]+)*")
+_AWARD_SUPPORT_MARKERS = ("컴백", "신곡", "앨범", "데뷔곡", "데뷔")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
 _DATE_STAMP_RE = re.compile(r"^20\d{2}[./-]\d{1,2}[./-]\d{1,2}$")
@@ -699,6 +700,27 @@ def _award_subject(title: str, subject: str, *, titles: tuple[str, ...] = ()) ->
     return subject
 
 
+def _award_supporting_fact(title: str, titles: tuple[str, ...]) -> str:
+    """Find a concrete event detail from another corroborating headline.
+
+    A chart cluster can choose a result-heavy headline as its display title,
+    leaving the default summary with no information gain.  Reuse only a
+    bounded event marker that appears in a different source headline; never
+    infer a release or comeback from the retrieval query.
+    """
+
+    headline = _clean_headline(title)
+    for candidate in titles:
+        clean = _clean_headline(candidate)
+        if not clean or clean == headline:
+            continue
+        for marker in _AWARD_SUPPORT_MARKERS:
+            match = re.search(rf"{re.escape(marker)}(?:부터|후|당일)?", clean)
+            if match and marker not in headline:
+                return match.group(0)
+    return ""
+
+
 def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     relevant = [metric for metric in metrics if metric.topic_id == topic_id]
     if not relevant:
@@ -895,6 +917,7 @@ def _summary(
     market_observation: MetricObservation | None = None,
     market_observations: tuple[MetricObservation, ...] = (),
     temporal_state: str = "",
+    supporting_titles: tuple[str, ...] = (),
 ) -> str:
     if event_type == "EARNINGS" and subject:
         period, metric, value = _earnings_fact_parts(completion_evidence or title)
@@ -1094,6 +1117,15 @@ def _summary(
             sentence = f"{_clean_headline(title)}."
         else:
             sentence = f"{_clean_headline(title)}."
+        if not summary_information_gain(title, sentence):
+            supporting_fact = _award_supporting_fact(title, supporting_titles)
+            if supporting_fact and chart_number and music_context:
+                connector = (
+                    supporting_fact
+                    if supporting_fact.endswith(("부터", "후", "당일"))
+                    else f"{supporting_fact}{_instrumental_particle(supporting_fact)}"
+                )
+                sentence = f"{subject}{_particle(subject)} {connector} 음악 차트 {chart_number}에 올랐다."
     elif event_type.startswith("RECRUITMENT") and subject:
         ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
         counts_match = re.search(
@@ -1463,6 +1495,7 @@ def synthesize_cluster(
         market_observation=market_observation,
         market_observations=market_observations,
         temporal_state=temporal_state,
+        supporting_titles=tuple(effective_title(item) for item in items if effective_title(item)),
     )
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()
