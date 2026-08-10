@@ -598,12 +598,10 @@ def _headline(
         # headline and can imply an unsupported comparison.
         if change and not _NUMBER_RE.search(cleaned):
             change = ""
-        if "강세" in change:
-            change = "강세"
-        elif "약세" in change:
-            change = "약세"
-        elif "강보합세" in change:
-            change = "강보합세"
+        for marker in ("강보합세", "강세", "약세", "상승", "하락", "급등", "급락"):
+            if marker in change:
+                change = marker
+                break
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result
@@ -669,12 +667,15 @@ def _summary(
             else:
                 sentence = f"{summary_subject} 변동성이 {change} 수준으로 확대됐다."
         elif change and change not in _GENERIC_CHANGE_WORDS:
-            marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if change.endswith(word)), "")
+            marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if word in change), "")
             if marker == "강보합세" and summary_subject:
                 sentence = f"{summary_subject}{_particle(summary_subject)} {numbers[0]}에서 강보합세를 보였다."
-            elif marker and summary_subject and numbers[0].endswith(("%", "달러")):
+            elif marker and summary_subject and numbers[0].endswith(("%", "달러", "선")):
                 verb = {"강세": "상승", "약세": "하락"}.get(marker, marker)
-                sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
+                if numbers[0].endswith("선"):
+                    sentence = f"{summary_subject}{_particle(summary_subject)} {numbers[0]}에서 {verb} 흐름을 보였다."
+                else:
+                    sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
             else:
                 lead = f"{summary_subject}의 " if summary_subject else ""
                 sentence = f"{lead}{numbers[0]} 수치가 "

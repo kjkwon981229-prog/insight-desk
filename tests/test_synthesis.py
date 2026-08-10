@@ -243,6 +243,29 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("강세", headline)
         self.assertIn("상승했다", summary)
 
+    def test_market_photo_lead_preserves_directional_fact(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "market-photo",
+                    "장 초반 상승하는 코스피 [포토]",
+                    "56포인트(0.76%) 오른 6306.33으로 개장했다. 코스닥은 1.11% 오른 것으로 나타났다.",
+                    "photo.example",
+                ),
+                _item(
+                    "market-index",
+                    "증시 상승 출발… 코스피 1%·코스닥 4%대 상승세",
+                    "코스피가 장 초반 상승세를 이어가고 있다...",
+                    "index.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, _, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
+        self.assertIn("0.76%", headline)
+        self.assertIn("상승했다", summary)
+        self.assertNotIn("수치가 여러 보도에서 확인됐다", summary)
+
     def test_song_announcement_preserves_release_date_and_fact(self) -> None:
         cluster = StoryCluster(
             "topic",
