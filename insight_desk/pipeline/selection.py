@@ -33,6 +33,10 @@ def candidate_key(cluster: StoryCluster) -> str:
     return representative.canonical_url or representative.content_hash or representative.evidence_id
 
 
+def _headline_key(cluster: StoryCluster) -> str:
+    return " ".join(effective_title(cluster.representative).casefold().split())
+
+
 def _publisher_count(cluster: StoryCluster) -> int:
     return len({item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain})
 
@@ -166,6 +170,7 @@ def select_clusters(
 
     selected: list[tuple[StoryCluster, EditorialAssessment, str, float]] = []
     selected_keys: set[str] = set()
+    selected_headline_keys: set[str] = set()
     selected_coverage: set[str] = set()
     topic_counts: dict[str, int] = {topic.id: 0 for topic in enabled_topics}
     records: dict[tuple[str, str], dict[str, object]] = {}
@@ -218,10 +223,12 @@ def select_clusters(
 
     def choose(cluster: StoryCluster, assessment: EditorialAssessment, reason: str, penalty: float = 0.0) -> None:
         key = candidate_key(cluster)
-        if key in selected_keys or len(selected) >= max(0, limit):
+        headline_key = _headline_key(cluster)
+        if key in selected_keys or headline_key in selected_headline_keys or len(selected) >= max(0, limit):
             return
         selected.append((cluster, assessment, reason, penalty))
         selected_keys.add(key)
+        selected_headline_keys.add(headline_key)
         topic_counts[cluster.topic_id] = topic_counts.get(cluster.topic_id, 0) + 1
         selected_coverage.update(_coverage(cluster, topic_by_id))
         funnel[cluster.topic_id]["selected"] += 1
@@ -234,7 +241,11 @@ def select_clusters(
         if topic.id in selected_coverage or len(selected) >= limit:
             continue
         for cluster, assessment in grouped.get(topic.id, ()):
-            if assessment.qualified and candidate_key(cluster) not in selected_keys:
+            if (
+                assessment.qualified
+                and candidate_key(cluster) not in selected_keys
+                and _headline_key(cluster) not in selected_headline_keys
+            ):
                 choose(cluster, assessment, "quality coverage floor")
                 break
 
@@ -253,7 +264,7 @@ def select_clusters(
     while len(selected) < max(0, limit):
         available: list[tuple[float, StoryCluster, EditorialAssessment, float]] = []
         for key, (cluster, assessment) in candidates.items():
-            if key in selected_keys:
+            if key in selected_keys or _headline_key(cluster) in selected_headline_keys:
                 continue
             topic = topic_by_id[cluster.topic_id]
             current_count = topic_counts.get(cluster.topic_id, 0)
@@ -294,6 +305,8 @@ def select_clusters(
                 reason = "cross-topic event already selected"
             elif capped and topic_counts.get(topic_id, 0) >= topic_by_id[topic_id].selection_cap:
                 reason = "topic saturation cap"
+            elif _headline_key(cluster) in selected_headline_keys:
+                reason = "duplicate rendered headline"
             else:
                 reason = "remaining slot"
             write_record(cluster, assessment, selected_value=False, reason=reason)

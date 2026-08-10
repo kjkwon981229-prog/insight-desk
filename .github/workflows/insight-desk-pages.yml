@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || github.event.before == 'e85925a25e9b700251f3835df20ae77dc87714b5'
+    if: github.event_name != 'push' || github.event.before == 'f84479c31d626dcb33b509f834f58dc6a3a54403'
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -128,6 +128,27 @@ class SelectionTests(unittest.TestCase):
             result.audit[0]["selection_reasons"],
         )
 
+    def test_duplicate_rendered_headline_is_not_selected_twice(self) -> None:
+        first = replace(
+            _item("headline-a", "ai", score=90.0, domain="first.example"),
+            title="AI 모델 출시 발표",
+            summary="AI 모델이 출시됐다는 구체적인 발표가 확인됐다.",
+        )
+        second = replace(
+            _item("headline-b", "ai", score=60.0, domain="second.example"),
+            title="AI 모델 출시 발표",
+            summary="AI 모델이 출시됐다는 구체적인 발표가 확인됐다.",
+        )
+        result = select_clusters(
+            (StoryCluster("ai", (first,)), StoryCluster("ai", (second,))),
+            _topics(),
+            limit=10,
+        )
+        self.assertEqual(len(result.selected), 1)
+        self.assertEqual(result.selected[0].representative.title, "AI 모델 출시 발표")
+        rejected = [entry for entry in result.audit if entry.get("selected") is False]
+        self.assertTrue(any(entry.get("reason") == "duplicate rendered headline" for entry in rejected))
+
     def test_metadata_policy_tail_does_not_promote_analyst_commentary(self) -> None:
         candidate = replace(
             _item(
