@@ -91,6 +91,11 @@ jobs:
         run: |
           echo "::error::Both Naver collection paths failed; preserving the existing Pages site."
           exit 1
+      - name: Fail closed on editorial or publication failure
+        if: steps.state.outputs.status == 'FILTER_COLLAPSE' || steps.state.outputs.status == 'RENDER_FAILURE' || steps.state.outputs.status == 'VALIDATION_FAILURE'
+        run: |
+          echo "::error::Editorial or publication validation failed; preserving the existing Pages site."
+          exit 1
       - name: Validate Pages artifact
         if: steps.state.outputs.publish == 'true'
         run: python scripts/validate_artifact.py build/site
