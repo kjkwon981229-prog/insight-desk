@@ -121,7 +121,13 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
         and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
     )
     if synthesis_vetoed_qualified:
-        return bool(upstream_passed and not assessment.qualified and assessment.final_score >= 45.0)
+        return bool(
+            upstream_passed
+            and not assessment.qualified
+            and assessment.event.concrete_fact_count >= 3
+            and assessment.event.significance >= 60.0
+            and assessment.final_score >= 45.0
+        )
     return bool(
         upstream_passed
         and not assessment.qualified
