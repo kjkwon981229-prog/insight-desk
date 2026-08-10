@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from insight_desk.domain.models import EvidenceType, NewsItem, Topic
+from insight_desk.domain.models import AuthorityEvidence, AuthoritySourceType, EvidenceType, NewsItem, Topic
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_relevance, event_signature
@@ -79,6 +79,42 @@ def _item(
 
 
 class EditorialAcceptanceTests(unittest.TestCase):
+    def test_authority_description_cannot_reclassify_discovery_event(self) -> None:
+        item = _item(
+            "authority-event-type",
+            "economy",
+            "반도체",
+            "소니·TSMC, 日구마모토 이미지 센서 공정에 9조원 합작 투자",
+            "소니와 TSMC가 일본 구마모토에서 이미지 센서 공정을 함께 추진한다.",
+        )
+        item = replace(
+            item,
+            authoritative_evidence=(
+                AuthorityEvidence(
+                    adapter="opendart",
+                    source_type=AuthoritySourceType.OFFICIAL_CORPORATE,
+                    title="소니: 영업실적 공시",
+                    description="2026-08-10 금융감독원 공시 접수: 소니 · 영업실적.",
+                    publisher="금융감독원 OpenDART",
+                    event_key="DART:20260810123456",
+                    fact_values=("영업실적", "2026-08-10"),
+                ),
+            ),
+        )
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "반도체",
+            anchors=("반도체", "소니", "TSMC"),
+            events=("투자", "계약"),
+        )
+        cluster = StoryCluster("economy", (item,))
+        assessment = assess_event(cluster, topic)
+        self.assertEqual(assessment.event_type, "INDUSTRY_CHANGE")
+        self.assertTrue(assessment.passed)
+        _, _, _, _, facts, _ = synthesize_cluster(cluster, topic_name="경제·투자", trend_metrics=())
+        self.assertEqual(facts.event_type, assessment.event_type)
+
     def test_psat_biography_false_positive_is_rejected(self) -> None:
         topic = _topic(
             "psat",

@@ -13,7 +13,7 @@ from .config import KosisDataset, OpenDartConfig, OpenDartEntity
 
 
 _DART_URL = "https://opendart.fss.or.kr/api/list.json"
-_KOSIS_URL = "https://kosis.kr/openapi/statisticsParameterData.do"
+_KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _DART_ROUTINE_MARKERS = (
     "사업보고서",
@@ -22,22 +22,15 @@ _DART_ROUTINE_MARKERS = (
     "감사보고서",
     "주주총회소집",
 )
-_DART_EVENT_MARKERS = (
-    "주요사항",
-    "영업실적",
-    "매출",
-    "영업이익",
-    "계약",
-    "인수",
-    "합병",
-    "투자",
-    "유상증자",
-    "자기주식",
-    "배당",
-    "공급",
-    "소송",
-    "공시",
+_DART_EVENT_GROUPS = (
+    ("EARNINGS", ("영업(잠정)실적", "영업실적", "매출액또는손익구조", "매출", "영업이익", "순이익", "가이던스", "실적")),
+    ("CONTRACT", ("단일판매·공급계약", "단일판매ㆍ공급계약", "공급계약", "계약")),
+    ("M_AND_A", ("회사합병", "영업양수도", "주식교환", "인수", "합병")),
+    ("INVESTMENT", ("타법인주식및출자증권취득결정", "시설투자", "유형자산양수", "투자")),
+    ("CAPITAL", ("유상증자", "전환사채", "신주인수권부사채", "증권발행", "자기주식", "배당")),
+    ("LEGAL", ("소송", "벌금", "횡령", "배임")),
 )
+_DART_MAX_EVENTS_PER_CANDIDATE = 2
 
 
 @dataclass(frozen=True)
@@ -124,16 +117,38 @@ def _entity_matches(item: NewsItem, entity: OpenDartEntity, corp_name: str) -> b
     return any(_fold(alias) in text for alias in names if alias)
 
 
+def _dart_event_groups(value: str) -> tuple[str, ...]:
+    folded = value.casefold()
+    return tuple(
+        group
+        for group, markers in _DART_EVENT_GROUPS
+        if any(marker.casefold() in folded for marker in markers)
+    )
+
+
+def _item_dart_event_groups(item: NewsItem) -> tuple[str, ...]:
+    # A filing can corroborate a discovered event only when the discovered
+    # headline itself names the same kind of event.  Query terms, snippets,
+    # and an official filing description are intentionally not enough: they
+    # are common sources of incidental entity matches.
+    title = " ".join(
+        value
+        for value in (item.metadata_title, item.title)
+        if value and not _TRUNCATION_RE.search(value)
+    )
+    return _dart_event_groups(title)
+
+
 def _report_is_relevant(report_name: str, item: NewsItem) -> bool:
     report = report_name.casefold()
-    text = _item_text(item)
-    event_hit = any(marker.casefold() in report for marker in _DART_EVENT_MARKERS)
-    if not event_hit:
+    report_groups = _dart_event_groups(report_name)
+    item_groups = _item_dart_event_groups(item)
+    if not report_groups or not item_groups or not set(report_groups).intersection(item_groups):
         return False
     routine = any(marker.casefold() in report for marker in _DART_ROUTINE_MARKERS)
-    # Routine periodic filings are only useful when the discovered story is
-    # explicitly about the same financial result or metric.
-    if routine and not any(marker in text for marker in ("실적", "매출", "영업이익", "순이익", "가이던스", "공시")):
+    # Periodic filings may support an explicitly reported earnings story, but
+    # never turn a routine filing into a generic corporate news candidate.
+    if routine and "EARNINGS" not in item_groups:
         return False
     return True
 
@@ -218,6 +233,7 @@ class OpenDartAdapter:
             return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason="INVALID_LIST_SHAPE"))
         matched: list[tuple[str, AuthorityEvidence]] = []
         used: set[tuple[str, str]] = set()
+        matches_by_item: dict[str, int] = {}
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -233,9 +249,10 @@ class OpenDartAdapter:
                 if entity is None or not _report_is_relevant(report_name, item):
                     continue
                 key = (item.evidence_id, evidence.event_key)
-                if key not in used:
+                if key not in used and matches_by_item.get(item.evidence_id, 0) < _DART_MAX_EVENTS_PER_CANDIDATE:
                     used.add(key)
                     matched.append((item.evidence_id, evidence))
+                    matches_by_item[item.evidence_id] = matches_by_item.get(item.evidence_id, 0) + 1
         result = AdapterResult(
             "opendart",
             attempted=1,

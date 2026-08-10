@@ -5,7 +5,7 @@ import unittest
 from datetime import date, datetime
 from urllib.parse import parse_qs, urlparse
 
-from insight_desk.authoritative.adapters import KosisAdapter, OpenDartAdapter
+from insight_desk.authoritative.adapters import KosisAdapter, OpenDartAdapter, _report_is_relevant
 from insight_desk.authoritative.config import (
     AuthorityConfig,
     KosisConfig,
@@ -85,6 +85,40 @@ def _kosis_dataset() -> KosisDataset:
 
 
 class AuthoritativeAdapterTests(unittest.TestCase):
+    def test_opendart_matches_event_category_and_caps_candidate_attachments(self) -> None:
+        item = _item(
+            "dart-category",
+            "하이브 대규모 투자 계획 발표",
+            "하이브의 투자 계획이 발표됐다.",
+            query="HYBE",
+            topic_id="kpop",
+        )
+        self.assertTrue(_report_is_relevant("주요사항보고서(타법인주식및출자증권취득결정)", item))
+        self.assertFalse(_report_is_relevant("주요사항보고서(계약)", item))
+        transport = FakeTransport(
+            (
+                _response(
+                    {
+                        "status": "000",
+                        "list": [
+                            {
+                                "corp_name": "하이브",
+                                "report_nm": "주요사항보고서(투자)",
+                                "rcept_no": f"2026081012345{i}",
+                                "rcept_dt": "20260810",
+                            }
+                            for i in range(1, 5)
+                        ],
+                    }
+                ),
+            )
+        )
+        payload = OpenDartAdapter(
+            api_key="placeholder-opendart-key", config=_dart_config(), transport=transport
+        ).fetch((item,), today=date(2026, 8, 10))
+        self.assertEqual(payload.result.events_augmented, 2)
+        self.assertEqual(len(payload.evidence), 2)
+
     def test_opendart_normalizes_relevant_filing_without_exposing_key(self) -> None:
         secret = "placeholder-opendart-key"
         transport = FakeTransport(
@@ -178,6 +212,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertEqual(evidence.revision_date, "20260702")
         self.assertIn("상승", evidence.description)
         self.assertEqual(evidence.fact_values[0], "202606=116.5 2020 = 100")
+        self.assertIn("/openapi/Param/statisticsParameterData.do", transport.urls[0])
 
     def test_kosis_rejects_unexpected_unit(self) -> None:
         transport = FakeTransport(

@@ -23,7 +23,7 @@ _EVENT_PATTERNS: tuple[tuple[str, tuple[str, ...], float], ...] = (
     ("EARNINGS", ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"), 78.0),
     ("AWARD_CHART", ("1위", "차트", "관왕", "수상"), 74.0),
     ("PRODUCT_RELEASE", ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "신규상장", "상장", "예약판매", "판매 개시", "사양 확정"), 68.0),
-    ("INDUSTRY_CHANGE", ("투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"), 66.0),
+    ("INDUSTRY_CHANGE", ("투자", "투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"), 66.0),
     ("SPORTS_INTERRUPTION", ("폭염", "중단", "멈춘"), 70.0),
     ("SPORTS_RESULT", ("경기 결과", "승리했다", "패배했다", "승리 확정", "우승", "승률", "연승", "연패", "홈런", "순위", "기록"), 72.0),
     ("ROSTER_PERSONNEL", ("선발", "엔트리", "부상", "트레이드", "등록", "말소"), 74.0),
@@ -133,10 +133,12 @@ def effective_title(item: NewsItem) -> str:
 
 
 def effective_lead(item: NewsItem) -> str:
-    for authority in getattr(item, "authoritative_evidence", ()):
-        description = safe_evidence_text(getattr(authority, "description", ""))
-        if description:
-            return description
+    return discovery_lead(item)
+
+
+def discovery_lead(item: NewsItem) -> str:
+    """Return discovery evidence without letting authority prose reclassify it."""
+
     metadata_description = safe_evidence_text(item.metadata_description)
     return metadata_description or safe_evidence_text(item.summary)
 
@@ -436,7 +438,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     # event type of a primary announcement (or vice versa).
     headline_item = best_headline_item(cluster.items)
     title_text = effective_title(headline_item)
-    lead_text = effective_lead(headline_item)
+    lead_text = discovery_lead(headline_item)
     event_type = "OTHER"
     significance = 0.0
     matched_terms: list[str] = []
