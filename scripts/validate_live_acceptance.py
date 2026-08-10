@@ -42,6 +42,11 @@ def validate(path: Path) -> list[str]:
         return ["selected_stories is not a list"]
     if len(stories) > 10:
         errors.append("selected story count exceeds maximum 10")
+    if not stories and (
+        payload.get("editorial_health") == "FILTER_COLLAPSE"
+        or int(payload.get("strong_rejected_candidates", 0) or 0) > 0
+    ):
+        errors.append("zero-story result is a filter collapse, not a valid empty day")
     generic_headline_markers = ("관련 보도", "관련 소식", "관련 기사", "관련 뉴스")
     generic_summary_markers = (
         "단일 검색 결과만 확인되어",

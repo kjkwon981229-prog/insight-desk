@@ -350,6 +350,22 @@ class SynthesisTests(unittest.TestCase):
         self.assertNotEqual(facts.location, "잠실")
         self.assertNotIn("잠실", summary)
 
+    def test_sports_interruption_preserves_resumption_state_and_date(self) -> None:
+        item = _item(
+            "heat-resumption",
+            "'폭염 휴식' 마친 KBO리그 11일 재개",
+            "폭염으로 일시 중단됐던 KBO리그가 오는 11일 다시 시작한다.",
+            "sports.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("topic", (item,)), topic_name="KBO", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "SPORTS_INTERRUPTION")
+        self.assertEqual(facts.action, "재개")
+        self.assertEqual(facts.temporal_state, "RESUMED")
+        self.assertEqual(facts.date, "11일")
+        self.assertIn("재개됐다", summary)
+
     def test_scheduled_event_extracts_date_and_location(self) -> None:
         cluster = StoryCluster(
             "topic",

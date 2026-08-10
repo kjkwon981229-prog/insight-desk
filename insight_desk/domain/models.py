@@ -13,6 +13,7 @@ class RunStatus(str, Enum):
     TOTAL_FAILURE = "TOTAL_FAILURE"
     RENDER_FAILURE = "RENDER_FAILURE"
     VALIDATION_FAILURE = "VALIDATION_FAILURE"
+    FILTER_COLLAPSE = "FILTER_COLLAPSE"
 
 
 class Certainty(str, Enum):
@@ -178,6 +179,7 @@ class StoryFacts:
     uncertainty: str = ""
     event_signature: str = ""
     conflict_state: str = "NO_CONFLICT"
+    temporal_state: str = ""
 
 
 @dataclass(frozen=True)
@@ -253,6 +255,8 @@ class Briefing:
     selection_funnel: dict[str, dict[str, int]] = field(default_factory=dict)
     selected_reviews: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     authoritative_audit: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    editorial_health: str = "OK"
+    strong_rejected_candidates: int = 0
 
 
 def _enum_value(value: Any) -> Any:

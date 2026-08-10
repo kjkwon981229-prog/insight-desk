@@ -9,11 +9,13 @@ from .clustering import StoryCluster, market_primary_text
 from .normalization import normalize_text
 from .semantics import (
     ACTION_TERMS,
+    CanonicalEvent,
     canonical_event_date,
     canonical_event_signature,
     contains_action,
     contains_intent_term,
     canonical_publisher,
+    event_action_signal,
     market_direction_class,
     metric_observations,
     recruitment_event_type,
@@ -226,6 +228,8 @@ class EventAssessment:
     concrete_fact_count: int
     passed: bool
     reasons: tuple[str, ...]
+    action: str = ""
+    canonical_event: CanonicalEvent | None = None
 
 
 @dataclass(frozen=True)
@@ -591,18 +595,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     event_terms = _event_terms_for(topic)
     topic_terms = topic_anchor_terms(topic)
     title_subject = any(_contains_intent_term(title_text, term) for term in topic_terms)
-    action_signal_terms = (
-        "발표", "공개", "출시", "발매", "유치", "투자", "인수", "규제", "시행", "고시", "요구", "촉구", "줄여라",
-        "상승", "하락", "증가", "감소", "변동", "급등", "급락", "통계", "지표", "실적",
-        "경기 결과", "승리", "패배", "중단", "멈춘", "컴백", "공연", "콘서트", "트레이드", "부상",
-        "차트", "관왕", "수상", "순위", "일정", "예정", "시구", "선발", "엔트리",
-    )
-    action = bool(
-        any(
-            (_event_term_match(title_text, term) or _event_term_match(lead_text, term))
-            for term in action_signal_terms
-        )
-    )
+    action_term = event_action_signal(event_type, title_text, lead_text)
+    action = bool(action_term)
     concrete = int(bool(title_subject)) + int(action) + int(bool(numbers or dates))
     _date_value, date_conflict = canonical_event_date(title_text, lead_text)
     if event_type == "MERCHANDISE":
@@ -642,7 +636,36 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and metric_signal
         and not metric_direction_conflict
     )
-    return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
+    observations = metric_observations(title_text)
+    canonical_subject = observations[0].instrument if observations else title_text.split(" · ", 1)[0][:48]
+    canonical_event = CanonicalEvent(
+        event_type=event_type,
+        subject=canonical_subject,
+        action=action_term,
+        date=_date_value,
+        period=(observations[0].period if observations else ""),
+        metric=(observations[0].metric if observations else ""),
+        value=(observations[0].value if observations else ""),
+        direction=(observations[0].direction if observations else ""),
+        observations=observations,
+        event_signature=canonical_event_signature(
+            event_type,
+            title_text,
+            lead=lead_text,
+            subject=canonical_subject,
+            action=action_term,
+        ),
+        conflict_state="DATE_CONFLICT" if date_conflict else "NO_CONFLICT",
+    )
+    return EventAssessment(
+        event_type,
+        round(significance, 3),
+        concrete,
+        passed,
+        reasons,
+        action_term,
+        canonical_event,
+    )
 
 
 def _is_official(item: NewsItem) -> bool:
@@ -753,6 +776,8 @@ def _truncated_prefix_has_event_fact(item: NewsItem) -> bool:
 
 def event_signature(cluster: StoryCluster, event: EventAssessment | None = None) -> str:
     assessed = event or assess_event(cluster, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ()))
+    if assessed.canonical_event is not None and assessed.canonical_event.event_signature:
+        return assessed.canonical_event.event_signature
     headline_item = best_headline_item(cluster.items)
     title = effective_title(headline_item)
     lead = discovery_lead(headline_item)
@@ -851,6 +876,14 @@ def assess_cluster(
         )
     )
     reasons = list(relevance.reasons + event.reasons + evidence.reasons)
+    if not relevance.passed:
+        reasons.append("RELEVANCE_FAILED")
+    if not event.passed:
+        reasons.append("EVENT_ACTION_CONTRACT_FAILED")
+    if not evidence.passed and not single_source_supported:
+        reasons.append("EVIDENCE_FAILED")
+    if novelty == "UNCHANGED":
+        reasons.append("NOVELTY_UNCHANGED")
     if single_source_supported:
         reasons.append("SUPPORTED_SINGLE_SOURCE")
     if generic_headline:

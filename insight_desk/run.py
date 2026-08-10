@@ -51,12 +51,16 @@ def _write_selection_audit(
     selected_reviews: tuple[dict[str, object], ...],
     secrets: tuple[str, ...],
     authoritative_audit: tuple[dict[str, object], ...] = (),
+    editorial_health: str = "OK",
+    strong_rejected_candidates: int = 0,
 ) -> None:
     payload = {
         "selection_audit": audit,
         "funnel": funnel,
         "selected_stories": selected_reviews,
         "authoritative_sources": authoritative_audit,
+        "editorial_health": editorial_health,
+        "strong_rejected_candidates": strong_rejected_candidates,
     }
     assert_no_secret_values(payload, secrets)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -236,6 +240,23 @@ def execute(
             retrieval_funnel=retrieval_funnel,
             authoritative_audit=authoritative_audit,
         )
+        if not briefing.state.publish:
+            for audit_path in (
+                state_path.with_name("selection-audit.json"),
+                state_path.with_name("live-acceptance.json"),
+            ):
+                _write_selection_audit(
+                    audit_path,
+                    audit=briefing.selection_audit,
+                    funnel=briefing.selection_funnel,
+                    selected_reviews=briefing.selected_reviews,
+                    secrets=secrets,
+                    authoritative_audit=briefing.authoritative_audit,
+                    editorial_health=briefing.editorial_health,
+                    strong_rejected_candidates=briefing.strong_rejected_candidates,
+                )
+            _write_state(state_path, briefing.state, secrets)
+            return briefing.state
         try:
             render_site(briefing, output_dir)
         except Exception as exc:  # noqa: BLE001 - boundary converts to explicit state
@@ -254,6 +275,8 @@ def execute(
             selected_reviews=briefing.selected_reviews,
             secrets=secrets,
             authoritative_audit=briefing.authoritative_audit,
+            editorial_health=briefing.editorial_health,
+            strong_rejected_candidates=briefing.strong_rejected_candidates,
         )
         _write_selection_audit(
             state_path.with_name("live-acceptance.json"),
@@ -262,6 +285,8 @@ def execute(
             selected_reviews=briefing.selected_reviews,
             secrets=secrets,
             authoritative_audit=briefing.authoritative_audit,
+            editorial_health=briefing.editorial_health,
+            strong_rejected_candidates=briefing.strong_rejected_candidates,
         )
         validation_errors = validate_artifact(output_dir, secrets=secrets)
         if validation_errors:

@@ -9,6 +9,7 @@ from insight_desk.pipeline.clustering import cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.normalization import normalize_news_item, normalize_url
 from insight_desk.pipeline.scoring import score_news
+from insight_desk.pipeline.semantics import metric_observations
 from insight_desk.pipeline.trend_metrics import compute_trend_metrics
 
 
@@ -60,6 +61,13 @@ class PipelineTests(unittest.TestCase):
         metrics = {metric.group_id: metric for metric in compute_trend_metrics(points)}
         self.assertEqual(metrics["flat"].state, "NO_MEANINGFUL_CHANGE")
         self.assertEqual(metrics["rise"].state, "RISE")
+
+    def test_metric_observation_binds_period_to_each_instrument(self) -> None:
+        observations = metric_observations("2026년 6월 코스닥 +6.97% 급등, 코스피 +0.65% 상승")
+        self.assertEqual(
+            [(value.instrument, value.value, value.direction, value.period) for value in observations],
+            [("코스닥", "+6.97%", "급등", "2026년6월"), ("코스피", "+0.65%", "상승", "2026년6월")],
+        )
 
     def test_clustering_and_scoring_are_deterministic(self) -> None:
         first = NewsItem("N001", "t", "AI", "AI 에이전트 기업 발표", "업무 활용", "https://a.test", "", "https://a.test", "2026-08-09T08:00:00+09:00", "a.test", "a")

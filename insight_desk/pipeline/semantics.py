@@ -127,6 +127,9 @@ _EVENT_DATE_MARKERS = (
 _NUMBER_RE = re.compile(
     r"[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원대|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
 )
+_PERIOD_RE = re.compile(
+    r"(?:20\d{2}\s?년\s?)?(?:\d{1,2}\s?월|[1-4]\s?분기|상반기|하반기|연간|월간|분기|전년(?:동월)?|전월)"
+)
 _DIRECTION_RE = re.compile(
     r"(?:소폭\s*)?(?:급등|급락|상승|하락|강세|약세|강보합세|보합|증가|감소|확대|축소|돌파|변동)"
 )
@@ -168,6 +171,23 @@ _MARKET_DIRECTION_ALIASES: tuple[tuple[str, str], ...] = (
     ("내려", "하락"),
     ("내린", "하락"),
 )
+
+_EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
+    "REGULATION": ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"),
+    "POLICY": ("정책 발표", "정책 결정", "정책 시행", "정책 개편", "대책 발표", "기준금리", "공고", "요구", "촉구", "줄여라"),
+    "EARNINGS": ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"),
+    "AWARD_CHART": ("1위", "차트", "관왕", "수상", "우승", "기록"),
+    "PRODUCT_RELEASE": ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "상장", "예약판매", "판매 개시"),
+    "INDUSTRY_CHANGE": ("투자", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"),
+    "SPORTS_INTERRUPTION": ("폭염", "중단", "멈춘", "휴식", "재개", "취소"),
+    "SPORTS_RESULT": ("경기 결과", "승리", "패배", "우승", "승률", "연승", "연패", "홈런", "순위", "기록"),
+    "ROSTER_PERSONNEL": ("선발", "엔트리", "부상", "트레이드", "등록", "말소"),
+    "SCHEDULED_EVENT": ("일정", "예정", "개최", "시구", "공연", "콘서트", "컴백", "월드투어"),
+    "ANNOUNCEMENT": ("발표", "공지", "공개"),
+    "STATISTIC": ("통계", "지표", "평균", "변동폭", "최고", "최대", "최저", "상승", "하락", "증가", "감소"),
+    "MARKET": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
+    "MARKET_MOVE": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
+}
 
 
 def fold(value: str) -> str:
@@ -253,6 +273,24 @@ class MetricObservation:
     raw: str = ""
 
 
+@dataclass(frozen=True)
+class CanonicalEvent:
+    """One bounded semantic representation shared by editorial stages."""
+
+    event_type: str
+    subject: str = ""
+    action: str = ""
+    date: str = ""
+    period: str = ""
+    metric: str = ""
+    value: str = ""
+    direction: str = ""
+    unit: str = ""
+    observations: tuple[MetricObservation, ...] = ()
+    event_signature: str = ""
+    conflict_state: str = "NO_CONFLICT"
+
+
 def _instrument_matches(text: str) -> list[tuple[int, int, str]]:
     matches: list[tuple[int, int, str]] = []
     for instrument, aliases in _MARKET_INSTRUMENTS:
@@ -290,16 +328,35 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
         if direction_match is None:
             direction_match = _DIRECTION_RE.search(segment[:80])
         direction = direction_match.group(0).replace(" ", "") if direction_match else ""
+        period_match = _PERIOD_RE.search(segment[:80]) or _PERIOD_RE.search(value)
+        period = re.sub(r"\s+", "", period_match.group(0)) if period_match else ""
         observations.append(
             MetricObservation(
                 instrument=instrument,
                 metric="CHANGE" if direction else "LEVEL",
                 value=number,
                 direction=direction,
+                period=period,
                 raw=value[start:segment_end].strip(" ,·-—"),
             )
         )
     return tuple(observations)
+
+
+def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
+    """Return an action/fact signal accepted by the event-family contract."""
+
+    text = f"{title} {lead}".strip()
+    if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
+        observations = metric_observations(title)
+        if observations:
+            return observations[0].direction or "LEVEL"
+    terms = _EVENT_ACTION_CONTRACTS.get(event_type, ACTION_TERMS)
+    for term in terms:
+        matched = contains_action(text, term) if term in ACTION_TERMS else contains_intent_term(text, term)
+        if matched:
+            return term
+    return ""
 
 
 def market_instruments(text: str) -> tuple[str, ...]:
@@ -445,7 +502,17 @@ def canonical_event_signature(
     observations = metric_observations(title)
     if observations and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         bound = ";".join(
-            ":".join(part for part in (observation.instrument, observation.metric, observation.value, observation.direction) if part)
+            ":".join(
+                part
+                for part in (
+                    observation.instrument,
+                    observation.metric,
+                    observation.value,
+                    observation.direction,
+                    observation.period,
+                )
+                if part
+            )
             for observation in observations[:3]
         )
         parts = (event_type, bound, date)
@@ -504,4 +571,5 @@ def summary_information_gain(headline: str, summary: str) -> bool:
             "됐다", "했다", "발표", "공개", "출시", "소식", "관련",
         }
     }
-    return bool(meaningful_additional or any(char.isdigit() for char in summary if char not in headline))
+    has_number_or_date = bool(any(char.isdigit() for char in summary if char not in headline) or _DATE_RE.search(summary))
+    return bool(has_number_or_date or len(meaningful_additional) >= 2)

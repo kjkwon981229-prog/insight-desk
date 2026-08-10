@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 
 from ..collectors.enrichment import EnrichmentReport
@@ -145,6 +146,9 @@ def build_briefing(
         limit=10,
         previous_signatures=previous_signatures,
     )
+    editorial_health = "FILTER_COLLAPSE" if selection.filter_collapse else "OK"
+    if selection.filter_collapse:
+        state = replace(state, status=RunStatus.FILTER_COLLAPSE, publish=False)
     stories: list[Story] = []
     selected_reviews = tuple(selection.selected_reviews)
     story_trend_matches: list[tuple[TrendMetric, ...]] = []
@@ -286,6 +290,8 @@ def build_briefing(
         selection_funnel=final_funnel,
         selected_reviews=tuple(final_reviews),
         authoritative_audit=authoritative_audit,
+        editorial_health=editorial_health,
+        strong_rejected_candidates=selection.strong_rejected_candidates,
     )
 
 

@@ -325,6 +325,7 @@ def _status_label(status: RunStatus | str) -> str:
         "TOTAL_FAILURE": "새 결과 없음",
         "RENDER_FAILURE": "게시 보류",
         "VALIDATION_FAILURE": "게시 보류",
+        "FILTER_COLLAPSE": "편집 품질 게이트 충돌",
     }.get(str(raw), "상태 확인 필요")
 
 
@@ -337,6 +338,7 @@ def _status_sentence(status: RunStatus) -> str:
         RunStatus.TOTAL_FAILURE: "새로운 결과를 만들지 않아 이전 게시물을 유지한다.",
         RunStatus.RENDER_FAILURE: "새 결과를 게시하지 못했다.",
         RunStatus.VALIDATION_FAILURE: "새 결과를 게시하지 못했다.",
+        RunStatus.FILTER_COLLAPSE: "편집 품질 게이트가 충돌해 새 결과를 게시하지 않았다.",
     }[status]
 
 

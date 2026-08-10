@@ -989,10 +989,30 @@ def _summary(
                 action_text = action or "선수단 변동"
                 sentence = f"{subject}의 {action_text}{_subject_particle(action_text)} 확인됐다."
     elif event_type == "SPORTS_RESULT" and subject:
-        sentence = f"{subject}의 경기 결과 또는 기록 변화가 확인됐다."
+        detail = normalize_text(completion_evidence)
+        if detail.startswith(normalize_text(title)):
+            detail = detail[len(normalize_text(title)) :].strip(" ,:·-—")
+        if detail and not _TRUNCATION_RE.search(detail) and len(detail) >= 12:
+            sentence = detail.rstrip(" .!?") + "."
+        else:
+            score_match = re.search(r"\d+\s*[-대]\s*\d+", title)
+            if score_match:
+                result_word = "승리" if "승리" in title else "패배" if "패배" in title else "경기 결과"
+                sentence = f"{subject}의 {result_word} 스코어는 {re.sub(r'\s+', '', score_match.group(0))}로 기록됐다."
+            else:
+                sentence = ""
     elif event_type == "SPORTS_INTERRUPTION" and subject:
-        league = "프로야구" if "프로야구" in title or "프로야구" in subject else ("KBO" if "KBO" in title else subject)
-        sentence = f"{league} 경기가 폭염 영향으로 중단돼 일정 조정이 필요해졌다."
+        evidence = f"{title} {completion_evidence}".casefold()
+        league = "프로야구" if "프로야구" in evidence or "프로야구" in subject.casefold() else ("KBO" if "kbo" in evidence else subject)
+        if "재개" in evidence and ("중단" in evidence or "취소" in evidence or "휴식" in evidence):
+            resume_date = f"{date}에 " if date else ""
+            sentence = f"{league} 경기가 폭염으로 중단된 뒤 {resume_date}재개됐다."
+        elif "취소" in evidence:
+            sentence = f"{league} 경기가 폭염 영향으로 취소됐다."
+        elif "휴식" in evidence:
+            sentence = f"{league} 경기가 폭염 영향으로 휴식기에 들어갔다."
+        else:
+            sentence = f"{league} 경기가 폭염 영향으로 중단됐다."
     elif event_type == "MERCHANDISE" and subject:
         sentence = f"{subject} 관련 상품 소식이 보도됐다."
     elif event_type == "ANNOUNCEMENT":
@@ -1100,10 +1120,10 @@ def synthesize_cluster(
     if event_type == "SPORTS_INTERRUPTION":
         interruption_evidence = headline_evidence.casefold()
         subject = "프로야구" if any(term in interruption_evidence for term in ("프로야구", "kbo", "야구")) else "KBO"
-        if any(term in interruption_evidence for term in ("중단", "멈춘", "취소", "휴식", "방학")):
-            action = "중단"
-        elif "재개" in interruption_evidence:
+        if "재개" in interruption_evidence:
             action = "재개"
+        elif any(term in interruption_evidence for term in ("중단", "멈춘", "취소", "휴식", "방학")):
+            action = "중단"
     else:
         subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
@@ -1161,6 +1181,15 @@ def synthesize_cluster(
     conflict_state = conflict_state_override or "NO_CONFLICT"
     if date_conflict:
         conflict_state = "DATE_CONFLICT"
+    temporal_state = ""
+    if event_type == "SPORTS_INTERRUPTION":
+        combined = f"{title} {fact_headline_evidence}".casefold()
+        if "재개" in combined:
+            temporal_state = "RESUMING" if "예정" in combined else "RESUMED"
+        elif "취소" in combined:
+            temporal_state = "CANCELLED"
+        elif "중단" in combined or "멈춘" in combined:
+            temporal_state = "INTERRUPTED"
     facts = StoryFacts(
         subject=subject,
         action=action,
@@ -1199,6 +1228,7 @@ def synthesize_cluster(
         event_signature=event_signature_override
         or canonical_event_signature(event_type, title, lead=_fact_lead(headline_item), subject=subject, action=action),
         conflict_state=conflict_state,
+        temporal_state=temporal_state,
     )
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):

@@ -188,6 +188,24 @@ class ArtifactTests(unittest.TestCase):
         errors = validate_live_acceptance(path)
         self.assertTrue(any("low-value event type" in error for error in errors))
 
+    def test_live_acceptance_rejects_filter_collapse_as_empty_day(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-collapse-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        path = root / "live-acceptance.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "selected_stories": [],
+                    "editorial_health": "FILTER_COLLAPSE",
+                    "strong_rejected_candidates": 1,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        errors = validate_live_acceptance(path)
+        self.assertIn("zero-story result is a filter collapse, not a valid empty day", errors)
+
     def test_live_acceptance_rejects_audit_synthesis_mismatch(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-audit-contract-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

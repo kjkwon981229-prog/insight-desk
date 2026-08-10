@@ -23,6 +23,8 @@ class SelectionResult:
     funnel: dict[str, dict[str, int]]
     assessments: dict[str, EditorialAssessment]
     selected_reviews: tuple[dict[str, object], ...]
+    strong_rejected_candidates: int = 0
+    filter_collapse: bool = False
 
 
 def topic_ids_for_item(item: NewsItem) -> tuple[str, ...]:
@@ -97,7 +99,45 @@ def _funnel_template() -> dict[str, int]:
         "novelty_pass": 0,
         "qualified": 0,
         "selected": 0,
+        "synthesis_veto": 0,
+        "strong_rejected": 0,
     }
+
+
+def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
+    """Detect a good upstream candidate lost by a downstream/common gate."""
+
+    upstream_passed = (
+        assessment.relevance.passed
+        and assessment.event.passed
+        and (assessment.evidence.passed or "SUPPORTED_SINGLE_SOURCE" in assessment.reasons)
+        and assessment.novelty != "UNCHANGED"
+        and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+        and assessment.evidence.metadata_complete
+    )
+    return bool(
+        upstream_passed
+        and not assessment.qualified
+        and assessment.event.concrete_fact_count >= 3
+        and assessment.event.significance >= 60.0
+        and assessment.final_score >= 45.0
+    )
+
+
+def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
+    for reason in (
+        "RELEVANCE_FAILED",
+        "EVENT_ACTION_CONTRACT_FAILED",
+        "EVIDENCE_FAILED",
+        "AUTHORITY_CONFLICT",
+        "NOVELTY_UNCHANGED",
+        "SYNTHESIS_FACT_LOSS",
+        "SYNTHESIS_NOT_EDITORIAL_READY",
+        "LOW_VALUE_EVENT",
+    ):
+        if reason in assessment.reasons:
+            return reason
+    return "EDITORIAL_QUALITY_GATE"
 
 
 def _synthesis_is_editorial_ready(
@@ -149,6 +189,7 @@ def select_clusters(
     }
     funnel: dict[str, dict[str, int]] = {topic.id: _funnel_template() for topic in enabled_topics}
     assessments: dict[str, EditorialAssessment] = {}
+    strong_rejected_candidates = 0
 
     for cluster in clusters:
         topic = topic_by_id.get(cluster.topic_id)
@@ -168,7 +209,7 @@ def select_clusters(
             assessment = replace(
                 assessment,
                 qualified=False,
-                reasons=(*assessment.reasons, "SYNTHESIS_NOT_EDITORIAL_READY"),
+                reasons=(*assessment.reasons, "SYNTHESIS_NOT_EDITORIAL_READY", "SYNTHESIS_FACT_LOSS"),
             )
         grouped.setdefault(topic.id, []).append((cluster, assessment))
         assessments[f"{topic.id}:{candidate_key(cluster)}"] = assessment
@@ -182,6 +223,11 @@ def select_clusters(
             funnel[topic.id]["novelty_pass"] += 1
         if assessment.qualified:
             funnel[topic.id]["qualified"] += 1
+        if "SYNTHESIS_NOT_EDITORIAL_READY" in assessment.reasons:
+            funnel[topic.id]["synthesis_veto"] += 1
+        if _is_strong_rejected(assessment):
+            strong_rejected_candidates += 1
+            funnel[topic.id]["strong_rejected"] += 1
 
     for values in grouped.values():
         values.sort(key=lambda value: (-value[1].final_score, effective_title(value[0].representative)))
@@ -318,7 +364,7 @@ def select_clusters(
             if key in records:
                 continue
             if not assessment.qualified:
-                reason = "editorial quality gate"
+                reason = _predicate_rejection_reason(assessment)
             elif candidate_key(cluster) in selected_keys:
                 reason = "cross-topic event already selected"
             elif capped and topic_counts.get(topic_id, 0) >= topic_by_id[topic_id].selection_cap:
@@ -367,6 +413,7 @@ def select_clusters(
         )
 
     selected_clusters = tuple(cluster for cluster, _, _, _ in selected)
+    filter_collapse = not selected_clusters and strong_rejected_candidates > 0
     return SelectionResult(
         selected=selected_clusters,
         audit=tuple(
@@ -378,6 +425,8 @@ def select_clusters(
         funnel=funnel,
         assessments={candidate_key(cluster): assessment for cluster, assessment, _, _ in selected},
         selected_reviews=tuple(selected_reviews),
+        strong_rejected_candidates=strong_rejected_candidates,
+        filter_collapse=filter_collapse,
     )
 
 
