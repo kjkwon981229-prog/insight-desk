@@ -798,7 +798,8 @@ def _summary(
         if numbers and clean_title:
             sentence = f"{clean_title}."
         else:
-            sentence = f"{subject}의 {action or '선수단 변동'}이 확인됐다."
+            action_text = action or "선수단 변동"
+            sentence = f"{subject}의 {action_text}{_subject_particle(action_text)} 확인됐다."
     elif event_type == "SPORTS_RESULT" and subject:
         sentence = f"{subject}의 경기 결과 또는 기록 변화가 확인됐다."
     elif event_type == "SPORTS_INTERRUPTION" and subject:

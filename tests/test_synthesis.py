@@ -375,6 +375,16 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("11,187명", summary)
         self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
 
+    def test_personnel_summary_uses_the_correct_korean_particle(self) -> None:
+        cluster = StoryCluster(
+            "topic",
+            (_item("trade-market", "얼어붙은 KBO 트레이드 시장", "KBO 트레이드 시장 상황이 전해졌다.", "sports.example"),),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="KBO", trend_metrics=())
+        self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
+        self.assertIn("트레이드가 확인됐다", summary)
+        self.assertNotIn("트레이드이", summary)
+
     def test_representative_headline_does_not_switch_to_secondary_market_fact(self) -> None:
         cluster = StoryCluster(
             "economy",
