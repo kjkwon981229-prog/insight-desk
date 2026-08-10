@@ -279,6 +279,14 @@ def _unit_key(value: str) -> str:
     return re.sub(r"\s+", "", value).casefold()
 
 
+def _unit_mismatch_reason(actual: str) -> str:
+    # The unit is response metadata, not a credential. Keep a bounded,
+    # character-filtered diagnostic in the private audit so a real table
+    # contract mismatch can be corrected without logging the API response.
+    safe = re.sub(r"[^0-9A-Za-z가-힣%=/_. -]", "", actual.strip())[:64]
+    return f"UNIT_MISMATCH:{safe or 'EMPTY'}"
+
+
 def _kosis_records(payload: object) -> tuple[dict[str, object], ...]:
     if isinstance(payload, dict):
         error_code = str(payload.get("err") or payload.get("errorCode") or "").strip()
@@ -303,7 +311,7 @@ def _kosis_evidence(dataset: KosisDataset, records: tuple[dict[str, object], ...
     if not current_period or not current_value or not unit:
         raise ValueError("INCOMPLETE_STATISTIC_RECORD")
     if _unit_key(dataset.expected_unit) != _unit_key(unit):
-        raise ValueError("UNIT_MISMATCH")
+        raise ValueError(_unit_mismatch_reason(unit))
     previous_period = str(previous.get("PRD_DE") or "").strip() if previous else ""
     previous_value = str(previous.get("DT") or "").strip() if previous else ""
     description = f"{dataset.label} {current_period} 수치는 {current_value} {unit}이다."

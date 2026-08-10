@@ -235,7 +235,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
             transport=transport,
         ).fetch((item,))
         self.assertFalse(payload.result.success)
-        self.assertEqual(payload.result.failure_reason, "UNIT_MISMATCH")
+        self.assertTrue(payload.result.failure_reason.startswith("UNIT_MISMATCH:"))
         self.assertEqual(payload.evidence, ())
 
     def test_router_keeps_naver_path_alive_when_one_adapter_fails(self) -> None:
