@@ -15,6 +15,23 @@ from insight_desk.pipeline.semantics import (
     summary_information_gain,
 )
 
+_MARKET_ACTIONS = {
+    "강보합세",
+    "급등",
+    "급락",
+    "상승",
+    "하락",
+    "강세",
+    "약세",
+    "보합",
+    "증가",
+    "감소",
+    "확대",
+    "축소",
+    "돌파",
+    "변동",
+}
+
 
 def validate(path: Path) -> list[str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -111,6 +128,8 @@ def validate(path: Path) -> list[str]:
             action = str(facts.get("action", "")).strip()
             if action in ACTION_TERMS and not contains_action(f"{headline} {summary}", action):
                 errors.append(f"story {index} has an action unsupported at a lexical boundary")
+            if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"} and action and action not in _MARKET_ACTIONS:
+                errors.append(f"story {index} uses a non-market action for a metric event")
 
             if event_type := str(story.get("event_type", "")):
                 if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:

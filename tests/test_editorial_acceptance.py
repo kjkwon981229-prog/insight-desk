@@ -545,6 +545,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(facts.key_numbers[:2], ("+6.97%", "+0.65%"))
         self.assertNotIn("코스피는 0.65%로 급등했다", summary)
 
+    def test_market_title_and_lead_direction_conflict_is_rejected(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "코스피",
+            anchors=("코스피",),
+            events=("상승", "강보합세"),
+        )
+        item = _item(
+            "market-direction-conflict",
+            "economy",
+            "코스피",
+            "코스피, 美 금리인상 우려 완화에 강보합세",
+            "코스피는 10일 오전 9시50분 현재 전일 대비 10.92% 오른 6316.47을 기록 중이다.",
+            score=90.0,
+        )
+        assessment = assess_event(StoryCluster("economy", (item,)), topic)
+        self.assertEqual(assessment.event_type, "MARKET_MOVE")
+        self.assertFalse(assessment.passed)
+        self.assertIn("METRIC_DIRECTION_CONFLICT", assessment.reasons)
+
     def test_run76_korean_action_boundaries_reject_collision_substrings(self) -> None:
         self.assertFalse(contains_action("음악 보부상 스트레이 키즈", "부상"))
         self.assertFalse(contains_action("NH투자증권", "투자"))

@@ -135,9 +135,37 @@ _MARKET_INSTRUMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("코스닥", ("코스닥", "KOSDAQ")),
     ("원·달러 환율", ("원·달러 환율", "원달러 환율", "환율")),
     ("엔화", ("엔화",)),
+    ("닛케이", ("닛케이225", "니케이225", "닛케이", "니케이", "도쿄증시")),
+    ("다우", ("다우존스", "다우")),
+    ("나스닥", ("나스닥", "NASDAQ")),
+    ("S&P500", ("S&P500", "S&P 500")),
     ("삼성전자", ("삼성전자",)),
     ("SK하이닉스", ("SK하이닉스", "하이닉스")),
-    ("나스닥", ("나스닥", "NASDAQ")),
+)
+
+_MARKET_DIRECTION_TERMS: tuple[str, ...] = (
+    "강보합세",
+    "급등",
+    "급락",
+    "상승",
+    "하락",
+    "강세",
+    "약세",
+    "보합",
+    "증가",
+    "감소",
+    "확대",
+    "축소",
+    "돌파",
+    "변동",
+)
+_MARKET_DIRECTION_ALIASES: tuple[tuple[str, str], ...] = (
+    ("올랐다", "상승"),
+    ("올라", "상승"),
+    ("오른", "상승"),
+    ("내렸다", "하락"),
+    ("내려", "하락"),
+    ("내린", "하락"),
 )
 
 
@@ -271,6 +299,56 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
             )
         )
     return tuple(observations)
+
+
+def market_direction(text: str) -> str:
+    """Return a market direction without confusing it with rate actions.
+
+    ``금리 인상 우려 완화에 코스피 강보합세`` contains both a policy
+    phrase and a market outcome.  The latter is the event action for a
+    market story; generic action extraction must not promote ``인상``.
+    """
+
+    value = normalize_text(text)
+    matches = [
+        (match.start(), match.end(), term)
+        for term in _MARKET_DIRECTION_TERMS
+        for match in re.finditer(re.escape(term), value)
+    ]
+    if not matches:
+        matches.extend(
+            (match.start(), match.end(), canonical)
+            for term, canonical in _MARKET_DIRECTION_ALIASES
+            for match in re.finditer(re.escape(term), value)
+        )
+    if not matches:
+        return ""
+    # ``보합`` is contained in ``강보합세``. Keep the longest lexical match
+    # at an overlapping position before choosing the latest direction.
+    filtered = [
+        current
+        for current in matches
+        if not any(
+            len(other[2]) > len(current[2])
+            and other[0] <= current[0]
+            and other[1] >= current[1]
+            for other in matches
+        )
+    ]
+    return max(filtered, key=lambda item: (item[0], len(item[2])))[2]
+
+
+def market_direction_class(text: str) -> str:
+    """Normalize market direction into up/down/neutral for conflict checks."""
+
+    direction = market_direction(text)
+    if direction in {"강보합세", "보합"}:
+        return "NEUTRAL"
+    if direction in {"급등", "상승", "강세", "증가", "확대", "돌파"}:
+        return "UP"
+    if direction in {"급락", "하락", "약세", "감소", "축소"}:
+        return "DOWN"
+    return ""
 
 
 def event_dates(text: str) -> tuple[str, ...]:

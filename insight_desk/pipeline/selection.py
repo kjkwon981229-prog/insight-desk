@@ -105,11 +105,15 @@ def _synthesis_is_editorial_ready(
     topic: Topic,
     *,
     official_source: bool,
+    event_type: str,
+    event_signature: str,
 ) -> bool:
     headline, summary, _, _, _, _ = synthesize_cluster(
         cluster,
         topic_name=topic.name,
         trend_metrics=(),
+        event_type_override=event_type,
+        event_signature_override=event_signature,
     )
     return is_usable_synthesis(
         headline,
@@ -153,6 +157,8 @@ def select_clusters(
             cluster,
             topic,
             official_source=assessment.evidence.official,
+            event_type=assessment.event.event_type,
+            event_signature=assessment.event_signature,
         ):
             assessment = replace(
                 assessment,

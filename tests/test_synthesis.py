@@ -36,6 +36,61 @@ def _item(
 
 
 class SynthesisTests(unittest.TestCase):
+    def test_market_move_override_keeps_directional_summary_without_generic_fallback(self) -> None:
+        item = _item(
+            "market-move-no-number",
+            "코스피, 美 금리인상 우려 완화에 강보합세",
+            "코스피는 미국 금리 인상 우려 완화에 강보합세를 보였다.",
+            "market.example",
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)),
+            topic_name="경제·투자",
+            trend_metrics=(),
+            event_type_override="MARKET_MOVE",
+        )
+        self.assertIn("강보합세", headline)
+        self.assertEqual(summary, "코스피는 강보합세를 보였다.")
+        self.assertNotIn("단일 검색 결과만", summary)
+        self.assertEqual(facts.action, "강보합세")
+        self.assertEqual(facts.key_numbers, ())
+
+    def test_market_action_does_not_promote_interest_rate_action(self) -> None:
+        item = _item(
+            "nikkei-market-action",
+            "고용발 금리 인상 기대 약화에 닛케이 2% · 상승",
+            "고용발 금리 인상 기대 약화에 닛케이는 2%로 상승했다.",
+            "market.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)), topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertEqual(facts.subject, "닛케이")
+        self.assertEqual(facts.action, "상승")
+        self.assertEqual(facts.key_numbers, ("2%",))
+        self.assertIn("닛케이", summary)
+        self.assertIn("2%", summary)
+        self.assertIn("상승", summary)
+        self.assertNotEqual(facts.action, "인상")
+
+    def test_recruitment_synthesis_does_not_borrow_metadata_action(self) -> None:
+        item = _item(
+            "recruitment-action-contamination",
+            "부산시, 올 지방공무원 7급 공채 71.5대 1",
+            "부산시 71.5대1 경쟁률과 38명 선발에 1,461명 지원 규모가 공개됐다.",
+            "recruitment.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("psat_recruitment", (item,)),
+            topic_name="PSAT·공채",
+            trend_metrics=(),
+            event_type_override="RECRUITMENT_COMPETITION",
+        )
+        self.assertEqual(facts.action, "")
+        self.assertIn("71.5대1", summary)
+        self.assertIn("38명", summary)
+        self.assertIn("1,461명", summary)
+
     def test_representative_case_matrix_is_safe_to_synthesize(self) -> None:
         cases = json.loads(
             (Path(__file__).resolve().parents[1] / "fixtures/synthesis_cases.json").read_text(encoding="utf-8")

@@ -14,6 +14,7 @@ from .semantics import (
     contains_action,
     contains_intent_term,
     canonical_publisher,
+    market_direction_class,
     metric_observations,
     recruitment_event_type,
 )
@@ -615,7 +616,11 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     if date_conflict:
         reasons = (*reasons, "EVENT_DATE_CONFLICT")
     metric_signal = True
-    if event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
+    metric_direction_conflict = False
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"}:
+        title_direction = market_direction_class(title_text)
+        lead_direction = market_direction_class(lead_text)
+        metric_direction_conflict = bool(title_direction and lead_direction and title_direction != lead_direction)
         metric_signal = any(
             _event_term_match(title_text, term) or _event_term_match(lead_text, term)
             for term in (
@@ -625,6 +630,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         )
         if not metric_signal:
             reasons = (*reasons, "WEAK_METRIC_SIGNAL")
+        if metric_direction_conflict:
+            reasons = (*reasons, "METRIC_DIRECTION_CONFLICT")
     passed = (
         event_type not in {"OTHER", *_LOW_VALUE_EVENT_TYPES}
         and significance >= 35.0
@@ -633,6 +640,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and not date_conflict
         and not (event_type == "ROSTER_PERSONNEL" and not sports_context)
         and metric_signal
+        and not metric_direction_conflict
     )
     return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
 

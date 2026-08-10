@@ -15,6 +15,7 @@ from .semantics import (
     contains_action,
     contains_boundary_term,
     first_action,
+    market_direction,
     metric_observations,
     MetricObservation,
     recruitment_event_type,
@@ -143,6 +144,7 @@ _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
 _DATE_STAMP_RE = re.compile(r"^20\d{2}[./-]\d{1,2}[./-]\d{1,2}$")
+_TIME_COUNTER_RE = re.compile(r"^\d{1,2}\s?(?:시|분)$")
 _MARKET_RUN_RE = re.compile(r"\d+\s?거래일(?:\s?연속)?\s?(?:순매수|순매도)")
 _GENERIC_HEADLINE_MARKERS = ("관련 보도", "관련 소식", "관련 기사", "관련 뉴스")
 _GENERIC_SUMMARY_MARKERS = (
@@ -560,7 +562,7 @@ def _fact_subject(value: str) -> str:
 def _domain_subject(title: str, subject: str, event_type: str) -> str:
     """Replace a clickbait lead with the stable noun users need."""
 
-    if event_type in {"MARKET", "STATISTIC"}:
+    if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
         clean_title = _clean_headline(title)
         has_fx = any(term in clean_title for term in ("환율", "원달러", "원·달러"))
         has_kospi = "코스피" in clean_title or "KOSPI" in clean_title
@@ -576,6 +578,14 @@ def _domain_subject(title: str, subject: str, event_type: str) -> str:
             return "원·달러 환율"
         if has_kospi:
             return "코스피"
+        if "코스닥" in clean_title or "KOSDAQ" in clean_title:
+            return "코스닥"
+        if any(term in clean_title for term in ("닛케이", "니케이", "도쿄증시")):
+            return "닛케이"
+        if "다우" in clean_title:
+            return "다우"
+        if "나스닥" in clean_title or "NASDAQ" in clean_title:
+            return "나스닥"
         if any(term in title for term in ("증시", "주가", "주식")) and subject in {"이젠", "올해", "이번"}:
             return "증시"
     return subject
@@ -641,7 +651,7 @@ def _number_with_ro(value: str) -> str:
 
 
 def _next_signal(event_type: str, text: str, date: str, action: str) -> str:
-    if event_type in {"STATISTIC", "MARKET"}:
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         if "월" in text:
             return "다음 월간 통계와 변동폭"
         if "분기" in text:
@@ -676,7 +686,7 @@ def _headline(
     action: str = "",
 ) -> str:
     cleaned = _clean_headline(title)
-    if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject and numbers:
         run_phrase = _market_run_phrase(cleaned)
         if run_phrase:
             return f"{subject} {run_phrase}"
@@ -688,7 +698,7 @@ def _headline(
         # article lead (for example ``미 증시 상승 마감에 코스피``).  The
         # metric itself is safe; appending that fragment creates a malformed
         # headline and can imply an unsupported comparison.
-        if change and not _NUMBER_RE.search(cleaned):
+        if change and not _NUMBER_RE.search(cleaned) and change not in cleaned:
             change = ""
         for marker in ("강보합세", "강세", "약세", "상승", "하락", "급등", "급락"):
             if marker in change:
@@ -734,13 +744,13 @@ def _summary(
     market_observation: MetricObservation | None = None,
     market_observations: tuple[MetricObservation, ...] = (),
 ) -> str:
-    if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
         summary_subject = _fact_subject(summary_subject)
         observations = tuple(
             observation
             for observation in (market_observations or ((market_observation,) if market_observation else ()))
-            if observation.value and observation.direction
+            if observation.value and observation.direction and observation.direction != "변동"
         )
         if observations:
             sentences: list[str] = []
@@ -806,24 +816,29 @@ def _summary(
                 sentence = f"{summary_subject} 변동성이 {change} 수준으로 확대됐다."
         elif change and change not in _GENERIC_CHANGE_WORDS:
             marker = next((word for word in _DIRECTIONAL_CHANGE_WORDS if word in change), "")
-            if marker == "강보합세" and summary_subject:
+            if marker == "강보합세" and summary_subject and numbers:
                 sentence = f"{summary_subject}{_particle(summary_subject)} {numbers[0]}에서 강보합세를 보였다."
-            elif marker and summary_subject and numbers[0].endswith(("%", "달러", "선")):
+            elif marker and summary_subject and numbers and numbers[0].endswith(("%", "달러", "선")):
                 verb = {"강세": "상승", "약세": "하락"}.get(marker, marker)
                 if numbers[0].endswith("선"):
                     sentence = f"{summary_subject}{_particle(summary_subject)} {numbers[0]}에서 {verb} 흐름을 보였다."
                 else:
                     sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
+            elif marker and summary_subject:
+                sentence = f"{summary_subject}{_particle(summary_subject)} {marker}를 보였다."
             else:
                 lead = f"{summary_subject}의 " if summary_subject else ""
-                sentence = f"{lead}{numbers[0]} 수치가 "
-                sentence += "여러 보도에서 확인됐다." if source_count > 1 else "한 건의 보도에서 제시됐다. 추가 확인이 필요하다."
+                if numbers:
+                    sentence = f"{lead}{numbers[0]} 수치가 "
+                    sentence += "여러 보도에서 확인됐다." if source_count > 1 else "한 건의 보도에서 제시됐다. 추가 확인이 필요하다."
+                else:
+                    sentence = ""
         elif source_count > 1:
             lead = f"{summary_subject}의 " if summary_subject else ""
-            sentence = f"{lead}{numbers[0]} 수치가 여러 보도에서 확인됐다."
+            sentence = f"{lead}{numbers[0]} 수치가 여러 보도에서 확인됐다." if numbers else ""
         else:
             lead = f"{summary_subject}의 " if summary_subject else ""
-            sentence = f"{lead}{numbers[0]} 수치가 한 건의 보도에서 제시돼 추가 확인이 필요하다."
+            sentence = f"{lead}{numbers[0]} 수치가 한 건의 보도에서 제시돼 추가 확인이 필요하다." if numbers else ""
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         event_phrase = action if action in _EVENT_ACTIONS else ""
         if any(marker in completion_evidence for marker in _COMPLETION_MARKERS):
@@ -1053,12 +1068,25 @@ def synthesize_cluster(
     # decision for synthesis so the audit and the emitted StoryFacts cannot
     # diverge when two deterministic classifiers have different precedence.
     event_type = event_type_override or inferred_event_type
-    market_observation = next(iter(metric_observations(title)), None)
     market_observations = metric_observations(title)
+    market_observation = next(iter(market_observations), None)
     # Do not borrow an action from another headline in a broad cluster. A
     # secondary article may describe a different event while sharing the
-    # same entity or theme.
-    action = _action(title) or _action(effective_lead(headline_item))
+    # same entity or theme. Market stories need a market outcome as their
+    # action; an explanatory phrase such as ``금리 인상`` is not that
+    # outcome.
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+        action = (
+            next((observation.direction for observation in market_observations if observation.direction), "")
+            or market_direction(title)
+        )
+    elif event_type.startswith("RECRUITMENT"):
+        # Recruitment competition/result stories frequently carry a lead
+        # verb such as ``공개``. The taxonomy already expresses the event;
+        # do not promote that incidental verb into StoryFacts.action.
+        action = ""
+    else:
+        action = _action(title) or _action(effective_lead(headline_item))
     if event_type == "SPORTS_INTERRUPTION":
         interruption_evidence = headline_evidence.casefold()
         subject = "프로야구" if any(term in interruption_evidence for term in ("프로야구", "kbo", "야구")) else "KBO"
@@ -1068,11 +1096,31 @@ def synthesize_cluster(
             action = "재개"
     else:
         subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
-    if market_observation is not None and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
-        display_numbers = tuple(observation.value for observation in market_observations[:3]) or (market_observation.value,)
-        change = market_observation.direction
-        if market_observation.instrument:
-            subject = market_observation.instrument
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+        if market_observations:
+            # Keep each metric bound to its own instrument and direction.
+            display_numbers = tuple(observation.value for observation in market_observations[:3])
+        else:
+            # Numbers found only in a market lead may be a time, comparison
+            # context, or another entity's value. Without a bound observation
+            # they are not all safe display facts. Retain only values with a
+            # meaningful market unit; bare publication-time counters are not
+            # facts about the market move.
+            display_numbers = tuple(
+                value
+                for value in _meaningful_numbers(numbers, title)
+                if not _TIME_COUNTER_RE.fullmatch(value)
+            )
+        if market_observation is not None:
+            change = market_observation.direction or action
+            if market_observation.instrument:
+                subject = market_observation.instrument
+        else:
+            change = (
+                _tail_after_first_number(title, display_numbers)
+                or (_change_phrases(title)[:1] or ("",))[0]
+                or action
+            )
     else:
         change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
     repeated = _repeated_values(items, _numbers)
@@ -1114,7 +1162,9 @@ def synthesize_cluster(
         key_numbers=display_numbers[:3],
         key_changes=_unique(
             (
-                [change]
+                [action]
+                if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and action
+                else [change]
                 if len(market_observations) <= 1 and change
                 else [
                     f"{observation.instrument} {observation.direction}"
