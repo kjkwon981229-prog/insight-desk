@@ -545,6 +545,31 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(facts.key_numbers[:2], ("+6.97%", "+0.65%"))
         self.assertNotIn("코스피는 0.65%로 급등했다", summary)
 
+    def test_run78_unbound_multi_metric_story_is_not_selected(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "코스피",
+            anchors=("코스피", "환율", "국채"),
+            events=("상승", "하락"),
+        )
+        items = tuple(
+            _item(
+                f"run78-mixed-market-{index}",
+                "economy",
+                "코스피",
+                "7월 국고채 금리 , 환율 상승·외국인 매도에 전반적 상승",
+                "저가 매수·외국인 주식 매도로 환율이 상승했다.",
+                domain=f"market-{index}.example",
+                score=90.0 - index,
+                channels=("SIM", "DATE"),
+            )
+            for index in range(3)
+        )
+        result = select_clusters((StoryCluster("economy", items),), (topic,), limit=10)
+        self.assertEqual(result.selected, ())
+        self.assertIn("SYNTHESIS_NOT_EDITORIAL_READY", result.audit[0]["selection_reasons"])
+
     def test_market_title_and_lead_direction_conflict_is_rejected(self) -> None:
         topic = _topic(
             "economy",
@@ -1164,6 +1189,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         )
         self.assertNotIn("환율", event_signature(index_cluster))
         self.assertTrue(any({item.evidence_id for item in cluster.items} == {"market-currency-event"} for cluster in clusters))
+
+    def test_single_instrument_report_does_not_merge_with_multi_metric_overview(self) -> None:
+        single = _item(
+            "single-currency-report",
+            "economy",
+            "코스피",
+            "[외환-마감] 저가 매수·外人 주식 매도로 상승…2.30원↑",
+            "달러-원 환율이 전날보다 2.30원 오른 1,418.40원에 거래됐다.",
+            domain="currency.example",
+        )
+        overview = _item(
+            "multi-metric-overview",
+            "economy",
+            "코스피",
+            "7월 국고채 금리 , 환율 상승·외국인 매도에 전반적 상승",
+            "국고채 금리와 환율 흐름을 함께 정리했다.",
+            domain="overview.example",
+        )
+        clusters = cluster_news((single, overview))
+        self.assertEqual(len(clusters), 2)
+        self.assertTrue(all(len(cluster.items) == 1 for cluster in clusters))
 
     def test_event_clustering_merges_same_sports_interruption_theme(self) -> None:
         first = _item(

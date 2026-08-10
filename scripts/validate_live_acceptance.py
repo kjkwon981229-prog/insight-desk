@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 from insight_desk.pipeline.semantics import (
     ACTION_TERMS,
     contains_action,
+    metric_summary_preserves_entity_binding,
     metric_observations,
     summary_information_gain,
 )
@@ -133,6 +134,7 @@ def validate(path: Path) -> list[str]:
 
             if event_type := str(story.get("event_type", "")):
                 if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
+                    binding_error = not metric_summary_preserves_entity_binding(headline, summary)
                     observations = []
                     seen_observations = set()
                     for observation in metric_observations(f"{headline} {summary}"):
@@ -151,7 +153,9 @@ def validate(path: Path) -> list[str]:
                         change_text = str(change)
                         tokens = change_text.split()
                         if len(tokens) >= 2 and not all(token in summary for token in tokens[:2]):
-                            errors.append(f"story {index} loses metric entity/direction binding")
+                            binding_error = True
+                    if binding_error:
+                        errors.append(f"story {index} loses metric entity/direction binding")
         audited_conflict = str(story.get("conflict_state", "NO_CONFLICT") or "NO_CONFLICT")
         if audited_conflict not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
             errors.append(f"story {index} has unresolved audit conflict: {audited_conflict}")

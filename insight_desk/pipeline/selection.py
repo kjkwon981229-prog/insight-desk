@@ -13,7 +13,7 @@ from .editorial import (
 )
 from .novelty import classify_novelty
 from .synthesis import is_usable_synthesis, synthesize_cluster
-from .semantics import canonical_publisher
+from .semantics import canonical_publisher, metric_summary_preserves_entity_binding
 
 
 @dataclass(frozen=True)
@@ -115,6 +115,11 @@ def _synthesis_is_editorial_ready(
         event_type_override=event_type,
         event_signature_override=event_signature,
     )
+    if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"} and not metric_summary_preserves_entity_binding(
+        headline,
+        summary,
+    ):
+        return False
     return is_usable_synthesis(
         headline,
         summary,

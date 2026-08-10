@@ -650,6 +650,16 @@ def _number_with_ro(value: str) -> str:
     return f"{value}로" if value.endswith(("%", "달러")) else f"{value}으로"
 
 
+def _market_direction_sentence(subject: str, marker: str) -> str:
+    """Render a direction with the correct Korean predicate form."""
+
+    if marker in {"상승", "하락", "급등", "급락", "증가", "감소", "확대", "축소", "돌파"}:
+        return f"{subject}{_particle(subject)} {marker}했다."
+    if marker == "보합":
+        return f"{subject}{_particle(subject)} 보합세를 보였다."
+    return f"{subject}{_particle(subject)} {marker}를 보였다."
+
+
 def _next_signal(event_type: str, text: str, date: str, action: str) -> str:
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         if "월" in text:
@@ -825,7 +835,7 @@ def _summary(
                 else:
                     sentence = f"{summary_subject}{_particle(summary_subject)} {_number_with_ro(numbers[0])} {verb}했다."
             elif marker and summary_subject:
-                sentence = f"{summary_subject}{_particle(summary_subject)} {marker}를 보였다."
+                sentence = _market_direction_sentence(summary_subject, marker)
             else:
                 lead = f"{summary_subject}의 " if summary_subject else ""
                 if numbers:

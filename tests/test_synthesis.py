@@ -7,6 +7,7 @@ from pathlib import Path
 
 from insight_desk.domain.models import EvidenceType, NewsItem, TrendMetric
 from insight_desk.pipeline.clustering import StoryCluster
+from insight_desk.pipeline.semantics import metric_summary_preserves_entity_binding
 from insight_desk.pipeline.synthesis import synthesize_cluster
 
 
@@ -36,6 +37,28 @@ def _item(
 
 
 class SynthesisTests(unittest.TestCase):
+    def test_unbound_multi_metric_summary_is_not_accepted(self) -> None:
+        headline = "7월 국고채 금리 , 환율 상승·외국인 매도에 전반적 상승"
+        summary = "원·달러 환율은 상승했다."
+        self.assertFalse(metric_summary_preserves_entity_binding(headline, summary))
+
+    def test_market_direction_sentence_uses_a_valid_predicate(self) -> None:
+        item = _item(
+            "market-rise-predicate",
+            "원·달러 환율 상승",
+            "원·달러 환율이 상승했다.",
+            "market.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)),
+            topic_name="경제·투자",
+            trend_metrics=(),
+            event_type_override="STATISTIC",
+        )
+        self.assertEqual(facts.action, "상승")
+        self.assertNotIn("상승를", summary)
+        self.assertIn("상승했다", summary)
+
     def test_market_move_override_keeps_directional_summary_without_generic_fallback(self) -> None:
         item = _item(
             "market-move-no-number",

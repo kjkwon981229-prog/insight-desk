@@ -56,7 +56,7 @@ _DATE_MARKER_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월(?:\s?\d{1,2
 _MARKET_INSTRUMENTS = (
     ("kospi", ("코스피", "KOSPI")),
     ("kosdaq", ("코스닥", "KOSDAQ")),
-    ("usdkrw", ("원·달러", "원달러", "환율")),
+    ("usdkrw", ("원·달러", "원달러", "환율", "외환")),
     ("jpy", ("엔화",)),
     ("samsung", ("삼성전자",)),
     ("skhynix", ("SK하이닉스", "하이닉스")),
@@ -196,9 +196,12 @@ def _similar(a: NewsItem, b: NewsItem) -> bool:
     left_instruments = _market_instruments(a)
     right_instruments = _market_instruments(b)
     # A shared macro driver such as ``금리`` or ``상승`` is not enough to
-    # merge separate instruments.  Prevent transitive clusters from turning
-    # an index, a stock, and a currency into one synthetic market story.
-    if left_instruments and right_instruments and not left_instruments & right_instruments:
+    # merge separate instruments.  Require the complete named instrument
+    # set to agree: a single-currency report must not be merged into a
+    # multi-metric overview and later synthesized as one arbitrary metric.
+    # Prevent transitive clusters from turning an index, a stock, and a
+    # currency into one synthetic market story.
+    if left_instruments and right_instruments and left_instruments != right_instruments:
         return False
     left_dates = _date_markers(a)
     right_dates = _date_markers(b)

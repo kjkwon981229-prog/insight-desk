@@ -134,6 +134,7 @@ _MARKET_INSTRUMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("코스피", ("코스피", "KOSPI")),
     ("코스닥", ("코스닥", "KOSDAQ")),
     ("원·달러 환율", ("원·달러 환율", "원달러 환율", "환율")),
+    ("국고채 금리", ("국고채 금리", "국채 금리", "국고채", "국채선물", "국채")),
     ("엔화", ("엔화",)),
     ("닛케이", ("닛케이225", "니케이225", "닛케이", "니케이", "도쿄증시")),
     ("다우", ("다우존스", "다우")),
@@ -299,6 +300,31 @@ def metric_observations(text: str) -> tuple[MetricObservation, ...]:
             )
         )
     return tuple(observations)
+
+
+def market_instruments(text: str) -> tuple[str, ...]:
+    """Return distinct market instruments named in trusted text order."""
+
+    return tuple(dict.fromkeys(instrument for _, _, instrument in _instrument_matches(normalize_text(text))))
+
+
+def metric_summary_preserves_entity_binding(headline: str, summary: str) -> bool:
+    """Require every headline metric entity to survive in the summary.
+
+    A headline naming multiple instruments is safe only when each instrument
+    has a bound numeric observation.  Otherwise the renderer cannot know
+    which direction or value belongs to which entity and must reject the
+    candidate instead of selecting one metric arbitrarily.
+    """
+
+    headline_instruments = market_instruments(headline)
+    if not headline_instruments:
+        return True
+    observations = metric_observations(headline)
+    if len(headline_instruments) > 1 and not observations:
+        return False
+    summary_instruments = set(market_instruments(summary))
+    return set(headline_instruments).issubset(summary_instruments)
 
 
 def market_direction(text: str) -> str:
