@@ -281,7 +281,7 @@ def _unit_key(value: str) -> str:
     # records even when the table metadata renders it as ``2020=100``. Keep
     # this equivalence narrowly scoped to a year/base-index notation; never
     # generalize it to numeric values or unrelated units.
-    match = re.fullmatch(r"(\d{4})[,=](\d{3})", folded)
+    match = re.fullmatch(r"(\d{4})[,=]?(\d{3})", folded)
     return f"{match.group(1)}={match.group(2)}" if match else folded
 
 

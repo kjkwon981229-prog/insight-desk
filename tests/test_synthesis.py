@@ -112,6 +112,48 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("발매", summary)
         self.assertEqual(facts.date, "19일")
 
+    def test_non_music_first_place_preserves_the_named_sales_context(self) -> None:
+        item = _item(
+            "ai-sales-rank",
+            "와이즈넛, AI 에이전트로 조달청 디지털서비스몰 판매 1위 - AI타임스",
+            "와이즈넛 AI 에이전트가 디지털서비스몰에서 판매 1위를 기록했다.",
+            "aitimes.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("topic", (item,)), topic_name="AI·테크", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "AWARD_CHART")
+        self.assertIn("디지털서비스몰 판매 1위", summary)
+        self.assertNotIn("음악 차트", summary)
+
+    def test_etf_listing_is_not_synthesized_as_a_product_release(self) -> None:
+        item = _item(
+            "etf-listing",
+            "미국우주위성통신·반도체 ETF 3종, 내일(11일) 코스피 상장",
+            "미국우주위성통신·반도체 ETF 3종이 11일 코스피에 상장될 예정이다.",
+            "market.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("topic", (item,)), topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "PRODUCT_RELEASE")
+        self.assertIn("상장될 예정이다", summary)
+        self.assertNotIn("제품을 출시", summary)
+
+    def test_non_investment_attraction_does_not_become_investment_attraction(self) -> None:
+        item = _item(
+            "ai-hub-attraction",
+            "고양특례시, UN 글로벌 AI 허브 유치 본격화",
+            "고양특례시가 글로벌 AI 허브 유치를 본격화한다.",
+            "local.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("topic", (item,)), topic_name="AI·테크", trend_metrics=()
+        )
+        self.assertEqual(facts.event_type, "INDUSTRY_CHANGE")
+        self.assertIn("AI 허브 유치", summary)
+        self.assertNotIn("투자 유치", summary)
+
     def test_debut_song_release_does_not_become_product_launch(self) -> None:
         cluster = StoryCluster(
             "kpop",

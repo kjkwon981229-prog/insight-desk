@@ -791,6 +791,8 @@ def _summary(
         if listing:
             listing_date, listing_product = listing.groups()
             sentence = f"{listing_product.strip()}{_subject_particle(listing_product.strip())} {listing_date} 상장될 예정이다."
+        elif "상장" in title and date:
+            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} 상장될 예정이다."
         else:
             if "데뷔곡" in title:
                 release_noun, release_verb, release_fact = "데뷔곡", "발매", "데뷔곡 발매"
@@ -810,13 +812,18 @@ def _summary(
                 sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
     elif event_type == "AWARD_CHART" and subject:
         chart_number = next((value for value in numbers if value.endswith("위")), "")
-        if chart_number:
+        music_context = any(
+            marker in title for marker in ("음악", "음원", "앨범", "가요", "아이돌", "가수", "차트", "빌보드", "멜론", "노래")
+        )
+        if chart_number and music_context:
             sentence = f"{subject}가 음악 차트 {chart_number}에 올랐다."
+        elif chart_number:
+            sentence = f"{_clean_headline(title)}."
         else:
-            sentence = f"{subject}의 차트·수상 성과가 확인됐다."
+            sentence = f"{_clean_headline(title)}."
     elif event_type == "INDUSTRY_CHANGE" and subject:
         change_action = {
-            "유치": "투자 유치",
+            "유치": "투자 유치" if any(marker in title for marker in ("투자", "자금", "출자")) else "유치",
             "투자": "투자",
             "인수": "인수",
             "전략": "전략 변화",
@@ -828,7 +835,9 @@ def _summary(
             (value for value in numbers if not re.search(r"(?:년|월|일)$", value)),
             "",
         )
-        if key_number:
+        if action == "유치" and change_action == "유치":
+            sentence = f"{_clean_headline(title)}."
+        elif key_number:
             sentence = f"{subject}의 {key_number} 규모 {change_action} 소식이 보도됐다."
         else:
             sentence = f"{subject}의 {change_action} 소식이 보도됐다."
