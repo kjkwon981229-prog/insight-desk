@@ -135,6 +135,29 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertFalse(assessment.relevance.passed)
         self.assertFalse(assessment.qualified)
 
+    def test_hanwha_company_compound_does_not_match_kbo_intent(self) -> None:
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "한화 경기",
+            anchors=("한화 이글스", "한화 경기", "한화 야구", "KBO", "프로야구", "야구"),
+            events=("경기", "결과", "선발", "부상", "트레이드"),
+            required=("한화", "한화 이글스", "한화 경기", "KBO", "프로야구"),
+            conditional=True,
+        )
+        item = _item(
+            "FP-KBO-COMPANY-01",
+            "kbo",
+            "한화 경기",
+            "코스피, 장중 6320선 상승...코스닥은 바이오·반도체 강세에 3%대 급등",
+            "코스피 상승과 한화에어로스페이스 주가 흐름이 함께 언급됐다.",
+            metadata_title="코스피, 장중 6320선 상승...코스닥은 바이오·반도체 강세에 3%대 급등",
+            metadata_description="코스피가 상승했고 한화에어로스페이스가 관련 종목으로 언급됐다.",
+        )
+        assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
+        self.assertFalse(assessment.relevance.passed)
+        self.assertFalse(assessment.qualified)
+
     def test_single_source_other_without_concrete_fact_is_rejected(self) -> None:
         topic = _topic("ai", "AI·테크", "AI", anchors=("AI", "인공지능"), events=("발표",))
         item = _item("GENERIC-01", "ai", "AI", "AI 관련 보도", "세부 내용은 추가 확인이 필요하다.")

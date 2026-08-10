@@ -54,10 +54,15 @@ def candidate_quality(cluster: StoryCluster, topic: Topic) -> float:
     return round(max(0.0, representative.score) + diversity_bonus + official + metadata - syndicated_penalty, 4)
 
 
-def _coverage(cluster: StoryCluster) -> set[str]:
+def _coverage(cluster: StoryCluster, topic_by_id: dict[str, Topic]) -> set[str]:
     covered = {cluster.topic_id}
     for item in cluster.items:
-        covered.update(topic_ids_for_item(item))
+        for topic_id in topic_ids_for_item(item):
+            if topic_id == cluster.topic_id:
+                continue
+            topic = topic_by_id.get(topic_id)
+            if topic is not None and assess_relevance(StoryCluster(topic_id, (item,)), topic).passed:
+                covered.add(topic_id)
     return covered
 
 
@@ -207,7 +212,7 @@ def select_clusters(
         selected.append((cluster, assessment, reason, penalty))
         selected_keys.add(key)
         topic_counts[cluster.topic_id] = topic_counts.get(cluster.topic_id, 0) + 1
-        selected_coverage.update(_coverage(cluster))
+        selected_coverage.update(_coverage(cluster, topic_by_id))
         funnel[cluster.topic_id]["selected"] += 1
         write_record(cluster, assessment, selected_value=True, reason=reason, penalty=penalty)
 

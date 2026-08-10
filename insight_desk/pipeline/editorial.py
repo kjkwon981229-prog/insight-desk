@@ -67,6 +67,29 @@ def _contains(text: str, phrase: str) -> bool:
     return bool(compact_phrase and compact_phrase in compact_text)
 
 
+def _contains_intent_term(text: str, phrase: str) -> bool:
+    """Match intent vocabulary without treating company compounds as teams.
+
+    Some configured intent terms are short Korean names that also occur as
+    prefixes in unrelated organizations.  ``한화`` must match the baseball
+    team when it is a standalone name (including ordinary particles), but not
+    ``한화에어로스페이스`` in an economy article.  Other vocabulary keeps the
+    existing substring behavior so broad configured anchors retain recall.
+    """
+
+    if _compact(phrase) == "한화":
+        folded = _fold(text)
+        return bool(
+            re.search(
+                r"(?<![가-힣A-Za-z0-9])한화"
+                r"(?:은|는|이|가|을|를|의|도|만|와|과|에|에서|로|으로)?"
+                r"(?![가-힣A-Za-z0-9])",
+                folded,
+            )
+        )
+    return _contains(text, phrase)
+
+
 def safe_evidence_text(value: str) -> str:
     text = normalize_text(value)
     return "" if _TRUNCATION_RE.search(text) else text
@@ -160,13 +183,13 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         body_query = _contains(raw_body, query)
         title_token_hits = sum(1 for token in query_tokens if _contains(title, token))
         lead_token_hits = sum(1 for token in query_tokens if _contains(lead, token))
-        anchor_title = any(_contains(title, anchor) for anchor in anchors)
-        core_anchor_title = any(_contains(title, anchor) for anchor in topic.intent_anchors)
-        anchor_lead = any(_contains(lead, anchor) for anchor in anchors)
+        anchor_title = any(_contains_intent_term(title, anchor) for anchor in anchors)
+        core_anchor_title = any(_contains_intent_term(title, anchor) for anchor in topic.intent_anchors)
+        anchor_lead = any(_contains_intent_term(lead, anchor) for anchor in anchors)
         query_title_match = bool(title_query or title_token_hits)
         query_supporting_match = bool(lead_query or lead_token_hits or body_query)
         required_match = not topic.required_intent_terms or any(
-            _contains(f"{title} {lead}", term) for term in topic.required_intent_terms
+            _contains_intent_term(f"{title} {lead}", term) for term in topic.required_intent_terms
         )
         negative_title = any(_contains(title, term) for term in topic.negative_context)
         negative_lead = any(_contains(lead, term) for term in topic.negative_context)

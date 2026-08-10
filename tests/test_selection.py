@@ -164,6 +164,62 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(len(result.selected), 1)
         self.assertEqual(set(result.selected[0].items[0].matched_topic_ids), {"ai", "economy"})
 
+    def test_story_attribution_rechecks_cross_topic_intent(self) -> None:
+        economy = Topic(
+            "economy",
+            "경제·투자",
+            True,
+            False,
+            75,
+            ("코스피",),
+            intent_anchors=("코스피",),
+            event_terms=("상승",),
+        )
+        kbo = Topic(
+            "kbo",
+            "KBO·한화 이글스",
+            True,
+            True,
+            65,
+            ("한화 경기",),
+            intent_anchors=("한화 이글스", "한화 경기", "한화 야구", "KBO", "프로야구", "야구"),
+            event_terms=("경기", "승리", "부상"),
+            required_intent_terms=("한화", "한화 이글스", "한화 경기", "KBO", "프로야구"),
+        )
+        item = replace(
+            _item(
+                "cross-topic-company",
+                "economy",
+                score=90.0,
+                summary="코스피가 0.76% 상승했고 한화에어로스페이스가 관련 종목으로 언급됐다.",
+            ),
+            query="코스피",
+            title="코스피 0.76% 상승",
+            metadata_title="코스피 0.76% 상승",
+            metadata_description="코스피가 0.76% 상승했고 한화에어로스페이스가 관련 종목으로 언급됐다.",
+            matched_topic_ids=("economy", "kbo"),
+        )
+        status = CollectorStatus(1, 1, 0, False, 1)
+        state = RunState(
+            RunStatus.COMPLETE,
+            True,
+            "2026-08-10T07:00:00+09:00",
+            "2026-08-10",
+            "fixture",
+            status,
+            status,
+        )
+        briefing = build_briefing(
+            state=state,
+            topics=(economy, kbo),
+            news=(item,),
+            clusters=(StoryCluster("economy", (item,)),),
+            trend_metrics=(),
+            generated_at=datetime.fromisoformat("2026-08-10T07:00:00+09:00"),
+        )
+        self.assertEqual(len(briefing.stories), 1)
+        self.assertEqual(briefing.stories[0].matched_topic_ids, ("economy",))
+
     def test_source_diversity_beats_raw_source_volume(self) -> None:
         syndicated = StoryCluster(
             "ai",

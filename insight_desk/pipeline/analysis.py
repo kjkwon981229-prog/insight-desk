@@ -16,7 +16,7 @@ from ..domain.models import (
     to_jsonable,
 )
 from .clustering import StoryCluster
-from .editorial import effective_lead, effective_title, why_selected
+from .editorial import assess_relevance, effective_lead, effective_title, why_selected
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
 from .synthesis import synthesize_cluster
@@ -80,6 +80,31 @@ def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
     return "검색 관심 · 큰 변화 없음"
 
 
+def _story_topic_ids(cluster: StoryCluster, topics: tuple[Topic, ...]) -> tuple[str, ...]:
+    """Keep only cross-topic attributions supported by topic relevance.
+
+    Deduplication preserves every retrieval topic so a genuinely shared event
+    can cover multiple interests.  That provenance is not, by itself, proof
+    that the story belongs to every topic, though: a query such as ``한화
+    경기`` can merge an economy article mentioning ``한화에어로스페이스``.
+    Reassess each additional topic against the item evidence before exposing
+    the attribution in the briefing.
+    """
+
+    topic_by_id = {topic.id: topic for topic in topics}
+    matched: list[str] = [cluster.topic_id]
+    for item in cluster.items:
+        for topic_id in item.matched_topic_ids or (item.topic_id,):
+            if topic_id == cluster.topic_id or topic_id in matched:
+                continue
+            topic = topic_by_id.get(topic_id)
+            if topic is None:
+                continue
+            if assess_relevance(StoryCluster(topic_id, (item,)), topic).passed:
+                matched.append(topic_id)
+    return tuple(matched)
+
+
 def build_briefing(
     *,
     state: RunState,
@@ -141,13 +166,7 @@ def build_briefing(
                 provenance=provenance,
                 metadata_enriched_count=metadata_count,
                 facts=facts,
-                matched_topic_ids=tuple(
-                    dict.fromkeys(
-                        topic_id
-                        for item in cluster.items
-                        for topic_id in (item.matched_topic_ids or (item.topic_id,))
-                    )
-                ),
+                matched_topic_ids=_story_topic_ids(cluster, topics),
                 novelty=assessment.novelty,
                 why_selected=why_selected(assessment),
                 intent_relevance=assessment.relevance.score,
