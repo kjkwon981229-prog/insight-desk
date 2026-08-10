@@ -79,6 +79,7 @@ class Topic:
     negative_context: tuple[str, ...] = field(default_factory=tuple)
     event_terms: tuple[str, ...] = field(default_factory=tuple)
     required_intent_terms: tuple[str, ...] = field(default_factory=tuple)
+    scope: str = ""
 
     @property
     def all_news_queries(self) -> tuple[str, ...]:

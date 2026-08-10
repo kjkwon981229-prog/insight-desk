@@ -49,6 +49,7 @@ def load_topics(path: Path) -> tuple[Topic, tuple[KeywordGroup, ...]]:
                     for value in topic_raw.get("required_intent_terms", [])
                     if str(value).strip()
                 ),
+                scope=str(topic_raw.get("scope", "")).strip(),
             )
         )
         for index, group_raw in enumerate(topic_raw.get("trend_groups", []), start=1):

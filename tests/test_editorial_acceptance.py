@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from dataclasses import replace
 
 from insight_desk.domain.models import AuthorityEvidence, AuthoritySourceType, EvidenceType, NewsItem, Topic
@@ -1636,6 +1637,39 @@ class EditorialAcceptanceTests(unittest.TestCase):
             write_publication_signatures(path, (StoryWithSignature(),), generated_at="2026-08-10T07:00:00+09:00")
             write_publication_signatures(path, (), generated_at="2026-08-11T07:00:00+09:00")
             self.assertEqual(load_previous_signatures(Path(root) / "site"), ("POLICY|psat|공고|2026-08-10",))
+
+    def test_public_history_fallback_rebuilds_canonical_event_identity(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as root:
+            site = Path(root) / "site"
+            data = site / "latest" / "data.json"
+            data.parent.mkdir(parents=True)
+            data.write_text(
+                json.dumps(
+                    {
+                        "stories": [
+                            {
+                                "title": "코스닥 +6.97% 급등",
+                                "summary": "코스닥이 6.97% 급등했다.",
+                                "facts": {
+                                    "event_type": "MARKET_MOVE",
+                                    "subject": "코스닥",
+                                    "action": "급등",
+                                },
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            signatures = load_previous_signatures(site)
+            self.assertEqual(
+                classify_novelty("MARKET_MOVE|코스닥:CHANGE:+6.97%:급등", signatures),
+                "UNCHANGED",
+            )
 
     def test_story_count_is_variable_and_zero_is_valid(self) -> None:
         topic = _topic("ai", "AI", "AI", anchors=("AI",), events=("발표",))

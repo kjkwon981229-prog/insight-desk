@@ -90,6 +90,7 @@
     {
       "id": "psat_recruitment",
       "name": "PSAT·공채 일정",
+      "scope": "national_and_local_civil_service",
       "enabled": true,
       "conditional": true,
       "priority": 55,

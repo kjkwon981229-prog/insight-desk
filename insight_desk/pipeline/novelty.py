@@ -136,16 +136,31 @@ def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
             if stored_signature:
                 signatures.append(stored_signature)
                 continue
-            signatures.append(
-                "|".join(
-                    _signature_parts(
-                        str(facts.get("event_type", "OTHER")),
-                        str(story.get("title", "")),
-                        facts.get("key_numbers", ()),
-                        (facts.get("date", ""),) if facts.get("date") else (),
+            # The public payload intentionally omits the internal signature,
+            # but it retains the same fact-bearing fields needed to rebuild a
+            # canonical identity after an Actions-cache miss.  This fallback
+            # is semantically aligned with current_signature rather than the
+            # old headline-token-only heuristic.
+            reconstructed = canonical_event_signature(
+                str(facts.get("event_type", "OTHER")),
+                str(story.get("title", "")),
+                lead=str(story.get("summary", "")),
+                subject=str(facts.get("subject", "")),
+                action=str(facts.get("action", "")),
+            )
+            if reconstructed:
+                signatures.append(reconstructed)
+            else:
+                signatures.append(
+                    "|".join(
+                        _signature_parts(
+                            str(facts.get("event_type", "OTHER")),
+                            str(story.get("title", "")),
+                            facts.get("key_numbers", ()),
+                            (facts.get("date", ""),) if facts.get("date") else (),
+                        )
                     )
                 )
-            )
         return tuple(signature for signature in signatures if signature)
     return ()
 

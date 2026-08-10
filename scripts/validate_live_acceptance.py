@@ -42,10 +42,39 @@ def validate(path: Path) -> list[str]:
         return ["selected_stories is not a list"]
     if len(stories) > 10:
         errors.append("selected story count exceeds maximum 10")
+    funnel = payload.get("funnel")
+    selection_audit = payload.get("selection_audit")
+    if funnel is not None and not isinstance(funnel, dict):
+        errors.append("candidate funnel is not an object")
+    if selection_audit is not None and not isinstance(selection_audit, list):
+        errors.append("selection audit is not a list")
+    strong_rejected_from_funnel = 0
+    qualified_from_funnel = 0
+    if isinstance(funnel, dict):
+        required_funnel_fields = {
+            "intent_pass",
+            "event_pass",
+            "evidence_pass",
+            "novelty_pass",
+            "qualified",
+            "selected",
+            "synthesis_veto",
+            "strong_rejected",
+        }
+        for topic_id, topic_funnel in funnel.items():
+            if not isinstance(topic_funnel, dict):
+                errors.append(f"funnel for {topic_id} is not an object")
+                continue
+            missing = sorted(required_funnel_fields - set(topic_funnel))
+            if missing:
+                errors.append(f"funnel for {topic_id} is missing diagnostics: {','.join(missing)}")
+                continue
+            strong_rejected_from_funnel += int(topic_funnel.get("strong_rejected", 0) or 0)
+            qualified_from_funnel += int(topic_funnel.get("qualified", 0) or 0)
+    strong_rejected = max(int(payload.get("strong_rejected_candidates", 0) or 0), strong_rejected_from_funnel)
     if not stories:
         health = str(payload.get("editorial_health", "") or "")
-        strong_rejected = int(payload.get("strong_rejected_candidates", 0) or 0)
-        if health == "FILTER_COLLAPSE" or strong_rejected > 0:
+        if health == "FILTER_COLLAPSE" or strong_rejected > 0 or qualified_from_funnel > 0:
             errors.append("zero-story result is a filter collapse, not a valid empty day")
         elif health not in {"VALID_EMPTY_DAY", "OK"}:
             errors.append("zero-story result has no explicit valid-empty classification")

@@ -214,6 +214,29 @@ class ArtifactTests(unittest.TestCase):
         errors = validate_live_acceptance(path)
         self.assertIn("zero-story result is a filter collapse, not a valid empty day", errors)
 
+    def test_live_acceptance_detects_zero_story_funnel_collapse_without_strong_counter(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-funnel-collapse-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        path = root / "live-acceptance.json"
+        funnel = {
+            "ai_tech": {
+                "intent_pass": 1,
+                "event_pass": 1,
+                "evidence_pass": 1,
+                "novelty_pass": 1,
+                "qualified": 1,
+                "selected": 0,
+                "synthesis_veto": 0,
+                "strong_rejected": 0,
+            }
+        }
+        path.write_text(
+            json.dumps({"selected_stories": [], "editorial_health": "VALID_EMPTY_DAY", "funnel": funnel}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        errors = validate_live_acceptance(path)
+        self.assertIn("zero-story result is a filter collapse, not a valid empty day", errors)
+
     def test_live_acceptance_rejects_audit_synthesis_mismatch(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-audit-contract-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

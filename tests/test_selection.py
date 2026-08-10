@@ -349,6 +349,11 @@ class SelectionTests(unittest.TestCase):
         selected = topic_diverse_enrichment_candidates(items, _topics(), limit=5)
         self.assertEqual({selected_item.topic_id for selected_item in selected}, {"ai", "kpop", "economy", "kbo", "psat"})
 
+    def test_psat_scope_is_explicit_and_includes_local_seventh_grade_events(self) -> None:
+        topics, _ = load_topics(Path("config/topics.json"))
+        psat = next(topic for topic in topics if topic.id == "psat_recruitment")
+        self.assertEqual(psat.scope, "national_and_local_civil_service")
+
     def test_selection_audit_explains_rejection_and_selection(self) -> None:
         result = select_clusters(tuple(_cluster(f"ai-{i}", "ai") for i in range(5)), _topics(), limit=3)
         self.assertTrue(result.audit)

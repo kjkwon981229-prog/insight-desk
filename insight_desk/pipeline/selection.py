@@ -129,11 +129,15 @@ def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
     for reason in (
         "RELEVANCE_FAILED",
         "EVENT_ACTION_CONTRACT_FAILED",
-        "EVIDENCE_FAILED",
+        "AUTHORITY_REQUIRED_UNVERIFIED",
         "AUTHORITY_CONFLICT",
+        "EVIDENCE_FAILED",
         "NOVELTY_UNCHANGED",
         "SYNTHESIS_FACT_LOSS",
         "SYNTHESIS_NOT_EDITORIAL_READY",
+        "GENERIC_HEADLINE",
+        "GENERIC_SUMMARY",
+        "SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD",
         "LOW_VALUE_EVENT",
     ):
         if reason in assessment.reasons:
