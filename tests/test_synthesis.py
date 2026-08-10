@@ -437,6 +437,57 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("경기 재개", headline)
         self.assertIn("재개됐다", summary)
 
+    def test_sports_interruption_future_lead_is_not_marked_resumed(self) -> None:
+        item = _item(
+            "heat-future-lead",
+            "폭염으로 중단됐던 프로야구 11일 경기 재개",
+            "극한 폭염으로 중단됐던 2026 신한 SOL KBO리그가 11일 다시 문을 연다...",
+            "sports.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kbo", (item,)), topic_name="KBO·한화 이글스", trend_metrics=()
+        )
+        self.assertEqual(facts.temporal_state, "RESUMING")
+        self.assertIn("재개될 예정이다", summary)
+        self.assertNotIn("재개됐다", summary)
+
+    def test_sports_interruption_uses_the_correct_cause_particle(self) -> None:
+        item = _item(
+            "heat-particle",
+            "프로야구 폭염으로 경기 중단",
+            "폭염으로 리그 일정이 중단됐다.",
+            "sports.example",
+        )
+        _, summary, _, _, _, _ = synthesize_cluster(
+            StoryCluster("kbo", (item,)), topic_name="KBO·한화 이글스", trend_metrics=()
+        )
+        self.assertIn("폭염으로", summary)
+        self.assertNotIn("폭염로", summary)
+
+    def test_incomplete_truncated_policy_lead_is_not_displayed(self) -> None:
+        item = _item(
+            "policy-incomplete-lead",
+            "추미애 삼전·닉스 반도체 공정수 방류 최소화 재차 요구",
+            "검색 결과의 정책 요약이 잘렸다...",
+            "newsis.com",
+        )
+        item = replace(
+            item,
+            metadata_title=item.title,
+            metadata_description=(
+                "[수원=뉴시스] 박상욱 기자 = 추미애 경기도지사가 10일 삼성전자와 SK하이닉스 "
+                "등 반도체 기업을 향해 공정수 방류량을 최소화할 것을 재차 요구했다. "
+                "추 지사는 인텔과 TSMC 미국 공장은 용수를 재활용하고 무방류 또는 최소 방류 방.."
+            ),
+        )
+        _, summary, _, _, _, _ = synthesize_cluster(
+            StoryCluster("ai_tech", (item,)), topic_name="AI·테크", trend_metrics=()
+        )
+        self.assertNotIn("[수원=뉴시스]", summary)
+        self.assertNotIn("방..", summary)
+        self.assertNotIn("방.", summary)
+        self.assertIn("요구했다.", summary)
+
     def test_scheduled_event_extracts_date_and_location(self) -> None:
         cluster = StoryCluster(
             "topic",

@@ -120,7 +120,73 @@ class ArtifactTests(unittest.TestCase):
         self.assertNotIn("N001", public_text)
         self.assertIn("title", public_payload["stories"][0])
         self.assertIn("original_url", public_payload["news"][0])
+        self.assertNotIn("summary", public_payload["news"][0])
+        self.assertNotIn("metadata_description", public_payload["news"][0])
         self.assertIn("data-generated-date", text)
+
+    def test_public_source_payload_does_not_expose_truncated_prose(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-public-source-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        collection = CollectorStatus(1, 1, 0, False, 1)
+        state = RunState(
+            RunStatus.COMPLETE,
+            True,
+            "2026-08-10T08:00:00+09:00",
+            "2026-07-11",
+            "fixture",
+            collection,
+            collection,
+        )
+        topic = Topic("t", "테스트", True, False, 50, ("q",))
+        item = NewsItem(
+            "N-TRUNCATED",
+            "t",
+            "q",
+            "잘린 원문 제목... 뒤쪽",
+            "검색 결과 설명... 잘린 꼬리",
+            "https://example.com/story",
+            "",
+            "https://example.com/story",
+            "2026-08-10T07:00:00+09:00",
+            "example.com",
+            "hash",
+            1.0,
+            metadata_title="잘린 원문 제목... 뒤쪽",
+            metadata_description="구체적 사실이 시작되지만 방..",
+        )
+        story = Story(
+            "t",
+            "테스트",
+            "안전한 제목",
+            "구체적인 추가 사실이 있는 요약이다.",
+            "구체적인 추가 사실이 있는 요약이다.",
+            "",
+            "",
+            "",
+            (),
+            ("N-TRUNCATED",),
+            Certainty.CONFIRMED,
+            1.0,
+            1,
+            (EvidenceType.SEARCH_SNIPPET,),
+            0,
+            facts=StoryFacts(event_type="STATISTIC"),
+        )
+        briefing = Briefing(
+            state,
+            (topic,),
+            ("첫 줄", "둘째 줄", "셋째 줄"),
+            (story,),
+            (item,),
+            (),
+            (),
+        )
+        render_site(briefing, root)
+        payload = json.loads((root / "data/latest.json").read_text(encoding="utf-8"))
+        source = payload["news"][0]
+        self.assertNotIn("summary", source)
+        self.assertNotIn("metadata_description", source)
+        self.assertNotIn("...", json.dumps(payload, ensure_ascii=False))
 
     def test_authoritative_internal_fields_stay_out_of_public_payload(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-authority-public-"))

@@ -275,7 +275,24 @@ def _fact_evidence_text(value: str) -> str:
     if not marker:
         return text
     prefix = text[: marker.start()].strip(" ,·-—")
-    return prefix if len(prefix) >= 12 else ""
+    if len(prefix) < 12:
+        return ""
+    # A prefix is safe only when it ends at a sentence boundary. Otherwise
+    # the apparent lead can end halfway through a word (for example
+    # ``방..``) and become a fabricated fact in the final summary.
+    boundaries = list(re.finditer(r"[.!?。！？]", prefix))
+    if boundaries:
+        return prefix[: boundaries[-1].end()].strip(" ,·-—")
+    # Korean leads often omit a final period. Accept only common predicate
+    # endings, not an arbitrary partial noun or word.
+    if re.search(r"(?:다|요|음|함|됨|임|연다|열린다|된다|했다|한다|있다|없다)$", prefix):
+        return prefix
+    # Structured lineup fragments are a narrow positive control: explicit
+    # team/player pairs are independently parseable even when the source
+    # truncates after the last pair. Do not generalize this to free-form prose.
+    if len(_lineup_detail(prefix)) >= 2:
+        return prefix
+    return ""
 
 
 def _fact_lead(item: object) -> str:
@@ -677,6 +694,27 @@ def _subject_particle(value: str) -> str:
     return "가"
 
 
+def _instrumental_particle(value: str) -> str:
+    """Return the Korean ``로/으로`` particle for a noun phrase."""
+
+    if not value:
+        return "으로"
+    last = value[-1]
+    if "가" <= last <= "힣":
+        code = ord(last) - 0xAC00
+        if code % 28 == 8:  # ㄹ 받침 takes ``로``.
+            return "로"
+        return "으로" if code % 28 else "로"
+    return "으로"
+
+
+def _strip_news_byline(value: str) -> str:
+    """Remove a wire-service dateline/byline from a reader-facing fact."""
+
+    cleaned = re.sub(r"^(?:\[[^]]+\]\s*)?[^=\n]{1,80}?\s+기자\s*=\s*", "", value).strip()
+    return re.sub(r"([.!?])(?=[A-Za-z가-힣])", r"\1 ", cleaned)
+
+
 def _number_with_ro(value: str) -> str:
     """Attach the Korean instrumental marker without producing ``원로``."""
 
@@ -939,6 +977,7 @@ def _summary(
         normalized_title = normalize_text(title)
         if normalized_title and detail.startswith(normalized_title):
             detail = detail[len(normalized_title) :].strip(" ,:·-—")
+        detail = _strip_news_byline(detail)
         if (
             len(detail) >= 20
             and not _TRUNCATION_RE.search(detail)
@@ -1075,7 +1114,7 @@ def _summary(
         evidence = f"{title} {completion_evidence}".casefold()
         league = "프로야구" if "프로야구" in evidence or "프로야구" in subject.casefold() else ("KBO" if "kbo" in evidence else subject)
         cause = next((marker for marker in ("폭염", "우천", "악천후", "기상") if marker in evidence), "")
-        cause_phrase = f"{cause}로 " if cause else ""
+        cause_phrase = f"{cause}{_instrumental_particle(cause)} " if cause else ""
         if temporal_state == "RESUMING":
             resume_date = f"{date}에 " if date else ""
             sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개될 예정이다."
@@ -1273,7 +1312,19 @@ def synthesize_cluster(
         if "재개" in combined:
             future_resume = any(
                 marker in combined
-                for marker in ("예정", "재개한다", "재개할", "재개될", "다시 시작한다", "다시 시작할", "오는")
+                for marker in (
+                    "예정",
+                    "재개한다",
+                    "재개할",
+                    "재개될",
+                    "다시 시작한다",
+                    "다시 시작할",
+                    "다시 문을 연다",
+                    "문을 연다",
+                    "내일",
+                    "모레",
+                    "오는",
+                )
             )
             temporal_state = "RESUMING" if future_resume else "RESUMED"
         elif "취소" in combined:

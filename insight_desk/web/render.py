@@ -925,15 +925,15 @@ def _public_payload(briefing: Briefing) -> dict[str, object]:
             continue
         news.append(
             {
-                "title": item.title,
-                "summary": item.summary,
+                # Source prose is not needed to render the public briefing.
+                # Keeping it here would expose truncated search/metadata
+                # snippets as if they were reader-facing facts.
+                "title": clean_headline(item.title),
                 "original_url": item.original_url,
                 "naver_url": item.naver_url,
                 "canonical_url": item.canonical_url,
                 "published_at": item.published_at,
                 "source_domain": item.source_domain,
-                "metadata_title": item.metadata_title,
-                "metadata_description": item.metadata_description,
                 "metadata_canonical_url": item.metadata_canonical_url,
                 "publisher": item.publisher,
                 "metadata_published_at": item.metadata_published_at,
