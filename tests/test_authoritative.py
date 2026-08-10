@@ -65,7 +65,7 @@ def _dart_config() -> OpenDartConfig:
         page_count=50,
         disclosure_type="B",
         max_requests=1,
-        entities=(OpenDartEntity("hybe", ("HYBE", "하이브"), ("kpop",)),),
+        entities=(OpenDartEntity("hybe", ("HYBE", "하이브"), ("kpop",), "01204056"),),
     )
 
 
@@ -187,6 +187,25 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertTrue(routine.result.success)
         self.assertEqual(routine.result.events_augmented, 0)
         self.assertEqual(routine.evidence, ())
+
+    def test_opendart_never_falls_back_to_global_first_page_without_corp_code(self) -> None:
+        config = OpenDartConfig(
+            enabled=True,
+            lookback_days=7,
+            page_count=50,
+            disclosure_type="B",
+            max_requests=2,
+            entities=(OpenDartEntity("hybe", ("HYBE", "하이브"), ("kpop",)),),
+        )
+        transport = FakeTransport(())
+        item = _item("dart-no-code", "하이브 투자 계약 체결", "하이브가 투자 계약을 체결했다.", query="HYBE", topic_id="kpop")
+        payload = OpenDartAdapter(
+            api_key="placeholder-opendart-key", config=config, transport=transport
+        ).fetch((item,), today=date(2026, 8, 10))
+        self.assertFalse(payload.result.success)
+        self.assertEqual(payload.result.failure_reason, "CORP_CODE_NOT_CONFIGURED")
+        self.assertEqual(payload.result.attempted, 0)
+        self.assertEqual(transport.urls, [])
 
     def test_kosis_normalizes_unit_period_and_direction(self) -> None:
         transport = FakeTransport(

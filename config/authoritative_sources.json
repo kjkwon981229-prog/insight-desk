@@ -7,13 +7,13 @@
     "disclosure_type": "B",
     "max_requests": 2,
     "entities": [
-      {"id": "samsung_electronics", "aliases": ["삼성전자", "Samsung Electronics"], "topic_ids": ["economy", "ai_tech"]},
-      {"id": "sk_hynix", "aliases": ["SK하이닉스", "하이닉스", "SK hynix"], "topic_ids": ["economy", "ai_tech"]},
-      {"id": "hanmi_semiconductor", "aliases": ["한미반도체"], "topic_ids": ["economy", "ai_tech"]},
-      {"id": "hybe", "aliases": ["HYBE", "하이브"], "topic_ids": ["kpop", "economy"]},
-      {"id": "sm_entertainment", "aliases": ["SM", "에스엠", "SM엔터테인먼트"], "topic_ids": ["kpop", "economy"]},
-      {"id": "jyp_entertainment", "aliases": ["JYP", "JYP엔터테인먼트"], "topic_ids": ["kpop", "economy"]},
-      {"id": "yg_entertainment", "aliases": ["YG", "와이지엔터테인먼트"], "topic_ids": ["kpop", "economy"]}
+      {"id": "samsung_electronics", "aliases": ["삼성전자", "Samsung Electronics"], "topic_ids": ["economy", "ai_tech"], "corp_code": "00126380"},
+      {"id": "sk_hynix", "aliases": ["SK하이닉스", "하이닉스", "SK hynix"], "topic_ids": ["economy", "ai_tech"], "corp_code": "00164779"},
+      {"id": "hanmi_semiconductor", "aliases": ["한미반도체"], "topic_ids": ["economy", "ai_tech"], "corp_code": "00161383"},
+      {"id": "hybe", "aliases": ["HYBE", "하이브"], "topic_ids": ["kpop", "economy"], "corp_code": "01204056"},
+      {"id": "sm_entertainment", "aliases": ["SM", "에스엠", "SM엔터테인먼트"], "topic_ids": ["kpop", "economy"], "corp_code": "00260930"},
+      {"id": "jyp_entertainment", "aliases": ["JYP", "JYP엔터테인먼트"], "topic_ids": ["kpop", "economy"], "corp_code": "00258689"},
+      {"id": "yg_entertainment", "aliases": ["YG", "와이지엔터테인먼트"], "topic_ids": ["kpop", "economy"], "corp_code": "00613318"}
     ]
   },
   "kosis": {

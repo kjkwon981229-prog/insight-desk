@@ -195,71 +195,79 @@ class OpenDartAdapter:
         if not entities:
             return AdapterPayload(AdapterResult("opendart", failure_reason="NO_CANDIDATE_MATCH"))
         begin = today - timedelta(days=self.config.lookback_days)
-        query: dict[str, str] = {
-            "crtfc_key": self.api_key,
-            "bgn_de": begin.strftime("%Y%m%d"),
-            "end_de": today.strftime("%Y%m%d"),
-            "pblntf_ty": self.config.disclosure_type,
-            "sort": "date",
-            "sort_mth": "desc",
-            "page_no": "1",
-            "page_count": str(self.config.page_count),
-        }
-        # A configured corporation code narrows the request.  Otherwise the
-        # single bounded major-disclosure page is filtered locally by the
-        # candidate entities; no unbounded company crawl is performed.
-        corp_codes = tuple(entity.corp_code for entity in entities if entity.corp_code)
-        if len(corp_codes) == 1:
-            query["corp_code"] = corp_codes[0]
-        url = f"{_DART_URL}?{urlencode(query)}"
-        try:
-            response = self.transport.request(
-                "GET",
-                url,
-                {"Accept": "application/json", "User-Agent": "InsightDesk/1.0"},
-                timeout=self.timeout,
-            )
-            if response.status < 200 or response.status >= 300:
-                return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason=f"HTTP_{response.status}"))
-            payload = _json_value(response)
-        except (OSError, TimeoutError):
-            return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason="NETWORK_OR_TIMEOUT"))
-        except ValueError as exc:
-            return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason=str(exc)))
-        if not isinstance(payload, dict):
-            return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason="INVALID_RESPONSE_SHAPE"))
-        status = _safe_status(payload.get("status"))
-        if status != "000":
-            return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason=f"API_STATUS_{status}"))
-        rows = payload.get("list", [])
-        if not isinstance(rows, list):
-            return AdapterPayload(AdapterResult("opendart", attempted=1, failure_reason="INVALID_LIST_SHAPE"))
         matched: list[tuple[str, AuthorityEvidence]] = []
         used: set[tuple[str, str]] = set()
         matches_by_item: dict[str, int] = {}
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            report_name = str(row.get("report_nm") or "")
-            evidence = _dart_evidence(row)
-            if evidence is None:
-                continue
-            for item in items:
-                entity = next(
-                    (candidate for candidate in entities if _entity_matches(item, candidate, str(row.get("corp_name") or ""))),
-                    None,
+        targeted_entities = tuple(entity for entity in entities if entity.corp_code)
+        if not targeted_entities:
+            return AdapterPayload(AdapterResult("opendart", failure_reason="CORP_CODE_NOT_CONFIGURED"))
+        attempted = 0
+        successful_requests = 0
+        failure_reason = ""
+        for entity in targeted_entities[: self.config.max_requests]:
+            query: dict[str, str] = {
+                "crtfc_key": self.api_key,
+                "corp_code": entity.corp_code,
+                "bgn_de": begin.strftime("%Y%m%d"),
+                "end_de": today.strftime("%Y%m%d"),
+                "pblntf_ty": self.config.disclosure_type,
+                "sort": "date",
+                "sort_mth": "desc",
+                "page_no": "1",
+                "page_count": str(self.config.page_count),
+            }
+            attempted += 1
+            try:
+                response = self.transport.request(
+                    "GET",
+                    f"{_DART_URL}?{urlencode(query)}",
+                    {"Accept": "application/json", "User-Agent": "InsightDesk/1.0"},
+                    timeout=self.timeout,
                 )
-                if entity is None or not _report_is_relevant(report_name, item):
+                if response.status < 200 or response.status >= 300:
+                    failure_reason = f"HTTP_{response.status}"
                     continue
-                key = (item.evidence_id, evidence.event_key)
-                if key not in used and matches_by_item.get(item.evidence_id, 0) < _DART_MAX_EVENTS_PER_CANDIDATE:
-                    used.add(key)
-                    matched.append((item.evidence_id, evidence))
-                    matches_by_item[item.evidence_id] = matches_by_item.get(item.evidence_id, 0) + 1
+                payload = _json_value(response)
+                if not isinstance(payload, dict):
+                    failure_reason = "INVALID_RESPONSE_SHAPE"
+                    continue
+                status = _safe_status(payload.get("status"))
+                if status != "000":
+                    failure_reason = f"API_STATUS_{status}"
+                    continue
+                rows = payload.get("list", [])
+                if not isinstance(rows, list):
+                    failure_reason = "INVALID_LIST_SHAPE"
+                    continue
+            except (OSError, TimeoutError):
+                failure_reason = "NETWORK_OR_TIMEOUT"
+                continue
+            except ValueError as exc:
+                failure_reason = str(exc)
+                continue
+            successful_requests += 1
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                report_name = str(row.get("report_nm") or "")
+                evidence = _dart_evidence(row)
+                if evidence is None:
+                    continue
+                for item in items:
+                    if not _entity_matches(item, entity, str(row.get("corp_name") or "")):
+                        continue
+                    if not _report_is_relevant(report_name, item):
+                        continue
+                    key = (item.evidence_id, evidence.event_key)
+                    if key not in used and matches_by_item.get(item.evidence_id, 0) < _DART_MAX_EVENTS_PER_CANDIDATE:
+                        used.add(key)
+                        matched.append((item.evidence_id, evidence))
+                        matches_by_item[item.evidence_id] = matches_by_item.get(item.evidence_id, 0) + 1
         result = AdapterResult(
             "opendart",
-            attempted=1,
-            success=True,
+            attempted=attempted,
+            success=successful_requests > 0,
+            failure_reason="" if successful_requests else (failure_reason or "NO_TARGETED_RESPONSE"),
             candidates_matched=len({item_id for item_id, _ in matched}),
             events_augmented=len(matched),
             official_facts_added=sum(len(evidence.fact_values) for _, evidence in matched),
