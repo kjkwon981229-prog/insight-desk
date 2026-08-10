@@ -196,10 +196,16 @@ def _best_title_item(items: tuple[object, ...]) -> object:
     def quality(item: object) -> tuple[float, float, str]:
         title = effective_title(item)
         compact = re.sub(r"\s+", "", title)
-        score = min(48.0, len(compact))
+        # A long headline often appends a second market/entity fact.  Let
+        # concrete event signals and corroboration decide the representative;
+        # title length is only a small completeness bonus.
+        score = min(32.0, len(compact))
         if item.metadata_title and safe_evidence_text(item.metadata_title):
             score += 18.0
-        if any(marker in title for marker in (*_ACTION_MARKERS, "차트", "수상", "변동폭", "최대", "최고")):
+        if any(
+            marker in title
+            for marker in (*_ACTION_MARKERS, "차트", "수상", "변동폭", "최대", "최고", "상승", "하락", "출발")
+        ):
             score += 16.0
         if re.search(r"^(?:내일의|오늘의)\s*(?:경기|일정)", title):
             score -= 20.0

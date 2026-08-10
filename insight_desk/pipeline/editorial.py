@@ -508,9 +508,8 @@ def event_signature(cluster: StoryCluster, event: EventAssessment | None = None)
         return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
     title = effective_title(cluster.representative)
     terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
-    title_evidence = " ".join(effective_title(item) for item in cluster.items)
-    numbers = _NUMBER_RE.findall(title_evidence)
-    dates = _DATE_RE.findall(title_evidence)
+    numbers = _NUMBER_RE.findall(title)
+    dates = _DATE_RE.findall(title)
     return "|".join(dict.fromkeys((assessed.event_type, *terms[:8], *numbers[:3], *dates[:2])))
 
 

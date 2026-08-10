@@ -226,6 +226,30 @@ class SynthesisTests(unittest.TestCase):
         headline, _, _, _, _, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
         self.assertNotIn("마감에 코스피", headline)
 
+    def test_representative_headline_does_not_switch_to_secondary_market_fact(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "market-core",
+                    "코스피·코스닥 동반 상승 출발",
+                    "코스피와 코스닥이 상승 출발했다.",
+                    "core.example",
+                ),
+                _item(
+                    "market-secondary",
+                    "코스피 6306.33 개장, 원·달러 환율 1410.8원",
+                    "코스피 개장과 환율이 함께 제시됐다.",
+                    "secondary.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster, topic_name="경제", trend_metrics=()
+        )
+        self.assertEqual(facts.subject, "코스피")
+        self.assertNotIn("환율", headline + summary)
+
     def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
         cluster = StoryCluster(
             "topic",
