@@ -10,7 +10,7 @@ from insight_desk.pipeline.deduplication import deduplicate_news
 from insight_desk.pipeline.normalization import normalize_news_item, normalize_url
 from insight_desk.pipeline.scoring import score_news
 from insight_desk.pipeline.editorial import assess_event
-from insight_desk.pipeline.semantics import earnings_observations, metric_observations
+from insight_desk.pipeline.semantics import earnings_observations, event_action_signal, metric_observations
 from insight_desk.pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 
 
@@ -132,6 +132,30 @@ class PipelineTests(unittest.TestCase):
             [(value.instrument, value.value, value.direction) for value in observations],
             [("삼성전자", "+3.2%", "상승")],
         )
+
+    def test_recruitment_classifier_and_action_gate_share_schedule_vocabulary(self) -> None:
+        title = "2026년 7급 공채 원서접수 일정 공고"
+        self.assertEqual(event_action_signal("RECRUITMENT_SCHEDULE", title), "일정")
+        item = NewsItem(
+            "recruitment-schedule-semantic",
+            "psat",
+            "7급 공채",
+            title,
+            "인사혁신처가 원서접수 일정과 시험일을 공고했다.",
+            "https://example.test/recruitment-schedule-semantic",
+            "",
+            "https://example.test/recruitment-schedule-semantic",
+            "2026-08-10T00:00:00+09:00",
+            "example.test",
+            "recruitment-schedule-semantic",
+        )
+        event = assess_event(
+            StoryCluster("psat", (item,)),
+            Topic("psat", "PSAT·공채", True, True, 55, ("7급 공채",), intent_anchors=("7급 공채",)),
+        )
+        self.assertEqual(event.event_type, "RECRUITMENT_SCHEDULE")
+        self.assertTrue(event.action)
+        self.assertTrue(event.passed)
 
     def test_clustering_and_scoring_are_deterministic(self) -> None:
         first = NewsItem("N001", "t", "AI", "AI 에이전트 기업 발표", "업무 활용", "https://a.test", "", "https://a.test", "2026-08-09T08:00:00+09:00", "a.test", "a")

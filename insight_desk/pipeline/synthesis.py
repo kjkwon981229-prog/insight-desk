@@ -15,6 +15,7 @@ from .semantics import (
     contains_action,
     contains_boundary_term,
     earnings_fact_parts,
+    earnings_observations,
     first_action,
     market_direction,
     metric_observations,
@@ -1186,7 +1187,16 @@ def synthesize_cluster(
         elif any(term in interruption_evidence for term in ("중단", "멈춘", "취소", "휴식", "방학")):
             action = "중단"
     else:
-        subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
+        earnings_observation = next(iter(earnings_observations(title)), None) if event_type == "EARNINGS" else None
+        if earnings_observation is not None:
+            # Reuse the bound earnings observation so a period such as
+            # ``2026년`` cannot be mistaken for part of the company name.
+            subject = earnings_observation.instrument
+            display_numbers = _unique(
+                [value for value in (earnings_observation.period, earnings_observation.value) if value]
+            )
+        else:
+            subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
         if event_type == "AWARD_CHART":
             subject = _award_subject(title, subject)
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:

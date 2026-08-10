@@ -150,6 +150,27 @@ class SynthesisTests(unittest.TestCase):
         self.assertTrue(earnings_summary_preserves_fact_binding(headline, summary))
         self.assertEqual(facts.key_numbers, ("2분기", "10조원"))
 
+    def test_earnings_year_period_does_not_contaminate_subject_or_summary(self) -> None:
+        item = _item(
+            "earnings-year-period",
+            "삼성전자 2026년 2분기 영업이익 10조원 실적 발표",
+            "삼성전자가 2026년 2분기 영업이익 10조원을 기록했다고 발표했다.",
+            "finance.example",
+            provenance=(EvidenceType.SEARCH_SNIPPET, EvidenceType.ENRICHED_METADATA),
+        )
+        item = replace(item, metadata_title=item.title, metadata_description=item.summary)
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)),
+            topic_name="경제·투자",
+            trend_metrics=(),
+            event_type_override="EARNINGS",
+        )
+        self.assertEqual(facts.subject, "삼성전자")
+        self.assertIn("삼성전자 2026년2분기 영업이익 10조원", headline)
+        self.assertNotIn("삼성전자 2026년이", summary)
+        self.assertIn("삼성전자가 2026년2분기 영업이익 10조원을", summary)
+        self.assertEqual(facts.key_numbers, ("2026년2분기", "10조원"))
+
     def test_representative_case_matrix_is_safe_to_synthesize(self) -> None:
         cases = json.loads(
             (Path(__file__).resolve().parents[1] / "fixtures/synthesis_cases.json").read_text(encoding="utf-8")
