@@ -211,6 +211,21 @@ class SynthesisTests(unittest.TestCase):
         )
         self.assertEqual(summary, "WayV의 컴백이 확인됐다.")
 
+    def test_market_headline_does_not_append_a_clipped_change_fragment(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "kospi-open",
+                    "美증시 상승 마감에 코스피·코스닥 상승 출발",
+                    "코스피와 코스닥이 각각 0.76%, 1.11% 상승 출발했다.",
+                    "market.example",
+                ),
+            ),
+        )
+        headline, _, _, _, _, _ = synthesize_cluster(cluster, topic_name="경제", trend_metrics=())
+        self.assertNotIn("마감에 코스피", headline)
+
     def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
         cluster = StoryCluster(
             "topic",

@@ -10,7 +10,7 @@ from .editorial import effective_lead, effective_title, safe_evidence_text
 from .normalization import normalize_text
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|월|년|개월|분|시|위|점|대|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -114,7 +114,7 @@ _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "�
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
-_DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일))$")
+_DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
 _MARKET_RUN_RE = re.compile(r"\d+\s?거래일(?:\s?연속)?\s?(?:순매수|순매도)")
 _GENERIC_HEADLINE_MARKERS = ("관련 보도", "관련 소식", "관련 기사", "관련 뉴스")
 _GENERIC_SUMMARY_MARKERS = (
@@ -623,6 +623,12 @@ def _headline(
         if not metric_number:
             return f"{subject} {change}" if change and change not in _GENERIC_CHANGE_WORDS else subject
         result = f"{subject} {metric_number}"
+        # A change fragment from a title without a number is often a clipped
+        # article lead (for example ``미 증시 상승 마감에 코스피``).  The
+        # metric itself is safe; appending that fragment creates a malformed
+        # headline and can imply an unsupported comparison.
+        if change and not _NUMBER_RE.search(cleaned):
+            change = ""
         if change and change not in _GENERIC_CHANGE_WORDS and change not in result:
             result += f" · {change}"
         return result

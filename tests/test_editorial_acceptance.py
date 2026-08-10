@@ -304,6 +304,39 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertIn("TRUNCATED_EVENT_WITHOUT_LEAD", assessment.reasons)
         self.assertFalse(assessment.qualified)
 
+    def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "YG",
+            anchors=("YG", "블랙핑크", "공연", "앨범"),
+            events=("공연", "앨범", "차트", "매출"),
+        )
+        item = _item(
+            "blackpink-fan-invite",
+            "kpop",
+            "YG",
+            "블랙핑크 10주년 행사, 팬 40명 부르더니…답례품은 6900원짜리 떡?",
+            "2022년 정규 2집으로 빌보드 앨범 차트를 석권했고 2023년에는 YG와 전속계약을 체결했다.",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "LOW_VALUE_APPEARANCE")
+        self.assertFalse(assessment.qualified)
+
+    def test_event_signature_does_not_use_metadata_tail_numbers(self) -> None:
+        topic = _topic("economy", "경제·투자", "코스피", anchors=("코스피",), events=("상승",))
+        item = _item(
+            "market-tail-signature",
+            "economy",
+            "코스피",
+            "코스피 0.76% 상승 출발",
+            "코스피가 상승 출발했다.",
+            metadata_description="10일 코스피가 상승했고 7일 수치는 47.56포인트였다.",
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        self.assertNotIn("10일", assessment.event_signature)
+        self.assertNotIn("47.56", assessment.event_signature)
+
     def test_ceremonial_first_pitch_is_not_core_sports_news(self) -> None:
         topic = _topic(
             "kbo",

@@ -10,7 +10,7 @@ from .normalization import normalize_text
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
-_NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|월|년|개월|분|시|위|점|대|km))?")
+_NUMBER_RE = re.compile(r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|km))?")
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _GENERIC_HEADLINE_RE = re.compile(r"^(?:.+\s)?관련\s*(?:보도|소식|기사)$")
 _GENERIC_SUMMARY_MARKERS = (
@@ -274,6 +274,18 @@ def _is_ceremonial_appearance(title_text: str) -> bool:
     )
 
 
+def _is_low_value_fan_event(title_text: str) -> bool:
+    """Reject fan-invite/thank-you coverage that is not a core music event."""
+
+    fan_context = any(_contains(title_text, marker) for marker in ("팬", "답례품", "기념품", "굿즈"))
+    event_context = any(_contains(title_text, marker) for marker in ("행사", "초대", "부르더니", "선물"))
+    substantive_event = any(
+        _contains(title_text, marker)
+        for marker in ("발매", "출시", "컴백", "앨범", "음원", "차트", "콘서트", "공연", "수상")
+    )
+    return fan_context and event_context and not substantive_event
+
+
 def _is_routine_market_quote(title_text: str) -> bool:
     lowered = title_text.casefold()
     return any(marker in lowered for marker in ("ndf", "선물환")) and not any(
@@ -322,6 +334,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     # sports article) from changing the story's event type.
     if heat_interruption:
         event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
+    elif _is_low_value_fan_event(title_text):
+        event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
     else:
         event_type, significance, matched_terms = detect_event(title_text)
         if event_type == "OTHER":
@@ -494,8 +508,9 @@ def event_signature(cluster: StoryCluster, event: EventAssessment | None = None)
         return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
     title = effective_title(cluster.representative)
     terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
-    numbers = _NUMBER_RE.findall(" ".join(effective_text(item) for item in cluster.items))
-    dates = _DATE_RE.findall(" ".join(effective_text(item) for item in cluster.items))
+    title_evidence = " ".join(effective_title(item) for item in cluster.items)
+    numbers = _NUMBER_RE.findall(title_evidence)
+    dates = _DATE_RE.findall(title_evidence)
     return "|".join(dict.fromkeys((assessed.event_type, *terms[:8], *numbers[:3], *dates[:2])))
 
 
