@@ -406,7 +406,10 @@ def _is_completed_entertainment_event(title_text: str) -> bool:
 
 def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     text = " ".join(effective_text(item) for item in cluster.items)
-    title_text = " ".join(effective_title(item) for item in cluster.items)
+    # Synthesis and the public headline use the same best source headline.
+    # Do not let a secondary cluster member's release word change the audited
+    # event type of a primary announcement (or vice versa).
+    title_text = effective_title(best_headline_item(cluster.items))
     event_type = "OTHER"
     significance = 0.0
     matched_terms: list[str] = []

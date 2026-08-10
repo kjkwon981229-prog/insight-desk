@@ -389,6 +389,33 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(assessment.event.passed)
         self.assertTrue(assessment.qualified)
 
+    def test_secondary_release_word_does_not_change_primary_announcement_type(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "JYP",
+            anchors=("JYP", "그룹", "데뷔"),
+            events=("발표", "공개", "데뷔"),
+        )
+        primary = _item(
+            "primary-announcement",
+            "kpop",
+            "JYP",
+            "JYP 신인 걸그룹 아워벌스데이, 데뷔 콘셉트 포토 공개",
+            "JYP가 데뷔 콘셉트 포토를 공개했다.",
+            score=70.0,
+        )
+        secondary = _item(
+            "secondary-release",
+            "kpop",
+            "JYP",
+            "JYP 아워벌스데이 데뷔곡 발표",
+            "아워벌스데이 데뷔곡 발표 소식이다.",
+            score=40.0,
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (primary, secondary)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "ANNOUNCEMENT")
+
     def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
         topic = _topic(
             "kpop",
