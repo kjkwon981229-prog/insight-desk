@@ -122,6 +122,7 @@ def build_briefing(
     enrichment: EnrichmentReport | None = None,
     previous_signatures: tuple[str, ...] = (),
     retrieval_funnel: dict[str, dict[str, int]] | None = None,
+    authoritative_audit: tuple[dict[str, object], ...] = (),
 ) -> Briefing:
     topic_by_id = {topic.id: topic for topic in topics}
     # score_clusters is retained as a candidate-quality ordering. It is not the
@@ -268,6 +269,7 @@ def build_briefing(
         selection_audit=selection.audit,
         selection_funnel=final_funnel,
         selected_reviews=tuple(final_reviews),
+        authoritative_audit=authoritative_audit,
     )
 
 

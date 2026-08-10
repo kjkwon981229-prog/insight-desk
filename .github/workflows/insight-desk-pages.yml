@@ -18,6 +18,8 @@ jobs:
     env:
       NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
       NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
     outputs:
       publish: ${{ steps.state.outputs.publish }}
       status: ${{ steps.state.outputs.status }}
@@ -29,11 +31,13 @@ jobs:
         with:
           python-version: "3.12.10"
           cache: pip
-      - name: Mask NCP values in logs
+      - name: Mask API values in logs
         shell: bash
         run: |
           echo "::add-mask::$NCP_CLIENT_ID"
           echo "::add-mask::$NCP_CLIENT_SECRET"
+          echo "::add-mask::$OPENDART_API_KEY"
+          echo "::add-mask::$KOSIS_API_KEY"
       - name: Restore previous static site archive
         uses: actions/cache/restore@v4
         with:

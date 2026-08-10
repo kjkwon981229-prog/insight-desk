@@ -4,12 +4,15 @@ import json
 import shutil
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from insight_desk.domain.models import (
     Briefing,
     Certainty,
     CollectorStatus,
+    AuthorityEvidence,
+    AuthoritySourceType,
     EvidenceType,
     NewsItem,
     RunState,
@@ -102,6 +105,41 @@ class ArtifactTests(unittest.TestCase):
         self.assertIn("title", public_payload["stories"][0])
         self.assertIn("original_url", public_payload["news"][0])
         self.assertIn("data-generated-date", text)
+
+    def test_authoritative_internal_fields_stay_out_of_public_payload(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-authority-public-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        collection = CollectorStatus(1, 1, 0, False, 1)
+        state = RunState(RunStatus.COMPLETE, True, "2026-08-09T08:00:00+09:00", "2026-07-10", "fixture", collection, collection)
+        topic = Topic("t", "테스트", True, False, 50, ("q",))
+        item = NewsItem(
+            "N-AUTH", "t", "q", "공식 통계 확인", "공식 수치가 확인됐다.", "https://example.com/story", "", "https://example.com/story", "2026-08-09T07:00:00+09:00", "example.com", "hash", 1.0,
+            authoritative_evidence=(
+                AuthorityEvidence(
+                    adapter="kosis",
+                    source_type=AuthoritySourceType.OFFICIAL_STATISTICAL,
+                    title="소비자물가지수",
+                    description="202606 수치는 116.5 2020=100이다.",
+                    canonical_url="https://kosis.kr/statHtml/statHtml.do?orgId=101&tblId=DT_TEST",
+                    publisher="통계청 KOSIS",
+                    event_key="KOSIS:consumer_price_index:202606",
+                    fact_values=("202606=116.5 2020=100",),
+                    unit="2020=100",
+                    period="202606",
+                ),
+            ),
+        )
+        story = Story(
+            "t", "테스트", "공식 통계 확인", "공식 수치가 확인됐다.", "공식 자료를 확인했다.", "", "", "", (), ("N-AUTH",), Certainty.CONFIRMED, 1.0, 1,
+            facts=StoryFacts(event_type="STATISTIC", key_numbers=("116.5",), official_source="공식 자료"),
+        )
+        briefing = Briefing(state, (topic,), ("첫 줄", "둘째 줄", "셋째 줄"), (story,), (item,), (), ())
+        render_site(briefing, root)
+        public_text = json.dumps(json.loads((root / "data/latest.json").read_text(encoding="utf-8")), ensure_ascii=False)
+        self.assertNotIn("authoritative_evidence", public_text)
+        self.assertNotIn("KOSIS:consumer_price_index", public_text)
+        self.assertNotIn("DT_TEST", public_text)
+        self.assertNotIn("apiKey", public_text)
 
     def test_live_acceptance_rejects_truncation_and_duplicate_events(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-live-qa-"))

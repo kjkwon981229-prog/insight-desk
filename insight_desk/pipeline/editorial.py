@@ -133,6 +133,10 @@ def effective_title(item: NewsItem) -> str:
 
 
 def effective_lead(item: NewsItem) -> str:
+    for authority in getattr(item, "authoritative_evidence", ()):
+        description = safe_evidence_text(getattr(authority, "description", ""))
+        if description:
+            return description
     metadata_description = safe_evidence_text(item.metadata_description)
     return metadata_description or safe_evidence_text(item.summary)
 
@@ -397,6 +401,27 @@ def _is_routine_market_quote(title_text: str) -> bool:
     )
 
 
+def _is_abstract_trade_market(title_text: str) -> bool:
+    """Reject market commentary that names no concrete transaction.
+
+    ``트레이드`` is an intent signal for sports coverage, but a headline
+    about a frozen or quiet trade market is not itself a roster event. A
+    named transaction, signing, agreement, or official announcement remains
+    eligible.
+    """
+
+    if not _contains(title_text, "트레이드"):
+        return False
+    abstract = ("시장", "얼어붙", "잠잠", "침묵", "분위기", "상황", "가능성", "전망")
+    concrete = (
+        "단행", "성사", "발표", "영입", "이적", "합의", "완료", "확정", "추진",
+        "보냈다", "데려왔다", "맞트레이드", "공식",
+    )
+    return any(_contains(title_text, marker) for marker in abstract) and not any(
+        _contains(title_text, marker) for marker in concrete
+    )
+
+
 def _is_completed_entertainment_event(title_text: str) -> bool:
     return (
         any(_contains(title_text, marker) for marker in _COMPLETED_ENTERTAINMENT_MARKERS)
@@ -467,6 +492,10 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         event_type, significance, matched_terms = detect_event(title_text)
         if event_type == "OTHER":
             event_type, significance, matched_terms = detect_event(lead_text)
+    if event_type == "ROSTER_PERSONNEL" and _is_abstract_trade_market(f"{title_text} {lead_text}"):
+        event_type = "OTHER"
+        significance = 0.0
+        matched_terms = []
     if event_type == "SCHEDULED_EVENT" and any(
         _contains(text, term) for term in ("블루카펫", "행사 참석", "행사 일정에 참석", "포토")
     ) and not any(_contains(text, term) for term in ("공연", "콘서트", "컴백", "앨범", "경기 결과", "시구")):

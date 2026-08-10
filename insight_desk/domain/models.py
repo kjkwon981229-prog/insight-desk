@@ -28,6 +28,40 @@ class EvidenceType(str, Enum):
     OFFICIAL_SOURCE = "OFFICIAL_SOURCE"
 
 
+class AuthoritySourceType(str, Enum):
+    """Public authority class of an optional verification source."""
+
+    OFFICIAL_PRIMARY = "OFFICIAL_PRIMARY"
+    OFFICIAL_STATISTICAL = "OFFICIAL_STATISTICAL"
+    OFFICIAL_CORPORATE = "OFFICIAL_CORPORATE"
+    OFFICIAL_GOVERNMENT = "OFFICIAL_GOVERNMENT"
+    OFFICIAL_SPORTS = "OFFICIAL_SPORTS"
+
+
+@dataclass(frozen=True)
+class AuthorityEvidence:
+    """Normalized, non-secret facts returned by an authoritative adapter.
+
+    The object is kept on the internal candidate.  The renderer uses an
+    explicit whitelist and does not serialize this object to the public
+    payload.
+    """
+
+    adapter: str
+    source_type: AuthoritySourceType
+    authority_strength: str = "HIGH"
+    title: str = ""
+    description: str = ""
+    canonical_url: str = ""
+    publisher: str = ""
+    published_at: str | None = None
+    event_key: str = ""
+    fact_values: tuple[str, ...] = field(default_factory=tuple)
+    unit: str = ""
+    period: str = ""
+    revision_date: str = ""
+
+
 @dataclass(frozen=True)
 class Topic:
     id: str
@@ -86,6 +120,7 @@ class NewsItem:
     provenance: tuple[EvidenceType, ...] = field(default_factory=lambda: (EvidenceType.SEARCH_SNIPPET,))
     matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     retrieval_channels: tuple[str, ...] = field(default_factory=tuple)
+    authoritative_evidence: tuple[AuthorityEvidence, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -213,6 +248,7 @@ class Briefing:
     selection_audit: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     selection_funnel: dict[str, dict[str, int]] = field(default_factory=dict)
     selected_reviews: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    authoritative_audit: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
 
 def _enum_value(value: Any) -> Any:

@@ -135,6 +135,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
         self.assertFalse(assessment.qualified)
 
+    def test_abstract_trade_market_is_not_a_roster_event(self) -> None:
+        topic = _topic(
+            "kbo",
+            "KBO·한화 이글스",
+            "KBO",
+            anchors=("KBO", "프로야구", "한화", "야구"),
+            events=("경기", "결과", "부상", "트레이드"),
+            conditional=True,
+        )
+        item = _item(
+            "FP-KBO-TRADE-MARKET-01",
+            "kbo",
+            "KBO",
+            "얼어붙은 KBO 트레이드 시장",
+            "KBO 트레이드 시장 상황이 전해졌다.",
+        )
+        assessment = assess_cluster(StoryCluster("kbo", (item,)), topic)
+        self.assertEqual(assessment.event.event_type, "OTHER")
+        self.assertFalse(assessment.event.passed)
+        self.assertFalse(assessment.qualified)
+
     def test_hanwha_background_player_mention_is_not_core_story(self) -> None:
         topic = _topic(
             "kbo",

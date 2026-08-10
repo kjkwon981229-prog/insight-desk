@@ -18,6 +18,15 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("selection-audit-${{ github.run_id }}", workflow)
         self.assertIn("hashFiles('build/selection-audit.json')", workflow)
 
+    def test_authoritative_credentials_are_injected_only_as_workflow_env(self) -> None:
+        workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}", workflow)
+        self.assertIn("KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}", workflow)
+        self.assertIn('echo "::add-mask::$OPENDART_API_KEY"', workflow)
+        self.assertIn('echo "::add-mask::$KOSIS_API_KEY"', workflow)
+        self.assertNotIn("echo $OPENDART_API_KEY", workflow)
+        self.assertNotIn("echo $KOSIS_API_KEY", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

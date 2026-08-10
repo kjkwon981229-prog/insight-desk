@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from insight_desk.domain.models import EvidenceType, NewsItem, TrendMetric
@@ -378,12 +379,30 @@ class SynthesisTests(unittest.TestCase):
     def test_personnel_summary_uses_the_correct_korean_particle(self) -> None:
         cluster = StoryCluster(
             "topic",
-            (_item("trade-market", "얼어붙은 KBO 트레이드 시장", "KBO 트레이드 시장 상황이 전해졌다.", "sports.example"),),
+            (_item("trade", "한화, 두산과 트레이드 단행", "한화와 두산이 트레이드를 단행했다.", "sports.example"),),
         )
         _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="KBO", trend_metrics=())
         self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
         self.assertIn("트레이드가 확인됐다", summary)
         self.assertNotIn("트레이드이", summary)
+
+    def test_scheduled_lineup_summary_preserves_explicit_team_and_pitcher_facts(self) -> None:
+        item = replace(
+            _item(
+                "lineup",
+                "10일 선발투수 예고",
+                "10일 선발투수 예고가 전해졌다.",
+                "sports.example",
+            ),
+            metadata_description="◆잠실 한화 왕옌청 두산 곽빈 ...",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("topic", (item,)), topic_name="KBO", trend_metrics=()
+        )
+        self.assertIn("한화 왕옌청", summary)
+        self.assertIn("두산 곽빈", summary)
+        self.assertIn("잠실", summary)
+        self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
 
     def test_representative_headline_does_not_switch_to_secondary_market_fact(self) -> None:
         cluster = StoryCluster(

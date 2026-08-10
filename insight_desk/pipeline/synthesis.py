@@ -87,6 +87,14 @@ _LOCATION_TERMS = (
     "충칭",
     "DDP",
 )
+_KBO_TEAM_RE = re.compile(
+    r"(?<![A-Za-z가-힣])(?:한화(?:\s*이글스)?|두산(?:\s*베어스)?|LG(?:\s*트윈스)?|"
+    r"KT(?:\s*위즈)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|NC(?:\s*다이노스)?|"
+    r"롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|키움(?:\s*히어로즈)?)(?![A-Za-z가-힣])",
+    re.IGNORECASE,
+)
+_LINEUP_LABEL_RE = re.compile(r"^(?:선발(?:투수)?|투수|예고|라인업)\s*", re.IGNORECASE)
+_PLAYER_TOKEN_RE = re.compile(r"[A-Za-z가-힣][A-Za-z가-힣·.'’-]{1,11}")
 _STOPWORDS = {
     "관련",
     "보도",
@@ -222,11 +230,37 @@ def _fact_evidence_text(value: str) -> str:
 
 
 def _fact_lead(item: object) -> str:
+    for authority in getattr(item, "authoritative_evidence", ()):
+        for value in (getattr(authority, "description", ""), getattr(authority, "title", "")):
+            lead = _fact_evidence_text(value)
+            if lead:
+                return lead
     for value in (getattr(item, "metadata_description", ""), getattr(item, "summary", "")):
         lead = _fact_evidence_text(value)
         if lead:
             return lead
     return ""
+
+
+def _lineup_detail(evidence: str) -> tuple[str, ...]:
+    """Extract only explicit team/player pairs from a complete lineup lead."""
+
+    matches = list(_KBO_TEAM_RE.finditer(evidence))
+    pairs: list[str] = []
+    for index, team_match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(evidence)
+        fragment = evidence[team_match.end() : end]
+        fragment = _LINEUP_LABEL_RE.sub("", fragment.lstrip(" \t:：·,/()[]{}-"))
+        player_match = _PLAYER_TOKEN_RE.match(fragment)
+        if not player_match:
+            continue
+        player = player_match.group(0).strip("·-—")
+        if not player or player in {"경기", "예고", "선발", "투수", "라인업"}:
+            continue
+        pair = f"{re.sub(r'\s+', ' ', team_match.group(0)).strip()} {player}"
+        if pair not in pairs:
+            pairs.append(pair)
+    return tuple(pairs[:4])
 
 
 def _unique(values: list[str]) -> tuple[str, ...]:
@@ -534,6 +568,11 @@ def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
 
 def _official_source(items: tuple[object, ...]) -> str:
     for item in items:
+        authorities = getattr(item, "authoritative_evidence", ())
+        for authority in authorities:
+            publisher = str(getattr(authority, "publisher", "") or "").strip()
+            if publisher:
+                return "공식 자료"
         if EvidenceType.OFFICIAL_SOURCE in getattr(item, "provenance", ()):
             return "공식 자료"
         domain = str(getattr(item, "source_domain", "")).lower()
@@ -794,12 +833,24 @@ def _summary(
         else:
             sentence = f"{subject}의 {change_action} 소식이 보도됐다."
     elif event_type == "ROSTER_PERSONNEL" and subject:
-        clean_title = _clean_headline(title)
-        if numbers and clean_title:
-            sentence = f"{clean_title}."
+        if action == "선발":
+            lineup = _lineup_detail(completion_evidence)
+            if len(lineup) >= 2:
+                detail = "과 ".join(lineup[:2])
+                context = " ".join(part for part in (date, location) if part)
+                context = f"{context} 경기의 " if context else "경기의 "
+                sentence = f"{context}선발로 {detail}{_subject_particle(detail)} 예고됐다."
+            else:
+                sentence = ""
         else:
-            action_text = action or "선수단 변동"
-            sentence = f"{subject}의 {action_text}{_subject_particle(action_text)} 확인됐다."
+            sentence = ""
+        if not sentence:
+            clean_title = _clean_headline(title)
+            if numbers and clean_title:
+                sentence = f"{clean_title}."
+            else:
+                action_text = action or "선수단 변동"
+                sentence = f"{subject}의 {action_text}{_subject_particle(action_text)} 확인됐다."
     elif event_type == "SPORTS_RESULT" and subject:
         sentence = f"{subject}의 경기 결과 또는 기록 변화가 확인됐다."
     elif event_type == "SPORTS_INTERRUPTION" and subject:
@@ -871,7 +922,11 @@ def synthesize_cluster(
         + list(metadata_dates)
     )
     times = _unique(list(_times(headline_evidence)) + list(repeated_times))
-    locations = _unique(list(_locations(headline_evidence)) + list(repeated_locations))
+    locations = _unique(
+        list(_locations(headline_evidence))
+        + list(_locations(fact_headline_evidence))
+        + list(repeated_locations)
+    )
     # Classify the representative headline first. Descriptions may mention
     # generic words such as "정책" or "공개" while the headline carries the
     # actual subject (for example a market statistic). This keeps the

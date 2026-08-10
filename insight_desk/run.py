@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,6 +11,7 @@ from .collectors.cache import ResponseCache
 from .collectors.collect import collect_news, collect_trends
 from .collectors.enrichment import EnrichmentReport, MetadataEnricher
 from .collectors.naver import NaverApiClient, NaverCredentials
+from .authoritative import build_authoritative_router, load_authority_config
 from .config import load_topics
 from .domain.models import CollectorStatus, NewsItem, RunState, RunStatus, Topic, to_jsonable
 from .domain.status import is_publishable, resolve_status
@@ -49,11 +51,13 @@ def _write_selection_audit(
     funnel: dict[str, dict[str, int]],
     selected_reviews: tuple[dict[str, object], ...],
     secrets: tuple[str, ...],
+    authoritative_audit: tuple[dict[str, object], ...] = (),
 ) -> None:
     payload = {
         "selection_audit": audit,
         "funnel": funnel,
         "selected_stories": selected_reviews,
+        "authoritative_sources": authoritative_audit,
     }
     assert_no_secret_values(payload, secrets)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +132,12 @@ def execute(
     generated_at = current.isoformat(timespec="seconds")
     cutoff = (current - timedelta(days=30)).date().isoformat()
     topics, groups = load_topics(config_path)
-    secrets = tuple(value for value in (getattr(client, "credentials", None) and (client.credentials.client_id, client.credentials.client_secret)) or ())
+    configured_secrets = (
+        getattr(client, "credentials", None)
+        and (client.credentials.client_id, client.credentials.client_secret)
+    ) or ()
+    external_secrets = (os.environ.get("OPENDART_API_KEY", ""), os.environ.get("KOSIS_API_KEY", ""))
+    secrets = tuple(value for value in (*configured_secrets, *external_secrets) if value)
 
     if client is None:
         credentials = NaverCredentials.from_environment()
@@ -179,6 +188,18 @@ def execute(
             ).enrich(enrichment_targets, limit=METADATA_ENRICHMENT_LIMIT)
             by_evidence_id = {item.evidence_id: item for item in enriched_targets}
             enriched = tuple(by_evidence_id.get(item.evidence_id, item) for item in bounded)
+        authoritative_audit: tuple[dict[str, object], ...] = ()
+        try:
+            authority_config = load_authority_config(config_path.with_name("authoritative_sources.json"))
+            authority_report = build_authoritative_router(authority_config, transport=transport).augment(
+                enriched,
+                now=current,
+            )
+            enriched = authority_report.items
+            authoritative_audit = authority_report.audits
+            warnings = tuple(dict.fromkeys((*warnings, *authority_report.warnings)))
+        except Exception as exc:  # noqa: BLE001 - optional source config cannot stop NAVER publication
+            warnings = tuple(dict.fromkeys((*warnings, f"authoritative source layer unavailable: {type(exc).__name__}.")))
         clusters = cluster_news(enriched)
         retrieval_funnel = _build_retrieval_funnel(
             raw_items=news_collection.raw_items,
@@ -215,6 +236,7 @@ def execute(
             enrichment=enrichment_report,
             previous_signatures=load_previous_signatures(output_dir),
             retrieval_funnel=retrieval_funnel,
+            authoritative_audit=authoritative_audit,
         )
         try:
             render_site(briefing, output_dir)
@@ -233,6 +255,7 @@ def execute(
             funnel=briefing.selection_funnel,
             selected_reviews=briefing.selected_reviews,
             secrets=secrets,
+            authoritative_audit=briefing.authoritative_audit,
         )
         _write_selection_audit(
             state_path.with_name("live-acceptance.json"),
@@ -240,6 +263,7 @@ def execute(
             funnel=briefing.selection_funnel,
             selected_reviews=briefing.selected_reviews,
             secrets=secrets,
+            authoritative_audit=briefing.authoritative_audit,
         )
         validation_errors = validate_artifact(output_dir, secrets=secrets)
         if validation_errors:
