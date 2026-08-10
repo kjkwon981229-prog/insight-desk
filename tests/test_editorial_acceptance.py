@@ -124,6 +124,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertTrue(evidence.syndicated_copy)
         self.assertNotIn("INDEPENDENT_PUBLISHERS", evidence.reasons)
 
+    def test_independent_publishers_must_share_core_facts_to_corroborate(self) -> None:
+        first = _item(
+            "independent-a",
+            "economy",
+            "반도체",
+            "하이브 1조원 계약 체결",
+            "하이브가 1조원 규모 계약을 체결했다.",
+            domain="first.example",
+        )
+        second = _item(
+            "independent-b",
+            "economy",
+            "반도체",
+            "하이브 계약 규모 1조원으로 확인",
+            "하이브의 1조원 계약 내용이 공개됐다.",
+            domain="second.example",
+        )
+        evidence = assess_evidence(StoryCluster("economy", (first, second)))
+        self.assertTrue(evidence.corroborated)
+        self.assertIn("INDEPENDENT_PUBLISHERS", evidence.reasons)
+
     def test_or_kr_domain_is_not_official_without_explicit_registry_or_provenance(self) -> None:
         topic = _topic("economy", "경제·투자", "투자", anchors=("투자",), events=("계약",))
         random_org = _item(

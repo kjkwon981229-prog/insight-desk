@@ -796,7 +796,7 @@ def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
         item
         for item in items
         if not syndicated
-        or len(copy_groups.get(item.content_hash or compact(effective_title(item)), ())) == 1
+        or len(copy_groups.get(compact(effective_title(item)) or item.content_hash, ())) == 1
     ]
     fact_sets = [_evidence_fact_tokens(item) for item in independent_items]
     corroborated = any(
