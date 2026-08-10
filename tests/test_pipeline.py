@@ -50,6 +50,17 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(metrics[1].delta, -10)
         self.assertIsNone(getattr(metrics[0], "cross_batch_ratio", None))
 
+    def test_trend_materiality_distinguishes_tiny_delta_from_rise(self) -> None:
+        points = (
+            TrendPoint("flat", "Flat", "t", "2026-08-08", 50.0, "batch-flat"),
+            TrendPoint("flat", "Flat", "t", "2026-08-09", 50.2, "batch-flat"),
+            TrendPoint("rise", "Rise", "t", "2026-08-08", 20.0, "batch-rise"),
+            TrendPoint("rise", "Rise", "t", "2026-08-09", 22.0, "batch-rise"),
+        )
+        metrics = {metric.group_id: metric for metric in compute_trend_metrics(points)}
+        self.assertEqual(metrics["flat"].state, "NO_MEANINGFUL_CHANGE")
+        self.assertEqual(metrics["rise"].state, "RISE")
+
     def test_clustering_and_scoring_are_deterministic(self) -> None:
         first = NewsItem("N001", "t", "AI", "AI 에이전트 기업 발표", "업무 활용", "https://a.test", "", "https://a.test", "2026-08-09T08:00:00+09:00", "a.test", "a")
         second = NewsItem("N002", "t", "AI", "AI 에이전트 기업 발표 후속", "추가 내용", "https://b.test", "", "https://b.test", "2026-08-09T07:00:00+09:00", "b.test", "b")

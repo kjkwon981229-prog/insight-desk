@@ -154,6 +154,29 @@ function validNotificationType(value) {
   return value === "READY" || value === "FAILURE";
 }
 
+function validNotificationSource(value) {
+  return value === "schedule" || value === "manual" || value === "other";
+}
+
+export function deliveryState({ subscriptionCount, sent, failed, pruned }) {
+  if (subscriptionCount === 0) {
+    return "NO_SUBSCRIBERS";
+  }
+  if (sent === 0 && failed === 0 && pruned > 0) {
+    return "STALE_SUBSCRIPTIONS_PRUNED";
+  }
+  if (sent === 0 && failed > 0) {
+    return "ALL_DELIVERIES_FAILED";
+  }
+  if (sent > 0 && failed > 0) {
+    return "PARTIAL_DELIVERY";
+  }
+  if (sent > 0) {
+    return "DELIVERED";
+  }
+  return "REQUEST_ACCEPTED";
+}
+
 function notificationPayload(type, env) {
   const ready = type === "READY";
   return {
@@ -212,16 +235,34 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
   if (!hasVapidConfig(env)) {
     throw new Error("VAPID_NOT_CONFIGURED");
   }
-  const { date, run_id: runId, type } = requestPayload;
+  const { date, run_id: runId, type, source } = requestPayload;
   const markerKey = `${NOTIFICATION_PREFIX}${date}:${type}`;
   const existing = await env.PUSH_SUBSCRIPTIONS.get(markerKey);
   if (existing) {
-    return { ok: true, duplicate: true, date, type, sent: 0, failed: 0, pruned: 0 };
+    let marker = {};
+    try {
+      marker = JSON.parse(existing);
+    } catch {
+      marker = {};
+    }
+    return {
+      ok: marker.delivery_state !== "ALL_DELIVERIES_FAILED",
+      duplicate: true,
+      request_state: "REQUEST_ACCEPTED",
+      date,
+      type,
+      source: marker.source || source,
+      delivery_state: marker.delivery_state || "REQUEST_ACCEPTED",
+      subscription_count: Number(marker.subscription_count || 0),
+      sent: Number(marker.sent || 0),
+      failed: Number(marker.failed || 0),
+      pruned: Number(marker.pruned || 0),
+    };
   }
 
   await env.PUSH_SUBSCRIPTIONS.put(
     markerKey,
-    JSON.stringify({ state: "sending", date, type, run_id: runId, at: new Date().toISOString() }),
+    JSON.stringify({ state: "sending", date, type, source, run_id: runId, at: new Date().toISOString() }),
     { expirationTtl: MARKER_TTL_SECONDS },
   );
   const send = dependencies.sendNotification || sendWebPush;
@@ -258,23 +299,56 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
         }
       }
     }
-    await env.PUSH_SUBSCRIPTIONS.put(
-      markerKey,
-      JSON.stringify({ state: "sent", date, type, run_id: runId, sent, failed, pruned, at: new Date().toISOString() }),
-      { expirationTtl: MARKER_TTL_SECONDS },
-    );
-    if (type === "READY") {
+    const subscriptionCount = keys.length;
+    const state = deliveryState({ subscriptionCount, sent, failed, pruned });
+    const marker = {
+      state: "complete",
+      request_state: "REQUEST_ACCEPTED",
+      delivery_state: state,
+      date,
+      type,
+      source,
+      run_id: runId,
+      subscription_count: subscriptionCount,
+      sent,
+      failed,
+      pruned,
+      at: new Date().toISOString(),
+    };
+    await env.PUSH_SUBSCRIPTIONS.put(markerKey, JSON.stringify(marker), { expirationTtl: MARKER_TTL_SECONDS });
+    if (type === "READY" && state !== "ALL_DELIVERIES_FAILED" && state !== "PARTIAL_DELIVERY") {
       await env.PUSH_SUBSCRIPTIONS.put(
         `${READY_STATE_PREFIX}${date}`,
-        JSON.stringify({ run_id: runId, at: new Date().toISOString() }),
+        JSON.stringify({
+          run_id: runId,
+          source,
+          delivery_state: state,
+          subscription_count: subscriptionCount,
+          sent,
+          failed,
+          pruned,
+          at: new Date().toISOString(),
+        }),
         { expirationTtl: MARKER_TTL_SECONDS },
       );
     }
+    return {
+      ok: state !== "ALL_DELIVERIES_FAILED" && state !== "PARTIAL_DELIVERY",
+      duplicate: false,
+      request_state: "REQUEST_ACCEPTED",
+      date,
+      type,
+      source,
+      delivery_state: state,
+      subscription_count: subscriptionCount,
+      sent,
+      failed,
+      pruned,
+    };
   } catch (error) {
     await env.PUSH_SUBSCRIPTIONS.delete(markerKey);
     throw error;
   }
-  return { ok: true, duplicate: false, date, type, sent, failed, pruned };
 }
 
 function validateSendPayload(value) {
@@ -284,7 +358,11 @@ function validateSendPayload(value) {
   if (!validDate(value.date) || !validRunId(value.run_id) || !validNotificationType(value.type)) {
     return null;
   }
-  return { date: value.date, run_id: value.run_id, type: value.type };
+  const source = value.source === undefined ? "other" : value.source;
+  if (!validNotificationSource(source)) {
+    return null;
+  }
+  return { date: value.date, run_id: value.run_id, type: value.type, source };
 }
 
 function authMatches(request, env) {
@@ -310,12 +388,24 @@ export async function runWatchdog(env, dependencies = {}) {
   }
   const now = dependencies.now ? dependencies.now() : new Date();
   const date = kstDate(now);
-  if (await env.PUSH_SUBSCRIPTIONS.get(`${READY_STATE_PREFIX}${date}`)) {
-    return { ok: true, skipped: true, reason: "READY_ALREADY_RECORDED", date };
+  const readyMarker = await env.PUSH_SUBSCRIPTIONS.get(`${READY_STATE_PREFIX}${date}`);
+  if (readyMarker) {
+    try {
+      const ready = JSON.parse(readyMarker);
+      if (
+        ready.source === "schedule" &&
+        ready.delivery_state !== "ALL_DELIVERIES_FAILED" &&
+        ready.delivery_state !== "PARTIAL_DELIVERY"
+      ) {
+        return { ok: true, skipped: true, reason: "READY_ALREADY_RECORDED", date };
+      }
+    } catch {
+      // Legacy/manual markers do not prove that today's scheduled run ran.
+    }
   }
   return dispatchNotification(
     env,
-    { date, run_id: `watchdog-${date}`, type: "FAILURE" },
+    { date, run_id: `watchdog-${date}`, type: "FAILURE", source: "schedule" },
     dependencies,
   );
 }
@@ -379,7 +469,8 @@ export async function handleRequest(request, env, _context, dependencies = {}) {
       return errorResponse(request, env, 400, "INVALID_NOTIFICATION");
     }
     try {
-      return jsonResponse(request, env, await dispatchNotification(env, payload, dependencies));
+      const result = await dispatchNotification(env, payload, dependencies);
+      return jsonResponse(request, env, result, result.ok ? 200 : 502);
     } catch (error) {
       const code = error?.message === "VAPID_NOT_CONFIGURED" ? "VAPID_NOT_CONFIGURED" : error?.message === "KV_NOT_CONFIGURED" ? "KV_NOT_CONFIGURED" : "DELIVERY_FAILED";
       return errorResponse(request, env, code === "DELIVERY_FAILED" ? 502 : 503, code);

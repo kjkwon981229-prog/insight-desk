@@ -121,6 +121,7 @@ class NewsItem:
     matched_topic_ids: tuple[str, ...] = field(default_factory=tuple)
     retrieval_channels: tuple[str, ...] = field(default_factory=tuple)
     authoritative_evidence: tuple[AuthorityEvidence, ...] = field(default_factory=tuple)
+    authority_conflict: str = "NO_CONFLICT"
 
 
 @dataclass(frozen=True)
@@ -147,6 +148,7 @@ class TrendMetric:
     spike_score: float | None
     interpretation: str
     points: tuple[TrendPoint, ...] = field(default_factory=tuple)
+    state: str = "INSUFFICIENT_COMPARISON"
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,8 @@ class StoryFacts:
     trend_state: str = "비교 부족"
     next_known_event: str = ""
     uncertainty: str = ""
+    event_signature: str = ""
+    conflict_state: str = "NO_CONFLICT"
 
 
 @dataclass(frozen=True)

@@ -88,7 +88,8 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("47원", summary)
         self.assertNotIn("...", summary)
         self.assertNotIn("…", summary)
-        self.assertIn("공식 자료", evidence)
+        self.assertIn("47원", evidence)
+        self.assertNotIn("여러 매체에서 같은 핵심 내용이 확인됐다", evidence)
         self.assertEqual(certainty.value, "confirmed")
         self.assertEqual(watch, ("다음 월간 통계와 변동폭",))
 
@@ -416,7 +417,7 @@ class SynthesisTests(unittest.TestCase):
         _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="PSAT·공채", trend_metrics=())
         self.assertIn("272명", summary)
         self.assertIn("11,187명", summary)
-        self.assertEqual(facts.event_type, "ROSTER_PERSONNEL")
+        self.assertEqual(facts.event_type, "RECRUITMENT_COMPETITION")
 
     def test_personnel_summary_uses_the_correct_korean_particle(self) -> None:
         cluster = StoryCluster(
@@ -564,7 +565,7 @@ class SynthesisTests(unittest.TestCase):
         )
         self.assertEqual(facts.event_type, "OTHER")
         self.assertFalse(watch)
-        self.assertIn("한 건", evidence)
+        self.assertEqual(evidence, summary)
         self.assertEqual(certainty.value, "uncertain")
         self.assertNotIn("후속 공식 발표", summary)
         self.assertNotIn("관련 내용이 확인됐다", summary)

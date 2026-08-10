@@ -219,6 +219,32 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertEqual(query["objL2"], ["0"])
         self.assertEqual(query["itmId"], ["1000"])
 
+    def test_kosis_query_provenance_cannot_trigger_unrelated_article_augmentation(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    [
+                        {"PRD_DE": "202606", "DT": "116.5", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260702"},
+                        {"PRD_DE": "202605", "DT": "116.1", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260603"},
+                    ]
+                ),
+            )
+        )
+        item = _item(
+            "kosis-query-only",
+            "AI 모델 투자 발표",
+            "AI 모델 출시 일정이 공개됐다.",
+            query="소비자물가",
+        )
+        payload = KosisAdapter(
+            api_key="placeholder-kosis-key",
+            datasets=(_kosis_dataset(),),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertEqual(payload.evidence, ())
+        self.assertEqual(payload.result.attempted, 0)
+
     def test_kosis_rejects_unexpected_unit(self) -> None:
         transport = FakeTransport(
             (
@@ -325,6 +351,7 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertEqual(len(report.items), 1)
         self.assertEqual(len(report.items[0].authoritative_evidence), 1)
         self.assertEqual(report.items[0].authoritative_evidence[0].adapter, "kosis")
+        self.assertEqual(report.items[0].authority_conflict, "CONFIRMED_MATCH")
         self.assertEqual(report.succeeded, 1)
         self.assertTrue(any("공식 근거 보강" in warning for warning in report.warnings))
         self.assertEqual([audit["adapter"] for audit in report.audits], ["opendart", "kosis"])
@@ -352,5 +379,6 @@ class AuthoritativeAdapterTests(unittest.TestCase):
             kosis_key="placeholder-kosis-key",
         ).augment((item,), now=datetime(2026, 8, 10, 7, 30))
         self.assertEqual(len(report.items[0].authoritative_evidence), 1)
+        self.assertEqual(report.items[0].authority_conflict, "VALUE_CONFLICT")
         self.assertEqual(report.audits[0]["adapter"], "opendart")
         self.assertEqual(report.audits[1]["conflicts_found"], 1)

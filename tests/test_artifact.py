@@ -214,3 +214,61 @@ class ArtifactTests(unittest.TestCase):
         path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
         errors = validate_live_acceptance(path)
         self.assertTrue(any("trend label without matched trend groups" in error for error in errors))
+
+    def test_live_acceptance_rejects_directional_label_for_non_material_trend(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-trend-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        story = {
+            "rank": 1,
+            "headline": "소비자물가 발표",
+            "summary": "소비자물가 지수가 8월 10일 발표됐다.",
+            "event_type": "STATISTIC",
+            "source_count": 2,
+            "concrete_fact_count": 2,
+            "topic_id": "economy",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": "STATISTIC|소비자물가|2026-08-10",
+            "final_score": 70.0,
+            "trend_relationship": "검색 관심 · 상승",
+            "trend_matches": [
+                {"group_id": "cpi", "group_name": "소비자물가", "state": "NO_MEANINGFUL_CHANGE"}
+            ],
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("non-rising trend as rising" in error for error in errors))
+
+    def test_live_acceptance_rejects_run76_semantic_false_passes(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-run76-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        story = {
+            "rank": 1,
+            "headline": "코스피 0.65%",
+            "summary": "코스피 0.65%.",
+            "event_type": "STATISTIC",
+            "source_count": 2,
+            "publisher_diversity": 3,
+            "concrete_fact_count": 3,
+            "topic_id": "economy",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": "STATISTIC|bad-market",
+            "final_score": 47.1,
+            "facts": {
+                "subject": "코스피",
+                "action": "투자",
+                "event_type": "STATISTIC",
+                "key_numbers": ["0.65%", "6.97%"],
+                "key_changes": ["코스닥 급등"],
+                "event_signature": "STATISTIC|other-market",
+            },
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps({"selected_stories": [story]}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("no information gain" in error for error in errors))
+        self.assertTrue(any("event signature disagrees" in error for error in errors))
+        self.assertTrue(any("publisher diversity exceeds" in error for error in errors))
+        self.assertTrue(any("bound metric value" in error for error in errors))
+        self.assertTrue(any("lexical boundary" in error for error in errors))
+        self.assertTrue(any("quality floor" in error for error in errors))

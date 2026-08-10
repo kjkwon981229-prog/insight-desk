@@ -43,7 +43,7 @@ def _item(
     domain: str | None = None,
     matched: tuple[str, ...] = (),
     official: bool = False,
-    summary: str = "공식 발표와 여러 보도에서 핵심 일정과 변화가 확인됐다.",
+    summary: str = "해당 변화가 8월 10일 공식 발표됐고 적용 일정이 공개됐다.",
 ) -> NewsItem:
     provenance = (EvidenceType.SEARCH_SNIPPET, EvidenceType.OFFICIAL_SOURCE) if official else (EvidenceType.SEARCH_SNIPPET,)
     return NewsItem(
@@ -132,12 +132,12 @@ class SelectionTests(unittest.TestCase):
         first = replace(
             _item("headline-a", "ai", score=90.0, domain="first.example"),
             title="AI 모델 출시 발표",
-            summary="AI 모델이 출시됐다는 구체적인 발표가 확인됐다.",
+            summary="AI 모델이 8월 10일 출시됐다는 구체적인 발표가 확인됐다.",
         )
         second = replace(
             _item("headline-b", "ai", score=60.0, domain="second.example"),
             title="AI 모델 출시 발표",
-            summary="AI 모델이 출시됐다는 구체적인 발표가 확인됐다.",
+            summary="AI 모델이 8월 10일 출시됐다는 구체적인 발표가 확인됐다.",
         )
         result = select_clusters(
             (StoryCluster("ai", (first,)), StoryCluster("ai", (second,))),

@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 
 from ..domain.models import NewsItem
+from .semantics import canonical_publisher, contains_action
 
 
 @dataclass(frozen=True)
@@ -17,7 +18,7 @@ class StoryCluster:
 
     @property
     def source_count(self) -> int:
-        return len({item.source_domain for item in self.items})
+        return len({canonical_publisher(item.publisher, item.source_domain) for item in self.items})
 
 
 def _tokens(text: str) -> set[str]:
@@ -138,7 +139,10 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
         and not _DATE_NUMBER_RE.fullmatch(token)
     }
     actions = {
-        term for term in _EVENT_TERMS if term in text and term not in _GENERIC_ACTION_TERMS
+        term
+        for term in _EVENT_TERMS
+        if (contains_action(text, term) if term in {"부상", "투자", "트레이드", "선발", "경기", "승리", "패배", "상승", "하락"} else term in text)
+        and term not in _GENERIC_ACTION_TERMS
     }
     dates_numbers = {
         value for value in _DATE_NUMBER_RE.findall(text)

@@ -5,6 +5,40 @@ from collections import defaultdict
 from ..domain.models import KeywordGroup, TrendMetric, TrendPoint
 
 
+# Naver Trend ratios are relative indices, not measurements with arbitrary
+# precision.  Treat a move as material only when it clears both the one-index
+# point floor and, for a non-zero baseline, the five-percent relative floor.
+_MIN_MATERIAL_DELTA = 1.0
+_MIN_MATERIAL_RELATIVE = 0.05
+
+
+def _trend_state(delta: float | None, previous: float | None) -> str:
+    if delta is None or previous is None:
+        return "INSUFFICIENT_COMPARISON"
+    material = abs(delta) >= _MIN_MATERIAL_DELTA or (
+        previous > 0 and abs(delta) / previous >= _MIN_MATERIAL_RELATIVE
+    )
+    if not material:
+        return "NO_MEANINGFUL_CHANGE"
+    return "RISE" if delta > 0 else "FALL"
+
+
+def effective_trend_state(metric: TrendMetric) -> str:
+    """Read the persisted state, with compatibility for old in-memory data.
+
+    Older fixtures and archived objects predate ``TrendMetric.state`` and
+    therefore carry the default value even when both comparison ratios are
+    present.  Re-evaluate only that legacy shape using the same deterministic
+    materiality rule; never infer a direction when the comparison is absent.
+    """
+
+    if metric.state != "INSUFFICIENT_COMPARISON":
+        return metric.state
+    if metric.delta is not None and metric.previous_ratio is not None:
+        return _trend_state(metric.delta, metric.previous_ratio)
+    return "INSUFFICIENT_COMPARISON"
+
+
 def parse_trend_batches(
     batches: tuple[tuple[str, tuple[KeywordGroup, ...], dict[str, object]], ...]
 ) -> tuple[TrendPoint, ...]:
@@ -63,11 +97,12 @@ def compute_trend_metrics(points: tuple[TrendPoint, ...]) -> tuple[TrendMetric, 
         spike_score = None
         if delta is not None and moving_average is not None:
             spike_score = delta + max(0.0, current - moving_average) * 0.5
-        if current is None or previous is None:
+        state = _trend_state(delta, previous)
+        if state == "INSUFFICIENT_COMPARISON":
             interpretation = "비교 기준 부족"
-        elif delta is None or abs(delta) < 1e-9:
-            interpretation = "변화 없음"
-        elif delta > 0:
+        elif state == "NO_MEANINGFUL_CHANGE":
+            interpretation = "유의미한 변화 없음"
+        elif state == "RISE":
             interpretation = "직전 구간보다 상승"
         else:
             interpretation = "직전 구간보다 하락"
@@ -86,6 +121,7 @@ def compute_trend_metrics(points: tuple[TrendPoint, ...]) -> tuple[TrendMetric, 
                 spike_score=spike_score,
                 interpretation=interpretation,
                 points=tuple(ordered),
+                state=state,
             )
         )
     # Never sort by absolute ratio: batches are independent and ratio is relative.

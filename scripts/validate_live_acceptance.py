@@ -4,6 +4,17 @@ import json
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from insight_desk.pipeline.semantics import (
+    ACTION_TERMS,
+    contains_action,
+    metric_observations,
+    summary_information_gain,
+)
+
 
 def validate(path: Path) -> list[str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -18,6 +29,9 @@ def validate(path: Path) -> list[str]:
         "단일 검색 결과만 확인되어",
         "공통으로 확인되는 세부 사실은 제한적이다",
         "세부 내용은 추가 확인이 필요하다",
+        "여러 매체에서 같은 핵심 내용이 확인됐다",
+        "여러 보도에서 같은 핵심 내용이 확인됐다",
+        "공식 자료를 인용한 보도가 확인됐다",
     )
     low_value_event_types = {
         "LOW_VALUE_APPEARANCE",
@@ -35,6 +49,8 @@ def validate(path: Path) -> list[str]:
         "single_source_count": 0,
         "duplicate_event_count": 0,
         "low_information_uncertain_count": 0,
+        "semantic_error_count": 0,
+        "publisher_diversity_error_count": 0,
     }
     signatures: dict[str, int] = {}
     for index, story in enumerate(stories, 1):
@@ -48,9 +64,14 @@ def validate(path: Path) -> list[str]:
         if not headline or any(marker in headline for marker in generic_headline_markers):
             metrics["generic_headline_count"] += 1
             errors.append(f"story {index} has a generic headline")
-        if not summary or any(marker in summary for marker in generic_summary_markers):
+        if not summary or any(
+            summary.strip() == marker or summary.strip().startswith(marker)
+            for marker in generic_summary_markers
+        ):
             metrics["generic_summary_count"] += 1
             errors.append(f"story {index} has a generic summary")
+        if headline and summary and not summary_information_gain(headline, summary):
+            errors.append(f"story {index} summary has no information gain over headline")
         if any(marker in headline or marker in summary for marker in ("...", "…", "··")):
             metrics["truncated_copy_count"] += 1
             errors.append(f"story {index} leaks truncated source copy")
@@ -63,6 +84,12 @@ def validate(path: Path) -> list[str]:
         certainty = str(story.get("certainty", ""))
         source_count = int(story.get("source_count", 0) or 0)
         concrete = int(story.get("concrete_fact_count", 0) or 0)
+        try:
+            final_score = float(story.get("final_score", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            final_score = 0.0
+        if final_score < 55.0:
+            errors.append(f"story {index} is below the editorial quality floor")
         facts = story.get("facts")
         if isinstance(facts, dict):
             audited_event_type = str(story.get("event_type", "")).strip()
@@ -72,16 +99,69 @@ def validate(path: Path) -> list[str]:
                     f"story {index} event type disagrees with synthesized facts: "
                     f"{audited_event_type} != {synthesized_event_type}"
                 )
+            facts_signature = str(facts.get("event_signature", "")).strip()
+            story_signature = str(story.get("event_signature", "")).strip()
+            if story_signature and not facts_signature:
+                errors.append(f"story {index} is missing canonical facts event signature")
+            elif story_signature and facts_signature and story_signature != facts_signature:
+                errors.append(f"story {index} event signature disagrees with synthesized facts")
+            conflict_state = str(facts.get("conflict_state", "NO_CONFLICT") or "NO_CONFLICT")
+            if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+                errors.append(f"story {index} has unresolved authority/event conflict: {conflict_state}")
+            action = str(facts.get("action", "")).strip()
+            if action in ACTION_TERMS and not contains_action(f"{headline} {summary}", action):
+                errors.append(f"story {index} has an action unsupported at a lexical boundary")
+
+            if event_type := str(story.get("event_type", "")):
+                if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
+                    observations = []
+                    seen_observations = set()
+                    for observation in metric_observations(f"{headline} {summary}"):
+                        key = (observation.instrument, observation.value, observation.direction)
+                        if key not in seen_observations:
+                            seen_observations.add(key)
+                            observations.append(observation)
+                    key_numbers = tuple(str(value) for value in facts.get("key_numbers", ()) if value)
+                    for value in key_numbers:
+                        if any(char.isdigit() for char in value) and value not in summary:
+                            errors.append(f"story {index} drops a bound metric value from its summary")
+                    subject = str(facts.get("subject", "")).strip()
+                    if observations and subject and subject != observations[0].instrument:
+                        errors.append(f"story {index} metric subject is not the first bound instrument")
+                    for change in facts.get("key_changes", ()) or ():
+                        change_text = str(change)
+                        tokens = change_text.split()
+                        if len(tokens) >= 2 and not all(token in summary for token in tokens[:2]):
+                            errors.append(f"story {index} loses metric entity/direction binding")
+        audited_conflict = str(story.get("conflict_state", "NO_CONFLICT") or "NO_CONFLICT")
+        if audited_conflict not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+            errors.append(f"story {index} has unresolved audit conflict: {audited_conflict}")
         trend_relationship = str(story.get("trend_relationship", "")).strip()
         trend_matches = story.get("trend_matches")
         if trend_relationship and (
             not isinstance(trend_matches, list) or not trend_matches
         ):
             errors.append(f"story {index} has a trend label without matched trend groups")
+        if isinstance(trend_matches, list):
+            for match in trend_matches:
+                if not isinstance(match, dict):
+                    errors.append(f"story {index} has a malformed trend match")
+                    continue
+                trend_state = str(match.get("state", "")).strip()
+                if trend_state not in {"", "RISE", "FALL", "NO_MEANINGFUL_CHANGE", "INSUFFICIENT_COMPARISON"}:
+                    errors.append(f"story {index} has an unknown trend state")
+                if trend_relationship and "상승" in trend_relationship and trend_state and trend_state != "RISE":
+                    errors.append(f"story {index} labels a non-rising trend as rising")
+                if trend_relationship and "둔화" in trend_relationship and trend_state and trend_state != "FALL":
+                    errors.append(f"story {index} labels a non-falling trend as slowing")
         if certainty == "uncertain":
             metrics["uncertain_count"] += 1
         if source_count <= 1:
             metrics["single_source_count"] += 1
+        publisher_diversity = int(story.get("publisher_diversity", source_count) or 0)
+        if publisher_diversity > source_count:
+            metrics["publisher_diversity_error_count"] += 1
+            errors.append(f"story {index} publisher diversity exceeds source count")
         if certainty == "uncertain" and str(story.get("event_type", "OTHER")) == "OTHER" and source_count <= 1 and concrete == 0:
             metrics["low_information_uncertain_count"] += 1
             errors.append(f"story {index} is low-information uncertain")
@@ -98,6 +178,7 @@ def validate(path: Path) -> list[str]:
     metrics["duplicate_event_count"] = duplicate_event_count
     if duplicate_event_count:
         errors.append("selected stories contain duplicate event signatures")
+    metrics["semantic_error_count"] = len(errors)
     print(json.dumps(metrics, ensure_ascii=False, sort_keys=True))
     return errors
 

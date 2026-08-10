@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { handleRequest, runWatchdog } from "../src/index.js";
+import { deliveryState, handleRequest, runWatchdog } from "../src/index.js";
 
 class MemoryKV {
   constructor() {
@@ -44,6 +44,14 @@ const subscription = {
   keys: {
     p256dh: base64Url(new Uint8Array(65).fill(7)),
     auth: base64Url(new Uint8Array(16).fill(9)),
+  },
+};
+
+const subscriptionTwo = {
+  endpoint: "https://push.example.test/subscription/two",
+  keys: {
+    p256dh: base64Url(new Uint8Array(65).fill(8)),
+    auth: base64Url(new Uint8Array(16).fill(10)),
   },
 };
 
@@ -147,7 +155,19 @@ test("send requires authentication and suppresses same-date same-state duplicate
     { sendNotification },
   );
   assert.equal(first.status, 200);
-  assert.deepEqual(await first.json(), { ok: true, duplicate: false, date: "2026-08-10", type: "READY", sent: 1, failed: 0, pruned: 0 });
+  assert.deepEqual(await first.json(), {
+    ok: true,
+    duplicate: false,
+    request_state: "REQUEST_ACCEPTED",
+    date: "2026-08-10",
+    type: "READY",
+    source: "other",
+    delivery_state: "DELIVERED",
+    subscription_count: 1,
+    sent: 1,
+    failed: 0,
+    pruned: 0,
+  });
   const second = await handleRequest(
     request("/send", { method: "POST", body: { ...payload, run_id: "run-2" }, headers: { Authorization: `Bearer ${sendToken}` } }),
     env,
@@ -157,6 +177,81 @@ test("send requires authentication and suppresses same-date same-state duplicate
   assert.equal(second.status, 200);
   assert.equal((await second.json()).duplicate, true);
   assert.equal(calls, 1);
+});
+
+test("delivery states distinguish no subscribers, partial delivery, total failure, and stale pruning", async () => {
+  assert.equal(deliveryState({ subscriptionCount: 0, sent: 0, failed: 0, pruned: 0 }), "NO_SUBSCRIBERS");
+  assert.equal(deliveryState({ subscriptionCount: 2, sent: 1, failed: 1, pruned: 0 }), "PARTIAL_DELIVERY");
+  assert.equal(deliveryState({ subscriptionCount: 1, sent: 0, failed: 1, pruned: 1 }), "ALL_DELIVERIES_FAILED");
+  assert.equal(deliveryState({ subscriptionCount: 1, sent: 0, failed: 0, pruned: 1 }), "STALE_SUBSCRIPTIONS_PRUNED");
+
+  const empty = environment();
+  const noSubscribers = await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-11", run_id: "no-subs", type: "READY", source: "schedule" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    empty,
+    undefined,
+    { sendNotification: async () => {} },
+  );
+  assert.equal(noSubscribers.status, 200);
+  assert.equal((await noSubscribers.json()).delivery_state, "NO_SUBSCRIBERS");
+
+  const partial = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), partial);
+  await handleRequest(request("/subscribe", { method: "POST", body: subscriptionTwo }), partial);
+  let attempt = 0;
+  const partialResponse = await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-12", run_id: "partial", type: "READY", source: "schedule" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    partial,
+    undefined,
+    {
+      sendNotification: async () => {
+        attempt += 1;
+        if (attempt === 2) throw new Error("provider unavailable");
+      },
+    },
+  );
+  assert.equal(partialResponse.status, 502);
+  assert.equal((await partialResponse.json()).delivery_state, "PARTIAL_DELIVERY");
+  assert.equal(await partial.PUSH_SUBSCRIPTIONS.get("state:ready:2026-08-12"), null);
+
+  const failed = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), failed);
+  const failedResponse = await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-13", run_id: "failed", type: "READY", source: "schedule" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    failed,
+    undefined,
+    { sendNotification: async () => { throw new Error("provider unavailable"); } },
+  );
+  assert.equal(failedResponse.status, 502);
+  assert.equal((await failedResponse.json()).delivery_state, "ALL_DELIVERIES_FAILED");
+  assert.equal(await failed.PUSH_SUBSCRIPTIONS.get("state:ready:2026-08-13"), null);
+
+  const stale = environment();
+  await stale.PUSH_SUBSCRIPTIONS.put("sub:stale", "not-json");
+  const staleResponse = await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-14", run_id: "stale", type: "READY", source: "schedule" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    stale,
+    undefined,
+    { sendNotification: async () => {} },
+  );
+  assert.equal(staleResponse.status, 200);
+  assert.equal((await staleResponse.json()).delivery_state, "STALE_SUBSCRIPTIONS_PRUNED");
 });
 
 test("watchdog emits one failure only when today's ready marker is absent", async () => {
@@ -176,7 +271,34 @@ test("watchdog emits one failure only when today's ready marker is absent", asyn
   assert.equal(second.skipped, undefined);
   assert.equal(second.duplicate, true);
   assert.equal(calls, 1);
-  await env.PUSH_SUBSCRIPTIONS.put("state:ready:2026-08-10", "ready");
+  await env.PUSH_SUBSCRIPTIONS.put(
+    "state:ready:2026-08-10",
+    JSON.stringify({ source: "schedule", delivery_state: "DELIVERED" }),
+  );
   const ready = await runWatchdog(env, dependencies);
   assert.equal(ready.reason, "READY_ALREADY_RECORDED");
+});
+
+test("manual READY never masks a missing scheduled run", async () => {
+  const env = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  let failures = 0;
+  await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-15", run_id: "manual", type: "READY", source: "manual" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    env,
+    undefined,
+    { sendNotification: async (_subscription, message) => { if (message.title.includes("실패")) failures += 1; } },
+  );
+  const watchdog = await runWatchdog(env, {
+    now: () => new Date("2026-08-15T00:00:00.000Z"),
+    sendNotification: async (_subscription, message) => {
+      if (message.title.includes("실패")) failures += 1;
+    },
+  });
+  assert.equal(watchdog.type, "FAILURE");
+  assert.equal(failures, 1);
 });

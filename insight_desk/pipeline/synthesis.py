@@ -8,6 +8,19 @@ from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
 from .editorial import best_headline_item, effective_lead, effective_title, safe_evidence_text
 from .normalization import normalize_text
+from .semantics import (
+    ACTION_TERMS,
+    canonical_event_date,
+    canonical_event_signature,
+    contains_action,
+    contains_boundary_term,
+    first_action,
+    metric_observations,
+    MetricObservation,
+    recruitment_event_type,
+    summary_information_gain,
+)
+from .trend_metrics import effective_trend_state
 
 _NUMBER_RE = re.compile(
     r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
@@ -135,6 +148,14 @@ _GENERIC_HEADLINE_MARKERS = ("관련 보도", "관련 소식", "관련 기사", 
 _GENERIC_SUMMARY_MARKERS = (
     "단일 검색 결과만 확인되어",
     "공통으로 확인되는 세부 사실은 제한적이다",
+    "소식이 보도됐다",
+    "변화가 보도됐다",
+    "발표가 확인됐다",
+    "공개 내용이 확인됐다",
+    "관련 내용이 확인됐다",
+    "여러 매체에서 같은 핵심 내용이 확인됐다",
+    "여러 보도에서 같은 핵심 내용이 확인됐다",
+    "공식 자료를 인용한 보도가 확인됐다",
 )
 _EVENT_DATE_MARKERS = (
     "발매", "출시", "컴백", "공개", "발표", "개최", "공연", "콘서트", "진행", "시작", "재개",
@@ -156,7 +177,12 @@ def is_usable_synthesis(
     clean_summary = normalize_text(summary)
     if not clean_headline or any(marker in clean_headline for marker in _GENERIC_HEADLINE_MARKERS):
         return False
-    if not clean_summary or any(marker in clean_summary for marker in _GENERIC_SUMMARY_MARKERS):
+    if not clean_summary or any(
+        clean_summary == marker or clean_summary.startswith(marker)
+        for marker in _GENERIC_SUMMARY_MARKERS
+    ):
+        return False
+    if not summary_information_gain(clean_headline, clean_summary):
         return False
     if _TRUNCATION_RE.search(clean_headline + clean_summary):
         return False
@@ -391,6 +417,9 @@ def _repeated_terms(items: tuple[object, ...]) -> tuple[str, ...]:
 
 
 def _event_type(text: str, numbers: tuple[str, ...]) -> str:
+    recruitment = recruitment_event_type(text)
+    if recruitment:
+        return recruitment
     if any(word in text for word in ("실적", "매출", "영업이익", "순이익", "가이던스")):
         return "EARNINGS"
     if any(word in text for word in ("1위", "차트", "관왕", "수상")):
@@ -423,7 +452,7 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         and any(word in text for word in ("중단", "멈춘", "휴식", "재개", "취소"))
     ):
         return "SPORTS_INTERRUPTION"
-    if any(word in text for word in ("부상", "트레이드", "엔트리", "선발")):
+    if any(contains_action(text, word) for word in ("부상", "트레이드", "엔트리", "선발")):
         return "ROSTER_PERSONNEL"
     if sports_context and _DATE_RE.search(text) and any(word in text for word in ("시구", "개최", "예정")):
         return "SPORTS_EVENT"
@@ -437,7 +466,10 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         return "MARKET"
     if numbers and any(word in text for word in (*_CHANGE_MARKERS, "평균", "통계", "지표", "비율", "변동폭")):
         return "STATISTIC"
-    if any(word in text for word in ("유치", "투자", "인수", "전략", "데이터센터", "할당", "계약", "생산")):
+    if any(
+        contains_action(text, word)
+        for word in ("유치", "투자", "인수", "전략", "데이터센터", "할당", "계약", "생산")
+    ):
         return "INDUSTRY_CHANGE"
     if _DATE_RE.search(text) and any(word in text for word in (*_ACTION_MARKERS, "예정", "진행", "프로젝트", "선보인다")):
         return "SCHEDULED_EVENT"
@@ -474,7 +506,7 @@ def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
 
 
 def _action(text: str) -> str:
-    return next((word for word in _ACTION_MARKERS if word in text), "")
+    return next((word for word in _ACTION_MARKERS if contains_action(text, word)), "")
 
 
 def _change_phrases(text: str) -> tuple[str, ...]:
@@ -553,15 +585,16 @@ def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     relevant = [metric for metric in metrics if metric.topic_id == topic_id]
     if not relevant:
         return "비교 부족"
-    rising = any(metric.delta is not None and metric.delta > 0 for metric in relevant)
-    falling = any(metric.delta is not None and metric.delta < 0 for metric in relevant)
+    states = tuple(effective_trend_state(metric) for metric in relevant)
+    rising = "RISE" in states
+    falling = "FALL" in states
     if rising and falling:
         return "혼조"
     if rising:
         return "상승"
     if falling:
         return "둔화"
-    if any(metric.interpretation == "비교 기준 부족" for metric in relevant):
+    if "INSUFFICIENT_COMPARISON" in states:
         return "비교 부족"
     return "큰 변화 없음"
 
@@ -698,10 +731,56 @@ def _summary(
     source_count: int,
     uncertainty: str,
     completion_evidence: str = "",
+    market_observation: MetricObservation | None = None,
+    market_observations: tuple[MetricObservation, ...] = (),
 ) -> str:
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
         summary_subject = _fact_subject(summary_subject)
+        observations = tuple(
+            observation
+            for observation in (market_observations or ((market_observation,) if market_observation else ()))
+            if observation.value and observation.direction
+        )
+        if observations:
+            sentences: list[str] = []
+            for observation in observations[:3]:
+                marker = observation.direction
+                verb = {"강세": "상승", "약세": "하락"}.get(marker, marker)
+                sentence_subject = _fact_subject(observation.instrument or summary_subject)
+                sentences.append(
+                    f"{sentence_subject}{_particle(sentence_subject)} {observation.value} {verb}했다."
+                )
+            sentence = " ".join(sentences)
+            if completion_evidence:
+                # Add one additional, trusted clause when the lead contains
+                # a concrete related fact.  Do not paste a generic evidence
+                # macro or borrow a second metric's direction.
+                detail_parts = re.split(r"(?:했고|하며|지만|그리고|,|，)", completion_evidence)
+                detail = next(
+                    (
+                        part.strip(" ,，:·-—")
+                        for part in detail_parts
+                        if len(part.strip()) >= 12
+                        and not any(
+                            marker in part
+                            for marker in (
+                                "공식 발표와",
+                                "여러 보도",
+                                "여러 매체",
+                                "핵심 내용",
+                                "세부 내용",
+                            )
+                        )
+                        and not any(observation.instrument in part for observation in observations)
+                    ),
+                    "",
+                )
+                if detail and summary_information_gain(title, detail):
+                    sentence += f" {detail.rstrip(' .!?')}."
+            if source_count > 1:
+                sentence += " 같은 흐름이 여러 보도에서 확인됐다."
+            return sentence
         quote_detail = _market_quote_detail(title, numbers, change)
         run_phrase = _market_run_phrase(title)
         if quote_detail:
@@ -793,6 +872,8 @@ def _summary(
             sentence = f"{listing_product.strip()}{_subject_particle(listing_product.strip())} {listing_date} 상장될 예정이다."
         elif "상장" in title and date:
             sentence = f"{release_subject}{_subject_particle(release_subject)} {date} 상장될 예정이다."
+        elif "일정" in completion_evidence and not date:
+            sentence = f"{release_subject}의 출시 일정이 공개됐다."
         else:
             if "데뷔곡" in title:
                 release_noun, release_verb, release_fact = "데뷔곡", "발매", "데뷔곡 발매"
@@ -821,6 +902,25 @@ def _summary(
             sentence = f"{_clean_headline(title)}."
         else:
             sentence = f"{_clean_headline(title)}."
+    elif event_type.startswith("RECRUITMENT") and subject:
+        ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
+        counts_match = re.search(
+            r"([\d,]+명)\s*선발.*?([\d,]+명)\s*지원",
+            completion_evidence,
+        )
+        if counts_match and ratio_match:
+            selected, applicants = counts_match.groups()
+            ratio = re.sub(r"\s+", "", ratio_match.group(0))
+            sentence = f"{subject} {ratio} 경쟁률을 기록했고, {selected} 선발에 {applicants} 지원했다."
+        elif counts_match:
+            selected, applicants = counts_match.groups()
+            sentence = f"{subject} 공채에서 {selected} 선발에 {applicants} 지원했다."
+        elif ratio_match:
+            sentence = f"{subject} 공채 경쟁률은 {re.sub(r'\s+', '', ratio_match.group(0))}였다."
+        else:
+            sentence = ""
+        if not sentence:
+            sentence = f"{_clean_headline(title)}."
     elif event_type == "INDUSTRY_CHANGE" and subject:
         change_action = {
             "유치": "투자 유치" if any(marker in title for marker in ("투자", "자금", "출자")) else "유치",
@@ -840,7 +940,10 @@ def _summary(
         elif key_number:
             sentence = f"{subject}의 {key_number} 규모 {change_action} 소식이 보도됐다."
         else:
-            sentence = f"{subject}의 {change_action} 소식이 보도됐다."
+            detail = completion_evidence
+            if title and detail.startswith(title):
+                detail = detail[len(title) :].strip(" ,:·-—")
+            sentence = detail if len(detail) >= 12 else ""
     elif event_type == "ROSTER_PERSONNEL" and subject:
         if action == "선발":
             lineup = _lineup_detail(completion_evidence)
@@ -890,12 +993,10 @@ def clean_headline(value: str) -> str:
     return _clean_headline(value)
 
 
-def _evidence_summary(source_count: int, repeated: tuple[str, ...], official: str) -> str:
-    if official:
-        return "공식 자료를 인용한 보도가 확인됐다."
-    if source_count > 1:
-        return "여러 매체에서 같은 핵심 내용이 확인됐다."
-    return "검색 결과 한 건에서 확인된 내용이다."
+def _evidence_summary(summary: str) -> str:
+    """Expose a story-specific fact, never a repeated evidence macro."""
+
+    return normalize_text(summary)
 
 
 def synthesize_cluster(
@@ -904,6 +1005,8 @@ def synthesize_cluster(
     topic_name: str,
     trend_metrics: tuple[TrendMetric, ...],
     event_type_override: str | None = None,
+    event_signature_override: str | None = None,
+    conflict_state_override: str | None = None,
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
     items = cluster.items
     representative = cluster.representative
@@ -950,6 +1053,8 @@ def synthesize_cluster(
     # decision for synthesis so the audit and the emitted StoryFacts cannot
     # diverge when two deterministic classifiers have different precedence.
     event_type = event_type_override or inferred_event_type
+    market_observation = next(iter(metric_observations(title)), None)
+    market_observations = metric_observations(title)
     # Do not borrow an action from another headline in a broad cluster. A
     # secondary article may describe a different event while sharing the
     # same entity or theme.
@@ -963,7 +1068,13 @@ def synthesize_cluster(
             action = "재개"
     else:
         subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
-    change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
+    if market_observation is not None and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+        display_numbers = tuple(observation.value for observation in market_observations[:3]) or (market_observation.value,)
+        change = market_observation.direction
+        if market_observation.instrument:
+            subject = market_observation.instrument
+    else:
+        change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
     repeated = _repeated_values(items, _numbers)
     if not repeated:
         repeated = _repeated_values(items, _dates)
@@ -985,9 +1096,13 @@ def synthesize_cluster(
     official = _official_source(items)
     source_count = cluster.source_count
     trend_state = _trend_state(cluster.topic_id, trend_metrics)
-    date = dates[0] if dates else ""
+    canonical_date, date_conflict = canonical_event_date(title, _fact_lead(headline_item))
+    date = canonical_date or (dates[0] if dates else "")
     location = locations[0] if locations else ""
     next_signal = _next_signal(event_type, headline_evidence, date, action)
+    conflict_state = conflict_state_override or "NO_CONFLICT"
+    if date_conflict:
+        conflict_state = "DATE_CONFLICT"
     facts = StoryFacts(
         subject=subject,
         action=action,
@@ -998,9 +1113,21 @@ def synthesize_cluster(
         location=location,
         key_numbers=display_numbers[:3],
         key_changes=_unique(
-            ([change] if change else [])
-            + list(_change_phrases(" ".join(_clean_headline(getattr(item, "title", "")) for item in items)))
-        )[:2],
+            (
+                [change]
+                if len(market_observations) <= 1 and change
+                else [
+                    f"{observation.instrument} {observation.direction}"
+                    for observation in market_observations[:3]
+                    if observation.direction
+                ]
+            )
+            + (
+                []
+                if market_observation is not None
+                else list(_change_phrases(" ".join(_clean_headline(getattr(item, "title", "")) for item in items)))
+            )
+        )[:3],
         official_source=official,
         source_count=source_count,
         source_diversity=source_count,
@@ -1009,6 +1136,9 @@ def synthesize_cluster(
         trend_state=trend_state,
         next_known_event=next_signal,
         uncertainty=uncertainty,
+        event_signature=event_signature_override
+        or canonical_event_signature(event_type, title, lead=_fact_lead(headline_item), subject=subject, action=action),
+        conflict_state=conflict_state,
     )
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):
@@ -1026,8 +1156,10 @@ def synthesize_cluster(
         source_count,
         uncertainty,
         fact_headline_evidence,
+        market_observation=market_observation,
+        market_observations=market_observations,
     )
-    evidence = _evidence_summary(source_count, repeated, official)
+    evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()
     if source_count > 1 or official:
         certainty = Certainty.CONFIRMED

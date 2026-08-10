@@ -20,6 +20,7 @@ from .editorial import assess_relevance, effective_lead, effective_title, why_se
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
 from .synthesis import synthesize_cluster
+from .trend_metrics import effective_trend_state
 
 
 def _topic_name(topic_id: str, topics: tuple[Topic, ...]) -> str:
@@ -34,15 +35,16 @@ def _trend_label(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     relevant = _trend_for_topic(topic_id, metrics)
     if not relevant:
         return ""
-    rising = any(metric.delta is not None and metric.delta > 0 for metric in relevant)
-    falling = any(metric.delta is not None and metric.delta < 0 for metric in relevant)
+    states = tuple(effective_trend_state(metric) for metric in relevant)
+    rising = "RISE" in states
+    falling = "FALL" in states
     if rising and falling:
         return "검색 관심 · 혼조"
     if rising:
         return "검색 관심 · 상승"
     if falling:
         return "검색 관심 · 둔화"
-    if any(metric.interpretation == "비교 기준 부족" for metric in relevant):
+    if "INSUFFICIENT_COMPARISON" in states:
         return "검색 관심 · 비교 부족"
     return "검색 관심 · 큰 변화 없음"
 
@@ -59,7 +61,15 @@ def _story_trend_matches(
     text = " ".join(
         value
         for item in cluster.items
-        for value in (effective_title(item), effective_lead(item), item.query)
+        for value in (
+            effective_title(item),
+            effective_lead(item),
+            *(
+                authority.title
+                for authority in getattr(item, "authoritative_evidence", ())
+                if getattr(authority, "title", "")
+            ),
+        )
         if value
     ).casefold()
     matched = tuple(
@@ -73,15 +83,16 @@ def _story_trend_matches(
 def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
     if not metrics:
         return "검색 관심 · 비교 부족"
-    rising = sum(1 for metric in metrics if metric.delta is not None and metric.delta > 0)
-    falling = sum(1 for metric in metrics if metric.delta is not None and metric.delta < 0)
+    states = tuple(effective_trend_state(metric) for metric in metrics)
+    rising = states.count("RISE")
+    falling = states.count("FALL")
     if rising and falling:
         return "검색 관심 · 혼조"
     if rising:
         return f"검색 관심 · {rising}개 그룹 상승"
     if falling:
         return f"검색 관심 · {falling}개 그룹 둔화"
-    if any(metric.interpretation == "비교 기준 부족" for metric in metrics):
+    if "INSUFFICIENT_COMPARISON" in states:
         return "검색 관심 · 비교 부족"
     return "검색 관심 · 큰 변화 없음"
 
@@ -157,6 +168,8 @@ def build_briefing(
             topic_name=topic_name,
             trend_metrics=trend_metrics,
             event_type_override=assessment.event.event_type,
+            event_signature_override=assessment.event_signature,
+            conflict_state_override=assessment.evidence.conflict_state,
         )
         stories.append(
             Story(
@@ -241,10 +254,12 @@ def build_briefing(
                         "group_name": metric.group_name,
                         "topic_id": metric.topic_id,
                         "delta": metric.delta,
+                        "state": effective_trend_state(metric),
                         "interpretation": metric.interpretation,
                     }
                     for metric in trend_matches
                 ],
+                "conflict_state": facts.conflict_state,
                 "matched_topic_ids": list(story.matched_topic_ids),
                 "why_selected": list(story.why_selected),
                 "final_score": story.editorial_score,

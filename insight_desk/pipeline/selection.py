@@ -13,6 +13,7 @@ from .editorial import (
 )
 from .novelty import classify_novelty
 from .synthesis import is_usable_synthesis, synthesize_cluster
+from .semantics import canonical_publisher
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,13 @@ def _headline_key(cluster: StoryCluster) -> str:
 
 
 def _publisher_count(cluster: StoryCluster) -> int:
-    return len({item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain})
+    return len(
+        {
+            canonical_publisher(item.publisher, item.source_domain)
+            for item in cluster.items
+            if item.publisher or item.source_domain
+        }
+    )
 
 
 def _summary_source(cluster: StoryCluster) -> str:
@@ -333,6 +340,7 @@ def select_clusters(
                 "evidence_strength": assessment.evidence.strength,
                 "official_source": assessment.evidence.official,
                 "metadata_complete": assessment.evidence.metadata_complete,
+                "conflict_state": assessment.evidence.conflict_state,
                 "certainty": (
                     "confirmed"
                     if assessment.evidence.official or assessment.evidence.publisher_diversity >= 2

@@ -11,7 +11,8 @@ from insight_desk.pipeline.normalization import normalize_news_payloads
 from insight_desk.pipeline.novelty import classify_novelty
 from insight_desk.pipeline.scoring import score_news
 from insight_desk.pipeline.selection import cap_topic_candidates, select_clusters
-from insight_desk.pipeline.synthesis import synthesize_cluster
+from insight_desk.pipeline.semantics import contains_action, metric_observations, summary_information_gain
+from insight_desk.pipeline.synthesis import is_usable_synthesis, synthesize_cluster
 
 
 def _topic(
@@ -492,14 +493,14 @@ class EditorialAcceptanceTests(unittest.TestCase):
         topic = _topic(
             "kpop",
             "엔터·음악·K-POP",
-            "YG",
-            anchors=("YG", "그룹", "신곡", "앨범"),
+            "빅뱅",
+            anchors=("빅뱅", "그룹", "신곡", "앨범"),
             events=("발표", "신곡", "앨범"),
         )
         item = _item(
             "bigbang-new-song",
             "kpop",
-            "YG",
+            "빅뱅",
             "데뷔 20주년 빅뱅, 완전체로 신곡 빅(BiiiG) 발표",
             "빅뱅이 신곡을 발표했다.",
         )
@@ -507,6 +508,105 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(assessment.event.event_type, "PRODUCT_RELEASE")
         self.assertTrue(assessment.event.passed)
         self.assertTrue(assessment.qualified)
+
+    def test_run76_market_observations_keep_instrument_value_and_direction_bound(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "코스닥",
+            anchors=("코스닥", "코스피"),
+            events=("상승", "급등"),
+        )
+        item = _item(
+            "run76-market-binding",
+            "economy",
+            "코스닥",
+            "코스닥 +6.97% 급등, 코스피 +0.65% 소폭 상승",
+            "코스닥은 6.97% 급등했고 코스피는 0.65% 소폭 상승했다.",
+            metadata_title="코스닥 +6.97% 급등, 코스피 +0.65% 소폭 상승",
+            metadata_description="코스닥은 6.97% 급등했고 코스피는 0.65% 소폭 상승했다.",
+            score=90.0,
+        )
+        observations = metric_observations(item.title)
+        self.assertEqual([(value.instrument, value.value) for value in observations], [("코스닥", "+6.97%"), ("코스피", "+0.65%")])
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("economy", (item,)),
+            topic_name=topic.name,
+            trend_metrics=(),
+            event_type_override=assessment.event.event_type,
+            event_signature_override=assessment.event_signature,
+        )
+        self.assertIn("코스닥", summary)
+        self.assertIn("6.97%", summary)
+        self.assertIn("코스피", summary)
+        self.assertIn("0.65%", summary)
+        self.assertEqual(facts.subject, "코스닥")
+        self.assertEqual(facts.key_numbers[:2], ("+6.97%", "+0.65%"))
+        self.assertNotIn("코스피는 0.65%로 급등했다", summary)
+
+    def test_run76_korean_action_boundaries_reject_collision_substrings(self) -> None:
+        self.assertFalse(contains_action("음악 보부상 스트레이 키즈", "부상"))
+        self.assertFalse(contains_action("NH투자증권", "투자"))
+        self.assertFalse(contains_action("장기투자 하라더니", "투자"))
+        self.assertTrue(contains_action("선수 부상으로 경기 중단", "부상"))
+
+    def test_run76_query_only_ai_match_is_rejected_but_real_model_release_survives(self) -> None:
+        topic = _topic("ai_tech", "AI·테크", "ChatGPT", anchors=("AI", "ChatGPT", "모델"), events=("발표", "공개"))
+        incidental = _item(
+            "run76-ai-incidental",
+            "ai_tech",
+            "ChatGPT",
+            "AI·투자교육·실전투자 삼박자",
+            "AI를 활용한 투자교육과 실전투자 전략을 소개했다.",
+        )
+        self.assertFalse(assess_cluster(StoryCluster("ai_tech", (incidental,)), topic, novelty="NEW").qualified)
+        actual = _item(
+            "real-chatgpt-release",
+            "ai_tech",
+            "OpenAI",
+            "OpenAI, 새 ChatGPT 모델 공개",
+            "OpenAI가 8월 10일 새 모델을 공개했다.",
+            metadata_title="OpenAI, 새 ChatGPT 모델 공개",
+            metadata_description="OpenAI가 8월 10일 새 모델을 공개했다.",
+            score=90.0,
+        )
+        self.assertTrue(assess_cluster(StoryCluster("ai_tech", (actual,)), replace(topic, news_queries=("OpenAI",)), novelty="NEW").qualified)
+
+    def test_run76_event_date_conflict_rejects_candidate(self) -> None:
+        topic = _topic("kpop", "K-POP", "빅뱅", anchors=("빅뱅", "신곡"), events=("발표",))
+        item = _item(
+            "date-conflict",
+            "kpop",
+            "빅뱅",
+            "빅뱅 19일 신곡 발표",
+            "빅뱅의 20일 신곡 발표가 예정됐다.",
+            metadata_title="빅뱅 19일 신곡 발표",
+            metadata_description="빅뱅의 20일 신곡 발표가 예정됐다.",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertFalse(assessment.event.passed)
+        self.assertIn("EVENT_DATE_CONFLICT", assessment.event.reasons)
+
+    def test_run76_summary_information_gain_and_generic_evidence_macro_are_gated(self) -> None:
+        self.assertFalse(summary_information_gain("AI 모델 출시 발표", "AI 모델 출시 발표."))
+        self.assertFalse(is_usable_synthesis(
+            "AI 모델 출시 발표",
+            "여러 매체에서 같은 핵심 내용이 확인됐다.",
+            source_count=2,
+        ))
+
+    def test_run76_incidental_ai_candidate_does_not_fill_a_slot(self) -> None:
+        topic = _topic("ai_tech", "AI·테크", "ChatGPT", anchors=("AI", "ChatGPT"), events=("투자",))
+        item = _item(
+            "run76-nh-investment",
+            "ai_tech",
+            "ChatGPT",
+            "NH투자증권, AI 기반 투자 전략 구현 지원",
+            "NH투자증권이 투자 전략 구현을 지원한다고 전했다.",
+        )
+        result = select_clusters((StoryCluster("ai_tech", (item,)),), (topic,), limit=10)
+        self.assertEqual(result.selected, ())
 
     def test_secondary_release_word_does_not_change_primary_announcement_type(self) -> None:
         topic = _topic(
@@ -555,7 +655,7 @@ class EditorialAcceptanceTests(unittest.TestCase):
             metadata_description="부산시 지방공무원 7급 공채에서 38명 선발에 1,461명이 지원했다.",
         )
         assessment = assess_cluster(StoryCluster("psat", (item,)), topic, novelty="NEW")
-        self.assertEqual(assessment.event.event_type, "ROSTER_PERSONNEL")
+        self.assertEqual(assessment.event.event_type, "RECRUITMENT_COMPETITION")
         self.assertTrue(assessment.event.passed)
         self.assertTrue(assessment.qualified)
 
@@ -1294,7 +1394,7 @@ class EditorialAcceptanceTests(unittest.TestCase):
 
     def test_story_count_is_variable_and_zero_is_valid(self) -> None:
         topic = _topic("ai", "AI", "AI", anchors=("AI",), events=("발표",))
-        strong = _item("one", "ai", "AI", "AI 모델 출시 발표", "새 모델 출시 일정이 공개됐다.")
+        strong = _item("one", "ai", "AI", "AI 모델 출시 발표", "8월 10일 새 모델 출시 일정이 공개됐다.")
         result = select_clusters((StoryCluster("ai", (strong,)),), (topic,), limit=10)
         self.assertEqual(len(result.selected), 1)
         weak = _item("weak", "ai", "AI", "AI 관련 보도", "세부 내용은 없다.")

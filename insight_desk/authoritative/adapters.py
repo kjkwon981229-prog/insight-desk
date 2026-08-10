@@ -89,8 +89,11 @@ def _fold(value: str) -> str:
 
 
 def _item_text(item: NewsItem) -> str:
+    # Retrieval provenance is deliberately excluded.  A query such as
+    # ``소비자물가`` or ``OpenAI`` is not evidence that the article is about
+    # that subject; only the article's own trusted title/lead may trigger an
+    # authoritative lookup.
     values = (
-        item.query,
         item.metadata_title,
         item.title,
         item.metadata_description,

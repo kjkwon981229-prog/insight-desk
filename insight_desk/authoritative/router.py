@@ -66,6 +66,43 @@ def _conflict_count(item: NewsItem, evidence: AuthorityEvidence) -> int:
     return int(item_numbers.isdisjoint(official_numbers))
 
 
+def _authority_conflict_state(item: NewsItem, evidence: AuthorityEvidence) -> str:
+    """Return the candidate-level state used by the editorial gate.
+
+    An attached official record is not automatically safe: when both sides
+    expose comparable numeric observations and the sets are disjoint, the
+    candidate is explicitly marked as a value conflict.  We intentionally do
+    not compare publication dates with statistical periods here; those fields
+    have different semantics and a false date conflict would be worse than a
+    private audit warning.
+    """
+
+    if _conflict_count(item, evidence):
+        return "VALUE_CONFLICT"
+    return "CONFIRMED_MATCH"
+
+
+_CONFLICT_PRIORITY = {
+    "NO_CONFLICT": 0,
+    "CONFIRMED_MATCH": 1,
+    "UNIT_CONFLICT": 3,
+    "DATE_CONFLICT": 4,
+    "ENTITY_CONFLICT": 5,
+    "VALUE_CONFLICT": 6,
+    "UNRESOLVED_CONFLICT": 7,
+}
+
+
+def _merge_conflict_state(existing: str, incoming: str) -> str:
+    existing_value = existing or "NO_CONFLICT"
+    incoming_value = incoming or "NO_CONFLICT"
+    return (
+        incoming_value
+        if _CONFLICT_PRIORITY.get(incoming_value, 7) > _CONFLICT_PRIORITY.get(existing_value, 0)
+        else existing_value
+    )
+
+
 def _attach(
     items: tuple[NewsItem, ...], payloads: tuple[AdapterPayload, ...]
 ) -> tuple[tuple[NewsItem, ...], dict[str, int]]:
@@ -76,15 +113,22 @@ def _attach(
             item = by_id.get(item_id)
             if item is None:
                 continue
-            conflicts[payload.result.adapter] = conflicts.get(payload.result.adapter, 0) + _conflict_count(item, evidence)
+            incoming_state = _authority_conflict_state(item, evidence)
+            conflicts[payload.result.adapter] = conflicts.get(payload.result.adapter, 0) + int(
+                incoming_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+            )
+            merged_state = _merge_conflict_state(item.authority_conflict, incoming_state)
             existing_keys = {value.event_key for value in item.authoritative_evidence if value.event_key}
             if evidence.event_key and evidence.event_key in existing_keys:
+                if merged_state != item.authority_conflict:
+                    by_id[item_id] = replace(item, authority_conflict=merged_state)
                 continue
             provenance = tuple(dict.fromkeys((*item.provenance, EvidenceType.OFFICIAL_SOURCE)))
             by_id[item_id] = replace(
                 item,
                 provenance=provenance,
                 authoritative_evidence=(*item.authoritative_evidence, evidence),
+                authority_conflict=merged_state,
             )
     return tuple(by_id[item.evidence_id] for item in items), conflicts
 

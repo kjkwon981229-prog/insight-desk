@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from ..domain.models import NewsItem
 from .clustering import StoryCluster
 from .editorial import effective_title
+from .semantics import canonical_event_signature, first_action
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
 _GENERIC = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
@@ -40,13 +42,13 @@ def _signature_parts(event_type: str, title: str, numbers: object = (), dates: o
 def current_signature(cluster: StoryCluster, event_type: str) -> str:
     representative = cluster.representative
     title = effective_title(representative)
-    numbers: list[str] = []
-    dates: list[str] = []
-    for item in cluster.items:
-        text = f"{effective_title(item)} {item.metadata_description if item.metadata_description else item.summary}"
-        numbers.extend(re.findall(r"\d[\d,.]*(?:\s?(?:조원|억원|만원|달러|원|%|명|건|배|개|곳|일|년|개월|위|점))?", text))
-        dates.extend(re.findall(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)", text))
-    return "|".join(_signature_parts(event_type, title, tuple(dict.fromkeys(numbers)), tuple(dict.fromkeys(dates))))
+    lead = representative.metadata_description or representative.summary
+    return canonical_event_signature(
+        event_type,
+        title,
+        lead=lead,
+        action=first_action(title),
+    )
 
 
 def _family(signature: str) -> tuple[str, ...]:
@@ -55,7 +57,24 @@ def _family(signature: str) -> tuple[str, ...]:
 
 
 def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
-    """Read only the previously published latest payload when available."""
+    """Read the private durable history before falling back to legacy output.
+
+    The history file lives beside the Pages directory and is cached by the
+    workflow; it is never copied into the public site.  This keeps novelty
+    truthful without adding a database or exposing event signatures to users.
+    """
+
+    history_candidates = (
+        output_dir.parent / "history" / "publication-signatures.json",
+        output_dir / "history" / "publication-signatures.json",
+    )
+    for path in history_candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("signatures"), list):
+            return tuple(str(value) for value in payload["signatures"] if isinstance(value, str) and value)
 
     candidates = (
         output_dir / "latest" / "data.json",
@@ -71,6 +90,10 @@ def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
             if not isinstance(story, dict):
                 continue
             facts = story.get("facts", {}) if isinstance(story.get("facts", {}), dict) else {}
+            stored_signature = str(facts.get("event_signature", "") or "").strip()
+            if stored_signature:
+                signatures.append(stored_signature)
+                continue
             signatures.append(
                 "|".join(
                     _signature_parts(
@@ -83,6 +106,28 @@ def load_previous_signatures(output_dir: Path) -> tuple[str, ...]:
             )
         return tuple(signature for signature in signatures if signature)
     return ()
+
+
+def write_publication_signatures(path: Path, stories: tuple[object, ...], *, generated_at: str | datetime) -> None:
+    """Persist the exact canonical signatures of the successfully rendered run."""
+
+    signatures = []
+    for story in stories:
+        signature = str(
+            getattr(story, "event_signature", "")
+            or getattr(getattr(story, "facts", None), "event_signature", "")
+            or ""
+        ).strip()
+        if signature and signature not in signatures:
+            signatures.append(signature)
+    timestamp = generated_at.isoformat(timespec="seconds") if isinstance(generated_at, datetime) else str(generated_at)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps({"version": 1, "generated_at": timestamp, "signatures": signatures}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def classify_novelty(signature: str, previous: tuple[str, ...]) -> str:

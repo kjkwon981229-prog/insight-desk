@@ -20,7 +20,7 @@ from .pipeline.clustering import cluster_news
 from .pipeline.deduplication import deduplicate_news
 from .pipeline.normalization import normalize_news_payloads
 from .pipeline.scoring import score_news
-from .pipeline.novelty import load_previous_signatures
+from .pipeline.novelty import load_previous_signatures, write_publication_signatures
 from .pipeline.selection import cap_topic_candidates, topic_diverse_enrichment_candidates
 from .pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
 from .security import assert_no_secret_values, redact_error
@@ -275,6 +275,11 @@ def execute(
             )
             _write_state(state_path, failure, secrets)
             return failure
+        write_publication_signatures(
+            state_path.parent / "history" / "publication-signatures.json",
+            briefing.stories,
+            generated_at=generated_at,
+        )
         _write_state(state_path, state, secrets)
         return state
     except Exception as exc:  # noqa: BLE001 - the workflow receives a sanitized failure state

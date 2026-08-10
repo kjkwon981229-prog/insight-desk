@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..domain.models import Briefing, RunStatus, TrendMetric, to_jsonable
 from ..pipeline.synthesis import clean_headline
+from ..pipeline.trend_metrics import effective_trend_state
 
 CSS = r""":root {
   color-scheme: light;
@@ -426,17 +427,22 @@ def _sparkline(metric: TrendMetric) -> str:
 
 
 def _trend_direction(metric: TrendMetric) -> tuple[str, str]:
-    interpretation = metric.interpretation or ""
-    if "상승" in interpretation or (metric.delta is not None and metric.delta > 0):
+    state = effective_trend_state(metric)
+    if state == "RISE":
         return "상승", "rise"
-    if "하락" in interpretation or (metric.delta is not None and metric.delta < 0):
+    if state == "FALL":
         return "하락", "fall"
-    if "유지" in interpretation:
+    if state == "NO_MEANINGFUL_CHANGE":
         return "유지", "steady"
     return "확인 부족", "unknown"
 
 
 def _trend_change(metric: TrendMetric) -> str:
+    state = effective_trend_state(metric)
+    if state == "INSUFFICIENT_COMPARISON":
+        return "비교 기준 부족"
+    if state == "NO_MEANINGFUL_CHANGE":
+        return "유의미한 변화 없음"
     if metric.change_percent is not None:
         return f"직전 구간 대비 {metric.change_percent:+.1f}%"
     if metric.delta is not None:
@@ -447,8 +453,9 @@ def _trend_change(metric: TrendMetric) -> str:
 def _trend_overview(metrics: tuple[TrendMetric, ...]) -> str:
     if not metrics:
         return "비교 자료 부족"
-    rising = sum(1 for metric in metrics if metric.delta is not None and metric.delta > 0)
-    falling = sum(1 for metric in metrics if metric.delta is not None and metric.delta < 0)
+    states = tuple(effective_trend_state(metric) for metric in metrics)
+    rising = states.count("RISE")
+    falling = states.count("FALL")
     if rising and falling:
         return "그룹별 방향 혼조"
     if rising:
@@ -911,6 +918,7 @@ def _public_payload(briefing: Briefing) -> dict[str, object]:
                 "previous_ratio": metric.previous_ratio,
                 "delta": metric.delta,
                 "change_percent": metric.change_percent,
+                "state": effective_trend_state(metric),
                 "interpretation": metric.interpretation,
                 "points": [{"period": point.period, "ratio": point.ratio} for point in metric.points],
             }

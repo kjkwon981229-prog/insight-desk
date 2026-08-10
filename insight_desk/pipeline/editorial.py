@@ -7,6 +7,16 @@ from dataclasses import dataclass
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster, market_primary_text
 from .normalization import normalize_text
+from .semantics import (
+    ACTION_TERMS,
+    canonical_event_date,
+    canonical_event_signature,
+    contains_action,
+    contains_intent_term,
+    canonical_publisher,
+    metric_observations,
+    recruitment_event_type,
+)
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
@@ -16,6 +26,14 @@ _GENERIC_HEADLINE_RE = re.compile(r"^(?:.+\s)?관련\s*(?:보도|소식|기사)$
 _GENERIC_SUMMARY_MARKERS = (
     "단일 검색 결과만 확인되어",
     "공통으로 확인되는 세부 사실은 제한적이다",
+    "소식이 보도됐다",
+    "변화가 보도됐다",
+    "발표가 확인됐다",
+    "공개 내용이 확인됐다",
+    "관련 내용이 확인됐다",
+    "여러 매체에서 같은 핵심 내용이 확인됐다",
+    "여러 보도에서 같은 핵심 내용이 확인됐다",
+    "공식 자료를 인용한 보도가 확인됐다",
 )
 _EVENT_PATTERNS: tuple[tuple[str, tuple[str, ...], float], ...] = (
     ("REGULATION", ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"), 84.0),
@@ -97,26 +115,19 @@ def _contains(text: str, phrase: str) -> bool:
 
 
 def _contains_intent_term(text: str, phrase: str) -> bool:
-    """Match intent vocabulary without treating company compounds as teams.
+    return contains_intent_term(text, phrase)
 
-    Some configured intent terms are short Korean names that also occur as
-    prefixes in unrelated organizations.  ``한화`` must match the baseball
-    team when it is a standalone name (including ordinary particles), but not
-    ``한화에어로스페이스`` in an economy article.  Other vocabulary keeps the
-    existing substring behavior so broad configured anchors retain recall.
-    """
 
-    if _compact(phrase) == "한화":
-        folded = _fold(text)
-        return bool(
-            re.search(
-                r"(?<![가-힣A-Za-z0-9])한화"
-                r"(?:은|는|이|가|을|를|의|도|만|와|과|에|에서|로|으로)?"
-                r"(?![가-힣A-Za-z0-9])",
-                folded,
-            )
-        )
-    return _contains(text, phrase)
+def _query_match(text: str, query: str) -> bool:
+    """Treat a retrieval query as a bounded signal, never as a subject."""
+
+    return contains_intent_term(text, query) if query.strip() else False
+
+
+def _event_term_match(text: str, term: str) -> bool:
+    if term in ACTION_TERMS:
+        return contains_action(text, term)
+    return _contains(text, term)
 
 
 def safe_evidence_text(value: str) -> str:
@@ -224,6 +235,7 @@ class EvidenceAssessment:
     metadata_complete: bool
     passed: bool
     reasons: tuple[str, ...]
+    conflict_state: str = "NO_CONFLICT"
 
 
 @dataclass(frozen=True)
@@ -248,11 +260,11 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
         raw_body = safe_evidence_text(item.summary)
         query = item.query
         query_tokens = _tokens(query)
-        title_query = _contains(title, query)
-        lead_query = _contains(lead, query)
-        body_query = _contains(raw_body, query)
-        title_token_hits = sum(1 for token in query_tokens if _contains(title, token))
-        lead_token_hits = sum(1 for token in query_tokens if _contains(lead, token))
+        title_query = _query_match(title, query)
+        lead_query = _query_match(lead, query)
+        body_query = _query_match(raw_body, query)
+        title_token_hits = sum(1 for token in query_tokens if _query_match(title, token))
+        lead_token_hits = sum(1 for token in query_tokens if _query_match(lead, token))
         anchor_title = any(_contains_intent_term(title, anchor) for anchor in anchors)
         core_anchor_title = any(_contains_intent_term(title, anchor) for anchor in topic.intent_anchors)
         anchor_lead = any(_contains_intent_term(lead, anchor) for anchor in anchors)
@@ -300,7 +312,7 @@ def assess_relevance(cluster: StoryCluster, topic: Topic) -> RelevanceAssessment
             reasons.append("NEGATIVE_CONTEXT_IN_SNIPPET")
 
         background_only = bool(
-            (body_query or any(_contains(raw_body, token) for token in query_tokens))
+            (body_query or any(_query_match(raw_body, token) for token in query_tokens))
             and not (title_query or title_token_hits or lead_query or lead_token_hits or anchor_title)
         )
         if background_only:
@@ -435,6 +447,45 @@ def _is_completed_entertainment_event(title_text: str) -> bool:
     )
 
 
+def _is_incidental_ai_topic(title_text: str, topic: Topic, event_type: str, action: bool) -> bool:
+    """Reject finance/education stories whose only tech signal is ``AI``.
+
+    This is a reusable semantic rule, not a title blacklist: an AI model,
+    data-centre, chip, product, or service event remains eligible.  A generic
+    investment/education headline does not become an AI story merely because
+    a query token or the acronym appears in it.
+    """
+
+    if topic.id != "ai_tech":
+        return False
+    if not _contains_intent_term(title_text, "AI"):
+        return False
+    technical_signal = any(
+        _contains(title_text, marker)
+        for marker in (
+            "인공지능",
+            "모델",
+            "에이전트",
+            "데이터센터",
+            "반도체",
+            "GPU",
+            "HBM",
+            "클라우드",
+            "플랫폼",
+            "서비스",
+            "개발",
+            "출시",
+            "규제",
+            "허가",
+        )
+    )
+    generic_finance_context = any(
+        _contains(title_text, marker)
+        for marker in ("투자교육", "실전투자", "투자 전략", "투자전략", "증권", "재테크")
+    )
+    return bool(action and event_type == "INDUSTRY_CHANGE" and generic_finance_context and not technical_signal)
+
+
 def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     text = " ".join(effective_text(item) for item in cluster.items)
     # Synthesis and the public headline use the same best source headline.
@@ -446,19 +497,15 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     event_type = "OTHER"
     significance = 0.0
     matched_terms: list[str] = []
+    reasons: tuple[str, ...] = ()
     def standalone(term: str) -> bool:
-        if " " in term:
-            return _contains(text, term)
-        return bool(re.search(rf"(?<![가-힣A-Za-z0-9]){re.escape(term)}(?![가-힣A-Za-z0-9])", text, re.IGNORECASE))
+        return contains_action(text, term) if term in ACTION_TERMS else _contains(text, term)
 
     sports_context = any(
         standalone(term)
         for term in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "엔트리", "선발", "트레이드", "경기 결과")
     )
-    recruitment_context = (
-        any(_contains(text, term) for term in ("공채", "채용", "공무원", "시험", "원서접수", "합격자"))
-        and any(_contains(text, term) for term in ("선발", "지원", "경쟁률", "합격자"))
-    )
+    recruitment_type = recruitment_event_type(f"{title_text} {lead_text}")
     def detect_event(source: str) -> tuple[str, float, list[str]]:
         detected_type = "OTHER"
         detected_value = 0.0
@@ -466,9 +513,9 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         for candidate_type, patterns, value in _EVENT_PATTERNS:
             if candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT"} and not sports_context:
                 continue
-            if candidate_type == "ROSTER_PERSONNEL" and not (sports_context or recruitment_context):
+            if candidate_type == "ROSTER_PERSONNEL" and not sports_context:
                 continue
-            hits = [pattern for pattern in patterns if _contains(source, pattern)]
+            hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
             if hits and value > detected_value:
                 detected_type = candidate_type
                 detected_value = value
@@ -477,15 +524,17 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
 
     heat_interruption = (
         sports_context
-        and any(_contains(text, term) for term in ("폭염", "열파"))
-        and any(_contains(text, term) for term in ("중단", "멈춘", "휴식", "재개", "취소"))
+        and any(_contains(f"{title_text} {lead_text}", term) for term in ("폭염", "열파"))
+        and any(_event_term_match(f"{title_text} {lead_text}", term) for term in ("중단", "멈춘", "휴식", "재개", "취소"))
     )
 
     # The title is the strongest intent/event evidence.  Only fall back to
     # the combined lead text when the title contains no recognizable event;
     # this prevents a secondary sentence (for example an album mention in a
     # sports article) from changing the story's event type.
-    if heat_interruption:
+    if recruitment_type:
+        event_type, significance, matched_terms = recruitment_type, 70.0, [recruitment_type]
+    elif heat_interruption:
         event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
     elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
@@ -536,19 +585,25 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
             event_type = "OTHER"
             significance = 0.0
             matched_terms = []
-    numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(text)))
-    dates = tuple(dict.fromkeys(_DATE_RE.findall(text)))
+    numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(f"{title_text} {lead_text}")))
+    dates = tuple(dict.fromkeys(_DATE_RE.findall(f"{title_text} {lead_text}")))
     event_terms = _event_terms_for(topic)
     topic_terms = topic_anchor_terms(topic)
-    title_subject = any(_contains(title_text, term) for term in topic_terms)
+    title_subject = any(_contains_intent_term(title_text, term) for term in topic_terms)
     action_signal_terms = (
         "발표", "공개", "출시", "발매", "유치", "투자", "인수", "규제", "시행", "고시", "요구", "촉구", "줄여라",
         "상승", "하락", "증가", "감소", "변동", "급등", "급락", "통계", "지표", "실적",
         "경기 결과", "승리", "패배", "중단", "멈춘", "컴백", "공연", "콘서트", "트레이드", "부상",
         "차트", "관왕", "수상", "순위", "일정", "예정", "시구", "선발", "엔트리",
     )
-    action = bool(any(_contains(title_text, term) or _contains(text, term) for term in action_signal_terms))
+    action = bool(
+        any(
+            (_event_term_match(title_text, term) or _event_term_match(lead_text, term))
+            for term in action_signal_terms
+        )
+    )
     concrete = int(bool(title_subject)) + int(action) + int(bool(numbers or dates))
+    _date_value, date_conflict = canonical_event_date(title_text, lead_text)
     if event_type == "MERCHANDISE":
         significance = min(significance, 18.0)
     if event_type in _LOW_VALUE_EVENT_TYPES:
@@ -557,10 +612,12 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         reasons = ("NO_CONCRETE_EVENT",)
     else:
         reasons = (event_type, "CONCRETE_EVENT" if concrete >= 2 else "WEAK_EVENT_STRUCTURE")
+    if date_conflict:
+        reasons = (*reasons, "EVENT_DATE_CONFLICT")
     metric_signal = True
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"}:
         metric_signal = any(
-            _contains(title_text, term) or _contains(text, term)
+            _event_term_match(title_text, term) or _event_term_match(lead_text, term)
             for term in (
                 "집계", "기록", "평균", "변동폭", "최고", "최대", "최저", "상승", "하락",
                 "증가", "감소", "급등", "급락", "실적", "매출", "영업이익", "공시", "수치",
@@ -573,6 +630,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and significance >= 35.0
         and concrete >= 2
         and action
+        and not date_conflict
+        and not (event_type == "ROSTER_PERSONNEL" and not sports_context)
         and metric_signal
     )
     return EventAssessment(event_type, round(significance, 3), concrete, passed, reasons)
@@ -586,8 +645,22 @@ def _is_official(item: NewsItem) -> bool:
 
 
 def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
-    publishers = {item.publisher or item.source_domain for item in cluster.items if item.publisher or item.source_domain}
+    publishers = {
+        canonical_publisher(item.publisher, item.source_domain)
+        for item in cluster.items
+        if item.publisher or item.source_domain
+    }
     official = any(_is_official(item) for item in cluster.items)
+    conflict_states = {
+        str(getattr(item, "authority_conflict", "NO_CONFLICT") or "NO_CONFLICT")
+        for item in cluster.items
+    }
+    conflict_state = next(
+        (state for state in ("UNRESOLVED_CONFLICT", "VALUE_CONFLICT", "DATE_CONFLICT", "ENTITY_CONFLICT", "UNIT_CONFLICT") if state in conflict_states),
+        "CONFIRMED_MATCH" if "CONFIRMED_MATCH" in conflict_states else "NO_CONFLICT",
+    )
+    if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+        official = False
     metadata_complete = any(
         len(effective_title(item)) >= 12 and len(effective_lead(item)) >= 24 for item in cluster.items
     )
@@ -605,7 +678,13 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
         reasons.append("SINGLE_PUBLISHER")
     if metadata_complete:
         reasons.append("COMPLETE_METADATA")
-    passed = bool(publishers) and (len(publishers) >= 2 or official or metadata_complete)
+    if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+        reasons.append(conflict_state)
+    passed = (
+        bool(publishers)
+        and (len(publishers) >= 2 or official or metadata_complete)
+        and conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+    )
     return EvidenceAssessment(
         round(max(0.0, min(100.0, strength)), 3),
         len(publishers),
@@ -613,6 +692,7 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
         metadata_complete,
         passed,
         tuple(reasons),
+        conflict_state,
     )
 
 
@@ -636,7 +716,10 @@ def is_generic_headline(value: str) -> bool:
 
 def is_generic_summary(value: str) -> bool:
     text = normalize_text(value)
-    return any(marker in text for marker in _GENERIC_SUMMARY_MARKERS)
+    # A concrete sentence may naturally end with ``발표가 확인됐다``.  Treat
+    # the macro as generic only when it is the whole sentence or its leading
+    # fallback, then let the information-gain gate inspect the full sentence.
+    return any(text == marker or text.startswith(marker) for marker in _GENERIC_SUMMARY_MARKERS)
 
 
 def _truncated_prefix_has_event_fact(item: NewsItem) -> bool:
@@ -662,23 +745,20 @@ def _truncated_prefix_has_event_fact(item: NewsItem) -> bool:
 
 def event_signature(cluster: StoryCluster, event: EventAssessment | None = None) -> str:
     assessed = event or assess_event(cluster, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ()))
-    if assessed.event_type == "SPORTS_INTERRUPTION":
-        evidence = " ".join(effective_text(item) for item in cluster.items)
-        league = "프로야구" if any(term in evidence for term in ("프로야구", "KBO", "야구")) else "야구"
-        heat = "폭염" if any(term in evidence for term in ("폭염", "열파")) else ""
-        dates = _DATE_RE.findall(evidence)
-        return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
     headline_item = best_headline_item(cluster.items)
     title = effective_title(headline_item)
-    if any(
-        marker.casefold() in title.casefold()
-        for marker in ("환율", "원달러", "원·달러", "코스피", "KOSPI", "코스닥", "KOSDAQ")
-    ):
-        title = market_primary_text(headline_item) or title
-    terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
-    numbers = _NUMBER_RE.findall(title)
-    dates = _DATE_RE.findall(title)
-    return "|".join(dict.fromkeys((assessed.event_type, *terms[:8], *numbers[:3], *dates[:2])))
+    lead = discovery_lead(headline_item)
+    subject = ""
+    observations = metric_observations(market_primary_text(headline_item) or title)
+    if observations:
+        subject = observations[0].instrument
+    return canonical_event_signature(
+        assessed.event_type,
+        title,
+        lead=lead,
+        subject=subject,
+        action="",
+    )
 
 
 def assess_cluster(
@@ -700,6 +780,12 @@ def assess_cluster(
     # headline, not every article that contains the marker.
     generic_headline = is_generic_headline(effective_title(representative))
     generic_summary = is_generic_summary(effective_lead(representative))
+    incidental_ai = _is_incidental_ai_topic(
+        effective_title(representative),
+        topic,
+        event.event_type,
+        any(contains_action(effective_title(representative), term) for term in ("투자", "전략", "유치")),
+    )
     truncated_title_without_lead = bool(
         representative.title
         and _TRUNCATION_RE.search(representative.title)
@@ -767,6 +853,10 @@ def assess_cluster(
         reasons.append("TRUNCATED_EVENT_WITHOUT_LEAD")
     if unresolved_single_source_metric:
         reasons.append("SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD")
+    if incidental_ai:
+        reasons.append("QUERY_OR_ACRONYM_ONLY_TOPIC_MATCH")
+    if evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+        reasons.append(evidence.conflict_state)
     if novelty == "NEW":
         novelty_value = 100.0
         reasons.append("NEW")
@@ -802,10 +892,15 @@ def assess_cluster(
         or event.event_type in _LOW_VALUE_EVENT_TYPES
         or not synthesis_ready
         or unresolved_single_source_metric
+        or incidental_ai
+        or evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}
         or (cluster.source_count == 1 and not single_source_supported)
         or (event.event_type == "OTHER" and cluster.source_count == 1 and event.concrete_fact_count == 0)
     )
-    qualified = not hard_reject and score >= 42.0
+    # A score is a ranking signal, not a slot-filling permission.  The
+    # synthesis gate below can still reject a candidate above this floor;
+    # this floor prevents 40-point remnants from becoming filler.
+    qualified = not hard_reject and score >= 55.0
     if qualified:
         reasons.append("QUALIFIED")
     else:

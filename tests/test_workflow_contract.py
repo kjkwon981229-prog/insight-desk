@@ -31,7 +31,7 @@ class WorkflowContractTests(unittest.TestCase):
         workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
         self.assertIn("push_notify:", workflow)
         self.assertIn("needs: [build, deploy]", workflow)
-        self.assertIn("if: always() && needs.build.result != 'skipped'", workflow)
+        self.assertIn("if: always()", workflow)
         self.assertIn("PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}", workflow)
         self.assertIn("PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}", workflow)
         self.assertIn('echo "::add-mask::$PUSH_SEND_TOKEN"', workflow)
@@ -40,6 +40,11 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('notification_type="FAILURE"', workflow)
         self.assertIn('notification_type="READY"', workflow)
         self.assertIn('"$BUILD_RESULT" == "success" && "$BUILD_PUBLISH" == "true" && "$DEPLOY_RESULT" == "success"', workflow)
+        self.assertIn('notification_source="other"', workflow)
+        self.assertIn('source":"%s"', workflow)
+        self.assertIn('delivery_state', workflow)
+        self.assertNotIn("github.event.before == '5e4ab28dca345fca39b67a0be98f9427aa7d9b14'", workflow)
+        self.assertNotIn("  push:\n", workflow)
         self.assertIn('TZ=Asia/Seoul date +%F', workflow)
 
 
