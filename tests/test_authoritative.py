@@ -167,6 +167,53 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertEqual(payload.result.events_augmented, 1)
         self.assertEqual(payload.evidence[0][1].canonical_url, "https://official.example/recruitment")
 
+    def test_public_ai_source_requires_same_event_and_can_attach_official_primary(self) -> None:
+        source = PublicSourceConfig(
+            id="openai-news",
+            url="https://openai.com/news/",
+            topic_ids=("ai",),
+            source_type="OFFICIAL_PRIMARY",
+            publisher="OpenAI",
+            trusted_domains=("openai.com",),
+            entity_aliases=("OpenAI", "GPT-5"),
+            event_markers=("launch", "model", "발표"),
+        )
+        page = """
+        <html><head><title>OpenAI News</title></head><body>
+          <a href="/index/gpt-5">OpenAI launches GPT-5 model</a>
+        </body></html>
+        """.encode("utf-8")
+        item = _item(
+            "openai-match",
+            "OpenAI launches GPT-5 model",
+            "OpenAI launched the GPT-5 model on 2026-08-10.",
+            query="ChatGPT",
+            topic_id="ai",
+        )
+        payload = PublicOfficialAdapter(
+            config=source,
+            transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+        ).fetch((item,))
+        self.assertEqual(payload.result.events_augmented, 1)
+        evidence = payload.evidence[0][1]
+        self.assertEqual(evidence.publisher, "OpenAI")
+        self.assertEqual(evidence.canonical_url, "https://openai.com/index/gpt-5")
+
+        unrelated = _item(
+            "openai-unrelated",
+            "ChatGPT education partnership announced",
+            "A separate education partnership was announced.",
+            query="ChatGPT",
+            topic_id="ai",
+        )
+        self.assertEqual(
+            PublicOfficialAdapter(
+                config=source,
+                transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+            ).fetch((unrelated,)).evidence,
+            (),
+        )
+
     def test_opendart_matches_event_category_and_caps_candidate_attachments(self) -> None:
         item = _item(
             "dart-category",

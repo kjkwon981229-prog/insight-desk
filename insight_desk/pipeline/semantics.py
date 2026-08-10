@@ -207,6 +207,7 @@ TRUSTED_OFFICIAL_DOMAINS = frozenset(
         "mpm.go.kr",
         "gosi.kr",
         "koreabaseball.com",
+        "openai.com",
     }
 )
 
