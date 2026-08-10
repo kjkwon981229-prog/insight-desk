@@ -20,7 +20,11 @@ _GENERIC_SUMMARY_MARKERS = (
 _EVENT_PATTERNS: tuple[tuple[str, tuple[str, ...], float], ...] = (
     ("REGULATION", ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"), 84.0),
     ("POLICY", ("정책 발표", "정책 결정", "정책 시행", "정책 개편", "대책 발표", "대책 시행", "기준금리", "공고", "요구", "촉구", "줄여라"), 76.0),
-    ("EARNINGS", ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"), 78.0),
+    # A bare ``공시`` is not an earnings event: it can describe a request for
+    # disclosure, a contract, or another filing. Require an earnings metric
+    # and let the concrete action classifier handle phrases such as
+    # ``조회공시 요구``.
+    ("EARNINGS", ("실적", "매출", "영업이익", "순이익", "가이던스"), 78.0),
     ("AWARD_CHART", ("1위", "차트", "관왕", "수상"), 74.0),
     ("PRODUCT_RELEASE", ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "신규상장", "상장", "예약판매", "판매 개시", "사양 확정"), 68.0),
     ("INDUSTRY_CHANGE", ("투자", "투자 유치", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"), 66.0),

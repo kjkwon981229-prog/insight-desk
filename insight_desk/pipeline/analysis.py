@@ -139,6 +139,9 @@ def build_briefing(
     story_trend_matches: list[tuple[TrendMetric, ...]] = []
     for cluster in selection.selected:
         topic_name = topic_by_id.get(cluster.topic_id, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ())).name
+        assessment = selection.assessments.get(candidate_key(cluster))
+        if assessment is None:
+            continue
         provenance = tuple(
             dict.fromkeys(
                 evidence_type
@@ -153,10 +156,8 @@ def build_briefing(
             cluster,
             topic_name=topic_name,
             trend_metrics=trend_metrics,
+            event_type_override=assessment.event.event_type,
         )
-        assessment = selection.assessments.get(candidate_key(cluster))
-        if assessment is None:
-            continue
         stories.append(
             Story(
                 topic_id=cluster.topic_id,

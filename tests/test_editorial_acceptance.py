@@ -79,6 +79,26 @@ def _item(
 
 
 class EditorialAcceptanceTests(unittest.TestCase):
+    def test_disclosure_request_is_policy_not_earnings(self) -> None:
+        item = _item(
+            "disclosure-request",
+            "economy",
+            "반도체",
+            "거래소, SK하이닉스 충칭공장 지분매각설 조회공시 요구",
+            "거래소가 SK하이닉스에 지분매각설에 대한 조회공시를 요구했다.",
+        )
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "반도체",
+            anchors=("SK하이닉스", "반도체"),
+            events=("공시", "요구"),
+        )
+        cluster = StoryCluster("economy", (item,))
+        assessment = assess_event(cluster, topic)
+        self.assertEqual(assessment.event_type, "POLICY")
+        _, _, _, _, facts, _ = synthesize_cluster(cluster, topic_name="경제·투자", trend_metrics=())
+        self.assertEqual(facts.event_type, "POLICY")
     def test_authority_description_cannot_reclassify_discovery_event(self) -> None:
         item = _item(
             "authority-event-type",

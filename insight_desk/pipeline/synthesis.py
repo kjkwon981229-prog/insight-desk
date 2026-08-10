@@ -894,6 +894,7 @@ def synthesize_cluster(
     *,
     topic_name: str,
     trend_metrics: tuple[TrendMetric, ...],
+    event_type_override: str | None = None,
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
     items = cluster.items
     representative = cluster.representative
@@ -933,9 +934,13 @@ def synthesize_cluster(
     # synthesis anchored to the strongest visible evidence.
     title_event_type = _event_type(title, _numbers(title))
     lead_event_type = _event_type(effective_lead(headline_item), _numbers(effective_lead(headline_item)))
-    event_type = title_event_type if title_event_type != "OTHER" else (
+    inferred_event_type = title_event_type if title_event_type != "OTHER" else (
         lead_event_type if lead_event_type != "OTHER" else _event_type(title_evidence, numbers)
     )
+    # Production selection already has the editorial event gate. Reuse that
+    # decision for synthesis so the audit and the emitted StoryFacts cannot
+    # diverge when two deterministic classifiers have different precedence.
+    event_type = event_type_override or inferred_event_type
     # Do not borrow an action from another headline in a broad cluster. A
     # secondary article may describe a different event while sharing the
     # same entity or theme.
