@@ -486,9 +486,20 @@ def _domain_subject(title: str, subject: str, event_type: str) -> str:
     """Replace a clickbait lead with the stable noun users need."""
 
     if event_type in {"MARKET", "STATISTIC"}:
-        if any(term in title for term in ("환율", "원달러", "원·달러")):
+        clean_title = _clean_headline(title)
+        has_fx = any(term in clean_title for term in ("환율", "원달러", "원·달러"))
+        has_kospi = "코스피" in clean_title or "KOSPI" in clean_title
+        if has_fx and has_kospi:
+            first_number = _NUMBER_RE.search(clean_title)
+            prefix = clean_title[: first_number.start()] if first_number else clean_title
+            if "코스피" in prefix or "KOSPI" in prefix:
+                return "코스피"
+            if "환율" in prefix or "원달러" in prefix or "원·달러" in prefix:
+                return "원·달러 환율"
+            return "코스피" if clean_title.find("코스피") < clean_title.find("환율") else "원·달러 환율"
+        if has_fx:
             return "원·달러 환율"
-        if "코스피" in title or "KOSPI" in title:
+        if has_kospi:
             return "코스피"
         if any(term in title for term in ("증시", "주가", "주식")) and subject in {"이젠", "올해", "이번"}:
             return "증시"

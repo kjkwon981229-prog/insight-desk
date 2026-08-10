@@ -5,7 +5,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from ..domain.models import EvidenceType, NewsItem, Topic
-from .clustering import StoryCluster
+from .clustering import StoryCluster, market_primary_text
 from .normalization import normalize_text
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
@@ -591,7 +591,13 @@ def event_signature(cluster: StoryCluster, event: EventAssessment | None = None)
         heat = "폭염" if any(term in evidence for term in ("폭염", "열파")) else ""
         dates = _DATE_RE.findall(evidence)
         return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
-    title = effective_title(best_headline_item(cluster.items))
+    headline_item = best_headline_item(cluster.items)
+    title = effective_title(headline_item)
+    if any(
+        marker.casefold() in title.casefold()
+        for marker in ("환율", "원달러", "원·달러", "코스피", "KOSPI", "코스닥", "KOSDAQ")
+    ):
+        title = market_primary_text(headline_item) or title
     terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
     numbers = _NUMBER_RE.findall(title)
     dates = _DATE_RE.findall(title)

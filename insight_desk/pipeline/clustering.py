@@ -117,13 +117,10 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
     # separate stories.  Use the title and optional enriched metadata as the
     # event signature; the dedicated heat-interruption rule above is the only
     # bounded exception that needs the snippet context.
-    text = " ".join(
-        value
-        for value in (
-            item.metadata_title,
-            item.title,
-        )
-        if value
+    text = (
+        market_primary_text(item)
+        if _market_instruments(item)
+        else " ".join(value for value in (item.metadata_title, item.title) if value)
     ).lower()
     tokens = _tokens(text)
     entities = {
@@ -162,10 +159,25 @@ def _date_markers(item: NewsItem) -> set[str]:
     return {re.sub(r"\s+", "", value) for value in _DATE_MARKER_RE.findall(text)}
 
 
-def _market_instruments(item: NewsItem) -> set[str]:
-    """Return explicit market instruments named in trusted headline text."""
+def market_primary_text(item: NewsItem) -> str:
+    """Return the primary clause of a market headline when it is explicit."""
 
     text = " ".join(value for value in (item.metadata_title, item.title) if value)
+    primary_clause = re.split(r"(?:…|\.{2,}|·{2,})", text, maxsplit=1)[0].strip()
+    if any(marker.casefold() in primary_clause.casefold() for _, markers in _MARKET_INSTRUMENTS for marker in markers):
+        return primary_clause
+    return text
+
+
+def _market_instruments(item: NewsItem) -> set[str]:
+    """Return primary market instruments from trusted headline text.
+
+    A headline can append a second instrument after an ellipsis (for example
+    a KOSPI lead followed by an exchange-rate note).  That secondary clause
+    must not become a clustering bridge to an otherwise separate story.
+    """
+
+    text = market_primary_text(item)
     return {
         instrument
         for instrument, markers in _MARKET_INSTRUMENTS

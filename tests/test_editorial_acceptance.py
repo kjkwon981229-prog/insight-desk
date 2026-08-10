@@ -6,7 +6,7 @@ from dataclasses import replace
 from insight_desk.domain.models import EvidenceType, NewsItem, Topic
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
-from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_relevance
+from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_relevance, event_signature
 from insight_desk.pipeline.normalization import normalize_news_payloads
 from insight_desk.pipeline.novelty import classify_novelty
 from insight_desk.pipeline.scoring import score_news
@@ -752,6 +752,38 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((stock, currency))
         self.assertEqual(len(clusters), 2)
         self.assertTrue(all(len(cluster.items) == 1 for cluster in clusters))
+
+    def test_secondary_market_clause_does_not_bridge_index_and_currency_events(self) -> None:
+        index = _item(
+            "market-index-event",
+            "economy",
+            "코스피",
+            "코스피 6300선 상승 출발",
+            "코스피가 6300선에서 상승 출발했다.",
+        )
+        overview = _item(
+            "market-overview-event",
+            "economy",
+            "코스피",
+            "[위클리오늘] 코스피 6300선 상승 출발···환율 1410원대",
+            "코스피는 6300선을 회복했고 환율은 1410원대였다.",
+        )
+        currency = _item(
+            "market-currency-event",
+            "economy",
+            "원달러 환율",
+            "원·달러 환율 1410원대 등락",
+            "원·달러 환율이 1410원대에서 등락했다.",
+        )
+        clusters = cluster_news((index, overview, currency))
+        self.assertEqual(len(clusters), 2)
+        index_cluster = next(
+            cluster
+            for cluster in clusters
+            if {item.evidence_id for item in cluster.items} == {"market-index-event", "market-overview-event"}
+        )
+        self.assertNotIn("환율", event_signature(index_cluster))
+        self.assertTrue(any({item.evidence_id for item in cluster.items} == {"market-currency-event"} for cluster in clusters))
 
     def test_event_clustering_merges_same_sports_interruption_theme(self) -> None:
         first = _item(

@@ -325,6 +325,25 @@ class SynthesisTests(unittest.TestCase):
         self.assertEqual(facts.subject, "코스피")
         self.assertNotIn("환율", headline + summary)
 
+    def test_mixed_market_headline_binds_number_to_first_metric(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "market-overview",
+                    "[위클리오늘] 코스피 6300선 상승 출발···환율 1410원대",
+                    "코스피는 6300선을 회복했고 환율은 1410원대였다.",
+                    "market.example",
+                ),
+            ),
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster, topic_name="경제·투자", trend_metrics=()
+        )
+        self.assertEqual(facts.subject, "코스피")
+        self.assertIn("6300선", headline + summary)
+        self.assertNotIn("환율 6300", headline + summary)
+
     def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
         cluster = StoryCluster(
             "topic",
