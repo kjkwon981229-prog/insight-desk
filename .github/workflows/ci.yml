@@ -30,3 +30,12 @@ jobs:
         run: python scripts/build_fixture_site.py
       - name: Validate fixture artifact
         run: python scripts/validate_artifact.py build/fixture-site
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+      - name: Run push Worker tests
+        working-directory: push-worker
+        run: npm ci && npm test

@@ -209,6 +209,14 @@ function normalizeStoredMarker(marker) {
   };
 }
 
+function notificationMarkerKey(date, type, source) {
+  return `${NOTIFICATION_PREFIX}${date}:${type}:${source}`;
+}
+
+function legacyNotificationMarkerKey(date, type) {
+  return `${NOTIFICATION_PREFIX}${date}:${type}`;
+}
+
 function notificationPayload(type, env) {
   const ready = type === "READY";
   return {
@@ -268,8 +276,15 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
     throw new Error("VAPID_NOT_CONFIGURED");
   }
   const { date, run_id: runId, type, source } = requestPayload;
-  const markerKey = `${NOTIFICATION_PREFIX}${date}:${type}`;
-  const existing = await env.PUSH_SUBSCRIPTIONS.get(markerKey);
+  // Source is part of the idempotency identity.  A manual READY must not
+  // consume the schedule READY slot for the same date and type.
+  const markerKey = notificationMarkerKey(date, type, source);
+  let existing = await env.PUSH_SUBSCRIPTIONS.get(markerKey);
+  // Read legacy markers only for non-schedule callers.  Existing pre-source
+  // markers remain compatible without allowing them to mask a schedule run.
+  if (!existing && source !== "schedule") {
+    existing = await env.PUSH_SUBSCRIPTIONS.get(legacyNotificationMarkerKey(date, type));
+  }
   if (existing) {
     let marker = {};
     try {
@@ -279,7 +294,7 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
     }
     const normalized = normalizeStoredMarker(marker);
     return {
-      ok: normalized.delivery_state !== "ALL_DELIVERIES_FAILED" && normalized.delivery_state !== "PARTIAL_DELIVERY",
+      ok: normalized.delivery_state === "DELIVERED",
       duplicate: true,
       request_state: "REQUEST_ACCEPTED",
       date,
@@ -362,7 +377,7 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
       );
     }
     return {
-      ok: state !== "ALL_DELIVERIES_FAILED" && state !== "PARTIAL_DELIVERY",
+      ok: state === "DELIVERED",
       duplicate: false,
       request_state: "REQUEST_ACCEPTED",
       date,
@@ -421,11 +436,7 @@ export async function runWatchdog(env, dependencies = {}) {
   if (readyMarker) {
     try {
       const ready = JSON.parse(readyMarker);
-      if (
-        ready.source === "schedule" &&
-        ready.delivery_state !== "ALL_DELIVERIES_FAILED" &&
-        ready.delivery_state !== "PARTIAL_DELIVERY"
-      ) {
+      if (ready.source === "schedule" && ready.delivery_state === "DELIVERED") {
         return { ok: true, skipped: true, reason: "READY_ALREADY_RECORDED", date };
       }
     } catch {
@@ -485,6 +496,11 @@ export async function handleRequest(request, env, _context, dependencies = {}) {
       await env.PUSH_SUBSCRIPTIONS.delete(key);
       return jsonResponse(request, env, { ok: true, subscribed: false });
     }
+    const maxSubscriptions = Math.max(1, Math.min(100, Number(env.MAX_SUBSCRIPTIONS || DEFAULT_MAX_SUBSCRIPTIONS)));
+    const existing = await env.PUSH_SUBSCRIPTIONS.get(key);
+    if (!existing && (await listSubscriptionKeys(env.PUSH_SUBSCRIPTIONS, maxSubscriptions + 1)).length >= maxSubscriptions) {
+      return errorResponse(request, env, 429, "SUBSCRIPTION_LIMIT");
+    }
     await env.PUSH_SUBSCRIPTIONS.put(key, JSON.stringify(subscription));
     return jsonResponse(request, env, { ok: true, subscribed: true }, 201);
   }
@@ -499,7 +515,8 @@ export async function handleRequest(request, env, _context, dependencies = {}) {
     }
     try {
       const result = await dispatchNotification(env, payload, dependencies);
-      return jsonResponse(request, env, result, result.ok ? 200 : 502);
+      const status = result.ok ? 200 : result.delivery_state === "NO_SUBSCRIBERS" ? 202 : 502;
+      return jsonResponse(request, env, result, status);
     } catch (error) {
       const code = error?.message === "VAPID_NOT_CONFIGURED" ? "VAPID_NOT_CONFIGURED" : error?.message === "KV_NOT_CONFIGURED" ? "KV_NOT_CONFIGURED" : "DELIVERY_FAILED";
       return errorResponse(request, env, code === "DELIVERY_FAILED" ? 502 : 503, code);

@@ -136,7 +136,7 @@ test("subscription validation stores only normalized browser keys and supports u
   assert.equal([...env.PUSH_SUBSCRIPTIONS.values.values()].some((value) => value.includes("push.example")), false);
 });
 
-test("send requires authentication and suppresses same-date same-state duplicates", async () => {
+test("send requires authentication and suppresses same-source duplicates", async () => {
   const env = environment();
   await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
   const payload = { date: "2026-08-10", run_id: "run-1", type: "READY" };
@@ -179,6 +179,30 @@ test("send requires authentication and suppresses same-date same-state duplicate
   assert.equal(calls, 1);
 });
 
+test("manual READY and scheduled READY have separate idempotency identities", async () => {
+  const env = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  let calls = 0;
+  const sendNotification = async () => { calls += 1; };
+  const auth = { Authorization: `Bearer ${sendToken}` };
+  const manual = await handleRequest(
+    request("/send", { method: "POST", body: { date: "2026-08-18", run_id: "manual", type: "READY", source: "manual" }, headers: auth }),
+    env,
+    undefined,
+    { sendNotification },
+  );
+  const scheduled = await handleRequest(
+    request("/send", { method: "POST", body: { date: "2026-08-18", run_id: "scheduled", type: "READY", source: "schedule" }, headers: auth }),
+    env,
+    undefined,
+    { sendNotification },
+  );
+  assert.equal(manual.status, 200);
+  assert.equal(scheduled.status, 200);
+  assert.equal((await scheduled.json()).duplicate, false);
+  assert.equal(calls, 2);
+});
+
 test("legacy delivery markers are normalized without an invalid response state", async () => {
   const env = environment();
   await env.PUSH_SUBSCRIPTIONS.put(
@@ -193,9 +217,9 @@ test("legacy delivery markers are normalized without an invalid response state",
     }),
     env,
   );
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), {
-    ok: true,
+    ok: false,
     duplicate: true,
     request_state: "REQUEST_ACCEPTED",
     date: "2026-08-16",
@@ -226,7 +250,7 @@ test("delivery states distinguish no subscribers, partial delivery, total failur
     undefined,
     { sendNotification: async () => {} },
   );
-  assert.equal(noSubscribers.status, 200);
+  assert.equal(noSubscribers.status, 202);
   assert.equal((await noSubscribers.json()).delivery_state, "NO_SUBSCRIBERS");
 
   const partial = environment();
@@ -280,7 +304,7 @@ test("delivery states distinguish no subscribers, partial delivery, total failur
     undefined,
     { sendNotification: async () => {} },
   );
-  assert.equal(staleResponse.status, 200);
+  assert.equal(staleResponse.status, 502);
   assert.equal((await staleResponse.json()).delivery_state, "STALE_SUBSCRIPTIONS_PRUNED");
 });
 
@@ -331,4 +355,16 @@ test("manual READY never masks a missing scheduled run", async () => {
   });
   assert.equal(watchdog.type, "FAILURE");
   assert.equal(failures, 1);
+});
+
+test("subscription writes enforce the configured maximum", async () => {
+  const env = environment();
+  env.MAX_SUBSCRIPTIONS = 1;
+  const first = await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  assert.equal(first.status, 201);
+  const second = await handleRequest(request("/subscribe", { method: "POST", body: subscriptionTwo }), env);
+  assert.equal(second.status, 429);
+  assert.deepEqual(await second.json(), { ok: false, error: "SUBSCRIPTION_LIMIT" });
+  const update = await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  assert.equal(update.status, 201);
 });

@@ -6,7 +6,7 @@ from dataclasses import replace
 from insight_desk.domain.models import AuthorityEvidence, AuthoritySourceType, EvidenceType, NewsItem, Topic
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
-from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_evidence, assess_relevance, event_signature
+from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_evidence, assess_relevance, event_signature, requires_authoritative_evidence
 from insight_desk.pipeline.normalization import normalize_news_payloads
 from insight_desk.pipeline.novelty import classify_novelty, load_previous_signatures, write_publication_signatures
 from insight_desk.pipeline.scoring import score_news
@@ -165,6 +165,64 @@ class EditorialAcceptanceTests(unittest.TestCase):
         )
         self.assertFalse(assess_cluster(StoryCluster("economy", (random_org,)), topic).evidence.official)
         self.assertTrue(assess_cluster(StoryCluster("economy", (known_org,)), topic).evidence.official)
+
+    def test_explicit_official_claim_fails_closed_without_authority(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "기업 공시",
+            anchors=("기업", "공시"),
+            events=("공시", "계약"),
+        )
+        item = _item(
+            "authority-required-missing",
+            "economy",
+            "공시",
+            "기업 공식 발표, 1조원 공급계약 체결",
+            "기업이 1조원 공급계약을 체결했다고 공식 발표했다.",
+            metadata_title="기업 공식 발표, 1조원 공급계약 체결",
+            metadata_description="기업이 1조원 공급계약을 체결했다고 공식 발표했다.",
+            score=80.0,
+        )
+        self.assertTrue(requires_authoritative_evidence(item))
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        self.assertIn("AUTHORITY_REQUIRED_UNVERIFIED", assessment.reasons)
+        self.assertFalse(assessment.qualified)
+
+    def test_explicit_official_claim_survives_with_same_event_authority(self) -> None:
+        topic = _topic(
+            "economy",
+            "경제·투자",
+            "기업 공시",
+            anchors=("기업", "공시"),
+            events=("공시", "계약"),
+        )
+        item = _item(
+            "authority-required-present",
+            "economy",
+            "공시",
+            "기업 공식 발표, 1조원 공급계약 체결",
+            "기업이 1조원 공급계약을 체결했다고 공식 발표했다.",
+            metadata_title="기업 공식 발표, 1조원 공급계약 체결",
+            metadata_description="기업이 1조원 공급계약을 체결했다고 공식 발표했다.",
+            score=80.0,
+        )
+        item = replace(
+            item,
+            provenance=(EvidenceType.SEARCH_SNIPPET, EvidenceType.OFFICIAL_SOURCE),
+            authoritative_evidence=(
+                AuthorityEvidence(
+                    adapter="official-test",
+                    source_type=AuthoritySourceType.OFFICIAL_PRIMARY,
+                    title="기업 공식 공급계약 발표",
+                    publisher="기업 공식 발표",
+                    event_key="OFFICIAL:contract-1",
+                    fact_values=("1조원 공급계약",),
+                ),
+            ),
+        )
+        assessment = assess_cluster(StoryCluster("economy", (item,)), topic, novelty="NEW")
+        self.assertTrue(assessment.qualified)
     def test_disclosure_request_is_policy_not_earnings(self) -> None:
         item = _item(
             "disclosure-request",

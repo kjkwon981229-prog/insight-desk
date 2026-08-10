@@ -43,6 +43,32 @@
     return navigator.serviceWorker.getRegistration(new URL("./", document.baseURI).href);
   }
 
+  async function registerSubscription(subscription) {
+    var response = await fetch(workerUrl + "/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(subscription.toJSON()),
+    });
+    if (!response.ok) throw new Error("subscription rejected");
+  }
+
+  async function reconcile() {
+    if (!supported || Notification.permission !== "granted") return;
+    try {
+      var registration = await getRegistration();
+      var subscription = registration && (await registration.pushManager.getSubscription());
+      if (!subscription) {
+        setStatus("알림 권한은 허용됐지만 알림 연결이 활성화되지 않았습니다. 알림 켜기를 눌러 다시 연결하세요.", "warning");
+        return;
+      }
+      await registerSubscription(subscription);
+      setStatus("알림 사용 중", "success");
+    } catch (error) {
+      console.warn("Insight Desk push reconciliation failed", error);
+      setStatus("알림 권한은 허용됐지만 서버 연결을 확인하지 못했습니다.", "warning");
+    }
+  }
+
   async function enable() {
     if (!supported) return;
     setBusy(true);
@@ -65,12 +91,7 @@
           applicationServerKey: toUint8Array(keyBody.public_key),
         });
       }
-      var response = await fetch(workerUrl + "/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(subscription.toJSON()),
-      });
-      if (!response.ok) throw new Error("subscription rejected");
+      await registerSubscription(subscription);
       setStatus("알림 사용 중", "success");
     } catch (error) {
       console.warn("Insight Desk push setup failed", error);
@@ -110,10 +131,13 @@
     setStatus("홈 화면에 추가한 앱에서 알림을 켤 수 있습니다.", "");
   } else if (!supported) {
     setStatus("이 기기 또는 브라우저에서는 웹 알림을 지원하지 않습니다.", "warning");
+  } else if (Notification.permission === "granted") {
+    setStatus("알림 연결을 확인 중입니다.", "");
   } else {
     setStatus(Notification.permission === "granted" ? "알림을 켜거나 끌 수 있습니다." : "사용자 탭 후 알림 권한을 요청합니다.", "");
   }
   setBusy(false);
   enableButton.addEventListener("click", enable);
   disableButton.addEventListener("click", disable);
+  reconcile();
 }());

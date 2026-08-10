@@ -144,14 +144,14 @@ jobs:
         run: |
           set -u
           if [[ -z "$PUSH_WORKER_URL" || -z "$PUSH_SEND_TOKEN" ]]; then
-            echo "::warning::Push notification skipped because Worker configuration is incomplete."
-            exit 0
+            echo "::error::Push notification could not be attempted because Worker configuration is incomplete."
+            exit 1
           fi
           case "$PUSH_WORKER_URL" in
             https://*) ;;
             *)
-              echo "::warning::Push notification skipped because PUSH_WORKER_URL is not HTTPS."
-              exit 0
+              echo "::error::Push notification could not be attempted because PUSH_WORKER_URL is not HTTPS."
+              exit 1
               ;;
           esac
 
@@ -177,19 +177,19 @@ jobs:
             --data "$payload" || true)"
 
           if [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
-            echo "::warning::Push endpoint did not accept the notification (type=$notification_type; http=$http_status)."
-            exit 0
+            echo "::error::Push endpoint did not accept the notification (type=$notification_type; http=$http_status)."
+            exit 1
           fi
           if ! jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate | type == "boolean") and (.delivery_state | IN("DELIVERED", "NO_SUBSCRIBERS", "PARTIAL_DELIVERY", "ALL_DELIVERIES_FAILED", "STALE_SUBSCRIPTIONS_PRUNED")) and (.sent | type == "number") and (.failed | type == "number") and (.pruned | type == "number") and (.subscription_count | type == "number")' "$response_file" >/dev/null 2>&1; then
-            echo "::warning::Push endpoint returned an invalid response (type=$notification_type; http=$http_status)."
-            exit 0
+            echo "::error::Push endpoint returned an invalid response (type=$notification_type; http=$http_status)."
+            exit 1
           fi
           delivery_state="$(jq -r '.delivery_state' "$response_file")"
           sent="$(jq -r '.sent' "$response_file")"
           failed="$(jq -r '.failed' "$response_file")"
           pruned="$(jq -r '.pruned' "$response_file")"
-          if [[ "$delivery_state" == "ALL_DELIVERIES_FAILED" || "$delivery_state" == "PARTIAL_DELIVERY" ]]; then
-            echo "::warning::Push delivery was not complete (type=$notification_type; source=$notification_source; state=$delivery_state; sent=$sent; failed=$failed; pruned=$pruned)."
-            exit 0
+          if [[ "$delivery_state" != "DELIVERED" ]]; then
+            echo "::error::Push delivery was not complete (type=$notification_type; source=$notification_source; state=$delivery_state; sent=$sent; failed=$failed; pruned=$pruned)."
+            exit 1
           fi
           echo "Push delivery state (type=$notification_type; source=$notification_source; state=$delivery_state; sent=$sent; failed=$failed; pruned=$pruned)."

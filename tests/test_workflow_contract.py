@@ -46,6 +46,15 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("github.event.before == '5e4ab28dca345fca39b67a0be98f9427aa7d9b14'", workflow)
         self.assertNotIn("  push:\n", workflow)
         self.assertIn('TZ=Asia/Seoul date +%F', workflow)
+        self.assertIn('notificationMarkerKey', Path("push-worker/src/index.js").read_text(encoding="utf-8"))
+        self.assertIn('delivery_state" != "DELIVERED"', workflow)
+        self.assertIn('exit 1', workflow)
+
+    def test_ci_runs_push_worker_node_tests(self) -> None:
+        workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn("actions/setup-node@v4", workflow)
+        self.assertIn("working-directory: push-worker", workflow)
+        self.assertIn("npm ci && npm test", workflow)
 
 
 if __name__ == "__main__":

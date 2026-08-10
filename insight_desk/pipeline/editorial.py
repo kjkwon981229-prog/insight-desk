@@ -699,12 +699,41 @@ _TRUSTED_OFFICIAL_DOMAINS = frozenset(
     }
 )
 
+# Only explicit claims of official provenance require an authoritative
+# confirmation.  Ordinary news reporting remains eligible when the optional
+# adapter is unavailable; this is a claim-level fail-closed rule, not a
+# global requirement to have an official source for every story.
+_AUTHORITY_REQUIRED_MARKERS = (
+    "공식 발표",
+    "공식 공고",
+    "공식 통계",
+    "공시",
+    "금융감독원",
+    "통계청",
+    "한국은행",
+    "인사혁신처",
+    "사이버국가고시센터",
+    "kbo 공식",
+    "한화 이글스 공식",
+    "open dart",
+    "opendart",
+)
+
 
 def _is_official(item: NewsItem) -> bool:
     if EvidenceType.OFFICIAL_SOURCE in item.provenance:
         return True
     domain = canonical_publisher(domain=item.source_domain)
     return domain in _TRUSTED_OFFICIAL_DOMAINS or domain.endswith(".go.kr")
+
+
+def requires_authoritative_evidence(item: NewsItem) -> bool:
+    """Return whether the article makes an explicit official-source claim."""
+
+    text = " ".join(
+        value for value in (item.metadata_title, item.title, item.metadata_description) if value
+    ).casefold()
+    return any(marker.casefold() in text for marker in _AUTHORITY_REQUIRED_MARKERS)
 
 
 def _evidence_fact_tokens(item: NewsItem) -> set[str]:
@@ -828,6 +857,7 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
         }
     publisher_diversity = max(1, len(raw_publishers) - len(syndicated_publishers) + 1) if syndicated else len(raw_publishers)
     official = any(_is_official(item) for item in cluster.items)
+    authority_required = any(requires_authoritative_evidence(item) for item in cluster.items)
     conflict_states = {
         str(getattr(item, "authority_conflict", "NO_CONFLICT") or "NO_CONFLICT")
         for item in cluster.items
@@ -859,10 +889,13 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
         reasons.append("COMPLETE_METADATA")
     if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
         reasons.append(conflict_state)
+    if authority_required and not official:
+        reasons.append("AUTHORITY_REQUIRED_UNVERIFIED")
     passed = (
         bool(raw_publishers)
         and (corroborated or official or metadata_complete)
         and conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+        and (not authority_required or official)
     )
     return EvidenceAssessment(
         round(max(0.0, min(100.0, strength)), 3),

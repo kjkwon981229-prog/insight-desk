@@ -510,6 +510,22 @@ def _story_sources(story: object, news_by_id: Mapping[str, object]) -> str:
             f'<span class="meta">{_esc(source)} · {_esc(published)}</span>'
             '</li>'
         )
+        for official in getattr(item, "authoritative_evidence", ()):
+            official_url = str(getattr(official, "canonical_url", "") or "").strip()
+            if not official_url.startswith("https://") or any(char.isspace() for char in official_url):
+                continue
+            if official_url in seen:
+                continue
+            seen.add(official_url)
+            official_title = str(getattr(official, "title", "") or "공식 자료").strip()
+            official_publisher = str(getattr(official, "publisher", "") or "공식 출처").strip()
+            official_published = _format_published(getattr(official, "published_at", None))
+            rows.append(
+                '<li class="source-row">'
+                f'<a href="{_esc(official_url)}" rel="noreferrer" target="_blank">{_esc(clean_headline(official_title))}</a>'
+                f'<span class="meta">{_esc(official_publisher)} · 공식 자료 · {_esc(official_published)}</span>'
+                '</li>'
+            )
     return '<ul class="source-links">' + "".join(rows) + "</ul>" if rows else '<p class="meta">연결된 원문 링크가 없다.</p>'
 
 
@@ -519,7 +535,12 @@ def _story_evidence_line(story: object, news_by_id: Mapping[str, object]) -> str
     trend = str(getattr(story, "trend_relationship", "") or "")
     if trend:
         chips.append(trend)
-    if getattr(facts, "official_source", ""):
+    official_link = any(
+        str(getattr(evidence, "canonical_url", "") or "").startswith("https://")
+        for item in _story_items(story, news_by_id)
+        for evidence in getattr(item, "authoritative_evidence", ())
+    )
+    if getattr(facts, "official_source", "") and official_link:
         chips.append("공식 자료")
     return "".join(
         f'<span class="{"accent-mark" if index == 0 else ""}">{_esc(chip)}</span>'
@@ -891,8 +912,17 @@ def _public_payload(briefing: Briefing) -> dict[str, object]:
                 "novelty": story.novelty,
             }
         )
+    selected_evidence_ids = {
+        evidence_id
+        for story in briefing.stories
+        for evidence_id in story.evidence_ids
+    }
     news = []
     for item in briefing.news:
+        # Public data is a story payload, not a rejected-candidate dump.  A
+        # zero-story run therefore exposes no news objects at all.
+        if item.evidence_id not in selected_evidence_ids:
+            continue
         news.append(
             {
                 "title": item.title,
