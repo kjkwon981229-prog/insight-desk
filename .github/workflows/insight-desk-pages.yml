@@ -2,7 +2,7 @@ name: Insight Desk Daily Pages
 
 on:
   # One-run source-layer acceptance trigger. The build guard below limits it
-  # to the first push after the current source-layer fix; the regular
+  # to the first push after the current push-client fix; the regular
   # schedule and manual dispatch remain the production triggers.
   push:
     branches: [main]
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || github.event.before == '3a4ef67f43bcac808a3c9cecd9fc12b45e9b8837'
+    if: github.event_name != 'push' || github.event.before == '5e4ab28dca345fca39b67a0be98f9427aa7d9b14'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,6 +26,7 @@ jobs:
       NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
       OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
       KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
     outputs:
       publish: ${{ steps.state.outputs.publish }}
       status: ${{ steps.state.outputs.status }}

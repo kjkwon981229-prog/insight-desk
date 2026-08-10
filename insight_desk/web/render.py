@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import shutil
 from collections.abc import Mapping
 from datetime import datetime
@@ -146,6 +147,17 @@ p { margin: 0; }
 .notice { border-left: 2px solid var(--warning); color: var(--muted-strong); margin-top: 20px; padding-left: 14px; }
 .notice summary { color: var(--warning); cursor: pointer; font-weight: 800; min-height: 40px; padding: 7px 0; }
 .notice ul { margin: 4px 0 12px; padding-left: 18px; }
+.push-settings { border-bottom: 1px solid var(--line-strong); display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) auto; padding: 22px 0; }
+.push-settings h2 { font-size: 1.08rem; margin-top: 4px; }
+.push-settings p { color: var(--muted-strong); font-size: .86rem; margin-top: 6px; max-width: 650px; }
+.push-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.push-actions button { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--text); cursor: pointer; font: inherit; font-size: .84rem; font-weight: 800; min-height: 44px; padding: 8px 13px; }
+.push-actions button:first-child { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.push-actions button:disabled { cursor: not-allowed; opacity: .48; }
+.push-actions button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.push-status { grid-column: 1 / -1; margin-top: -7px !important; }
+.push-status[data-tone="success"] { color: var(--success); font-weight: 800; }
+.push-status[data-tone="warning"] { color: var(--warning); }
 .signal-strip { border-bottom: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .signal-cell { min-width: 0; padding: 18px 20px 17px 0; }
 .signal-cell + .signal-cell { border-left: 1px solid var(--line); padding-left: 20px; }
@@ -248,6 +260,9 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 max(48px, env(s
   .signal-value { font-size: 1.7rem; }
   .signal-label { font-size: .78rem; }
   .signal-note { font-size: .7rem; }
+  .push-settings { grid-template-columns: 1fr; }
+  .push-actions { justify-content: flex-start; }
+  .push-status { grid-column: auto; }
   .content-section, .method-section { padding-top: 44px; }
   .section-heading { align-items: flex-start; display: block; }
   .section-heading .meta { margin-top: 7px; text-align: left; }
@@ -707,6 +722,10 @@ def _freshness_script() -> str:
 </script>"""
 
 
+def _push_worker_url() -> str:
+    return os.environ.get("PUSH_WORKER_URL", "").strip()
+
+
 def _pwa_head(asset_prefix: str) -> str:
     return (
         f'<link rel="manifest" href="{_esc(asset_prefix)}manifest.webmanifest">'
@@ -716,6 +735,25 @@ def _pwa_head(asset_prefix: str) -> str:
         '<meta name="apple-mobile-web-app-capable" content="yes">'
         '<meta name="apple-mobile-web-app-status-bar-style" content="default">'
         '<meta name="apple-mobile-web-app-title" content="Insight Desk">'
+        f'<meta name="insight-desk-push-worker-url" content="{_esc(_push_worker_url())}">'
+    )
+
+
+def _push_settings(asset_prefix: str) -> str:
+    return (
+        '<section class="push-settings" id="notifications" aria-labelledby="notifications-heading" '
+        'data-push-settings '
+        f'data-push-service-worker-url="{_esc(asset_prefix)}push-sw.js">'
+        '<div><span class="section-index">알림 · 하루 한 번</span>'
+        '<h2 id="notifications-heading">브리핑 상태 알림</h2>'
+        '<p>오늘 브리핑이 준비됐거나 마지막 정상본을 유지할 때만 알려드립니다.</p></div>'
+        '<div class="push-actions">'
+        '<button type="button" data-push-enable>알림 켜기</button>'
+        '<button type="button" data-push-disable>알림 끄기</button>'
+        '</div>'
+        '<p class="push-status" data-push-status role="status" aria-live="polite">알림 상태 확인 중…</p>'
+        f'<script defer src="{_esc(asset_prefix)}assets/js/push.js"></script>'
+        '</section>'
     )
 
 
@@ -748,6 +786,7 @@ def _document(
     nav_html = "".join(_nav_link(key, label, href, active_nav) for key, label, href in nav_items)
     latest_attrs = f' data-latest-briefing="true" data-generated-date="{_esc(state.generated_at[:10])}"' if is_latest else ""
     freshness_html = _freshness_script() if is_latest else ""
+    push_html = _push_settings(asset_prefix) if is_latest else ""
     return f'''<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Insight Desk 모바일 뉴스·검색 관심 흐름 브리핑"><title>{_esc(title)}</title>
@@ -757,6 +796,7 @@ def _document(
 <nav class="site-nav" aria-label="브리핑 탐색">{nav_html}</nav></header>
 <section class="briefing-overview" id="today" aria-labelledby="briefing-heading"><span class="eyebrow">오늘의 개인 브리핑 · {_esc(_format_date(state.generated_at))}</span><h1 id="briefing-heading">오늘의 브리핑</h1><p class="overview-lede">{_esc(briefing.three_line_summary[0] if briefing.three_line_summary else _status_sentence(state.status))}</p><p class="overview-status {status_class}"><strong>{_esc(status_label)}</strong> · {_esc(_status_sentence(state.status))}</p><div class="freshness-banner" id="freshness-banner" hidden role="status"></div><ul class="lead-signals" aria-label="관심사별 주요 신호">{_lead_signals(briefing, nav_prefix)}</ul></section>
 {freshness_html}
+{push_html}
 {_notice_html(briefing)}
 <section class="signal-strip" id="signals" aria-label="브리핑 범위"><div class="signal-cell"><span class="label">오늘의 범위</span><div class="signal-value">{_esc(str(len(stories)))}</div><span class="signal-label">주요 변화</span><span class="signal-note">{_esc(str(len(represented)))}개 관심사에서 확인</span></div><div class="signal-cell"><span class="label">검색 흐름</span><div class="signal-value">{_esc("있음" if briefing.trend_metrics else "없음")}</div><span class="signal-label">상대 관심지수</span><span class="signal-note">{_esc(trend_note)}</span></div></section>
 <section class="content-section" id="stories" aria-labelledby="stories-heading"><div class="section-heading"><div><span class="section-index">01 / 오늘의 변화</span><h2 id="stories-heading">오늘 볼 뉴스</h2></div><p class="meta">관심사별로 고른 사건 단위 요약</p></div><div class="story-list">{stories_html or '<p class="meta empty-state">표시할 뉴스가 없다.</p>'}</div></section>
@@ -898,6 +938,11 @@ def render_site(briefing: Briefing, output_dir: Path) -> None:
     icon_output_dir.mkdir(parents=True, exist_ok=True)
     for icon_name in ("icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.png"):
         shutil.copyfile(icon_source_dir / icon_name, icon_output_dir / icon_name)
+    static_source_dir = Path(__file__).resolve().parents[2] / "assets"
+    static_output_dir = output_dir / "assets/js"
+    static_output_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(static_source_dir / "js/push.js", static_output_dir / "push.js")
+    shutil.copyfile(static_source_dir / "push-sw.js", output_dir / "push-sw.js")
     (output_dir / "manifest.webmanifest").write_text(
         json.dumps(MANIFEST, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
