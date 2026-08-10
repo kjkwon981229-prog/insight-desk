@@ -47,6 +47,12 @@ _ROUTINE_MARKET_QUALIFIERS = (
     "변동성", "변동폭", "금융위기", "사상", "최대", "최고", "최저", "급등", "급락",
     "개입", "정책", "기준금리", "결정",
 )
+_HEADLINE_ACTION_MARKERS = (
+    "시구", "개최", "공연", "콘서트", "출시", "발매", "발표", "공개", "시행",
+    "선발", "중단", "멈춘", "재개", "취소", "경기", "매각", "인수", "인상", "인하",
+    "규제", "유치", "투자", "트레이드", "부상", "승리", "패배", "컴백", "전략",
+    "할당", "계약",
+)
 
 
 def _fold(value: str) -> str:
@@ -114,6 +120,41 @@ def effective_lead(item: NewsItem) -> str:
 
 def effective_text(item: NewsItem) -> str:
     return " ".join(part for part in (effective_title(item), effective_lead(item)) if part)
+
+
+def best_headline_item(items: tuple[NewsItem, ...]) -> NewsItem:
+    """Choose the concrete source headline used for display and signatures."""
+
+    def quality(item: NewsItem) -> tuple[float, float, str]:
+        title = effective_title(item)
+        compact = re.sub(r"\s+", "", title)
+        score = min(32.0, len(compact))
+        if item.metadata_title and safe_evidence_text(item.metadata_title):
+            score += 18.0
+        if any(
+            marker in title
+            for marker in (*_HEADLINE_ACTION_MARKERS, "차트", "수상", "변동폭", "최대", "최고", "상승", "하락", "출발")
+        ):
+            score += 16.0
+        if re.search(r"^(?:내일의|오늘의)\s*(?:경기|일정)", title):
+            score -= 20.0
+        if title.startswith(("관련 보도", "관련 소식", "관련 기사")):
+            score -= 30.0
+        if _TRUNCATION_RE.search(item.title):
+            score -= 12.0
+        heat_sports = (
+            any(term in title for term in ("폭염", "열파"))
+            and any(term in title for term in ("KBO", "프로야구", "야구"))
+        )
+        if heat_sports:
+            score += 24.0
+            if any(term in title for term in ("중단", "멈춘", "취소")):
+                score += 12.0
+            if any(term in title for term in ("→", "리셋", "체력 충전")):
+                score -= 10.0
+        return score, item.score, title
+
+    return max(items, key=quality)
 
 
 def topic_anchor_terms(topic: Topic) -> tuple[str, ...]:
@@ -529,7 +570,7 @@ def event_signature(cluster: StoryCluster, event: EventAssessment | None = None)
         heat = "폭염" if any(term in evidence for term in ("폭염", "열파")) else ""
         dates = _DATE_RE.findall(evidence)
         return "|".join(dict.fromkeys((assessed.event_type, league, heat, *dates[:1])))
-    title = effective_title(cluster.representative)
+    title = effective_title(best_headline_item(cluster.items))
     terms = [token for token in _tokens(title) if token not in _GENERIC_TERMS]
     numbers = _NUMBER_RE.findall(title)
     dates = _DATE_RE.findall(title)

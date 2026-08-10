@@ -103,7 +103,8 @@ class SynthesisTests(unittest.TestCase):
                 ),
             ),
         )
-        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        headline, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="K-POP", trend_metrics=())
+        self.assertIn("발매", headline)
         self.assertIn("빅뱅이", summary)
         self.assertIn("19일", summary)
         self.assertIn("신곡", summary)

@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
-from .editorial import effective_lead, effective_title, safe_evidence_text
+from .editorial import best_headline_item, effective_lead, effective_title, safe_evidence_text
 from .normalization import normalize_text
 
 _NUMBER_RE = re.compile(
@@ -188,46 +188,6 @@ def _editorial_headline(value: str, *, subject: str = "") -> str:
         if 8 <= len(clause) <= 56:
             return clause
     return cleaned
-
-
-def _best_title_item(items: tuple[object, ...]) -> object:
-    """Choose the most informative headline inside a corroborated cluster."""
-
-    def quality(item: object) -> tuple[float, float, str]:
-        title = effective_title(item)
-        compact = re.sub(r"\s+", "", title)
-        # A long headline often appends a second market/entity fact.  Let
-        # concrete event signals and corroboration decide the representative;
-        # title length is only a small completeness bonus.
-        score = min(32.0, len(compact))
-        if item.metadata_title and safe_evidence_text(item.metadata_title):
-            score += 18.0
-        if any(
-            marker in title
-            for marker in (*_ACTION_MARKERS, "차트", "수상", "변동폭", "최대", "최고", "상승", "하락", "출발")
-        ):
-            score += 16.0
-        if re.search(r"^(?:내일의|오늘의)\s*(?:경기|일정)", title):
-            score -= 20.0
-        if title.startswith(("관련 보도", "관련 소식", "관련 기사")):
-            score -= 30.0
-        if _TRUNCATION_RE.search(getattr(item, "title", "")):
-            score -= 12.0
-        heat_sports = (
-            any(term in title for term in ("폭염", "열파"))
-            and any(term in title for term in ("KBO", "프로야구", "야구"))
-        )
-        if heat_sports:
-            # Prefer the concrete league interruption headline over an
-            # analysis headline such as ``선발진 리셋`` inside the same event.
-            score += 24.0
-            if any(term in title for term in ("중단", "멈춘", "취소")):
-                score += 12.0
-            if any(term in title for term in ("→", "리셋", "체력 충전")):
-                score -= 10.0
-        return score, float(getattr(item, "score", 0.0)), title
-
-    return max(items, key=quality)
 
 
 def _safe_evidence_text(value: str) -> str:
@@ -644,6 +604,8 @@ def _headline(
     if event_type in {"AWARD_CHART", "PRODUCT_RELEASE", "INDUSTRY_CHANGE", "REGULATION", "POLICY", "ANNOUNCEMENT"}:
         return cleaned or subject or "주요 변화"
     if event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
+        if event_type == "SCHEDULED_EVENT" and action in {"발표", "발매", "출시", "공개"} and action in cleaned:
+            return _editorial_headline(cleaned, subject=subject)
         if event_type == "SCHEDULED_EVENT" and any(
             marker in cleaned for marker in ("프로젝트", "기념", "선보인다")
         ) and len(cleaned) <= 60:
@@ -826,7 +788,7 @@ def synthesize_cluster(
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
     items = cluster.items
     representative = cluster.representative
-    headline_item = _best_title_item(items)
+    headline_item = best_headline_item(items)
     title = effective_title(headline_item) or _clean_headline(headline_item.title)
     headline_evidence = " ".join(
         value for value in (effective_title(headline_item), effective_lead(headline_item)) if value

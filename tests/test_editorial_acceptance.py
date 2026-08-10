@@ -360,6 +360,33 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertNotIn("10일", assessment.event_signature)
         self.assertNotIn("47.56", assessment.event_signature)
 
+    def test_event_signature_uses_the_same_headline_evidence_as_synthesis(self) -> None:
+        topic = _topic("economy", "경제·투자", "코스피", anchors=("코스피",), events=("상승",))
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "market-analysis-title",
+                    "economy",
+                    "코스피",
+                    "반도체 투톱 상승에… 코스피 장 초반 6300선 회복",
+                    "코스피가 상승 출발했다.",
+                    score=90.0,
+                ),
+                _item(
+                    "market-core-title",
+                    "economy",
+                    "코스피",
+                    "코스피 0.76%·코스닥 1.11% 상승 출발",
+                    "코스피와 코스닥이 상승 출발했다.",
+                    score=60.0,
+                ),
+            ),
+        )
+        assessment = assess_cluster(cluster, topic, novelty="NEW")
+        self.assertIn("0.76%", assessment.event_signature)
+        self.assertNotIn("반도체", assessment.event_signature)
+
     def test_ceremonial_first_pitch_is_not_core_sports_news(self) -> None:
         topic = _topic(
             "kbo",
