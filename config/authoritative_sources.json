@@ -67,7 +67,7 @@
       "publisher": "OpenAI",
       "trusted_domains": ["openai.com"],
       "entity_aliases": ["OpenAI", "ChatGPT", "GPT"],
-      "event_markers": ["launch", "launched", "release", "released", "announcement", "announces", "introducing", "model", "발표", "공개", "출시", "모델"],
+      "event_markers": ["launch", "launched", "release", "released", "announcement", "announces", "introducing", "model", "advance", "partner", "partnership", "responsible AI", "발표", "공개", "출시", "모델"],
       "max_requests": 1
     }
   ]

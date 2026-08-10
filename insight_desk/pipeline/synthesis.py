@@ -727,6 +727,7 @@ def _headline(
     *,
     date: str = "",
     action: str = "",
+    temporal_state: str = "",
 ) -> str:
     cleaned = _clean_headline(title)
     if event_type == "EARNINGS" and subject:
@@ -757,6 +758,12 @@ def _headline(
         return result
     if event_type == "SPORTS_INTERRUPTION":
         league = "프로야구" if "프로야구" in cleaned or "프로야구" in subject else ("KBO" if "KBO" in cleaned else subject)
+        if temporal_state == "RESUMING":
+            return " ".join(part for part in (league, date, "경기 재개 예정") if part).strip() or "경기 재개 예정"
+        if temporal_state == "RESUMED":
+            return " ".join(part for part in (league, date, "경기 재개") if part).strip() or "경기 재개"
+        if temporal_state == "CANCELLED":
+            return f"{league} 경기 취소" if league else "경기 취소"
         return f"{league} 폭염으로 경기 중단" if league else "폭염으로 경기 중단"
     if event_type in {"AWARD_CHART", "PRODUCT_RELEASE", "INDUSTRY_CHANGE", "REGULATION", "POLICY", "ANNOUNCEMENT"}:
         return cleaned or subject or "주요 변화"
@@ -791,6 +798,7 @@ def _summary(
     completion_evidence: str = "",
     market_observation: MetricObservation | None = None,
     market_observations: tuple[MetricObservation, ...] = (),
+    temporal_state: str = "",
 ) -> str:
     if event_type == "EARNINGS" and subject:
         period, metric, value = _earnings_fact_parts(completion_evidence or title)
@@ -1066,15 +1074,20 @@ def _summary(
     elif event_type == "SPORTS_INTERRUPTION" and subject:
         evidence = f"{title} {completion_evidence}".casefold()
         league = "프로야구" if "프로야구" in evidence or "프로야구" in subject.casefold() else ("KBO" if "kbo" in evidence else subject)
-        if "재개" in evidence and ("중단" in evidence or "취소" in evidence or "휴식" in evidence):
+        cause = next((marker for marker in ("폭염", "우천", "악천후", "기상") if marker in evidence), "")
+        cause_phrase = f"{cause}로 " if cause else ""
+        if temporal_state == "RESUMING":
             resume_date = f"{date}에 " if date else ""
-            sentence = f"{league} 경기가 폭염으로 중단된 뒤 {resume_date}재개됐다."
-        elif "취소" in evidence:
+            sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개될 예정이다."
+        elif temporal_state == "RESUMED":
+            resume_date = f"{date}에 " if date else ""
+            sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개됐다."
+        elif temporal_state == "CANCELLED" or "취소" in evidence:
             sentence = f"{league} 경기가 폭염 영향으로 취소됐다."
         elif "휴식" in evidence:
-            sentence = f"{league} 경기가 폭염 영향으로 휴식기에 들어갔다."
+            sentence = f"{league} 경기가 {cause_phrase}휴식기에 들어갔다."
         else:
-            sentence = f"{league} 경기가 폭염 영향으로 중단됐다."
+            sentence = f"{league} 경기가 {cause_phrase}중단됐다."
     elif event_type == "MERCHANDISE" and subject:
         sentence = f"{subject} 관련 상품 소식이 보도됐다."
     elif event_type == "ANNOUNCEMENT":
@@ -1258,7 +1271,11 @@ def synthesize_cluster(
     if event_type == "SPORTS_INTERRUPTION":
         combined = f"{title} {fact_headline_evidence}".casefold()
         if "재개" in combined:
-            temporal_state = "RESUMING" if "예정" in combined else "RESUMED"
+            future_resume = any(
+                marker in combined
+                for marker in ("예정", "재개한다", "재개할", "재개될", "다시 시작한다", "다시 시작할", "오는")
+            )
+            temporal_state = "RESUMING" if future_resume else "RESUMED"
         elif "취소" in combined:
             temporal_state = "CANCELLED"
         elif "중단" in combined or "멈춘" in combined:
@@ -1306,7 +1323,16 @@ def synthesize_cluster(
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):
         headline_source = headline_item.title
-    headline = _headline(headline_source, event_type, subject, display_numbers, change, date=date, action=action)
+    headline = _headline(
+        headline_source,
+        event_type,
+        subject,
+        display_numbers,
+        change,
+        date=date,
+        action=action,
+        temporal_state=temporal_state,
+    )
     summary = _summary(
         title,
         event_type,
@@ -1321,6 +1347,7 @@ def synthesize_cluster(
         fact_headline_evidence,
         market_observation=market_observation,
         market_observations=market_observations,
+        temporal_state=temporal_state,
     )
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()

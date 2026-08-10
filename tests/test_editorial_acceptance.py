@@ -829,6 +829,8 @@ class EditorialAcceptanceTests(unittest.TestCase):
 
     def test_run76_summary_information_gain_and_generic_evidence_macro_are_gated(self) -> None:
         self.assertFalse(summary_information_gain("AI 모델 출시 발표", "AI 모델 출시 발표."))
+        self.assertFalse(summary_information_gain("삼성전자 영업이익 10조원", "삼성전자가 영업이익 10조원을 기록했다."))
+        self.assertTrue(summary_information_gain("삼성전자 영업이익 10조원", "삼성전자가 2026년 2분기 영업이익 10조원을 기록했다."))
         self.assertFalse(is_usable_synthesis(
             "AI 모델 출시 발표",
             "여러 매체에서 같은 핵심 내용이 확인됐다.",

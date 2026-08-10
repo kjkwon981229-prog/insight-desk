@@ -708,5 +708,14 @@ def summary_information_gain(headline: str, summary: str) -> bool:
             "됐다", "했다", "발표", "공개", "출시", "소식", "관련",
         }
     }
-    has_number_or_date = bool(any(char.isdigit() for char in summary if char not in headline) or _DATE_RE.search(summary))
-    return bool(has_number_or_date or len(meaningful_additional) >= 2)
+    headline_numbers = {compact(value) for value in _NUMBER_RE.findall(headline)}
+    summary_numbers = {compact(value) for value in _NUMBER_RE.findall(summary)}
+    new_numbers = summary_numbers - headline_numbers
+    headline_dates = {compact(value) for value in _DATE_RE.findall(headline)}
+    summary_dates = {compact(value) for value in _DATE_RE.findall(summary)}
+    new_dates = summary_dates - headline_dates
+    # A number/date only counts when it is genuinely new relative to the
+    # headline. Repeating the same metric in declarative form is not
+    # information gain, and must not rescue a headline-copy summary.
+    has_new_fact = bool(new_numbers or new_dates)
+    return bool(has_new_fact or len(meaningful_additional) >= 2)

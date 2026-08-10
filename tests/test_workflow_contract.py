@@ -18,6 +18,14 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("selection-audit-${{ github.run_id }}", workflow)
         self.assertIn("hashFiles('build/selection-audit.json')", workflow)
 
+    def test_history_has_last_good_pages_fallback_without_write_permissions(self) -> None:
+        workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("Restore durable history from last-good Pages payload", workflow)
+        self.assertIn("https://kjkwon981229-prog.github.io/insight-desk/latest/data.json", workflow)
+        self.assertIn("publication-signatures.json", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+
     def test_authoritative_credentials_are_injected_only_as_workflow_env(self) -> None:
         workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
         self.assertIn("OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}", workflow)

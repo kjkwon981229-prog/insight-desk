@@ -48,6 +48,19 @@ jobs:
           key: insight-desk-site-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
             insight-desk-site-${{ github.ref_name }}-
+      - name: Restore durable history from last-good Pages payload
+        shell: bash
+        run: |
+          set -u
+          if [ -f build/history/publication-signatures.json ]; then
+            exit 0
+          fi
+          mkdir -p build/site/latest
+          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
+          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
+            rm -f build/site/latest/data.json
+            echo "No last-good public payload was available for novelty fallback."
+          fi
       - name: Build live briefing
         run: >-
           python -m insight_desk.cli
