@@ -284,6 +284,26 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertFalse(assessment.event.passed)
         self.assertFalse(assessment.qualified)
 
+    def test_truncated_analysis_headline_without_safe_lead_is_not_a_schedule(self) -> None:
+        topic = _topic(
+            "kpop",
+            "엔터·음악·K-POP",
+            "SM",
+            anchors=("SM", "공연", "음반", "가수"),
+            events=("공연", "매출", "실적"),
+        )
+        item = _item(
+            "truncated-earnings-headline",
+            "kpop",
+            "SM",
+            "음반보다 공연이 효자… SM, 매출 3496억·영업익 529억",
+            "SM 엔터테인먼트가 올해 2분기 실적 성장을 기록했다고 밝혔다...",
+        )
+        assessment = assess_cluster(StoryCluster("kpop", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "SCHEDULED_EVENT")
+        self.assertIn("TRUNCATED_EVENT_WITHOUT_LEAD", assessment.reasons)
+        self.assertFalse(assessment.qualified)
+
     def test_ceremonial_first_pitch_is_not_core_sports_news(self) -> None:
         topic = _topic(
             "kbo",

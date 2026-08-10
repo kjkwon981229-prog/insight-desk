@@ -121,6 +121,11 @@ _GENERIC_SUMMARY_MARKERS = (
     "단일 검색 결과만 확인되어",
     "공통으로 확인되는 세부 사실은 제한적이다",
 )
+_EVENT_DATE_MARKERS = (
+    "발매", "출시", "컴백", "공개", "개최", "공연", "콘서트", "진행", "시작", "재개",
+    "예정", "시구", "경기", "열렸다", "성료",
+)
+_COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
 
 
 def is_usable_synthesis(
@@ -139,6 +144,8 @@ def is_usable_synthesis(
     if not clean_summary or any(marker in clean_summary for marker in _GENERIC_SUMMARY_MARKERS):
         return False
     if _TRUNCATION_RE.search(clean_headline + clean_summary):
+        return False
+    if clean_summary.endswith("일정이 공개됐다.") and not _DATE_RE.search(clean_summary):
         return False
     if source_count <= 1 and not official_source and "추가 확인이 필요하다" in clean_summary:
         return False
@@ -267,7 +274,11 @@ def _meaningful_numbers(values: tuple[str, ...], context: str = "") -> tuple[str
 
     if any(marker in context.casefold() for marker in ("ndf", "선물환")) and "/" in context:
         return values
-    meaningful = tuple(value for value in values if re.search(r"[^\d,.\s]", value))
+    meaningful = tuple(
+        value
+        for value in values
+        if not _DATE_COUNTER_RE.fullmatch(value) and re.search(r"[^\d,.\s]", value)
+    )
     if meaningful:
         return meaningful
     if values and all(_DATE_COUNTER_RE.fullmatch(value) for value in values):
@@ -315,6 +326,24 @@ def _market_metric_number(title: str, numbers: tuple[str, ...]) -> str:
 
 def _dates(text: str) -> tuple[str, ...]:
     return _unique([re.sub(r"\s+", "", value) for value in _DATE_RE.findall(text)])
+
+
+def _event_dates(text: str) -> tuple[str, ...]:
+    """Extract dates tied to the event, not a publication-date preface."""
+
+    selected: list[str] = []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    for sentence in sentences:
+        matches = list(_DATE_RE.finditer(sentence))
+        marker_positions = [
+            match.start()
+            for marker in _EVENT_DATE_MARKERS
+            for match in re.finditer(re.escape(marker), sentence)
+        ]
+        if matches and marker_positions:
+            match = min(matches, key=lambda value: min(abs(value.start() - position) for position in marker_positions))
+            selected.append(re.sub(r"\s+", "", match.group(0)))
+    return _unique(selected)
 
 
 def _times(text: str) -> tuple[str, ...]:
@@ -628,6 +657,7 @@ def _summary(
     change: str,
     source_count: int,
     uncertainty: str,
+    completion_evidence: str = "",
 ) -> str:
     if event_type in {"STATISTIC", "MARKET", "EARNINGS"} and subject and numbers:
         summary_subject = "" if _TIME_PREFIX_RE.match(subject) else subject
@@ -671,7 +701,13 @@ def _summary(
             sentence = f"{lead}{numbers[0]} 수치가 한 건의 보도에서 제시돼 추가 확인이 필요하다."
     elif event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and subject:
         event_phrase = action if action in _EVENT_ACTIONS else ""
-        if event_type == "ENTERTAINMENT_EVENT" and ("컴백" in title or action == "컴백") and date:
+        if any(marker in completion_evidence for marker in _COMPLETION_MARKERS):
+            when = f"{date} " if date else ""
+            where = f"{location} " if location else ""
+            event_noun = event_phrase or "행사"
+            particle = "이" if event_noun == "컴백" else "가"
+            sentence = f"{subject}의 {when}{where}{event_noun}{particle} 성황리에 진행됐다."
+        elif event_type == "ENTERTAINMENT_EVENT" and ("컴백" in title or action == "컴백") and date:
             sentence = f"{subject}가 {date} 컴백한다."
         elif event_type == "ENTERTAINMENT_EVENT" and ("앨범" in title or action == "발매") and date:
             sentence = f"{subject}가 {date} 앨범을 발매한다."
@@ -681,8 +717,12 @@ def _summary(
             phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"
             sentence = f"{subject} {phrase} {when}{where}예정돼 있다."
         else:
-            phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"
-            sentence = f"{subject} {phrase} 공개됐다."
+            if event_phrase == "컴백":
+                sentence = f"{subject}의 컴백이 확인됐다."
+            elif event_phrase:
+                sentence = f"{subject}의 {event_phrase} 소식이 확인됐다."
+            else:
+                sentence = f"{subject}의 행사 소식이 확인됐다."
     elif event_type in {"POLICY", "REGULATION"} and subject:
         policy_action = action if action in {"발표", "공개", "시행", "고시", "확정"} else "정책 변화"
         sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
@@ -790,10 +830,11 @@ def synthesize_cluster(
     numbers = _unique(list(_numbers(headline_evidence)) + list(repeated_numbers))
     display_numbers = _meaningful_numbers(numbers, title)
     metadata_dates = _unique(
-        [date for item in items for date in _dates(safe_evidence_text(item.metadata_description))]
+        [date for item in items for date in _event_dates(safe_evidence_text(item.metadata_description))]
     )
     dates = _unique(
-        list(_dates(fact_headline_evidence))
+        list(_dates(effective_title(headline_item)))
+        + list(_event_dates(_fact_lead(headline_item)))
         + list(repeated_dates)
         + list(metadata_dates)
     )
@@ -883,6 +924,7 @@ def synthesize_cluster(
         change,
         source_count,
         uncertainty,
+        fact_headline_evidence,
     )
     evidence = _evidence_summary(source_count, repeated, official)
     watch = (next_signal,) if next_signal else ()

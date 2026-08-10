@@ -463,6 +463,27 @@ def is_generic_summary(value: str) -> bool:
     return any(marker in text for marker in _GENERIC_SUMMARY_MARKERS)
 
 
+def _truncated_prefix_has_event_fact(item: NewsItem) -> bool:
+    """Allow a truncated title when its safe lead prefix proves the event."""
+
+    for value in (item.metadata_description, item.summary):
+        text = normalize_text(value)
+        marker = _TRUNCATION_RE.search(text)
+        if not marker:
+            continue
+        prefix = text[:marker.start()].strip(" ,·-—")
+        if len(prefix) < 12:
+            continue
+        has_date = bool(_DATE_RE.search(prefix) or re.search(r"\d{1,2}\s?월", prefix))
+        has_event = any(
+            _contains(prefix, term)
+            for term in ("발매", "출시", "컴백", "공연", "콘서트", "개최", "진행", "시작", "공개", "예정")
+        )
+        if has_date and has_event:
+            return True
+    return False
+
+
 def event_signature(cluster: StoryCluster, event: EventAssessment | None = None) -> str:
     assessed = event or assess_event(cluster, Topic(cluster.topic_id, cluster.topic_id, True, False, 50, ()))
     if assessed.event_type == "SPORTS_INTERRUPTION":
@@ -497,6 +518,24 @@ def assess_cluster(
     # headline, not every article that contains the marker.
     generic_headline = is_generic_headline(effective_title(representative))
     generic_summary = is_generic_summary(effective_lead(representative))
+    truncated_title_without_lead = bool(
+        representative.title
+        and _TRUNCATION_RE.search(representative.title)
+        and not (representative.metadata_title and safe_evidence_text(representative.metadata_title))
+        and not effective_lead(representative)
+    )
+    completed_event_headline = any(
+        _contains(effective_title(representative), marker)
+        for marker in ("대성황", "성황", "성료", "진행", "개최", "열렸다", "마쳤다")
+    )
+    thin_truncated_schedule = (
+        cluster.source_count == 1
+        and truncated_title_without_lead
+        and event.event_type == "SCHEDULED_EVENT"
+        and not _DATE_RE.search(effective_title(representative))
+        and not completed_event_headline
+        and not _truncated_prefix_has_event_fact(representative)
+    )
     single_source_supported = (
         cluster.source_count == 1
         and (
@@ -527,6 +566,8 @@ def assess_cluster(
         reasons.append("GENERIC_HEADLINE")
     if generic_summary:
         reasons.append("GENERIC_SUMMARY")
+    if thin_truncated_schedule:
+        reasons.append("TRUNCATED_EVENT_WITHOUT_LEAD")
     if novelty == "NEW":
         novelty_value = 100.0
         reasons.append("NEW")
@@ -553,6 +594,7 @@ def assess_cluster(
     hard_reject = (
         generic_headline
         or generic_summary
+        or thin_truncated_schedule
         or not relevance.passed
         or not event.passed
         or not evidence.passed and not single_source_supported

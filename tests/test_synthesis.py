@@ -185,6 +185,32 @@ class SynthesisTests(unittest.TestCase):
         self.assertNotIn("9", facts.key_numbers)
         self.assertNotIn("커밍순", summary)
 
+    def test_completed_concert_does_not_turn_publication_date_into_event_date(self) -> None:
+        item = _item(
+            "yunho-concert-report",
+            "동방신기 유노윤호, 마카오 콘서트도 대성황…현지어 소통까지",
+            "8월 10일 소속사 SM 엔터테인먼트에 따르면 유노윤호는 8일 마카오 브로드웨이 시어터에서 공연을 진행했다. 이날...",
+            "music.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kpop", (item,)), topic_name="K-POP", trend_metrics=()
+        )
+        self.assertEqual(facts.date, "8일")
+        self.assertIn("성황리에 진행됐다", summary)
+        self.assertNotIn("8월10일", summary)
+
+    def test_comeback_without_schedule_does_not_invent_a_schedule(self) -> None:
+        item = _item(
+            "wayv-comeback",
+            'WayV, "Vision Wings"로 여덟 번째 미니앨범 컴백',
+            "WayV가 새 미니앨범으로 활동을 시작한다. 오늘 오후 6시 전곡 음원이 공개된다...",
+            "music.example",
+        )
+        _, summary, _, _, _, _ = synthesize_cluster(
+            StoryCluster("kpop", (item,)), topic_name="K-POP", trend_metrics=()
+        )
+        self.assertEqual(summary, "WayV의 컴백이 확인됐다.")
+
     def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
         cluster = StoryCluster(
             "topic",
