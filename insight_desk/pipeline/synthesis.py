@@ -121,6 +121,7 @@ _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "
 _TRUNCATION_RE = re.compile(r"\.{2,}|…")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
+_DATE_STAMP_RE = re.compile(r"^20\d{2}[./-]\d{1,2}[./-]\d{1,2}$")
 _MARKET_RUN_RE = re.compile(r"\d+\s?거래일(?:\s?연속)?\s?(?:순매수|순매도)")
 _GENERIC_HEADLINE_MARKERS = ("관련 보도", "관련 소식", "관련 기사", "관련 뉴스")
 _GENERIC_SUMMARY_MARKERS = (
@@ -129,7 +130,7 @@ _GENERIC_SUMMARY_MARKERS = (
 )
 _EVENT_DATE_MARKERS = (
     "발매", "출시", "컴백", "공개", "발표", "개최", "공연", "콘서트", "진행", "시작", "재개",
-    "예정", "시구", "경기", "열렸다", "성료",
+    "예정", "상장", "시구", "경기", "열렸다", "성료",
 )
 _COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
 
@@ -249,11 +250,13 @@ def _meaningful_numbers(values: tuple[str, ...], context: str = "") -> tuple[str
     meaningful = tuple(
         value
         for value in values
-        if not _DATE_COUNTER_RE.fullmatch(value) and re.search(r"[^\d,.\s]", value)
+        if not _DATE_COUNTER_RE.fullmatch(value)
+        and not _DATE_STAMP_RE.fullmatch(value)
+        and re.search(r"[^\d,.\s]", value)
     )
     if meaningful:
         return meaningful
-    if values and all(_DATE_COUNTER_RE.fullmatch(value) for value in values):
+    if values and all(_DATE_COUNTER_RE.fullmatch(value) or _DATE_STAMP_RE.fullmatch(value) for value in values):
         return ()
     return values
 
@@ -377,7 +380,7 @@ def _event_type(text: str, numbers: tuple[str, ...]) -> str:
         )
     ):
         return "POLICY"
-    if any(word in text for word in ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "예약판매", "판매 개시", "사양 확정")):
+    if any(word in text for word in ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "신규상장", "상장", "예약판매", "판매 개시", "사양 확정")):
         return "PRODUCT_RELEASE"
     sports_context = any(word in text for word in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "경기", "시구"))
     if (
@@ -735,22 +738,30 @@ def _summary(
             sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
         release_subject = _clean_headline(title).split(",", 1)[0].strip() or subject
-        if "데뷔곡" in title:
-            release_noun, release_verb, release_fact = "데뷔곡", "발매", "데뷔곡 발매"
-        elif "앨범" in title:
-            release_noun, release_verb, release_fact = "앨범", "발매", "앨범 발매"
-        elif any(marker in title for marker in ("음원", "싱글", "신곡", "발매")):
-            release_noun, release_verb, release_fact = "신곡", "발매", "신곡 발매"
-        elif "도구" in title or "서비스" in title:
-            release_noun, release_verb, release_fact = "도구·서비스", "출시", "도구·서비스 출시"
+        listing = re.search(
+            r"(?:오는\s*)?(\d{1,2}\s?일)\s*상장\s*예정인\s*([A-Za-z0-9가-힣·&+\- ]+?(?:ETF|펀드))",
+            completion_evidence,
+        )
+        if listing:
+            listing_date, listing_product = listing.groups()
+            sentence = f"{listing_product.strip()}{_subject_particle(listing_product.strip())} {listing_date} 상장될 예정이다."
         else:
-            release_noun, release_verb, release_fact = "제품", "출시", "출시"
-        if date and release_verb == "발매":
-            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
-        elif date and release_verb == "출시":
-            sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
-        else:
-            sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
+            if "데뷔곡" in title:
+                release_noun, release_verb, release_fact = "데뷔곡", "발매", "데뷔곡 발매"
+            elif "앨범" in title:
+                release_noun, release_verb, release_fact = "앨범", "발매", "앨범 발매"
+            elif any(marker in title for marker in ("음원", "싱글", "신곡", "발매")):
+                release_noun, release_verb, release_fact = "신곡", "발매", "신곡 발매"
+            elif "도구" in title or "서비스" in title:
+                release_noun, release_verb, release_fact = "도구·서비스", "출시", "도구·서비스 출시"
+            else:
+                release_noun, release_verb, release_fact = "제품", "출시", "출시"
+            if date and release_verb == "발매":
+                sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
+            elif date and release_verb == "출시":
+                sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
+            else:
+                sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
     elif event_type == "AWARD_CHART" and subject:
         chart_number = next((value for value in numbers if value.endswith("위")), "")
         if chart_number:

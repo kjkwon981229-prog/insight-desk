@@ -471,6 +471,27 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((first, second))
         self.assertEqual(len(clusters), 2)
 
+    def test_policy_aliases_merge_same_directive_across_company_shorthand(self) -> None:
+        first = _item(
+            "directive-full-company",
+            "ai_tech",
+            "반도체",
+            "추미애 삼성·SK하이닉스, 반도체 폐수 방류 줄여라",
+            "반도체 기업에 방류량 저감을 요구했다.",
+            domain="a.example",
+        )
+        second = _item(
+            "directive-short-company",
+            "ai_tech",
+            "반도체",
+            "추미애 삼전·닉스 반도체 공정수 방류 최소화 재차 요구",
+            "삼성전자와 SK하이닉스에 공정수 방류 최소화를 요구했다.",
+            domain="b.example",
+        )
+        clusters = cluster_news((first, second))
+        self.assertEqual(len(clusters), 1)
+        self.assertEqual(len(clusters[0].items), 2)
+
     def test_same_dated_artist_release_headlines_still_merge(self) -> None:
         first = _item(
             "same-release-a",

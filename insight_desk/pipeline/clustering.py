@@ -29,7 +29,7 @@ _EVENT_TERMS = {
     "경기", "승리", "패배", "부상", "트레이드", "선발", "엔트리", "시행", "일정",
     "컴백", "공연", "콘서트", "차트", "기록", "상승", "하락", "급등", "급락", "변동",
     "발매", "협업", "프로젝트",
-    "폭염", "중단", "멈춘", "논란",
+    "폭염", "중단", "멈춘", "논란", "요구", "촉구", "줄여라", "최소화",
 }
 _GENERIC_TERMS = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
 _CONTEXT_TERMS = {"행사", "일정", "참석", "포토", "블루카펫", "대표", "얼굴", "내일의", "오늘의"}
@@ -44,6 +44,7 @@ _CLUSTER_GENERIC_ENTITIES = {
 _GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
 _RELEASE_ACTIONS = {"출시", "발매", "컴백", "release_announcement"}
 _RELEASE_NOUNS = {"앨범", "음원", "싱글", "신곡", "신보"}
+_POLICY_ACTIONS = {"요구", "촉구", "줄여라", "최소화"}
 _HEAT_INTERRUPTION_TERMS = {
     "중단", "멈춘", "휴식", "재개", "취소", "방학", "브레이크", "순연", "재편", "일정"
 }
@@ -227,9 +228,16 @@ def _similar(a: NewsItem, b: NewsItem) -> bool:
         and left_actions <= _RELEASE_ACTIONS
         and right_actions <= _RELEASE_ACTIONS
     )
+    same_policy_family = bool(
+        left_actions
+        and right_actions
+        and left_actions <= _POLICY_ACTIONS
+        and right_actions <= _POLICY_ACTIONS
+        and len(shared_entities) >= 2
+    )
     return bool(
         shared_entities
-        and (shared_actions or same_release_family or (shared_dates and actions_compatible))
+        and (shared_actions or same_release_family or same_policy_family or (shared_dates and actions_compatible))
     )
 
 

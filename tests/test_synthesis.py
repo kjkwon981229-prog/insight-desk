@@ -129,6 +129,26 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("발매", summary)
         self.assertNotIn("제품", summary)
 
+    def test_etf_listing_caption_preserves_upcoming_listing_fact(self) -> None:
+        cluster = StoryCluster(
+            "economy",
+            (
+                _item(
+                    "etf-listing-caption",
+                    "ACE ETF 신규상장기념 투자세미나",
+                    "배재규 대표가 10일 세미나에서 오는 11일 상장 예정인 ACE 반도체 Plus전략산업 ETF 관련 브리핑을 했다. 2026.8.10",
+                    "market.example",
+                ),
+            ),
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(cluster, topic_name="경제·투자", trend_metrics=())
+        self.assertEqual(facts.event_type, "PRODUCT_RELEASE")
+        self.assertEqual(facts.date, "11일")
+        self.assertIn("ACE 반도체 Plus전략산업 ETF", summary)
+        self.assertIn("11일", summary)
+        self.assertIn("상장", summary)
+        self.assertNotIn("2026.8.10", facts.key_numbers)
+
     def test_policy_directive_preserves_supported_action(self) -> None:
         cluster = StoryCluster(
             "ai_tech",
