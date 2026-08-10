@@ -422,12 +422,18 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         standalone(term)
         for term in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "엔트리", "선발", "트레이드", "경기 결과")
     )
+    recruitment_context = (
+        any(_contains(text, term) for term in ("공채", "채용", "공무원", "시험", "원서접수", "합격자"))
+        and any(_contains(text, term) for term in ("선발", "지원", "경쟁률", "합격자"))
+    )
     def detect_event(source: str) -> tuple[str, float, list[str]]:
         detected_type = "OTHER"
         detected_value = 0.0
         detected_terms: list[str] = []
         for candidate_type, patterns, value in _EVENT_PATTERNS:
-            if candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"} and not sports_context:
+            if candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT"} and not sports_context:
+                continue
+            if candidate_type == "ROSTER_PERSONNEL" and not (sports_context or recruitment_context):
                 continue
             hits = [pattern for pattern in patterns if _contains(source, pattern)]
             if hits and value > detected_value:

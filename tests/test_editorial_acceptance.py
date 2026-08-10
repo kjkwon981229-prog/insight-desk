@@ -416,6 +416,30 @@ class EditorialAcceptanceTests(unittest.TestCase):
         assessment = assess_cluster(StoryCluster("kpop", (primary, secondary)), topic, novelty="NEW")
         self.assertEqual(assessment.event.event_type, "ANNOUNCEMENT")
 
+    def test_concrete_recruitment_result_uses_personnel_event_type(self) -> None:
+        topic = _topic(
+            "psat",
+            "PSAT·공채 일정",
+            "7급 공채",
+            anchors=("7급 공채", "공무원", "선발"),
+            events=("공채", "선발", "시험"),
+            required=("7급 공채",),
+            conditional=True,
+        )
+        item = _item(
+            "recruitment-result",
+            "psat",
+            "7급 공채",
+            "부산시, 올 지방공무원 7급 공채 71.5대 1",
+            "부산시 지방공무원 7급 공채에서 38명 선발에 1,461명이 지원했다.",
+            metadata_title="부산시, 올 지방공무원 7급 공채 71.5대 1",
+            metadata_description="부산시 지방공무원 7급 공채에서 38명 선발에 1,461명이 지원했다.",
+        )
+        assessment = assess_cluster(StoryCluster("psat", (item,)), topic, novelty="NEW")
+        self.assertEqual(assessment.event.event_type, "ROSTER_PERSONNEL")
+        self.assertTrue(assessment.event.passed)
+        self.assertTrue(assessment.qualified)
+
     def test_fan_invitation_background_is_not_misclassified_from_historical_lead(self) -> None:
         topic = _topic(
             "kpop",
