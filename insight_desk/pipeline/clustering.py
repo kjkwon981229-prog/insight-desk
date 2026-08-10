@@ -51,6 +51,18 @@ _DATE_NUMBER_RE = re.compile(
     r"(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일)|\d+(?:[,\.]\d+)?\s?(?:%|원|달러|억|만|명|건|배|개|곳|주년|위|점|대|선))"
 )
 _DATE_MARKER_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월(?:\s?\d{1,2}\s?일)?|일)")
+_MARKET_INSTRUMENTS = (
+    ("kospi", ("코스피", "KOSPI")),
+    ("kosdaq", ("코스닥", "KOSDAQ")),
+    ("usdkrw", ("원·달러", "원달러", "환율")),
+    ("jpy", ("엔화",)),
+    ("samsung", ("삼성전자",)),
+    ("skhynix", ("SK하이닉스", "하이닉스")),
+    ("treasury", ("국채선물", "국채")),
+    ("nasdaq", ("나스닥", "NASDAQ")),
+    ("sp500", ("S&P500", "S&P 500")),
+    ("dow", ("다우", "DOW")),
+)
 
 
 def _item_text(item: NewsItem) -> str:
@@ -150,9 +162,27 @@ def _date_markers(item: NewsItem) -> set[str]:
     return {re.sub(r"\s+", "", value) for value in _DATE_MARKER_RE.findall(text)}
 
 
+def _market_instruments(item: NewsItem) -> set[str]:
+    """Return explicit market instruments named in trusted headline text."""
+
+    text = " ".join(value for value in (item.metadata_title, item.title) if value)
+    return {
+        instrument
+        for instrument, markers in _MARKET_INSTRUMENTS
+        if any(marker.casefold() in text.casefold() for marker in markers)
+    }
+
+
 def _similar(a: NewsItem, b: NewsItem) -> bool:
     if _is_sports_heat_story(a) and _is_sports_heat_story(b):
         return True
+    left_instruments = _market_instruments(a)
+    right_instruments = _market_instruments(b)
+    # A shared macro driver such as ``금리`` or ``상승`` is not enough to
+    # merge separate instruments.  Prevent transitive clusters from turning
+    # an index, a stock, and a currency into one synthetic market story.
+    if left_instruments and right_instruments and not left_instruments & right_instruments:
+        return False
     left_dates = _date_markers(a)
     right_dates = _date_markers(b)
     # Different dated events about the same entity are not one story merely

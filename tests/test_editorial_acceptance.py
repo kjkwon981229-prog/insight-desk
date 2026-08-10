@@ -734,6 +734,25 @@ class EditorialAcceptanceTests(unittest.TestCase):
         self.assertEqual(len(psat_clusters), 2)
         self.assertTrue(all(len(cluster.items) == 1 for cluster in psat_clusters))
 
+    def test_market_instruments_do_not_merge_through_shared_rate_context(self) -> None:
+        stock = _item(
+            "market-stock-context",
+            "economy",
+            "기준금리",
+            "[특징주]SK하이닉스·삼성전자 나란히 상승…낙폭과대·금리 인하 기대",
+            "금리 인하 기대가 반도체주 상승 배경으로 거론됐다.",
+        )
+        currency = _item(
+            "market-yen-context",
+            "economy",
+            "기준금리",
+            "엔화, 美 조기 금리 인상 관측 후퇴에 1달러=157엔대 후반 상승 출발",
+            "엔화가 금리 전망 변화로 상승 출발했다.",
+        )
+        clusters = cluster_news((stock, currency))
+        self.assertEqual(len(clusters), 2)
+        self.assertTrue(all(len(cluster.items) == 1 for cluster in clusters))
+
     def test_event_clustering_merges_same_sports_interruption_theme(self) -> None:
         first = _item(
             "heat-a",
