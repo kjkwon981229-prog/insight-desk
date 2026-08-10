@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,7 +22,7 @@ from .pipeline.scoring import score_news
 from .pipeline.novelty import load_previous_signatures, write_publication_signatures
 from .pipeline.selection import cap_topic_candidates, topic_diverse_enrichment_candidates
 from .pipeline.trend_metrics import compute_trend_metrics, parse_trend_batches
-from .security import assert_no_secret_values, redact_error
+from .security import assert_no_secret_values, configured_secret_values, redact_error, scan_secret_values
 from .web.render import render_site
 from .web.validate import validate_artifact
 
@@ -132,12 +131,11 @@ def execute(
     generated_at = current.isoformat(timespec="seconds")
     cutoff = (current - timedelta(days=30)).date().isoformat()
     topics, groups = load_topics(config_path)
-    configured_secrets = (
-        getattr(client, "credentials", None)
-        and (client.credentials.client_id, client.credentials.client_secret)
-    ) or ()
-    external_secrets = (os.environ.get("OPENDART_API_KEY", ""), os.environ.get("KOSIS_API_KEY", ""))
-    secrets = tuple(value for value in (*configured_secrets, *external_secrets) if value)
+    configured_secrets: tuple[str, ...] = ()
+    client_credentials = getattr(client, "credentials", None)
+    if client_credentials is not None:
+        configured_secrets = (client_credentials.client_id, client_credentials.client_secret)
+    secrets = configured_secret_values(*configured_secrets)
 
     if client is None:
         credentials = NaverCredentials.from_environment()
@@ -151,10 +149,10 @@ def execute(
                 trends=_empty_status(),
                 errors=("NCP_CLIENT_ID 또는 NCP_CLIENT_SECRET이 없어 새 데이터를 수집하지 않았다.",),
             )
-            _write_state(state_path, state, ())
+            _write_state(state_path, state, secrets)
             return state
         client = NaverApiClient(credentials, cache=ResponseCache(cache_path))
-        secrets = (credentials.client_id, credentials.client_secret)
+        secrets = configured_secret_values(credentials.client_id, credentials.client_secret)
 
     try:
         news_collection = collect_news(client, topics)
@@ -275,11 +273,31 @@ def execute(
             )
             _write_state(state_path, failure, secrets)
             return failure
+        tree_secret_errors = scan_secret_values(output_dir.parent, secrets)
+        if tree_secret_errors:
+            failure = replace(
+                state,
+                status=resolve_status(news_collection.status, trend_collection.status, validation_ok=False),
+                publish=False,
+                render_errors=tree_secret_errors,
+            )
+            _write_state(state_path, failure, secrets)
+            return failure
         write_publication_signatures(
             state_path.parent / "history" / "publication-signatures.json",
             briefing.stories,
             generated_at=generated_at,
         )
+        tree_secret_errors = scan_secret_values(output_dir.parent, secrets)
+        if tree_secret_errors:
+            failure = replace(
+                state,
+                status=resolve_status(news_collection.status, trend_collection.status, validation_ok=False),
+                publish=False,
+                render_errors=tree_secret_errors,
+            )
+            _write_state(state_path, failure, secrets)
+            return failure
         _write_state(state_path, state, secrets)
         return state
     except Exception as exc:  # noqa: BLE001 - the workflow receives a sanitized failure state

@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from ..security import scan_secret_values
+
 REQUIRED_FILES = (
     "index.html",
     "latest/index.html",
@@ -21,6 +23,7 @@ _LOCAL_HREF = re.compile(r'href=["\']([^"\'#]+)["\']')
 
 def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple[str, ...]:
     errors: list[str] = []
+    errors.extend(scan_secret_values(site_dir, secrets))
     for relative in REQUIRED_FILES:
         path = site_dir / relative
         if not path.is_file():
@@ -33,9 +36,6 @@ def validate_artifact(site_dir: Path, *, secrets: tuple[str, ...] = ()) -> tuple
         except UnicodeDecodeError:
             errors.append(f"not valid UTF-8: {relative}")
             continue
-        for secret in secrets:
-            if secret and secret in text:
-                errors.append(f"secret detected in artifact: {relative}")
         if relative.endswith(".html"):
             if "charset=\"utf-8\"" not in text.lower():
                 errors.append(f"missing UTF-8 declaration: {relative}")
