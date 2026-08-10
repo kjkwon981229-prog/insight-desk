@@ -419,3 +419,25 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         self.assertEqual(report.items[0].authority_conflict, "VALUE_CONFLICT")
         self.assertEqual(report.audits[0]["adapter"], "opendart")
         self.assertEqual(report.audits[1]["conflicts_found"], 1)
+
+    def test_router_does_not_compare_rate_to_official_base_index(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    [
+                        {"PRD_DE": "202606", "DT": "116.5", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260702"},
+                        {"PRD_DE": "202605", "DT": "116.1", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260603"},
+                    ]
+                ),
+            )
+        )
+        config = AuthorityConfig(
+            schema_version=1,
+            open_dart=OpenDartConfig(False, 7, 50, "B", 1, ()),
+            kosis=KosisConfig(enabled=True, max_requests=1, datasets=(_kosis_dataset(),)),
+        )
+        item = _item("router-rate", "소비자물가 6월 2.7% 상승", "소비자물가가 2.7% 상승했다.", query="물가")
+        report = AuthoritativeRouter(config=config, transport=transport, kosis_key="placeholder-kosis-key").augment(
+            (item,), now=datetime(2026, 8, 10, 7, 30)
+        )
+        self.assertEqual(report.items[0].authority_conflict, "CONFIRMED_MATCH")

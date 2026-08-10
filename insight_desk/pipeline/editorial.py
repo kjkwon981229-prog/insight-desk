@@ -12,6 +12,7 @@ from .semantics import (
     CanonicalEvent,
     canonical_event_date,
     canonical_event_signature,
+    compact,
     contains_action,
     contains_intent_term,
     canonical_publisher,
@@ -241,6 +242,8 @@ class EvidenceAssessment:
     passed: bool
     reasons: tuple[str, ...]
     conflict_state: str = "NO_CONFLICT"
+    corroborated: bool = False
+    syndicated_copy: bool = False
 
 
 @dataclass(frozen=True)
@@ -668,19 +671,99 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     )
 
 
+_TRUSTED_OFFICIAL_DOMAINS = frozenset(
+    {
+        "bok.or.kr",
+        "kosis.kr",
+        "opendart.fss.or.kr",
+        "dart.fss.or.kr",
+        "fss.or.kr",
+        "kostat.go.kr",
+    }
+)
+
+
 def _is_official(item: NewsItem) -> bool:
     if EvidenceType.OFFICIAL_SOURCE in item.provenance:
         return True
-    domain = item.source_domain.casefold()
-    return domain.endswith((".go.kr", ".gov", ".or.kr")) or "bok.or.kr" in domain
+    domain = canonical_publisher(domain=item.source_domain)
+    return domain in _TRUSTED_OFFICIAL_DOMAINS or domain.endswith(".go.kr")
+
+
+def _evidence_fact_tokens(item: NewsItem) -> set[str]:
+    text = " ".join(value for value in (effective_title(item), effective_lead(item)) if value)
+    observations = metric_observations(text)
+    if observations:
+        return {
+            compact(value)
+            for observation in observations
+            for value in (
+                observation.instrument,
+                observation.metric,
+                observation.value,
+                observation.direction,
+                observation.period,
+            )
+            if value
+        }
+    return {
+        compact(token)
+        for token in _TOKEN_RE.findall(text)
+        if compact(token) not in _GENERIC_TERMS and len(compact(token)) >= 2
+    }
+
+
+def evidence_corroborated(items: tuple[NewsItem, ...]) -> tuple[bool, bool]:
+    """Return (same-core-fact corroborated, syndicated-copy-present)."""
+
+    publishers = {
+        canonical_publisher(item.publisher, item.source_domain)
+        for item in items
+        if item.publisher or item.source_domain
+    }
+    if len(publishers) < 2:
+        return False, False
+    copy_groups: dict[str, set[str]] = {}
+    for item in items:
+        key = compact(effective_title(item)) or item.content_hash
+        copy_groups.setdefault(key, set()).add(canonical_publisher(item.publisher, item.source_domain))
+    syndicated_groups = [group for group in copy_groups.values() if len(group) > 1]
+    syndicated = bool(syndicated_groups)
+    independent_items = [
+        item
+        for item in items
+        if not syndicated
+        or len(copy_groups.get(item.content_hash or compact(effective_title(item)), ())) == 1
+    ]
+    fact_sets = [_evidence_fact_tokens(item) for item in independent_items]
+    corroborated = any(
+        len(left.intersection(right)) >= 2
+        for index, left in enumerate(fact_sets)
+        for right in fact_sets[index + 1 :]
+    )
+    return corroborated, syndicated
 
 
 def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
-    publishers = {
+    raw_publishers = {
         canonical_publisher(item.publisher, item.source_domain)
         for item in cluster.items
         if item.publisher or item.source_domain
     }
+    corroborated, syndicated = evidence_corroborated(cluster.items)
+    syndicated_publishers: set[str] = set()
+    if syndicated:
+        copy_groups: dict[str, set[str]] = {}
+        for item in cluster.items:
+            key = compact(effective_title(item)) or item.content_hash
+            copy_groups.setdefault(key, set()).add(canonical_publisher(item.publisher, item.source_domain))
+        syndicated_publishers = {
+            publisher
+            for group in copy_groups.values()
+            if len(group) > 1
+            for publisher in group
+        }
+    publisher_diversity = max(1, len(raw_publishers) - len(syndicated_publishers) + 1) if syndicated else len(raw_publishers)
     official = any(_is_official(item) for item in cluster.items)
     conflict_states = {
         str(getattr(item, "authority_conflict", "NO_CONFLICT") or "NO_CONFLICT")
@@ -695,35 +778,41 @@ def assess_evidence(cluster: StoryCluster) -> EvidenceAssessment:
     metadata_complete = any(
         len(effective_title(item)) >= 12 and len(effective_lead(item)) >= 24 for item in cluster.items
     )
-    repeated = max(0, len(cluster.items) - len(publishers))
-    strength = min(40.0, len(publishers) * 14.0) + (42.0 if official else 0.0)
+    repeated = max(0, len(cluster.items) - publisher_diversity)
+    strength = min(40.0, publisher_diversity * 14.0) + (42.0 if official else 0.0)
     if metadata_complete:
         strength += 18.0
     strength -= min(8.0, repeated * 1.5)
     reasons: list[str] = []
     if official:
         reasons.append("OFFICIAL_SOURCE")
-    if len(publishers) >= 2:
+    if corroborated:
         reasons.append("INDEPENDENT_PUBLISHERS")
-    elif publishers:
+    elif publisher_diversity:
         reasons.append("SINGLE_PUBLISHER")
+    if syndicated:
+        reasons.append("SYNDICATED_COPY_DISCOUNT")
+    if len(raw_publishers) >= 2 and not corroborated:
+        reasons.append("NO_CORE_FACT_CORROBORATION")
     if metadata_complete:
         reasons.append("COMPLETE_METADATA")
     if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
         reasons.append(conflict_state)
     passed = (
-        bool(publishers)
-        and (len(publishers) >= 2 or official or metadata_complete)
+        bool(raw_publishers)
+        and (corroborated or official or metadata_complete)
         and conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
     )
     return EvidenceAssessment(
         round(max(0.0, min(100.0, strength)), 3),
-        len(publishers),
+        publisher_diversity,
         official,
         metadata_complete,
         passed,
         tuple(reasons),
         conflict_state,
+        corroborated,
+        syndicated,
     )
 
 
@@ -969,7 +1058,7 @@ def why_selected(assessment: EditorialAssessment) -> tuple[str, ...]:
         reasons.append("CONCRETE_EVENT")
     if assessment.evidence.official:
         reasons.append("OFFICIAL_SOURCE")
-    elif assessment.evidence.publisher_diversity >= 2:
+    elif assessment.evidence.corroborated:
         reasons.append("MULTI_SOURCE")
     elif assessment.evidence.metadata_complete:
         reasons.append("COMPLETE_METADATA")

@@ -400,7 +400,7 @@ def select_clusters(
                 "conflict_state": assessment.evidence.conflict_state,
                 "certainty": (
                     "confirmed"
-                    if assessment.evidence.official or assessment.evidence.publisher_diversity >= 2
+                    if assessment.evidence.official or assessment.evidence.corroborated
                     else "supported_single_source"
                 ),
                 "novelty": assessment.novelty,

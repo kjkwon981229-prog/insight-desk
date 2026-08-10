@@ -6,7 +6,7 @@ from dataclasses import replace
 from insight_desk.domain.models import AuthorityEvidence, AuthoritySourceType, EvidenceType, NewsItem, Topic
 from insight_desk.pipeline.clustering import StoryCluster, cluster_news
 from insight_desk.pipeline.deduplication import deduplicate_news
-from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_relevance, event_signature
+from insight_desk.pipeline.editorial import assess_cluster, assess_event, assess_evidence, assess_relevance, event_signature
 from insight_desk.pipeline.normalization import normalize_news_payloads
 from insight_desk.pipeline.novelty import classify_novelty
 from insight_desk.pipeline.scoring import score_news
@@ -80,6 +80,70 @@ def _item(
 
 
 class EditorialAcceptanceTests(unittest.TestCase):
+    def test_publisher_count_requires_same_core_fact_corroboration(self) -> None:
+        first = _item(
+            "fact-a",
+            "economy",
+            "반도체",
+            "하이브 1조원 계약 체결",
+            "하이브가 1조원 규모 계약을 체결했다.",
+            domain="first.example",
+        )
+        second = _item(
+            "fact-b",
+            "economy",
+            "반도체",
+            "삼성전자 20조원 투자 확대",
+            "삼성전자가 20조원 규모 투자를 확대했다.",
+            domain="second.example",
+        )
+        evidence = assess_evidence(StoryCluster("economy", (first, second)))
+        self.assertFalse(evidence.corroborated)
+        self.assertIn("NO_CORE_FACT_CORROBORATION", evidence.reasons)
+        self.assertNotIn("INDEPENDENT_PUBLISHERS", evidence.reasons)
+
+    def test_syndicated_copy_does_not_count_as_independent_publisher(self) -> None:
+        first = _item(
+            "copy-a",
+            "economy",
+            "반도체",
+            "하이브 1조원 계약 체결",
+            "하이브가 1조원 규모 계약을 체결했다.",
+            domain="first.example",
+        )
+        second = _item(
+            "copy-b",
+            "economy",
+            "반도체",
+            "하이브 1조원 계약 체결",
+            "하이브가 1조원 규모 계약을 체결했다.",
+            domain="second.example",
+        )
+        evidence = assess_evidence(StoryCluster("economy", (first, second)))
+        self.assertEqual(evidence.publisher_diversity, 1)
+        self.assertTrue(evidence.syndicated_copy)
+        self.assertNotIn("INDEPENDENT_PUBLISHERS", evidence.reasons)
+
+    def test_or_kr_domain_is_not_official_without_explicit_registry_or_provenance(self) -> None:
+        topic = _topic("economy", "경제·투자", "투자", anchors=("투자",), events=("계약",))
+        random_org = _item(
+            "random-org",
+            "economy",
+            "투자",
+            "기업 투자 계약 체결",
+            "기업이 투자 계약을 체결했다.",
+            domain="random.or.kr",
+        )
+        known_org = _item(
+            "known-org",
+            "economy",
+            "투자",
+            "한국은행 투자 통계 발표",
+            "한국은행이 투자 통계를 발표했다.",
+            domain="bok.or.kr",
+        )
+        self.assertFalse(assess_cluster(StoryCluster("economy", (random_org,)), topic).evidence.official)
+        self.assertTrue(assess_cluster(StoryCluster("economy", (known_org,)), topic).evidence.official)
     def test_disclosure_request_is_policy_not_earnings(self) -> None:
         item = _item(
             "disclosure-request",

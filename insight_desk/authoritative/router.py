@@ -54,6 +54,36 @@ def _conflict_count(item: NewsItem, evidence: AuthorityEvidence) -> int:
         return 0
     item_text = " ".join((item.metadata_title, item.title, item.metadata_description))
     item_numbers = _comparable_numbers(item_text)
+    # A percentage, currency amount, count, or publication date is not an
+    # index observation.  Compare only the number family represented by the
+    # official evidence; otherwise ``CPI 2.7%`` would conflict with the
+    # official base-index value ``116.5`` merely because both contain digits.
+    official_unit = str(evidence.unit or "").casefold()
+    if "=" in official_unit:
+        item_numbers -= {
+            match.group(1).replace(",", "")
+            for match in re.finditer(
+                r"(?<!\d)(\d[\d,.]*)\s*(%|원|명|건|개|곳|배|점|위|대|억원|조원)",
+                item_text,
+            )
+        }
+    elif official_unit:
+        unit_patterns = {
+            "%": r"%",
+            "원": r"원|억원|조원",
+            "명": r"명",
+            "건": r"건",
+            "점": r"점",
+            "위": r"위",
+        }
+        pattern = next((regex for marker, regex in unit_patterns.items() if marker in official_unit), "")
+        if pattern:
+            item_numbers = {
+                match.group(1).replace(",", "")
+                for match in re.finditer(rf"(?<!\d)(\d[\d,.]*)\s*(?:{pattern})", item_text)
+            }
+        else:
+            item_numbers = set()
     official_numbers = {
         number
         for value in evidence.fact_values

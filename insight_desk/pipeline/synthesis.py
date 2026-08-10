@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
-from .editorial import best_headline_item, effective_lead, effective_title, safe_evidence_text
+from .editorial import best_headline_item, effective_lead, effective_title, evidence_corroborated, safe_evidence_text
 from .normalization import normalize_text
 from .semantics import (
     ACTION_TERMS,
@@ -1251,7 +1251,8 @@ def synthesize_cluster(
     )
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()
-    if source_count > 1 or official:
+    corroborated, _ = evidence_corroborated(items)
+    if corroborated or official:
         certainty = Certainty.CONFIRMED
     elif event_type != "OTHER" and (numbers or dates or action):
         certainty = Certainty.SUPPORTED_SINGLE_SOURCE
