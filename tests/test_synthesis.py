@@ -170,6 +170,21 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("잠실", summary)
         self.assertTrue(watch)
 
+    def test_truncated_lead_prefix_preserves_scheduled_event_date(self) -> None:
+        item = _item(
+            "monsta-truncated-lead",
+            "몬스타엑스, 9월 가요계 컴백 확정…'더 페이즈' 발매",
+            "그룹 몬스타엑스가 오는 9월 4일 미니 앨범을 발매하며 가요계 컴백을 예고했다. 소속사는 커밍순 영상을...",
+            "music.example",
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kpop", (item,)), topic_name="K-POP", trend_metrics=()
+        )
+        self.assertEqual(facts.date, "9월4일")
+        self.assertIn("9월4일", summary)
+        self.assertNotIn("9", facts.key_numbers)
+        self.assertNotIn("커밍순", summary)
+
     def test_headline_ellipsis_is_removed_and_title_type_wins_over_description_noise(self) -> None:
         cluster = StoryCluster(
             "topic",

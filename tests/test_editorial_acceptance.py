@@ -428,6 +428,35 @@ class EditorialAcceptanceTests(unittest.TestCase):
         clusters = cluster_news((release, project))
         self.assertEqual(len(clusters), 2)
 
+    def test_anniversary_context_does_not_bridge_a_release_cluster(self) -> None:
+        release = _item(
+            "bigbang-release-bridge",
+            "kpop",
+            "YG",
+            "빅뱅, 19일 데뷔 20주년 기념 BiiG 발매",
+            "빅뱅이 19일 신곡을 발표한다.",
+            domain="release.example",
+        )
+        anniversary = _item(
+            "bigbang-anniversary-bridge",
+            "kpop",
+            "아이돌",
+            "글로벌 아이돌의 시작, 빅뱅 20주년에…잠실도 들썩",
+            "롯데백화점이 빅뱅 20주년 기념 프로젝트를 추진한다.",
+            domain="anniversary.example",
+        )
+        project = _item(
+            "bigbang-project-bridge",
+            "kpop",
+            "K-POP",
+            "롯데백화점, YG와 빅뱅 20주년 기념 프로젝트",
+            "롯데백화점이 빅뱅 20주년 기념 전시 프로젝트를 추진한다.",
+            domain="project.example",
+        )
+        clusters = cluster_news((release, anniversary, project))
+        release_cluster = next(cluster for cluster in clusters if release in cluster.items)
+        self.assertEqual([item.evidence_id for item in release_cluster.items], [release.evidence_id])
+
     def test_date_only_breaking_event_can_pass(self) -> None:
         topic = _topic(
             "economy",

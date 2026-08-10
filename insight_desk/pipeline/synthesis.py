@@ -10,7 +10,7 @@ from .editorial import effective_lead, effective_title, safe_evidence_text
 from .normalization import normalize_text
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|년|개월|분|시|위|점|대|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|원|%|퍼센트|명|건|배|개|곳|일|월|년|개월|분|시|위|점|대|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -222,6 +222,31 @@ def _safe_evidence_text(value: str) -> str:
 
     text = normalize_text(value)
     return "" if _TRUNCATION_RE.search(text) else text
+
+
+def _fact_evidence_text(value: str) -> str:
+    """Keep a concrete lead prefix when only its trailing clause is cut off.
+
+    Search snippets frequently end with an ellipsis after a complete first
+    sentence.  That prefix can support a date or action, while the truncated
+    tail must remain unusable.  A snippet that starts with an ellipsis has no
+    safe prefix and is rejected.
+    """
+
+    text = normalize_text(value)
+    marker = _TRUNCATION_RE.search(text)
+    if not marker:
+        return text
+    prefix = text[: marker.start()].strip(" ,·-—")
+    return prefix if len(prefix) >= 12 else ""
+
+
+def _fact_lead(item: object) -> str:
+    for value in (getattr(item, "metadata_description", ""), getattr(item, "summary", "")):
+        lead = _fact_evidence_text(value)
+        if lead:
+            return lead
+    return ""
 
 
 def _unique(values: list[str]) -> tuple[str, ...]:
@@ -754,6 +779,9 @@ def synthesize_cluster(
     headline_evidence = " ".join(
         value for value in (effective_title(headline_item), effective_lead(headline_item)) if value
     )
+    fact_headline_evidence = " ".join(
+        value for value in (effective_title(headline_item), _fact_lead(headline_item)) if value
+    )
     title_evidence = " ".join(effective_title(item) for item in items if effective_title(item))
     repeated_numbers = _repeated_values(items, _numbers)
     repeated_dates = _repeated_values(items, _dates)
@@ -764,7 +792,11 @@ def synthesize_cluster(
     metadata_dates = _unique(
         [date for item in items for date in _dates(safe_evidence_text(item.metadata_description))]
     )
-    dates = _unique(list(_dates(headline_evidence)) + list(repeated_dates) + list(metadata_dates))
+    dates = _unique(
+        list(_dates(fact_headline_evidence))
+        + list(repeated_dates)
+        + list(metadata_dates)
+    )
     times = _unique(list(_times(headline_evidence)) + list(repeated_times))
     locations = _unique(list(_locations(headline_evidence)) + list(repeated_locations))
     # Classify the representative headline first. Descriptions may mention

@@ -42,7 +42,8 @@ _CLUSTER_GENERIC_ENTITIES = {
     "모멘텀", "수혜", "초호황", "확정", "신보", "신곡", "기념", "데뷔", "만에",
 }
 _GENERIC_ACTION_TERMS = {"발표", "공개", "일정", "기록", "변동", "확인"}
-_RELEASE_ACTIONS = {"출시", "발매", "컴백"}
+_RELEASE_ACTIONS = {"출시", "발매", "컴백", "release_announcement"}
+_RELEASE_NOUNS = {"앨범", "음원", "싱글", "신곡", "신보"}
 _HEAT_INTERRUPTION_TERMS = {
     "중단", "멈춘", "휴식", "재개", "취소", "방학", "브레이크", "순연", "재편", "일정"
 }
@@ -129,7 +130,18 @@ def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
     actions = {
         term for term in _EVENT_TERMS if term in text and term not in _GENERIC_ACTION_TERMS
     }
-    dates_numbers = set(_DATE_NUMBER_RE.findall(text))
+    dates_numbers = {
+        value for value in _DATE_NUMBER_RE.findall(text)
+        # An anniversary is shared context, not an event date.  Treating
+        # ``20주년`` as a merge key lets a release and a separate anniversary
+        # campaign form one transitive cluster.
+        if not value.endswith("주년")
+    }
+    if "발표" in text and any(noun in text for noun in _RELEASE_NOUNS):
+        # ``발표`` is intentionally generic elsewhere, but ``신곡 발표`` (and
+        # its equivalents) is a release signal that should align with
+        # ``발매``/``컴백`` headlines without joining policy announcements.
+        actions.add("release_announcement")
     return entities, actions, dates_numbers
 
 
@@ -167,7 +179,16 @@ def _similar(a: NewsItem, b: NewsItem) -> bool:
     # A shared entity alone is not enough: the action/event or a concrete date
     # must also line up. This prevents two unrelated stories about one company
     # or artist from being over-merged.
-    return bool(shared_entities and (shared_actions or (shared_dates and actions_compatible)))
+    same_release_family = bool(
+        left_actions
+        and right_actions
+        and left_actions <= _RELEASE_ACTIONS
+        and right_actions <= _RELEASE_ACTIONS
+    )
+    return bool(
+        shared_entities
+        and (shared_actions or same_release_family or (shared_dates and actions_compatible))
+    )
 
 
 def cluster_news(items: tuple[NewsItem, ...]) -> tuple[StoryCluster, ...]:
