@@ -177,6 +177,38 @@ export function deliveryState({ subscriptionCount, sent, failed, pruned }) {
   return "REQUEST_ACCEPTED";
 }
 
+const DELIVERY_STATES = new Set([
+  "DELIVERED",
+  "NO_SUBSCRIBERS",
+  "PARTIAL_DELIVERY",
+  "ALL_DELIVERIES_FAILED",
+  "STALE_SUBSCRIPTIONS_PRUNED",
+]);
+
+function nonNegativeCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? Math.trunc(count) : 0;
+}
+
+function normalizeStoredMarker(marker) {
+  const sent = nonNegativeCount(marker?.sent);
+  const failed = nonNegativeCount(marker?.failed);
+  const pruned = nonNegativeCount(marker?.pruned);
+  const subscriptionCount = Number.isFinite(Number(marker?.subscription_count))
+    ? nonNegativeCount(marker.subscription_count)
+    : sent + failed + pruned;
+  const deliveryStateValue = DELIVERY_STATES.has(marker?.delivery_state)
+    ? marker.delivery_state
+    : deliveryState({ subscriptionCount, sent, failed, pruned });
+  return {
+    delivery_state: deliveryStateValue,
+    subscription_count: subscriptionCount,
+    sent,
+    failed,
+    pruned,
+  };
+}
+
 function notificationPayload(type, env) {
   const ready = type === "READY";
   return {
@@ -245,18 +277,15 @@ async function dispatchNotification(env, requestPayload, dependencies = {}) {
     } catch {
       marker = {};
     }
+    const normalized = normalizeStoredMarker(marker);
     return {
-      ok: marker.delivery_state !== "ALL_DELIVERIES_FAILED",
+      ok: normalized.delivery_state !== "ALL_DELIVERIES_FAILED" && normalized.delivery_state !== "PARTIAL_DELIVERY",
       duplicate: true,
       request_state: "REQUEST_ACCEPTED",
       date,
       type,
       source: marker.source || source,
-      delivery_state: marker.delivery_state || "REQUEST_ACCEPTED",
-      subscription_count: Number(marker.subscription_count || 0),
-      sent: Number(marker.sent || 0),
-      failed: Number(marker.failed || 0),
-      pruned: Number(marker.pruned || 0),
+      ...normalized,
     };
   }
 

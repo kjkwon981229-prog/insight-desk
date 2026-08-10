@@ -179,6 +179,36 @@ test("send requires authentication and suppresses same-date same-state duplicate
   assert.equal(calls, 1);
 });
 
+test("legacy delivery markers are normalized without an invalid response state", async () => {
+  const env = environment();
+  await env.PUSH_SUBSCRIPTIONS.put(
+    "notify:2026-08-16:READY",
+    JSON.stringify({ state: "sent", date: "2026-08-16", type: "READY", run_id: "legacy", sent: 0, failed: 0, pruned: 0 }),
+  );
+  const response = await handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-16", run_id: "retry", type: "READY", source: "manual" },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    env,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    duplicate: true,
+    request_state: "REQUEST_ACCEPTED",
+    date: "2026-08-16",
+    type: "READY",
+    source: "manual",
+    delivery_state: "NO_SUBSCRIBERS",
+    subscription_count: 0,
+    sent: 0,
+    failed: 0,
+    pruned: 0,
+  });
+});
+
 test("delivery states distinguish no subscribers, partial delivery, total failure, and stale pruning", async () => {
   assert.equal(deliveryState({ subscriptionCount: 0, sent: 0, failed: 0, pruned: 0 }), "NO_SUBSCRIBERS");
   assert.equal(deliveryState({ subscriptionCount: 2, sent: 1, failed: 1, pruned: 0 }), "PARTIAL_DELIVERY");
