@@ -545,6 +545,13 @@ def _subject(title: str, action: str, numbers: tuple[str, ...]) -> str:
     return candidate[:48]
 
 
+def _recruitment_subject(title: str, subject: str) -> str:
+    """Keep the recruitment subject separate from its trailing metric label."""
+
+    cleaned = re.sub(r"\s+(?:경쟁률|경쟁률은|경쟁률이)$", "", subject).strip(" ,·-")
+    return cleaned or _clean_headline(title)
+
+
 def _action(text: str) -> str:
     return next((word for word in _ACTION_MARKERS if contains_action(text, word)), "")
 
@@ -1039,16 +1046,16 @@ def _summary(
     elif event_type.startswith("RECRUITMENT") and subject:
         ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
         counts_match = re.search(
-            r"([\d,]+명)\s*선발.*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
+            r"([\d,]+명)\s*(선발|모집).*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
             completion_evidence,
         )
         if counts_match and ratio_match:
-            selected, applicants = counts_match.groups()
+            selected, selection_word, applicants = counts_match.groups()
             ratio = re.sub(r"\s+", "", ratio_match.group(0))
-            sentence = f"{subject} {ratio} 경쟁률을 기록했고, {selected} 선발에 {applicants} 지원했다."
+            sentence = f"{subject} {ratio} 경쟁률을 기록했고, {selected} {selection_word}에 {applicants} 지원했다."
         elif counts_match:
-            selected, applicants = counts_match.groups()
-            sentence = f"{subject} 공채에서 {selected} 선발에 {applicants} 지원했다."
+            selected, selection_word, applicants = counts_match.groups()
+            sentence = f"{subject} 공채에서 {selected} {selection_word}에 {applicants} 지원했다."
         elif ratio_match:
             sentence = f"{subject} 공채 경쟁률은 {re.sub(r'\s+', '', ratio_match.group(0))}였다."
         else:
@@ -1249,6 +1256,8 @@ def synthesize_cluster(
             )
         else:
             subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
+        if event_type.startswith("RECRUITMENT"):
+            subject = _recruitment_subject(title, subject)
         if event_type == "AWARD_CHART":
             subject = _award_subject(title, subject)
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:

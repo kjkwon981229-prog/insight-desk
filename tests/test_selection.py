@@ -4,6 +4,7 @@ import unittest
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from insight_desk.collectors.collect import collect_news
 from insight_desk.config import load_topics
@@ -328,6 +329,88 @@ class SelectionTests(unittest.TestCase):
             "SYNTHESIS_NOT_EDITORIAL_READY",
             result.audit[0]["selection_reasons"],
         )
+
+    def test_fact_bearing_recruitment_candidate_survives_selection(self) -> None:
+        topics, _ = load_topics(Path("config/topics.json"))
+        first = replace(
+            _item(
+                "gyeonggi-a",
+                "psat_recruitment",
+                score=80.0,
+                domain="news.example",
+                summary="25명 모집에 292명이 지원해 11.7대 1의 경쟁률을 보였다.",
+            ),
+            query="7급 공채",
+            title="경기도 첫 지방노동감독관 7급 공채 경쟁률 11.7대 1",
+            metadata_title="경기도 첫 지방노동감독관 7급 공채 경쟁률 11.7대 1",
+            metadata_description="25명 모집에 292명이 지원해 11.7대 1의 경쟁률을 보였다.",
+        )
+        second = replace(
+            _item(
+                "gyeonggi-b",
+                "psat_recruitment",
+                score=70.0,
+                domain="other.example",
+                summary="경기도는 7급 공개경쟁시험에서 25명을 모집했고 292명이 응시해 경쟁률 11.7대1을 기록했다.",
+            ),
+            query="7급 공채",
+            title="경기도 지방노동감독관 7급 공채 25명 모집",
+            metadata_title="경기도 지방노동감독관 7급 공채 25명 모집",
+            metadata_description="경기도는 7급 공개경쟁시험에서 25명을 모집했고 292명이 응시해 경쟁률 11.7대1을 기록했다.",
+        )
+        result = select_clusters(
+            (StoryCluster("psat_recruitment", (first, second)),),
+            topics,
+            limit=10,
+        )
+        self.assertEqual(len(result.selected), 1)
+        self.assertEqual(result.selected[0].topic_id, "psat_recruitment")
+        self.assertFalse(result.filter_collapse)
+        record = result.audit[0]
+        self.assertTrue(record["qualifying"], record)
+        self.assertNotIn("SYNTHESIS_FACT_LOSS", record["selection_reasons"])
+
+    def test_zero_after_synthesis_veto_is_filter_collapse(self) -> None:
+        topics, _ = load_topics(Path("config/topics.json"))
+        lead = "25명 모집에 292명이 지원해 11.7대 1의 경쟁률을 보였다."
+        first = replace(
+            _item(
+                "gyeonggi-veto-a",
+                "psat_recruitment",
+                score=80.0,
+                domain="news.example",
+                summary=lead,
+            ),
+            query="7급 공채",
+            title="경기도 첫 지방노동감독관 7급 공채 경쟁률 11.7대 1",
+            metadata_title="경기도 첫 지방노동감독관 7급 공채 경쟁률 11.7대 1",
+            metadata_description=lead,
+        )
+        second = replace(
+            _item(
+                "gyeonggi-veto-b",
+                "psat_recruitment",
+                score=70.0,
+                domain="other.example",
+                summary="경기도는 7급 공개경쟁시험에서 25명을 모집했고 292명이 응시해 경쟁률 11.7대1을 기록했다.",
+            ),
+            query="7급 공채",
+            title="경기도 지방노동감독관 7급 공채 25명 모집",
+            metadata_title="경기도 지방노동감독관 7급 공채 25명 모집",
+            metadata_description="경기도는 7급 공개경쟁시험에서 25명을 모집했고 292명이 응시해 경쟁률 11.7대1을 기록했다.",
+        )
+        with patch(
+            "insight_desk.pipeline.selection._synthesis_is_editorial_ready",
+            return_value=False,
+        ):
+            result = select_clusters(
+                (StoryCluster("psat_recruitment", (first, second)),),
+                topics,
+                limit=10,
+            )
+        self.assertEqual(result.selected, ())
+        self.assertEqual(result.strong_rejected_candidates, 1)
+        self.assertTrue(result.filter_collapse)
 
     def test_duplicate_rendered_headline_is_not_selected_twice(self) -> None:
         first = replace(

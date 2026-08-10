@@ -108,17 +108,24 @@ def _funnel_template() -> dict[str, int]:
 def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
     """Detect a good upstream candidate lost by a downstream/common gate."""
 
+    synthesis_vetoed_qualified = (
+        "QUALIFIED" in assessment.reasons
+        and "SYNTHESIS_FACT_LOSS" in assessment.reasons
+        and "SYNTHESIS_NOT_EDITORIAL_READY" in assessment.reasons
+    )
     upstream_passed = (
         assessment.relevance.passed
         and assessment.event.passed
         and (assessment.evidence.passed or "SUPPORTED_SINGLE_SOURCE" in assessment.reasons)
         and assessment.novelty != "UNCHANGED"
         and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
-        and assessment.evidence.metadata_complete
     )
+    if synthesis_vetoed_qualified:
+        return bool(upstream_passed and not assessment.qualified and assessment.final_score >= 45.0)
     return bool(
         upstream_passed
         and not assessment.qualified
+        and assessment.evidence.metadata_complete
         and assessment.event.concrete_fact_count >= 3
         and assessment.event.significance >= 60.0
         and assessment.final_score >= 45.0

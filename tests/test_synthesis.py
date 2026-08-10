@@ -131,6 +131,26 @@ class SynthesisTests(unittest.TestCase):
         self.assertIn("1,461명", summary)
         self.assertIn("71.5대1", summary)
 
+    def test_recruitment_synthesis_preserves_recruitment_counts_from_fact_bearing_lead(self) -> None:
+        item = _item(
+            "recruitment-recruitment-word",
+            "경기도 첫 지방노동감독관 7급 공채 경쟁률 11.7대 1",
+            "25명 모집에 292명이 지원해 11.7대 1의 경쟁률을 보였다.",
+            "recruitment.example",
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("psat_recruitment", (item,)),
+            topic_name="PSAT·공채",
+            trend_metrics=(),
+            event_type_override="RECRUITMENT_COMPETITION",
+        )
+        self.assertIn("25명 모집", summary)
+        self.assertIn("292명 지원", summary)
+        self.assertIn("11.7대1", summary)
+        self.assertNotIn("경쟁률 공채 경쟁률", summary)
+        self.assertNotEqual(headline, summary.rstrip("."))
+        self.assertEqual(facts.event_type, "RECRUITMENT_COMPETITION")
+
     def test_earnings_synthesis_keeps_period_metric_and_value_bound(self) -> None:
         item = _item(
             "earnings-bound",
