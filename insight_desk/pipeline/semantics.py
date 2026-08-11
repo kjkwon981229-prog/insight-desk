@@ -412,7 +412,7 @@ def _earnings_subject(value: str) -> str:
     """
 
     candidate = normalize_text(value).strip(" ,·-—")
-    candidate = re.sub(r"^\s*["'“‘][^"'”’]*["'”’]\s*", "", candidate)
+    candidate = re.sub(r"^\s*[\"'“‘][^\"'”’]*[\"'”’]\s*", "", candidate)
     candidate = re.split(r"[,，:：|｜]", candidate, maxsplit=1)[0].strip(" ,·-—")
     candidate = re.split(
         r"\s+(?=(?:20\d{2}\s?년\s?)?(?:[1-4]\s?분기|상반기|하반기|연간)\b)",
