@@ -23,7 +23,9 @@ from .semantics import (
     market_direction_class,
     metric_observations,
     recruitment_event_type,
+    same_canonical_event,
     sports_interruption_state,
+    sports_interruption_title_support,
     summary_information_gain,
 )
 
@@ -205,7 +207,7 @@ def best_headline_item(items: tuple[NewsItem, ...]) -> NewsItem:
                 score -= 10.0
         lifecycle_rank = 0
         published = ""
-        if any(term in f"{title} {lead}".casefold() for term in ("kbo", "프로야구", "야구")):
+        if sports_interruption_title_support(title, lead):
             state, cause = sports_interruption_state(
                 "SPORTS_INTERRUPTION",
                 f"{title} {lead}",
@@ -545,6 +547,148 @@ def _is_incidental_ai_topic(title_text: str, topic: Topic, event_type: str, acti
     return bool(action and event_type == "INDUSTRY_CHANGE" and generic_finance_context and not technical_signal)
 
 
+def _sports_context(value: str) -> bool:
+    return any(
+        _contains(value, term)
+        for term in (
+            "야구",
+            "KBO",
+            "프로야구",
+            "구단",
+            "선수",
+            "홈런",
+            "엔트리",
+            "선발",
+            "트레이드",
+            "경기 결과",
+        )
+    )
+
+
+def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float, list[str]]:
+    detected_type = "OTHER"
+    detected_value = 0.0
+    detected_terms: list[str] = []
+    sports_context = _sports_context(f"{source} {context}")
+    for candidate_type, patterns, value in _EVENT_PATTERNS:
+        if (
+            candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}
+            and not sports_context
+        ):
+            continue
+        hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
+        if hits and value > detected_value:
+            detected_type = candidate_type
+            detected_value = value
+            detected_terms = hits
+    return detected_type, detected_value, detected_terms
+
+
+def _sports_interruption_lead_support(title: str, lead: str) -> bool:
+    return bool(
+        _sports_context(f"{title} {lead}")
+        and any(
+            marker in _fold(lead)
+            for marker in ("중단", "멈춘", "멈춰", "휴식", "방학", "취소", "재개", "재출발")
+        )
+    )
+
+
+def _event_profile(title: str, lead: str) -> tuple[str, float, list[str]]:
+    """Classify one source without allowing its lead to replace its title event."""
+
+    if _is_completed_entertainment_event(title):
+        return "ENTERTAINMENT_EVENT", 64.0, ["ENTERTAINMENT_EVENT"]
+    title_recruitment = recruitment_event_type(title)
+    if title_recruitment:
+        combined_recruitment = recruitment_event_type(f"{title} {lead}")
+        recruitment = combined_recruitment or title_recruitment
+        return recruitment, 70.0, [recruitment]
+    if sports_interruption_title_support(title, lead):
+        return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]
+    if (
+        _sports_context(title)
+        and any(_contains(title, marker) for marker in ("관중", "입장객"))
+        and _NUMBER_RE.search(title)
+        and any(_contains(title, marker) for marker in ("돌파", "누적", "최다", "최소경기", "매진"))
+    ):
+        return "SPORTS_ATTENDANCE", 68.0, ["SPORTS_ATTENDANCE"]
+    title_profile = _detect_event_source(title)
+    if title_profile[0] != "OTHER":
+        return title_profile
+
+    lead_recruitment = recruitment_event_type(lead)
+    if lead_recruitment:
+        return lead_recruitment, 70.0, [lead_recruitment]
+    if _sports_interruption_lead_support(title, lead):
+        return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]
+    return _detect_event_source(lead, context=title)
+
+
+def _owned_lead(event_type: str, title: str, lead: str) -> str:
+    """Return only a lead that does not declare a competing source event."""
+
+    if not lead:
+        return ""
+    if re.match(
+        r"^(?:해당|이|이번)\s*(?:변화|발표|조치|결정|제품|서비스|행사|경기|공시|소식)(?:은|는|이|가|을|를)?(?:\s|$)",
+        normalize_text(lead),
+    ):
+        # An anaphoric lead explicitly continues the title event; it does not
+        # declare a second event merely because its supporting detail has a
+        # different classifier keyword (for example an announced schedule).
+        return lead
+    if event_type.startswith("RECRUITMENT"):
+        return lead if recruitment_event_type(f"{title} {lead}") == event_type else ""
+    if event_type == "ENTERTAINMENT_EVENT" and _is_completed_entertainment_event(lead):
+        return lead
+    if event_type == "SPORTS_INTERRUPTION":
+        supports_event = sports_interruption_title_support(
+            title, lead
+        ) or _sports_interruption_lead_support(title, lead)
+        return lead if supports_event else ""
+    lead_type, _, _ = _detect_event_source(lead, context=title)
+    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"} and lead_type in {
+        "STATISTIC",
+        "MARKET",
+        "MARKET_MOVE",
+    }:
+        return lead
+    if lead_type in {"OTHER", "ANNOUNCEMENT", event_type}:
+        return lead
+    return ""
+
+
+def event_owned_lead(item: NewsItem, event_type: str) -> str:
+    """Return the source lead only when it supports the item's title event."""
+
+    title = effective_title(item)
+    return _owned_lead(event_type, title, discovery_lead(item))
+
+
+def event_owned_items(
+    cluster: StoryCluster,
+    canonical_event: CanonicalEvent | None,
+) -> tuple[NewsItem, ...]:
+    """Return only source items explicitly bound to the canonical event."""
+
+    if canonical_event is None or not canonical_event.evidence_owner_ids:
+        return cluster.items
+    owners = set(canonical_event.evidence_owner_ids)
+    return tuple(item for item in cluster.items if item.evidence_id in owners)
+
+
+def _event_owned_item_view(item: NewsItem, event_type: str) -> NewsItem:
+    """Hide a mismatched lead without changing the source's evidence class."""
+
+    lead = event_owned_lead(item, event_type)
+    return replace(
+        item,
+        summary=lead if item.summary else "",
+        metadata_description=lead if item.metadata_description else "",
+    )
+
+
 def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     text = " ".join(effective_text(item) for item in cluster.items)
     # Synthesis and the public headline use the same best source headline.
@@ -557,45 +701,14 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     significance = 0.0
     matched_terms: list[str] = []
     reasons: tuple[str, ...] = ()
-    def standalone(term: str) -> bool:
-        return contains_action(text, term) if term in ACTION_TERMS else _contains(text, term)
-
-    sports_context = any(
-        standalone(term)
-        for term in ("야구", "KBO", "프로야구", "구단", "선수", "홈런", "엔트리", "선발", "트레이드", "경기 결과")
-    )
-    recruitment_type = recruitment_event_type(f"{title_text} {lead_text}")
-    def detect_event(source: str) -> tuple[str, float, list[str]]:
-        detected_type = "OTHER"
-        detected_value = 0.0
-        detected_terms: list[str] = []
-        for candidate_type, patterns, value in _EVENT_PATTERNS:
-            if candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT"} and not sports_context:
-                continue
-            if candidate_type == "ROSTER_PERSONNEL" and not sports_context:
-                continue
-            hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
-            if hits and value > detected_value:
-                detected_type = candidate_type
-                detected_value = value
-                detected_terms = hits
-        return detected_type, detected_value, detected_terms
-
-    heat_interruption = (
-        sports_context
-        and any(_contains(f"{title_text} {lead_text}", term) for term in ("폭염", "열파"))
-        and any(_event_term_match(f"{title_text} {lead_text}", term) for term in ("중단", "멈춘", "휴식", "재개", "취소"))
-    )
+    sports_context = _sports_context(text)
+    profiled_type, profiled_significance, profiled_terms = _event_profile(title_text, lead_text)
 
     # The title is the strongest intent/event evidence.  Only fall back to
     # the combined lead text when the title contains no recognizable event;
     # this prevents a secondary sentence (for example an album mention in a
     # sports article) from changing the story's event type.
-    if recruitment_type:
-        event_type, significance, matched_terms = recruitment_type, 70.0, [recruitment_type]
-    elif heat_interruption:
-        event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
-    elif is_low_value_popularity_poll(f"{title_text} {lead_text}"):
+    if is_low_value_popularity_poll(f"{title_text} {lead_text}"):
         event_type, significance, matched_terms = "LOW_VALUE_POLL", 18.0, ["LOW_VALUE_POLL"]
     elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
@@ -605,9 +718,11 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         # already classifies the same evidence as an entertainment event.
         event_type, significance, matched_terms = "ENTERTAINMENT_EVENT", 64.0, ["ENTERTAINMENT_EVENT"]
     else:
-        event_type, significance, matched_terms = detect_event(title_text)
-        if event_type == "OTHER":
-            event_type, significance, matched_terms = detect_event(lead_text)
+        event_type, significance, matched_terms = (
+            profiled_type,
+            profiled_significance,
+            profiled_terms,
+        )
     if event_type == "ROSTER_PERSONNEL" and _is_abstract_trade_market(f"{title_text} {lead_text}"):
         event_type = "OTHER"
         significance = 0.0
@@ -646,18 +761,43 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
             event_type = "OTHER"
             significance = 0.0
             matched_terms = []
-    numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(f"{title_text} {lead_text}")))
-    dates = tuple(dict.fromkeys(_DATE_RE.findall(f"{title_text} {lead_text}")))
+    canonical_lead = _owned_lead(event_type, title_text, lead_text)
+    numbers = tuple(dict.fromkeys(_NUMBER_RE.findall(f"{title_text} {canonical_lead}")))
+    dates = tuple(dict.fromkeys(_DATE_RE.findall(f"{title_text} {canonical_lead}")))
     event_terms = _event_terms_for(topic)
     topic_terms = topic_anchor_terms(topic, include_queries=False)
     title_subject = any(_contains_intent_term(title_text, term) for term in topic_terms)
-    action_term = event_action_signal(event_type, title_text, lead_text)
+    action_term = event_action_signal(event_type, title_text, canonical_lead)
     action = bool(action_term)
     canonical_event = build_canonical_event(
         event_type,
         title_text,
-        lead=lead_text,
+        lead=canonical_lead,
         action=action_term,
+        evidence_owner_ids=(headline_item.evidence_id,),
+    )
+    owner_ids: list[str] = []
+    for item in cluster.items:
+        item_title = effective_title(item)
+        item_lead = discovery_lead(item)
+        item_type, _, _ = _event_profile(item_title, item_lead)
+        if item_type != event_type:
+            continue
+        item_owned_lead = _owned_lead(event_type, item_title, item_lead)
+        item_event = build_canonical_event(
+            event_type,
+            item_title,
+            lead=item_owned_lead,
+            action=event_action_signal(event_type, item_title, item_owned_lead),
+            evidence_owner_ids=(item.evidence_id,),
+        )
+        if same_canonical_event(canonical_event, item_event):
+            owner_ids.append(item.evidence_id)
+    ownership_valid = headline_item.evidence_id in owner_ids
+    canonical_event = replace(
+        canonical_event,
+        evidence_owner_ids=tuple(dict.fromkeys(owner_ids)),
+        representative_evidence_id=headline_item.evidence_id,
     )
     concrete = (
         int(bool(title_subject or canonical_event.subject))
@@ -675,6 +815,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         reasons = (event_type, "CONCRETE_EVENT" if concrete >= 2 else "WEAK_EVENT_STRUCTURE")
     if date_conflict:
         reasons = (*reasons, "EVENT_DATE_CONFLICT")
+    if not ownership_valid:
+        reasons = (*reasons, "EVENT_OWNERSHIP_FAILED")
     metric_signal = True
     metric_direction_conflict = False
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"}:
@@ -702,6 +844,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and significance >= 35.0
         and concrete >= 2
         and action
+        and ownership_valid
         and not date_conflict
         and not (event_type == "ROSTER_PERSONNEL" and not sports_context)
         and metric_signal
@@ -1022,12 +1165,17 @@ def assess_cluster(
     *,
     novelty: str = "UNKNOWN_HISTORY",
 ) -> EditorialAssessment:
-    relevance = assess_relevance(cluster, topic)
     event = assess_event(cluster, topic)
-    evidence = assess_evidence(cluster)
-    completeness = completeness_score(cluster)
+    owned_items = tuple(
+        _event_owned_item_view(item, event.event_type)
+        for item in event_owned_items(cluster, event.canonical_event)
+    )
+    owned_cluster = StoryCluster(cluster.topic_id, owned_items or cluster.items)
+    relevance = assess_relevance(owned_cluster, topic)
+    evidence = assess_evidence(owned_cluster)
+    completeness = completeness_score(owned_cluster)
     signature = event_signature(cluster, event)
-    representative = cluster.representative
+    representative = owned_cluster.representative
     raw_headline = representative.metadata_title or representative.title
     # A source headline may use an editorial ellipsis even when the clause
     # before it is a complete, fact-bearing headline.  The renderer removes
@@ -1052,7 +1200,7 @@ def assess_cluster(
         for marker in ("대성황", "성황", "성료", "진행", "개최", "열렸다", "마쳤다")
     )
     thin_truncated_schedule = (
-        cluster.source_count == 1
+        owned_cluster.source_count == 1
         and truncated_title_without_lead
         and event.event_type == "SCHEDULED_EVENT"
         and not _DATE_RE.search(effective_title(representative))
@@ -1060,7 +1208,7 @@ def assess_cluster(
         and not _truncated_prefix_has_event_fact(representative)
     )
     single_source_supported = (
-        cluster.source_count == 1
+        owned_cluster.source_count == 1
         and (
             evidence.official
             or evidence.metadata_complete
@@ -1073,12 +1221,21 @@ def assess_cluster(
             )
         )
     )
+    ownership_fact_gap = bool(
+        event.canonical_event is not None
+        and event.canonical_event.needs_enrichment
+        and owned_cluster.source_count == 1
+        and not effective_lead(representative)
+        and not evidence.official
+    )
+    if ownership_fact_gap:
+        single_source_supported = False
     # A metric or market headline with no trusted lead is not safe to carry
     # as a single-source briefing fact. This keeps strong complete headlines,
     # enriched metadata, official evidence, and multi-source corroboration
     # eligible while rejecting fallback summaries built from a cut-off result.
     unresolved_single_source_metric = (
-        cluster.source_count == 1
+        owned_cluster.source_count == 1
         and not evidence.official
         and not evidence.metadata_complete
         and event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
@@ -1098,10 +1255,10 @@ def assess_cluster(
     synthesis_ready = not (
         event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
         and not (
-            _NUMBER_RE.search(effective_title(cluster.representative))
-            or _DATE_RE.search(effective_title(cluster.representative))
-            or effective_lead(cluster.representative)
-            or cluster.source_count > 1
+            _NUMBER_RE.search(effective_title(representative))
+            or _DATE_RE.search(effective_title(representative))
+            or effective_lead(representative)
+            or owned_cluster.source_count > 1
         )
     )
     reasons = list(relevance.reasons + event.reasons + evidence.reasons)
@@ -1123,6 +1280,8 @@ def assess_cluster(
         reasons.append("TRUNCATED_EVENT_WITHOUT_LEAD")
     if unresolved_single_source_metric:
         reasons.append("SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD")
+    if ownership_fact_gap:
+        reasons.append("FACT_OWNERSHIP_UNSUPPORTED")
     if incidental_ai:
         reasons.append("QUERY_OR_ACRONYM_ONLY_TOPIC_MATCH")
     if evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
@@ -1163,10 +1322,15 @@ def assess_cluster(
         or event.event_type in _LOW_VALUE_EVENT_TYPES
         or not synthesis_ready
         or unresolved_single_source_metric
+        or ownership_fact_gap
         or incidental_ai
         or evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}
-        or (cluster.source_count == 1 and not single_source_supported)
-        or (event.event_type == "OTHER" and cluster.source_count == 1 and event.concrete_fact_count == 0)
+        or (owned_cluster.source_count == 1 and not single_source_supported)
+        or (
+            event.event_type == "OTHER"
+            and owned_cluster.source_count == 1
+            and event.concrete_fact_count == 0
+        )
     )
     # A score is a ranking signal, not a slot-filling permission.  The
     # synthesis gate below can still reject a candidate above this floor;

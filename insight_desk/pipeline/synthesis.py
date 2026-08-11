@@ -6,14 +6,24 @@ from collections.abc import Callable
 
 from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
-from .editorial import best_headline_item, effective_lead, effective_title, evidence_corroborated, safe_evidence_text
+from .editorial import (
+    best_headline_item,
+    effective_lead,
+    effective_title,
+    event_owned_items,
+    event_owned_lead,
+    evidence_corroborated,
+    safe_evidence_text,
+)
 from .normalization import normalize_text
 from .semantics import (
     ACTION_TERMS,
     CanonicalEvent,
     EventFact,
+    MetricObservation,
     canonical_event_date,
     canonical_event_signature,
+    canonical_publisher,
     contains_action,
     contains_boundary_term,
     earnings_fact_parts,
@@ -21,13 +31,12 @@ from .semantics import (
     event_dates,
     first_action,
     industry_change_facts,
+    is_trusted_official_domain,
     market_direction,
     metric_observations,
-    MetricObservation,
     recruitment_event_type,
-    summary_information_gain,
     sports_result_facts,
-    is_trusted_official_domain,
+    summary_information_gain,
 )
 from .trend_metrics import effective_trend_state
 
@@ -936,6 +945,54 @@ def _structured_policy_sentence(title: str, evidence: str) -> str:
     )
 
 
+def _policy_role_sentence(
+    actor: str,
+    condition: str,
+    policy_object: str,
+    action: str,
+) -> str:
+    """Render policy roles only when the structured predicate is explicit."""
+
+    if not actor or not policy_object or not action:
+        return ""
+    condition_clause = normalize_text(condition)
+    condition_match = re.match(
+        r"(?P<subject>.+?)(?P<particle>[이가])?\s*"
+        r"(?P<ending>없다면|없으면|없을\s+경우|없는\s+경우|있다면|있으면|있을\s+경우)$",
+        condition_clause,
+    )
+    if condition_match is not None:
+        condition_subject = condition_match.group("subject").strip()
+        condition_subject = re.sub(
+            r"(?<=[가-힣])(?=(?:충격|위험|변동|악화|개선|문제)$)",
+            " ",
+            condition_subject,
+        )
+        condition_particle = condition_match.group("particle") or _subject_particle(
+            condition_subject
+        )
+        condition_clause = (
+            f"{condition_subject}{condition_particle} {condition_match.group('ending')}"
+        )
+    if condition_clause:
+        condition_clause += " "
+
+    if action == "추가 인상 가능성 언급":
+        predicate = "추가로 인상할 가능성을 언급했다."
+    elif action == "인상 가능성 언급":
+        predicate = "인상할 가능성을 언급했다."
+    elif action == "인하 가능성 언급":
+        predicate = "인하할 가능성을 언급했다."
+    elif action in {"인상", "인하", "동결", "유지"}:
+        predicate = f"{action} 방침을 밝혔다."
+    else:
+        return ""
+    return (
+        f"{actor}{_particle(actor)} {condition_clause}"
+        f"{policy_object}{_object_particle(policy_object)} {predicate}"
+    )
+
+
 def _sports_result_subject(subject: str, facts: tuple[EventFact, ...], title: str = "") -> str:
     """Remove leading performance facts from a sports subject without guessing."""
 
@@ -1179,6 +1236,8 @@ def _summary(
     supporting_titles: tuple[str, ...] = (),
     event_facts: tuple[EventFact, ...] = (),
     cause: str = "",
+    condition: str = "",
+    policy_object: str = "",
 ) -> str:
     if event_type == "EARNINGS" and subject:
         observation = next(iter(market_observations), None)
@@ -1329,6 +1388,12 @@ def _summary(
             else:
                 sentence = f"{subject}의 행사 소식이 확인됐다."
     elif event_type in {"POLICY", "REGULATION"} and subject:
+        role_sentence = _policy_role_sentence(subject, condition, policy_object, action)
+        if role_sentence:
+            sentence = role_sentence
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
         detail = normalize_text(completion_evidence)
         normalized_title = normalize_text(title)
         if normalized_title and detail.startswith(normalized_title):
@@ -1610,15 +1675,39 @@ def synthesize_cluster(
     conflict_state_override: str | None = None,
     canonical_event_override: CanonicalEvent | None = None,
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
-    items = cluster.items
-    representative = cluster.representative
+    canonical_event = canonical_event_override
+    items = event_owned_items(cluster, canonical_event)
+    if canonical_event is not None and canonical_event.evidence_owner_ids and not items:
+        return (
+            "",
+            "",
+            "",
+            (),
+            StoryFacts(
+                event_type=canonical_event.event_type,
+                canonical_event_id=canonical_event.canonical_event_id,
+                conflict_state="UNRESOLVED_CONFLICT",
+            ),
+            Certainty.UNCERTAIN,
+        )
+    items = items or cluster.items
     headline_item = best_headline_item(items)
     title = effective_title(headline_item) or _clean_headline(headline_item.title)
+    owned_headline_lead = (
+        event_owned_lead(headline_item, canonical_event.event_type)
+        if canonical_event is not None
+        else effective_lead(headline_item)
+    )
+    owned_fact_lead = (
+        owned_headline_lead
+        if canonical_event is not None
+        else _fact_lead(headline_item)
+    )
     headline_evidence = " ".join(
-        value for value in (effective_title(headline_item), effective_lead(headline_item)) if value
+        value for value in (effective_title(headline_item), owned_headline_lead) if value
     )
     fact_headline_evidence = " ".join(
-        value for value in (effective_title(headline_item), _fact_lead(headline_item)) if value
+        value for value in (effective_title(headline_item), owned_fact_lead) if value
     )
     title_evidence = " ".join(effective_title(item) for item in items if effective_title(item))
     repeated_numbers = _repeated_values(items, _numbers)
@@ -1628,11 +1717,19 @@ def synthesize_cluster(
     numbers = _unique(list(_numbers(headline_evidence)) + list(repeated_numbers))
     display_numbers = _meaningful_numbers(numbers, title)
     metadata_dates = _unique(
-        [date for item in items for date in _event_dates(safe_evidence_text(item.metadata_description))]
+        [
+            date
+            for item in items
+            for date in _event_dates(
+                event_owned_lead(item, canonical_event.event_type)
+                if canonical_event is not None
+                else safe_evidence_text(item.metadata_description)
+            )
+        ]
     )
     dates = _unique(
         list(_dates(effective_title(headline_item)))
-        + list(_event_dates(_fact_lead(headline_item)))
+        + list(_event_dates(owned_fact_lead))
         + list(repeated_dates)
         + list(metadata_dates)
     )
@@ -1647,14 +1744,13 @@ def synthesize_cluster(
     # actual subject (for example a market statistic). This keeps the
     # synthesis anchored to the strongest visible evidence.
     title_event_type = _event_type(title, _numbers(title))
-    lead_event_type = _event_type(effective_lead(headline_item), _numbers(effective_lead(headline_item)))
+    lead_event_type = _event_type(owned_headline_lead, _numbers(owned_headline_lead))
     inferred_event_type = title_event_type if title_event_type != "OTHER" else (
         lead_event_type if lead_event_type != "OTHER" else _event_type(title_evidence, numbers)
     )
     # Production selection already has the editorial event gate. Reuse that
     # decision for synthesis so the audit and the emitted StoryFacts cannot
     # diverge when two deterministic classifiers have different precedence.
-    canonical_event = canonical_event_override
     event_type = (
         canonical_event.event_type
         if canonical_event is not None
@@ -1693,7 +1789,7 @@ def synthesize_cluster(
         # do not promote that incidental verb into StoryFacts.action.
         action = ""
     else:
-        action = _action(title) or _action(effective_lead(headline_item))
+        action = _action(title) or _action(owned_headline_lead)
     if event_type == "SPORTS_INTERRUPTION":
         interruption_evidence = headline_evidence.casefold()
         subject = (
@@ -1783,11 +1879,20 @@ def synthesize_cluster(
         if len(units) == 1:
             uncertainty = "보도마다 수치가 달라 추가 확인이 필요하다."
     official = _official_source(items)
-    source_count = cluster.source_count
+    source_count = len(
+        {
+            canonical_publisher(
+                str(getattr(item, "publisher", "")),
+                str(getattr(item, "source_domain", "")),
+            )
+            for item in items
+            if getattr(item, "publisher", "") or getattr(item, "source_domain", "")
+        }
+    )
     trend_state = _trend_state(cluster.topic_id, trend_metrics)
     canonical_date, date_conflict = canonical_event_date(
         title,
-        _fact_lead(headline_item),
+        owned_fact_lead,
         event_type=event_type,
         state=canonical_event.temporal_state if canonical_event is not None else "",
     )
@@ -1834,7 +1939,9 @@ def synthesize_cluster(
     facts = StoryFacts(
         subject=subject,
         action=action,
-        object="",
+        object=canonical_event.object if canonical_event is not None else "",
+        cause=canonical_event.cause if canonical_event is not None else "",
+        condition=canonical_event.condition if canonical_event is not None else "",
         event_type=event_type,
         date=date,
         time=times[0] if times else "",
@@ -1878,6 +1985,17 @@ def synthesize_cluster(
         ),
         temporal_facts=canonical_event.temporal_facts if canonical_event is not None else (),
         fixture_id=canonical_event.fixture_id if canonical_event is not None else "",
+        event_owner_ids=(
+            canonical_event.evidence_owner_ids if canonical_event is not None else ()
+        ),
+        fact_evidence_ids=(
+            canonical_event.evidence_owner_ids
+            if canonical_event is not None
+            else ()
+        ),
+        representative_evidence_id=(
+            canonical_event.representative_evidence_id if canonical_event is not None else ""
+        ),
     )
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):
@@ -1916,6 +2034,8 @@ def synthesize_cluster(
         supporting_titles=tuple(effective_title(item) for item in items if effective_title(item)),
         event_facts=resolved_event_facts,
         cause=canonical_event.cause if canonical_event is not None else "",
+        condition=canonical_event.condition if canonical_event is not None else "",
+        policy_object=canonical_event.object if canonical_event is not None else "",
     )
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()

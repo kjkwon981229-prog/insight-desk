@@ -1,0 +1,102 @@
+{
+  "items": [
+    {
+      "id": "attendance-milestone",
+      "topic_id": "kbo_hanwha",
+      "query": "프로야구",
+      "title": "2026 프로야구 최소경기 900만 관중 돌파 눈앞",
+      "lead": "폭염으로 중단됐던 프로야구가 11일 서울 경기부터 재개됐다.",
+      "domain": "attendance.example",
+      "score": 91.0
+    },
+    {
+      "id": "weather-resumption",
+      "topic_id": "kbo_hanwha",
+      "query": "프로야구",
+      "title": "폭염으로 중단됐던 프로야구 경기 재개",
+      "lead": "프로야구가 폭염으로 중단된 뒤 오늘 재개됐다.",
+      "domain": "resumption.example",
+      "score": 84.0
+    },
+    {
+      "id": "weather-resumption-corroboration",
+      "topic_id": "kbo_hanwha",
+      "query": "KBO",
+      "title": "프로야구 오늘 경기 재개",
+      "lead": "폭염으로 멈췄던 프로야구 일정이 오늘 다시 시작됐다.",
+      "domain": "resumption-two.example",
+      "score": 82.0
+    },
+    {
+      "id": "policy-rate-stance",
+      "topic_id": "economy",
+      "query": "기준금리",
+      "title": "한은 부총재 경기충격 없다면 기준금리 추가 인상 가능성 커",
+      "lead": "유상대 한국은행 부총재가 기준금리 를 추가로 올릴 가능성이 크다고 언급했습니다.",
+      "domain": "economy.example",
+      "score": 88.0
+    },
+    {
+      "id": "policy-rate-stance-corroboration",
+      "topic_id": "economy",
+      "query": "한국은행 기준금리",
+      "title": "한은 부총재 특별한 충격 없으면 기준금리 추가 인상",
+      "lead": "한국은행 부총재는 특별한 충격이 없다면 기준금리를 추가 인상할 수 있다고 밝혔다.",
+      "domain": "economy-two.example",
+      "score": 83.0
+    }
+  ],
+  "old_selected_stories": [
+    {
+      "rank": 1,
+      "headline": "프로야구 11일 경기 재개",
+      "summary": "프로야구 경기가 폭염으로 중단된 뒤 11일에 재개됐다.",
+      "topic_id": "kbo_hanwha",
+      "event_type": "SPORTS_INTERRUPTION",
+      "source_count": 2,
+      "publisher_diversity": 2,
+      "concrete_fact_count": 3,
+      "why_selected": ["CONCRETE_EVENT", "MULTI_SOURCE"],
+      "event_signature": "SPORTS_INTERRUPTION|프로야구|HEAT|EVENT_DATE=11일|STATE=RESUMED",
+      "canonical_event_id": "SPORTS_INTERRUPTION|프로야구|HEAT|EVENT_DATE=11일",
+      "final_score": 76.0,
+      "facts": {
+        "subject": "프로야구",
+        "action": "폭염",
+        "object": "",
+        "event_type": "SPORTS_INTERRUPTION",
+        "date": "11일",
+        "key_numbers": ["2026", "900", "11일"],
+        "event_signature": "SPORTS_INTERRUPTION|프로야구|HEAT|EVENT_DATE=11일|STATE=RESUMED",
+        "canonical_event_id": "SPORTS_INTERRUPTION|프로야구|HEAT|EVENT_DATE=11일",
+        "conflict_state": "NO_CONFLICT",
+        "temporal_state": "RESUMED",
+        "temporal_facts": [{"role": "EVENT_DATE", "value": "11일", "raw": "11일"}]
+      }
+    },
+    {
+      "rank": 2,
+      "headline": "한은 부총재 경기충격 없다면 기준금리 추가 인상 가능성 커",
+      "summary": "유상대 한국은행 부총재가 기준금리 를 추가로 올릴 가능성이 크다고 언급했습니다.",
+      "topic_id": "economy",
+      "event_type": "POLICY",
+      "source_count": 2,
+      "publisher_diversity": 2,
+      "concrete_fact_count": 2,
+      "why_selected": ["CONCRETE_EVENT", "MULTI_SOURCE"],
+      "event_signature": "POLICY|한은부총재경기충격없다면|기준금리",
+      "canonical_event_id": "POLICY|한은부총재경기충격없다면|기준금리",
+      "final_score": 75.0,
+      "facts": {
+        "subject": "한은 부총재 경기충격 없다면",
+        "action": "기준금리",
+        "object": "",
+        "event_type": "POLICY",
+        "event_signature": "POLICY|한은부총재경기충격없다면|기준금리",
+        "canonical_event_id": "POLICY|한은부총재경기충격없다면|기준금리",
+        "conflict_state": "NO_CONFLICT",
+        "temporal_facts": []
+      }
+    }
+  ]
+}

@@ -17,10 +17,16 @@ from ..domain.models import (
     to_jsonable,
 )
 from .clustering import StoryCluster
-from .editorial import assess_semantic_relevance, effective_lead, effective_title, why_selected
-from .semantics import contains_intent_term
+from .editorial import (
+    assess_semantic_relevance,
+    effective_lead,
+    effective_title,
+    event_owned_items,
+    why_selected,
+)
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
+from .semantics import contains_intent_term
 from .synthesis import synthesize_cluster
 from .trend_metrics import effective_trend_state
 
@@ -169,15 +175,17 @@ def build_briefing(
         assessment = selection.assessments.get(candidate_key(cluster))
         if assessment is None:
             continue
+        owned_items = event_owned_items(cluster, assessment.event.canonical_event)
+        owned_cluster = StoryCluster(cluster.topic_id, owned_items or cluster.items)
         provenance = tuple(
             dict.fromkeys(
                 evidence_type
-                for item in cluster.items
+                for item in owned_cluster.items
                 for evidence_type in item.provenance
             )
         )
         metadata_count = sum(
-            EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items
+            EvidenceType.ENRICHED_METADATA in item.provenance for item in owned_cluster.items
         )
         headline, summary, evidence_summary, watch_next, facts, certainty = synthesize_cluster(
             cluster,
@@ -195,18 +203,18 @@ def build_briefing(
                 title=headline,
                 summary=summary,
                 why_it_matters=evidence_summary,
-                trend_relationship=_story_trend_label(cluster, trend_metrics),
+                trend_relationship=_story_trend_label(owned_cluster, trend_metrics),
                 industry_impact="",
                 investment_relevance="",
                 watch_next=watch_next,
-                evidence_ids=tuple(item.evidence_id for item in cluster.items),
+                evidence_ids=tuple(item.evidence_id for item in owned_cluster.items),
                 certainty=certainty,
                 score=assessment.final_score,
-                source_count=cluster.source_count,
+                source_count=owned_cluster.source_count,
                 provenance=provenance,
                 metadata_enriched_count=metadata_count,
                 facts=facts,
-                matched_topic_ids=_story_topic_ids(cluster, topics),
+                matched_topic_ids=_story_topic_ids(owned_cluster, topics),
                 novelty=assessment.novelty,
                 why_selected=why_selected(assessment),
                 intent_relevance=assessment.relevance.score,
@@ -217,7 +225,7 @@ def build_briefing(
                 event_signature=assessment.event_signature,
             )
         )
-        story_trend_matches.append(_story_trend_matches(cluster, trend_metrics))
+        story_trend_matches.append(_story_trend_matches(owned_cluster, trend_metrics))
 
     represented_ids = tuple(dict.fromkeys(topic_id for story in stories for topic_id in (story.matched_topic_ids or (story.topic_id,))))
     represented_names = tuple(topic_by_id[topic_id].name for topic_id in represented_ids if topic_id in topic_by_id)

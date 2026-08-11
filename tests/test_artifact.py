@@ -213,7 +213,14 @@ class ArtifactTests(unittest.TestCase):
         )
         story = Story(
             "t", "테스트", "공식 통계 확인", "공식 수치가 확인됐다.", "공식 자료를 확인했다.", "", "", "", (), ("N-AUTH",), Certainty.CONFIRMED, 1.0, 1,
-            facts=StoryFacts(event_type="STATISTIC", key_numbers=("116.5",), official_source="공식 자료"),
+            facts=StoryFacts(
+                event_type="STATISTIC",
+                key_numbers=("116.5",),
+                official_source="공식 자료",
+                event_owner_ids=("N-AUTH",),
+                fact_evidence_ids=("N-AUTH",),
+                representative_evidence_id="N-AUTH",
+            ),
         )
         briefing = Briefing(state, (topic,), ("첫 줄", "둘째 줄", "셋째 줄"), (story,), (item,), (), ())
         render_site(briefing, root)
@@ -223,6 +230,9 @@ class ArtifactTests(unittest.TestCase):
         self.assertNotIn("KOSIS:consumer_price_index", public_text)
         self.assertNotIn("DT_TEST", public_text)
         self.assertNotIn("apiKey", public_text)
+        self.assertNotIn("event_owner_ids", public_text)
+        self.assertNotIn("fact_evidence_ids", public_text)
+        self.assertNotIn("representative_evidence_id", public_text)
         self.assertIn("https://kosis.kr/statHtml/statHtml.do?orgId=101&amp;tblId=DT_TEST", html_text)
         self.assertIn("통계청 KOSIS · 공식 자료", html_text)
 
@@ -357,6 +367,9 @@ class ArtifactTests(unittest.TestCase):
                     {"role": "DURATION", "value": "5일", "raw": "5일 동안"},
                     {"role": "RESUMPTION_DATE", "value": "오늘", "raw": "오늘"},
                 ],
+                "event_owner_ids": ["evidence-positive"],
+                "fact_evidence_ids": ["evidence-positive"],
+                "representative_evidence_id": "evidence-positive",
             },
         }
         resumed = {
@@ -413,6 +426,9 @@ class ArtifactTests(unittest.TestCase):
                     {"role": "DURATION", "value": "5일", "raw": "5일 동안"},
                     {"role": "RESUMPTION_DATE", "value": "오늘", "raw": "오늘"},
                 ],
+                "event_owner_ids": ["evidence-positive"],
+                "fact_evidence_ids": ["evidence-positive"],
+                "representative_evidence_id": "evidence-positive",
             },
         }
         path = root / "live-acceptance.json"

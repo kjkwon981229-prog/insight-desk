@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import urlsplit
 
 from ..domain.models import TemporalFact
@@ -256,7 +256,22 @@ def is_trusted_official_domain(domain: str) -> bool:
 
 _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "REGULATION": ("규제", "법안", "고시", "허용", "금지", "시행", "제도 개편"),
-    "POLICY": ("정책 발표", "정책 결정", "정책 시행", "정책 개편", "대책 발표", "기준금리", "공고", "요구", "촉구", "줄여라"),
+    "POLICY": (
+        "정책 발표",
+        "정책 결정",
+        "정책 시행",
+        "정책 개편",
+        "대책 발표",
+        "추가 인상",
+        "인상",
+        "인하",
+        "동결",
+        "유지",
+        "공고",
+        "요구",
+        "촉구",
+        "줄여라",
+    ),
     "EARNINGS": ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"),
     "AWARD_CHART": ("1위", "차트", "관왕", "수상", "우승", "기록"),
     "PRODUCT_RELEASE": ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "상장", "예약판매", "판매 개시"),
@@ -273,7 +288,7 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
         "확대",
         "축소",
     ),
-    "SPORTS_INTERRUPTION": ("폭염", "중단", "멈춘", "휴식", "재개", "취소"),
+    "SPORTS_INTERRUPTION": ("중단", "멈춘", "휴식", "재개", "취소"),
     "SPORTS_RESULT": (
         "경기 결과",
         "승리",
@@ -287,6 +302,7 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
         "순위",
         "기록",
     ),
+    "SPORTS_ATTENDANCE": ("돌파", "기록", "증가", "감소", "매진"),
     "ROSTER_PERSONNEL": ("선발", "엔트리", "부상", "트레이드", "등록", "말소"),
     "RECRUITMENT_COMPETITION": ("경쟁률", "지원", "지원자", "선발"),
     "RECRUITMENT_RESULT": ("합격", "선발", "발표"),
@@ -401,6 +417,8 @@ class EventFact:
     related_subject: str = ""
     relation: str = ""
     object: str = ""
+    evidence_owner_ids: tuple[str, ...] = ()
+    canonical_event_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -410,6 +428,9 @@ class CanonicalEvent:
     event_type: str
     subject: str = ""
     action: str = ""
+    actor: str = ""
+    object: str = ""
+    condition: str = ""
     date: str = ""
     period: str = ""
     metric: str = ""
@@ -429,6 +450,111 @@ class CanonicalEvent:
     needs_enrichment: bool = False
     event_signature: str = ""
     conflict_state: str = "NO_CONFLICT"
+    evidence_owner_ids: tuple[str, ...] = ()
+    representative_evidence_id: str = ""
+
+
+@dataclass(frozen=True)
+class PolicyRoles:
+    """Bounded roles for a policy statement.
+
+    The parser intentionally handles only explicit institutional statements.
+    Unknown roles stay empty instead of promoting a condition or policy noun
+    into the actor/action slots.
+    """
+
+    actor: str = ""
+    condition: str = ""
+    object: str = ""
+    action: str = ""
+
+
+_POLICY_OBJECT_RE = re.compile(r"(?<![가-힣A-Za-z0-9])(?:기준금리|정책금리)(?![가-힣A-Za-z0-9])")
+_POLICY_CONDITION_RE = re.compile(
+    r"(?P<condition>[A-Za-z0-9가-힣· ]{2,36}?)\s*"
+    r"(?P<ending>없다면|없으면|없을\s+경우|없는\s+경우|있다면|있으면|있을\s+경우)$"
+)
+_POLICY_ACTOR_RE = re.compile(
+    r"(?:^|(?<=[.!?。！？])\s)"
+    r"(?P<actor>[A-Za-z가-힣· ]{2,48}?(?:부총재|총재|장관|위원장|위원|대통령))"
+    r"(?:은|는|이|가)\s+"
+)
+
+
+def _strip_policy_particle(value: str) -> str:
+    return re.sub(r"(?:은|는|이|가|을|를)$", "", normalize_text(value)).strip(" ,·-—")
+
+
+def _policy_action(value: str) -> str:
+    text = fold(value)
+    possibility = any(marker in text for marker in ("가능성", "가능", "시사", "언급", "말했다"))
+    if "인상" in text or "올릴" in text or "올리" in text:
+        prefix = "추가 " if "추가" in text else ""
+        return f"{prefix}인상 가능성 언급" if possibility else f"{prefix}인상".strip()
+    if "인하" in text or "내릴" in text or "내리" in text:
+        return "인하 가능성 언급" if possibility else "인하"
+    if "동결" in text:
+        return "동결"
+    if "유지" in text:
+        return "유지"
+    if "발표" in text:
+        return "발표"
+    if "결정" in text:
+        return "결정"
+    return ""
+
+
+def policy_roles(title: str, lead: str = "") -> PolicyRoles:
+    """Extract actor/condition/object/action without crossing their roles."""
+
+    title_text = normalize_text(title)
+    lead_text = normalize_text(lead)
+    object_match = _POLICY_OBJECT_RE.search(title_text) or _POLICY_OBJECT_RE.search(lead_text)
+    if object_match is None:
+        return PolicyRoles()
+
+    object_text = object_match.group(0)
+    title_object = _POLICY_OBJECT_RE.search(title_text)
+    actor = ""
+    condition = ""
+    action_evidence = ""
+    if title_object is not None:
+        prefix = title_text[: title_object.start()].strip(" ,·-—")
+        condition_match = _POLICY_CONDITION_RE.search(prefix)
+        if condition_match is not None:
+            condition = normalize_text(condition_match.group(0))
+            role_split = re.match(
+                r"^(?P<actor>.*(?:부총재|총재|장관|위원장|위원|대통령|정부|한국은행|한은))"
+                r"\s+(?P<condition>.+)$",
+                condition,
+            )
+            if role_split is not None:
+                actor = _strip_policy_particle(role_split.group("actor"))
+                condition = normalize_text(role_split.group("condition"))
+            else:
+                actor = _strip_policy_particle(prefix[: condition_match.start()])
+        else:
+            actor = _strip_policy_particle(prefix)
+        actor = re.sub(
+            r"[,，]?\s*(?:20\d{2}\s*년\s*)?\d{1,2}\s*월\s*\d{1,2}\s*일$",
+            "",
+            actor,
+        ).strip(" ,·-—")
+        action_evidence = title_text[title_object.end() :]
+
+    lead_actor = _POLICY_ACTOR_RE.search(lead_text)
+    if lead_actor is not None:
+        actor = _strip_policy_particle(lead_actor.group("actor"))
+    lead_object = _POLICY_OBJECT_RE.search(lead_text)
+    if lead_object is not None:
+        action_evidence = f"{action_evidence} {lead_text[lead_object.end():]}".strip()
+
+    return PolicyRoles(
+        actor=actor,
+        condition=condition,
+        object=object_text,
+        action=_policy_action(action_evidence),
+    )
 
 
 _RECRUITMENT_SELECTED_RE = re.compile(
@@ -830,6 +956,34 @@ def sports_interruption_state(event_type: str, text: str) -> tuple[str, str]:
     return "", cause
 
 
+def sports_interruption_title_support(title: str, lead: str = "") -> bool:
+    """Require the headline itself to own the lifecycle predicate.
+
+    A lead may supply a cause or a date, but it cannot turn an attendance,
+    player, or ceremonial headline into an interruption story merely because
+    both mention professional baseball.
+    """
+
+    title_text = fold(title)
+    combined = fold(f"{title} {lead}")
+    sports_context = any(term in combined for term in ("프로야구", "kbo", "한국 야구", "야구"))
+    lifecycle_in_title = any(
+        marker in title_text
+        for marker in (
+            "중단",
+            "멈춘",
+            "멈춰",
+            "휴식",
+            "방학",
+            "취소",
+            "재개",
+            "재출발",
+            "다시 시작",
+        )
+    )
+    return sports_context and lifecycle_in_title
+
+
 def _span_overlaps(span: tuple[int, int], occupied: list[tuple[int, int]]) -> bool:
     return any(span[0] < other[1] and other[0] < span[1] for other in occupied)
 
@@ -994,6 +1148,109 @@ def same_event_lifecycle(left: CanonicalEvent, right: CanonicalEvent) -> bool:
     return same_lifecycle_signatures(left.event_signature, right.event_signature)
 
 
+def _event_identity_text(value: str) -> str:
+    text = compact(value)
+    aliases = (
+        ("한국야구위원회", "프로야구"),
+        ("kbo", "프로야구"),
+        ("한은", "한국은행"),
+    )
+    for alias, canonical in aliases:
+        text = text.replace(alias, canonical)
+    return text
+
+
+def _event_action_family(value: str) -> str:
+    text = compact(value)
+    for marker in (
+        "추가인상",
+        "인상",
+        "인하",
+        "동결",
+        "유지",
+        "투자",
+        "인수",
+        "계약",
+        "생산",
+        "출시",
+        "발매",
+        "재개",
+        "중단",
+        "취소",
+    ):
+        if marker in text:
+            return marker.removeprefix("추가")
+    return text
+
+
+def same_canonical_event(left: CanonicalEvent, right: CanonicalEvent) -> bool:
+    """Return whether two independently interpreted sources own one event.
+
+    This is deliberately stricter than topic or cluster similarity.  It is
+    used only for evidence ownership: conflicting dates, objects, metrics, or
+    typed fact values cannot share a final fact pool.
+    """
+
+    if left.event_type != right.event_type:
+        return False
+    if left.event_type == "SPORTS_INTERRUPTION":
+        return same_event_lifecycle(left, right)
+    if left.canonical_event_id and left.canonical_event_id == right.canonical_event_id:
+        return True
+    if left.date and right.date and left.date != right.date:
+        return False
+    if (
+        left.object
+        and right.object
+        and _event_identity_text(left.object) != _event_identity_text(right.object)
+    ):
+        return False
+
+    left_subject = _event_identity_text(left.actor or left.subject)
+    right_subject = _event_identity_text(right.actor or right.subject)
+    subject_matches = bool(
+        left_subject
+        and right_subject
+        and (
+            left_subject == right_subject
+            or left_subject in right_subject
+            or right_subject in left_subject
+        )
+    )
+    if left_subject and right_subject and not subject_matches:
+        return False
+
+    left_action = _event_action_family(left.action)
+    right_action = _event_action_family(right.action)
+    action_matches = bool(left_action and right_action and left_action == right_action)
+    if left_action and right_action and not action_matches:
+        return False
+
+    left_observations = {
+        (item.instrument, item.metric, item.period): (item.value, item.direction)
+        for item in left.observations
+    }
+    right_observations = {
+        (item.instrument, item.metric, item.period): (item.value, item.direction)
+        for item in right.observations
+    }
+    for key in left_observations.keys() & right_observations.keys():
+        if left_observations[key] != right_observations[key]:
+            return False
+
+    left_facts = {(fact.role, fact.subject, fact.object): fact.value for fact in left.facts}
+    right_facts = {(fact.role, fact.subject, fact.object): fact.value for fact in right.facts}
+    fact_overlap = left_facts.keys() & right_facts.keys()
+    for key in fact_overlap:
+        if left_facts[key] != right_facts[key]:
+            return False
+
+    return bool(
+        subject_matches
+        and (action_matches or fact_overlap or left_observations.keys() & right_observations.keys())
+    )
+
+
 def build_canonical_event(
     event_type: str,
     title: str,
@@ -1001,6 +1258,7 @@ def build_canonical_event(
     lead: str = "",
     action: str = "",
     conflict_state: str = "NO_CONFLICT",
+    evidence_owner_ids: tuple[str, ...] = (),
 ) -> CanonicalEvent:
     """Build the one semantic object consumed by all downstream stages."""
 
@@ -1008,11 +1266,29 @@ def build_canonical_event(
     lead_text = normalize_text(lead)
     evidence = " ".join(part for part in (title_text, lead_text) if part)
     observations = event_observations(event_type, title_text)
-    subject = _event_subject(event_type, title_text, observations, lead_text)
-    event_action = action or event_action_signal(event_type, title_text, lead_text)
+    policy = policy_roles(title_text, lead_text) if event_type == "POLICY" else PolicyRoles()
+    subject = policy.actor or _event_subject(
+        event_type,
+        title_text,
+        observations,
+        lead_text,
+    )
     if event_type == "EARNINGS" and observations:
         event_action = observations[0].direction or "기록"
+    else:
+        event_action = policy.action or action or event_action_signal(
+            event_type,
+            title_text,
+            lead_text,
+        )
     temporal_state, cause = sports_interruption_state(event_type, evidence)
+    if event_type == "SPORTS_INTERRUPTION":
+        event_action = {
+            "INTERRUPTED": "중단",
+            "CANCELLED": "취소",
+            "RESUMING": "재개",
+            "RESUMED": "재개",
+        }.get(temporal_state, event_action)
     temporal = temporal_facts(evidence, event_type)
     date, date_conflict = canonical_event_date(
         title_text,
@@ -1098,10 +1374,22 @@ def build_canonical_event(
             action=event_action,
         )
     )
+    fact_owner_ids = tuple(dict.fromkeys(evidence_owner_ids[:1]))
+    facts = tuple(
+        replace(
+            fact,
+            evidence_owner_ids=fact.evidence_owner_ids or fact_owner_ids,
+            canonical_event_id=fact.canonical_event_id or canonical_event_id or signature,
+        )
+        for fact in facts
+    )
     return CanonicalEvent(
         event_type=event_type,
         subject=subject,
         action=event_action,
+        actor=policy.actor or subject,
+        object=policy.object,
+        condition=policy.condition,
         date=date,
         period=(observations[0].period if observations else ""),
         metric=(observations[0].metric if observations else ""),
@@ -1120,6 +1408,8 @@ def build_canonical_event(
         needs_enrichment=needs_enrichment,
         event_signature=signature,
         conflict_state=canonical_conflict,
+        evidence_owner_ids=tuple(dict.fromkeys(evidence_owner_ids)),
+        representative_evidence_id=(evidence_owner_ids or ("",))[0],
     )
 
 
@@ -1296,6 +1586,18 @@ def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
     """Return an action/fact signal accepted by the event-family contract."""
 
     text = f"{title} {lead}".strip()
+    if event_type == "SPORTS_INTERRUPTION":
+        state, _ = sports_interruption_state(event_type, text)
+        return {
+            "INTERRUPTED": "중단",
+            "CANCELLED": "취소",
+            "RESUMING": "재개",
+            "RESUMED": "재개",
+        }.get(state, "")
+    if event_type == "POLICY":
+        roles = policy_roles(title, lead)
+        if roles.action:
+            return roles.action
     if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
         observations = metric_observations(title)
         if observations:

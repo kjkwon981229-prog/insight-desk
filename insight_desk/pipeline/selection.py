@@ -10,21 +10,23 @@ from .editorial import (
     assess_event,
     assess_relevance,
     assess_semantic_relevance,
+    best_headline_item,
     effective_title,
+    event_owned_items,
     why_selected,
 )
 from .novelty import classify_novelty
-from .synthesis import (
-    earnings_summary_preserves_fact_binding,
-    industry_summary_preserves_fact_binding,
-    is_usable_synthesis,
-    synthesize_cluster,
-)
 from .semantics import (
     CanonicalEvent,
     canonical_publisher,
     metric_summary_preserves_entity_binding,
     same_event_lifecycle,
+)
+from .synthesis import (
+    earnings_summary_preserves_fact_binding,
+    industry_summary_preserves_fact_binding,
+    is_usable_synthesis,
+    synthesize_cluster,
 )
 
 
@@ -162,6 +164,8 @@ def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
         "RELEVANCE_FAILED",
         "LOW_VALUE_EVENT",
         "EVENT_ACTION_CONTRACT_FAILED",
+        "EVENT_OWNERSHIP_FAILED",
+        "FACT_OWNERSHIP_UNSUPPORTED",
         "AUTHORITY_REQUIRED_UNVERIFIED",
         "AUTHORITY_CONFLICT",
         "EVIDENCE_FAILED",
@@ -397,6 +401,8 @@ def select_clusters(
     ) -> None:
         topic = topic_by_id[cluster.topic_id]
         key = candidate_key(cluster)
+        owned_items = event_owned_items(cluster, assessment.event.canonical_event)
+        owned_cluster = StoryCluster(cluster.topic_id, owned_items or cluster.items)
         records[(cluster.topic_id, key)] = {
             "candidate_key": key,
             "topic_id": cluster.topic_id,
@@ -407,7 +413,7 @@ def select_clusters(
             "reason": reason,
             "saturation_penalty": round(penalty, 3),
             "conditional": topic.conditional,
-            "source_count": cluster.source_count,
+            "source_count": owned_cluster.source_count,
             "source_diversity": assessment.evidence.publisher_diversity,
             "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
             "retrieval_queries": sorted({
@@ -525,25 +531,31 @@ def select_clusters(
 
     selected_reviews: list[dict[str, object]] = []
     for rank, (cluster, assessment, reason, _) in enumerate(selected, 1):
+        owned_items = event_owned_items(cluster, assessment.event.canonical_event)
+        owned_cluster = StoryCluster(cluster.topic_id, owned_items or cluster.items)
+        owned_representative = best_headline_item(owned_cluster.items)
         selected_reviews.append(
             {
                 "rank": rank,
                 "topic_id": cluster.topic_id,
                 "topic": topic_by_id[cluster.topic_id].name,
-                "headline": effective_title(cluster.representative),
-                "source_count": cluster.source_count,
+                "headline": effective_title(owned_representative),
+                "source_count": owned_cluster.source_count,
                 "publisher_diversity": assessment.evidence.publisher_diversity,
                 "metadata_enriched_count": sum(
-                    EvidenceType.ENRICHED_METADATA in item.provenance for item in cluster.items
+                    EvidenceType.ENRICHED_METADATA in item.provenance
+                    for item in owned_cluster.items
                 ),
-                "retrieval_channels": sorted({channel for item in cluster.items for channel in item.retrieval_channels}),
+                "retrieval_channels": sorted(
+                    {channel for item in owned_cluster.items for channel in item.retrieval_channels}
+                ),
                 "retrieval_queries": sorted({
                     query
-                    for item in cluster.items
+                    for item in owned_cluster.items
                     for query in (item.retrieval_queries or (item.query,))
                     if query
                 }),
-                "query": cluster.representative.query,
+                "query": owned_representative.query,
                 "intent_relevance": assessment.relevance.score,
                 "event_type": assessment.event.event_type,
                 "event_significance": assessment.event.significance,
@@ -572,7 +584,13 @@ def select_clusters(
                 "final_score": assessment.final_score,
                 "why_selected": list(why_selected(assessment)),
                 "selection_reason": reason,
-                "summary_source": _summary_source(cluster),
+                "summary_source": _summary_source(owned_cluster),
+                "representative_evidence_id": owned_representative.evidence_id,
+                "event_owner_ids": list(
+                    assessment.event.canonical_event.evidence_owner_ids
+                    if assessment.event.canonical_event is not None
+                    else ()
+                ),
             }
         )
 

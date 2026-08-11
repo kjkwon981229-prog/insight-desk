@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from insight_desk.pipeline.semantics import (
     ACTION_TERMS,
+    compact,
     contains_action,
     metric_summary_preserves_entity_binding,
     metric_observations,
@@ -114,6 +115,9 @@ def validate(path: Path) -> list[str]:
         "sentence_completeness_error_count": 0,
         "quote_balance_error_count": 0,
         "subject_boundary_error_count": 0,
+        "event_ownership_error_count": 0,
+        "fact_provenance_error_count": 0,
+        "semantic_role_error_count": 0,
     }
     signatures: list[str] = []
     for index, story in enumerate(stories, 1):
@@ -196,6 +200,63 @@ def validate(path: Path) -> list[str]:
                 errors.append(f"story {index} has unresolved authority/event conflict: {conflict_state}")
             action = str(facts.get("action", "")).strip()
             subject = str(facts.get("subject", "")).strip()
+            cause = str(facts.get("cause", "")).strip()
+            condition = str(facts.get("condition", "")).strip()
+            policy_object = str(facts.get("object", "")).strip()
+            owner_ids = {
+                str(value).strip()
+                for value in facts.get("event_owner_ids", ()) or ()
+                if str(value).strip()
+            }
+            fact_evidence_ids = {
+                str(value).strip()
+                for value in facts.get("fact_evidence_ids", ()) or ()
+                if str(value).strip()
+            }
+            representative_evidence_id = str(
+                facts.get("representative_evidence_id", "")
+            ).strip()
+            if source_count > 0 and not owner_ids:
+                metrics["event_ownership_error_count"] += 1
+                errors.append(f"story {index} has no canonical-event evidence owners")
+            if representative_evidence_id and representative_evidence_id not in owner_ids:
+                metrics["event_ownership_error_count"] += 1
+                errors.append(f"story {index} representative does not own the canonical event")
+            if owner_ids and not representative_evidence_id:
+                metrics["event_ownership_error_count"] += 1
+                errors.append(f"story {index} has no event-owning representative")
+            if not fact_evidence_ids:
+                metrics["fact_provenance_error_count"] += 1
+                errors.append(f"story {index} has no fact evidence provenance")
+            elif not fact_evidence_ids.issubset(owner_ids):
+                metrics["fact_provenance_error_count"] += 1
+                errors.append(f"story {index} contains facts owned by a different event")
+
+            role_errors: list[str] = []
+            if cause and compact(cause) == compact(action):
+                role_errors.append("cause occupies the action role")
+            if event_type == "SPORTS_INTERRUPTION" and compact(action) in {
+                "폭염",
+                "더위",
+                "고온",
+                "열파",
+                "우천",
+                "폭우",
+            }:
+                role_errors.append("weather cause occupies the action role")
+            if policy_object and compact(policy_object) == compact(action):
+                role_errors.append("policy object occupies the action role")
+            if event_type == "POLICY" and compact(action) in {"기준금리", "정책금리"}:
+                role_errors.append("policy noun occupies the action role")
+            if condition and compact(condition) and compact(condition) in compact(subject):
+                role_errors.append("condition remains inside the subject")
+            if event_type == "POLICY" and any(
+                marker in subject for marker in ("없다면", "없으면", "있다면", "있으면")
+            ) and not condition:
+                role_errors.append("conditional clause was not separated from the subject")
+            for detail in dict.fromkeys(role_errors):
+                metrics["semantic_role_error_count"] += 1
+                errors.append(f"story {index} semantic role failure: {detail}")
             if not subject_boundary_is_clean(event_type, subject):
                 metrics["subject_boundary_error_count"] += 1
                 errors.append(f"story {index} stores an audience phrase inside its subject")

@@ -180,6 +180,8 @@ class StoryFacts:
     subject: str = ""
     action: str = ""
     object: str = ""
+    cause: str = ""
+    condition: str = ""
     event_type: str = "OTHER"
     date: str = ""
     time: str = ""
@@ -200,6 +202,11 @@ class StoryFacts:
     temporal_state: str = ""
     temporal_facts: tuple[TemporalFact, ...] = field(default_factory=tuple)
     fixture_id: str = ""
+    # Private audit-only ownership fields.  The public renderer uses an
+    # explicit whitelist and deliberately omits these evidence identifiers.
+    event_owner_ids: tuple[str, ...] = field(default_factory=tuple)
+    fact_evidence_ids: tuple[str, ...] = field(default_factory=tuple)
+    representative_evidence_id: str = ""
 
 
 @dataclass(frozen=True)
