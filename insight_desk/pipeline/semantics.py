@@ -125,7 +125,7 @@ _EVENT_DATE_MARKERS = (
 )
 
 _NUMBER_RE = re.compile(
-    r"[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원대|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
+    r"[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|원대|원|%|퍼센트|명|건|배|개|종|곳|일|월|년|분|시|위|점|대|선|km))?"
 )
 _PERIOD_RE = re.compile(
     r"(?:20\d{2}\s?년\s?)?(?:\d{1,2}\s?월|[1-4]\s?분기|상반기|하반기|연간|월간|분기|전년(?:동월)?|전월)"
@@ -136,6 +136,12 @@ _EARNINGS_METRIC_RE = re.compile(
 )
 _EARNINGS_VALUE_RE = re.compile(
     r"(?<![A-Za-z가-힣])\d[\d,.]*\s?(?:조원|억원|만원|천만원|만\s?달러|억\s?달러|달러|원|%|퍼센트)"
+)
+_RECRUITMENT_RATIO_RE = re.compile(r"(?<![\d.])\d+(?:\.\d+)?\s*대\s*1(?!\d)")
+_EARNINGS_DESCRIPTOR_RE = re.compile(
+    r"\s+(?:(?:AI|GPU|클라우드|반도체|신사업)\s+)*(?:성과|효과|기반|관련|전략|사업|성장|호조|부진|개선|전망|영향|대비)"
+    r"(?:로|으로|에|을|를|이|가|은|는)?\s*$",
+    re.IGNORECASE,
 )
 _DIRECTION_RE = re.compile(
     r"(?:소폭\s*)?(?:급등|급락|상승|하락|강세|약세|강보합세|보합|증가|감소|확대|축소|돌파|변동)"
@@ -380,7 +386,7 @@ def earnings_observations(text: str) -> tuple[MetricObservation, ...]:
     subject = clean[:metric_start] if metric_start >= 0 else ""
     for period_marker in _EARNINGS_PERIOD_RE.finditer(subject):
         subject = subject[: period_marker.start()]
-    subject = subject.strip(" ,·-—")
+    subject = _earnings_subject(subject)
     if not subject:
         return ()
     return (
@@ -394,6 +400,30 @@ def earnings_observations(text: str) -> tuple[MetricObservation, ...]:
         ),
     )
 
+
+
+def _earnings_subject(value: str) -> str:
+    """Keep the company/entity before a metric, not headline decoration.
+
+    Search headlines often put a quoted slogan, a comma-separated product
+    descriptor, or an AI/GPU performance clause before the actual company. The
+    metric binding remains unchanged; only the subject is normalized to the
+    nearest fact-bearing entity prefix.
+    """
+
+    candidate = normalize_text(value).strip(" ,·-—")
+    candidate = re.sub(r"^\s*["'“‘][^"'”’]*["'”’]\s*", "", candidate)
+    candidate = re.split(r"[,，:：|｜]", candidate, maxsplit=1)[0].strip(" ,·-—")
+    candidate = re.split(
+        r"\s+(?=(?:20\d{2}\s?년\s?)?(?:[1-4]\s?분기|상반기|하반기|연간)\b)",
+        candidate,
+        maxsplit=1,
+    )[0].strip(" ,·-—")
+    candidate = re.sub(r"^(?:올해|이번|지난해|내년)\s+", "", candidate)
+    candidate = _EARNINGS_DESCRIPTOR_RE.sub("", candidate).strip(" ,·-—")
+    if not candidate:
+        return ""
+    return candidate
 
 def _instrument_matches(text: str) -> list[tuple[int, int, str]]:
     normalized = normalize_text(text)
@@ -616,6 +646,7 @@ def recruitment_event_type(text: str) -> str:
         contains_boundary_term(value, "경쟁률")
         or contains_boundary_term(value, "지원자")
         or contains_boundary_term(value, "지원")
+        or _RECRUITMENT_RATIO_RE.search(value)
     ):
         return "RECRUITMENT_COMPETITION"
     if contains_boundary_term(value, "합격") or contains_boundary_term(value, "선발"):

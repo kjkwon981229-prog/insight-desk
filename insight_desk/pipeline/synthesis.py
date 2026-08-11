@@ -27,7 +27,7 @@ from .semantics import (
 from .trend_metrics import effective_trend_state
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|분기|원|%|퍼센트|명|건|배|개|곳|일|월|년|분|시|위|점|대|선|km))?"
+    r"(?<![A-Za-z가-힣])\d[\d,.]*(?:\s?(?:조원|억원|만원|천만|만\s?달러|억\s?달러|달러|개월|주년|분기|원|%|퍼센트|명|건|배|개|종|곳|일|월|년|분|시|위|점|대|선|km))?"
 )
 _DATE_RE = re.compile(r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)")
 _TIME_RE = re.compile(r"(?:오전|오후)\s?\d{1,2}(?::\d{2})?|\d{1,2}\s?시(?:\s?\d{1,2}\s?분)?")
@@ -145,6 +145,25 @@ _SUBJECT_END_MARKERS = ("회동", "시구", "경기", "공연", "콘서트", "�
 _DIRECTIONAL_CHANGE_WORDS = {"증가", "감소", "상승", "하락", "확대", "축소", "돌파", "급등", "급락", "강세", "약세", "강보합세"}
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _AWARD_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]+(?:[·&'’-][A-Za-z0-9가-힣]+)*")
+_AWARD_GENERIC_TOKENS = frozenset(
+    {
+        "국내외",
+        "음악",
+        "음원",
+        "가요",
+        "아이돌",
+        "가수",
+        "차트",
+        "평점",
+        "랭킹",
+        "연속",
+        "no",
+        "위",
+        "주",
+        "월",
+        "일",
+    }
+)
 _AWARD_SUPPORT_MARKERS = ("컴백", "신곡", "앨범", "데뷔곡", "데뷔")
 _TIME_PREFIX_RE = re.compile(r"^(?:한|두|세|몇|\d+)\s?(?:달|주|일|시간)\s?만에\b")
 _DATE_COUNTER_RE = re.compile(r"^(?:20\d{2}\s?년|\d{1,2}\s?(?:월|일|주년))$")
@@ -669,36 +688,51 @@ def _award_subject(title: str, subject: str, *, titles: tuple[str, ...] = ()) ->
 
     clean = _clean_headline(title)
     marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", clean)
-    prefixes = []
-    for value in (title, *titles):
+    if not marker:
+        return subject
+
+    def prefix_tokens(value: str) -> list[str]:
         candidate = _clean_headline(value)
         candidate_marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", candidate)
-        if candidate_marker:
-            candidate = candidate[: candidate_marker.start()]
-        tokens = _AWARD_TOKEN_RE.findall(candidate)
-        if tokens:
-            prefixes.append(tokens)
-    if len(prefixes) >= 2:
-        best: tuple[str, ...] = ()
+        if not candidate_marker:
+            return []
+        candidate = candidate[: candidate_marker.start()]
+        tokens: list[str] = []
+        for token in _AWARD_TOKEN_RE.findall(candidate):
+            folded = token.casefold()
+            if token.isdigit() or any(character.isdigit() for character in token):
+                continue
+            if folded in _AWARD_GENERIC_TOKENS:
+                continue
+            tokens.append(token)
+        return tokens
+
+    prefixes = [prefix_tokens(value) for value in (title, *titles)]
+    prefixes = [tokens for index, tokens in enumerate(prefixes) if tokens and (index == 0 or tokens != prefixes[0])]
+    if prefixes:
         first = prefixes[0]
-        for start in range(len(first)):
-            for end in range(len(first), start + 1, -1):
-                phrase = tuple(first[start:end])
-                if len(phrase) < 2:
-                    continue
+        best: tuple[str, ...] = ()
+        for length in range(min(4, len(first)), 0, -1):
+            for start in range(0, len(first) - length + 1):
+                phrase = tuple(first[start : start + length])
                 if all(
-                    any(tokens[index : index + len(phrase)] == list(phrase) for index in range(len(tokens) - len(phrase) + 1))
+                    any(
+                        tokens[index : index + len(phrase)] == list(phrase)
+                        for index in range(len(tokens) - len(phrase) + 1)
+                    )
                     for tokens in prefixes[1:]
-                ) and len(phrase) > len(best):
+                ):
                     best = phrase
+                    break
+            if best:
+                break
         if best:
             return " ".join(best)
-    if marker:
-        candidate = clean[: marker.start()].strip(" ,·-—")
-        if len(candidate) >= 2:
-            return candidate
+        # With one source, or with differently formatted corroboration, the
+        # final named tokens are safer than retaining date/rank decoration.
+        if first:
+            return " ".join(first[-2:])
     return subject
-
 
 def _award_supporting_fact(title: str, titles: tuple[str, ...]) -> str:
     """Find a concrete event detail from another corroborating headline.
@@ -771,7 +805,29 @@ def _subject_particle(value: str) -> str:
     if "가" <= last <= "힣":
         code = ord(last) - 0xAC00
         return "이" if code % 28 else "가"
+    # For Latin abbreviations, a final consonant sound normally takes 이
+    # (NHN이, KT이), while vowel-ending names take 가 (OpenAI가). This is
+    # a small display normalization, not an attempt at full transliteration.
+    last = value.rstrip()[-1:].casefold()
+    if last and last in "bcdfghjklmnpqrstvwxyz0123456789":
+        return "이"
     return "가"
+
+
+def _object_particle(value: str) -> str:
+    """Return the Korean object marker for a fact value."""
+
+    if not value:
+        return "을"
+    last = value.rstrip()[-1]
+    if last in "%":
+        return "를"
+    if "가" <= last <= "힣":
+        code = ord(last) - 0xAC00
+        return "을" if code % 28 else "를"
+    if last.isdigit():
+        return "를"
+    return "을" if last.casefold() in "bcdfghjklmnpqrstvwxyz" else "를"
 
 
 def _instrumental_particle(value: str) -> str:
@@ -923,7 +979,10 @@ def _summary(
         period, metric, value = _earnings_fact_parts(completion_evidence or title)
         if metric and value:
             period_text = f"{period} " if period else ""
-            sentence = f"{subject}{_subject_particle(subject)} {period_text}{metric} {value}을 기록했다고 밝혔다."
+            sentence = (
+                f"{subject}{_subject_particle(subject)} {period_text}{metric} "
+                f"{value}{_object_particle(value)} 기록했다고 밝혔다."
+            )
             if uncertainty:
                 sentence += f" {uncertainty}"
             return sentence.strip()
@@ -1071,7 +1130,15 @@ def _summary(
             return sentence.strip()
         policy_action = action if action in {"발표", "공개", "시행", "고시", "확정", "요구", "촉구", "줄여라"} else "정책 변화"
         if policy_action in {"요구", "촉구", "줄여라"}:
-            sentence = f"{_clean_headline(title)}."
+            clean_title = _clean_headline(title)
+            sentence = f"{clean_title}는 정책 요구로 제시됐다."
+        elif policy_action in {"시행", "고시", "확정"} and date:
+            if policy_action == "시행":
+                sentence = f"{subject}{_particle(subject)} {date}부터 법 적용이 시작된다."
+            else:
+                sentence = f"{subject}{_particle(subject)} {date}부터 {policy_action}된다."
+        elif policy_action in {"시행", "고시", "확정"}:
+            sentence = f"{subject}{_particle(subject)} {policy_action} 절차가 시작됐다."
         else:
             sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
@@ -1100,7 +1167,23 @@ def _summary(
                 release_noun, release_verb, release_fact = "도구·서비스", "출시", "도구·서비스 출시"
             else:
                 release_noun, release_verb, release_fact = "제품", "출시", "출시"
-            if date and release_verb == "발매":
+            fact_number = next(
+                (
+                    value
+                    for value in _meaningful_numbers(numbers, title)
+                    if not _DATE_COUNTER_RE.fullmatch(value) and not _DATE_STAMP_RE.fullmatch(value)
+                ),
+                "",
+            )
+            if fact_number and not date:
+                noun = "요금제" if "요금제" in title else release_noun
+                base_subject = re.sub(r"\s+(?:신규\s*)?" + re.escape(noun) + r"$", "", release_subject).strip()
+                base_subject = base_subject or release_subject
+                sentence = (
+                    f"{base_subject}{_subject_particle(base_subject)} "
+                    f"{fact_number} {noun}를 새로 내놓았다."
+                )
+            elif date and release_verb == "발매":
                 sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
             elif date and release_verb == "출시":
                 sentence = f"{release_subject}{_subject_particle(release_subject)} {date} {release_noun}을 {release_verb}한다."
@@ -1112,7 +1195,7 @@ def _summary(
             marker in title for marker in ("음악", "음원", "앨범", "가요", "아이돌", "가수", "차트", "빌보드", "멜론", "노래")
         )
         if chart_number and music_context:
-            sentence = f"{subject}가 음악 차트 {chart_number}에 올랐다."
+            sentence = f"{subject}{_subject_particle(subject)} 음악 차트 {chart_number}에 올랐다."
         elif chart_number:
             sentence = f"{_clean_headline(title)}."
         else:
@@ -1338,7 +1421,10 @@ def synthesize_cluster(
                 [value for value in (earnings_observation.period, earnings_observation.value) if value]
             )
         else:
-            subject = _domain_subject(title, _subject(title, action, display_numbers), event_type)
+            # Use all title numbers while deriving the noun subject. Date
+            # counters may be unsafe as display metrics, but they still mark
+            # where the subject ends (반도체특별법 11일 시행).
+            subject = _domain_subject(title, _subject(title, action, numbers), event_type)
         if event_type.startswith("RECRUITMENT"):
             subject = _recruitment_subject(title, subject)
         if event_type == "AWARD_CHART":

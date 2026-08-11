@@ -11,7 +11,7 @@ from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.editorial import assess_relevance
 from insight_desk.pipeline.selection import select_clusters, topic_diverse_enrichment_candidates
 from insight_desk.pipeline.synthesis import synthesize_cluster
-from insight_desk.pipeline.semantics import summary_information_gain
+from insight_desk.pipeline.semantics import recruitment_event_type, summary_information_gain
 
 
 def _item(title: str, summary: str, *, metadata_title: str = "", metadata_description: str = "") -> NewsItem:
@@ -179,6 +179,58 @@ class Run83RegressionTests(unittest.TestCase):
         self.assertEqual(len(result.selected), 1)
         self.assertFalse(result.filter_collapse)
         self.assertNotIn("SYNTHESIS_FACT_LOSS", result.audit[0]["selection_reasons"])
+
+
+    def test_live_like_award_decoration_does_not_become_artist_subject(self) -> None:
+        titles = (
+            "8월도 No.1 임영웅, 아이돌 차트 평점랭킹 280주 연속 1위",
+            "임영웅, 아이돌 차트 평점랭킹 280주 연속 1위",
+            "임영웅 280주 연속 아이돌 차트 1위",
+        )
+        items = tuple(
+            replace(
+                _item(title, title),
+                source_domain=f"publisher-{index}.test",
+                original_url=f"https://publisher-{index}.test/story",
+                canonical_url=f"https://publisher-{index}.test/story",
+            )
+            for index, title in enumerate(titles, 1)
+        )
+        _, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kpop", items),
+            topic_name="엔터·음악·K-POP",
+            trend_metrics=(),
+            event_type_override="AWARD_CHART",
+        )
+        self.assertEqual(facts.subject, "임영웅")
+        self.assertIn("임영웅이", summary)
+        self.assertNotIn("아이돌가", summary)
+
+    def test_live_like_earnings_headline_strips_decorative_prefix_and_binds_percent(self) -> None:
+        cases = (
+            ("'어화둥둥 우리 GPU' NHN 영업이익 164% 실적", "NHN"),
+            ("NHN클라우드, AI GPU 성과로 매출 85% 실적", "NHN클라우드"),
+        )
+        for index, (title, subject) in enumerate(cases, 1):
+            _, summary, _, _, facts, _ = synthesize_cluster(
+                StoryCluster(
+                    "economy",
+                    (_item(title, title),),
+                ),
+                topic_name="경제·투자",
+                trend_metrics=(),
+                event_type_override="EARNINGS",
+            )
+            self.assertEqual(facts.subject, subject)
+            self.assertIn(subject, summary)
+            self.assertIn("%를", summary)
+            self.assertNotIn("%을", summary)
+
+    def test_numeric_recruitment_ratio_is_competition_not_generic_application(self) -> None:
+        self.assertEqual(
+            recruitment_event_type("부산시, 올 지방공무원 7급 공채 71.5대 1"),
+            "RECRUITMENT_COMPETITION",
+        )
 
 if __name__ == "__main__":
     unittest.main()
