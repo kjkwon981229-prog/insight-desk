@@ -1,5 +1,15 @@
 # RECOVERY_REPORT
 
+## 현재 post-Sol 상태
+
+- post-Sol code closure HEAD: `421bae43a11f1e47bd4ce26f6b259927193cd88a`
+- 기준 CI #190: Python 281개 및 Push Worker 13개 통과
+- 이번 local closure: Python 289개 및 Push Worker 13개 통과
+- Run #92 human acceptance 실패는 Sol event/fact ownership closure 전의 historical regression이다.
+- Run #93 general production smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했지만 KBO·경제 targeted live reproof는 실행되지 않았다.
+- manual workflow dispatch는 실행하지 않았다. 다음 live evidence는 실제 `07:30 KST` schedule이다.
+- 현재 판정: `READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+
 ## 복구 수준
 
 `LEVEL D — CONTRACT RECONSTRUCTION`
@@ -51,7 +61,7 @@
 - Windows UI·Credential Manager·Task Scheduler·PyInstaller·desktop PDF workflow
 - 원본 Codex source 수준의 연속성
 
-## 현재 remote continuity
+## Historical remote continuity
 
 - source commit: `23c572afe7bd8e2240f1cc6bda4431dd2572ca44`
 - CI: [Run · 31334275366](https://github.com/kjkwon981229-prog/insight-desk/actions/runs/31334275366) 성공, 48 tests
@@ -61,17 +71,20 @@
 
 실제 live 콘텐츠 재감사에서 잘린 snippet 조각과 무의미한 generic summary 가능성을 발견해 `23c572a`에서 수정했다. 수정 후 로컬 48개 테스트와 Pages Run #12 실제 결과를 다시 통과했다.
 
-## 현재 상태
+## Historical recovery 상태
 
 이전 Pages Run #12는 배포 자체에는 성공했지만 실제 콘텐츠 selection false pass가 확인되어 완료 판정을 철회했다. 현재 작업은 원본 복구가 아니라, 그 false pass를 일반화된 deterministic retrieval/relevance/event/evidence/novelty/selection gate로 교정하는 production recovery다.
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (62/62 local)
-LIVE_NCP_NEWS_VERIFIED = PENDING (recovery run)
-LIVE_NCP_TREND_VERIFIED = PENDING (recovery run)
-GITHUB_ACTIONS_VERIFIED = PENDING (recovery run)
-PAGES_DEPLOYMENT_VERIFIED = PENDING (recovery run)
-PAGES_URL_VERIFIED = PENDING (recovery run)
+BASELINE_CI_190 = PASS (281 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
+RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
+MANUAL_WORKFLOW_DISPATCH = NOT RUN
+ACTUAL_SCHEDULE_0730 = PENDING
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
+PAGES_URL_VERIFIED = PASS (Run #93)
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 SCHEDULED_RUN_VERIFIED = PENDING
@@ -87,6 +100,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 판정
 
-`HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`
+`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
 
-새 코드가 실제 live selected story 전부에서 relevance/event/evidence/novelty hard gate를 통과할 때까지 외부 완료로 올리지 않는다.
+실제 schedule event의 selected stories 전수 audit, push provenance, iPhone 표시·tap/open 및 watchdog 확인 전에는 `PRODUCTION_FINAL`로 올리지 않는다.

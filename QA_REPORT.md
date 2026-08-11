@@ -1,12 +1,17 @@
 # QA_REPORT
 
-## 검사 대상
+## 현재 post-Sol 검사 대상
 
-이전 소스 commit `23c572afe7bd8e2240f1cc6bda4431dd2572ca44`의 Pages Run #12와, 그 결과를 반증하기 위해 작성한 현재 local recovery tree.
+post-Sol code closure HEAD `421bae43a11f1e47bd4ce26f6b259927193cd88a`, 기준 CI #190(281 Python + 13 Worker), Sol ownership closure, Run #93 general production smoke 및 이번 local closure를 함께 기록한다.
+
+- 이번 local closure: Python 289개 및 Push Worker 13개 통과
+- Run #92 KBO·경제 targeted live reproof: `PENDING` (Run #93에서는 해당 후보가 선택되지 않음)
+- manual workflow dispatch: `NOT RUN`
+- next live: actual `07:30 KST` schedule
 
 ## False-pass 철회
 
-Run #12는 News·Trend 수집과 Pages 배포에는 성공했지만, 실제 selected story 10개가 모두 single-source였고 저정보·`OTHER`·generic 후보가 다수였다. PSAT biography, incidental K-POP mention, KBO merchandise/문화성 결과도 통과했다. 따라서 이전 QA의 콘텐츠 PASS와 `CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`는 무효이며 현재 판정은 `HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`다.
+Historical Run #12는 News·Trend 수집과 Pages 배포에는 성공했지만, 실제 selected story 10개가 모두 single-source였고 저정보·`OTHER`·generic 후보가 다수였다. PSAT biography, incidental K-POP mention, KBO merchandise/문화성 결과도 통과했다. 따라서 이전 QA의 콘텐츠 PASS와 `CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`는 무효다. 현재 판정은 문서 하단의 post-Sol 상태를 따른다.
 
 ## 선택·콘텐츠 검증
 
@@ -37,11 +42,11 @@ Run #12는 News·Trend 수집과 Pages 배포에는 성공했지만, 실제 sele
 - `display: standalone`, 아이콘 192/512, Candidate 5 provenance — 통과
 - manifest icon 파일 존재·경로 검사 — 통과
 - `viewport-fit=cover`, safe-area CSS — 통과
-- service worker 미포함 — 의도한 정책과 일치
+- push 전용 service worker·notification click 유지, briefing HTML fetch/cache handler 없음 — 의도한 정책과 일치
 - internal topic ID·selection audit·local filesystem path·secret 공개 차단 — 통과
 - local link·UTF-8·artifact validator — 통과
 
-## 자동 테스트
+## Historical 자동 테스트
 
 ```text
 compileall = PASS
@@ -71,15 +76,18 @@ mypy = NOT CLAIMED (환경 미설치)
 - 정확한 320/375/390/430/768/1024/1440px 각각의 브라우저 렌더와 실제 iPhone Safari는 이 환경에서 직접 완료하지 않았다.
 - iPhone 상태는 사용자의 physical-device acceptance 후에만 `YES`로 바꾼다.
 
-## 현재 게이트(새 live run 전)
+## 현재 게이트(실제 schedule 전)
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (62/62)
-LIVE_NCP_NEWS_VERIFIED = PENDING
-LIVE_NCP_TREND_VERIFIED = PENDING
-GITHUB_ACTIONS_VERIFIED = PENDING
-PAGES_DEPLOYMENT_VERIFIED = PENDING
-PAGES_URL_VERIFIED = PENDING
+BASELINE_CI_190 = PASS (281 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
+RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
+MANUAL_WORKFLOW_DISPATCH = NOT RUN
+ACTUAL_SCHEDULE_0730 = PENDING
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
+PAGES_URL_VERIFIED = PASS (Run #93)
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES
@@ -90,6 +98,6 @@ SCHEDULED_RUN_VERIFIED = PENDING
 
 ## 현재 판정
 
-`HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`
+`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
 
-새 코드가 실제 live selected story hard gate와 human-sense review를 통과한 뒤에만 원격 판정을 갱신한다.
+Run #93의 general smoke와 이번 오프라인 closure는 통과했지만, 실제 schedule provenance·selected-story 전수 audit·iPhone physical evidence 전에는 `PRODUCTION_FINAL`로 올리지 않는다.

@@ -2,9 +2,32 @@
 
 ## 현재 판정
 
-- 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION`
-- 현재 상태: `HOLD — LIVE_EDITORIAL_SELECTION_FALSE_PASS`
+- 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION` 이후 post-Sol hardening
+- 현재 상태: `READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+- post-Sol code closure HEAD: `421bae43a11f1e47bd4ce26f6b259927193cd88a`
+- 기준 CI #190: Python 281개 및 Push Worker 13개 통과
+- 이번 오프라인 closure: Python 289개 및 Push Worker 13개 통과
+- Run #92 human acceptance 실패는 ownership closure 전의 historical evidence이며, Run #93 general smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했다.
+- 수동 workflow는 이 closure에서 실행하지 않았고, 다음 live acceptance는 실제 `07:30 KST` schedule이다.
 - Run #12의 원격 NCP/Pages 성공은 수집·배포 성공 증거일 뿐이며, 실제 selected story 품질 감사에서 false pass가 확인되어 최종 판정을 철회했다.
+
+## 현재 공식 source 상태
+
+| source | 상태 |
+|---|---|
+| OpenDART | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| KOSIS | `IMPLEMENTED_AND_OFFLINE_VALIDATED` |
+| ECOS | `CREDENTIAL_REQUIRED` |
+| PSAT official | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| KBO official | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| Hanwha official | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| OpenAI official | `BLOCKED_EXTERNAL` (HTTP 403) |
+| Google AI official | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| HYBE | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| SM | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+| JYP | `IMPLEMENTED_LIVE_HEALTHY_POSITIVE_PENDING` |
+
+`*_POSITIVE_PENDING`은 adapter health와 deterministic same-event fixture는 확인했지만, 해당 fresh run에서 실제 same-event positive가 없었다는 뜻이다. source는 discovery feed가 아니며, query-only/entity-only match로 story를 만들지 않는다.
 - 원본 Windows working tree를 복구한 결과가 아니라, 확정된 모바일 웹 계약을 기준으로 재구축한 결과다.
 
 ## 이번 production recovery 변경
@@ -65,11 +88,11 @@ Pages Run #12의 실제 NCP 결과를 다시 읽어 다음 결함을 확인했�
 - `display: standalone`, `start_url`, `scope`, theme/background color, Apple web-app meta, `viewport-fit=cover`, safe-area CSS를 연결했다.
 - 승인된 아이콘 보드의 Candidate 5 영역을 그대로 추출하고 리사이즈하여 `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, `favicon.png`로 연결했다. 새 아이콘 geometry를 생성하지 않았다.
 - manifest provenance: `APPROVED_CANDIDATE_5_EXTRACTED`
-- service worker는 추가하지 않았다. 매일 갱신되는 정적 브리핑에서 오래된 offline HTML이 최신 결과처럼 보일 위험을 피하기 위한 의도적 선택이다.
+- push 전용 service worker와 notification click 경로를 유지한다. briefing HTML을 fetch/cache하는 offline-first handler는 추가하지 않는다.
 - total failure·render failure·validation failure에서는 새 Pages 배포를 하지 않고 기존 정상 사이트를 보존한다.
 - 최신 페이지에만 Asia/Seoul 기준 freshness 표시를 적용하고, 날짜 archive에는 stale 경고를 적용하지 않는다.
 
-## 원격 증거
+## Historical Run #12 원격 증거
 
 | 항목 | 결과 |
 |---|---|
@@ -85,7 +108,7 @@ Pages Run #12의 실제 NCP 결과를 다시 읽어 다음 결함을 확인했�
 
 Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 포함된 commit을 실제 NCP `COMPLETE`로 빌드하고, artifact validation을 거쳐 Pages에 배포한 증거다. 로그에는 NCP secret이 `***`로 마스킹되어 있고, artifact에는 manifest·192/512 icon·Apple touch icon·favicon이 포함되어 있다.
 
-## 로컬 검증
+## Historical 로컬 검증
 
 - `python3 -m compileall -q insight_desk scripts tests` — 통과
 - `python3 -m unittest discover -s tests -q` — `62/62` 통과
@@ -101,15 +124,18 @@ Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 �
 
 전체 Ruff 기본 실행은 기존 장문 HTML/CSS E501이 남아 전체 통과로 기록하지 않는다. mypy는 실행 환경에 설치되어 있지 않아 통과로 주장하지 않는다.
 
-## 현재 게이트(원격 재실행 전)
+## 현재 post-Sol 게이트
 
 ```text
-LOCAL_TESTS_VERIFIED = YES (62/62)
-LIVE_NCP_NEWS_VERIFIED = PENDING (new recovery run)
-LIVE_NCP_TREND_VERIFIED = PENDING (new recovery run)
-GITHUB_ACTIONS_VERIFIED = PENDING (new recovery run)
-PAGES_DEPLOYMENT_VERIFIED = PENDING (new recovery run)
-PAGES_URL_VERIFIED = PENDING (new recovery run)
+BASELINE_CI_190 = PASS (281 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
+RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
+MANUAL_WORKFLOW_DISPATCH = NOT RUN
+ACTUAL_SCHEDULE_0730 = PENDING
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
+PAGES_URL_VERIFIED = PASS (Run #93)
 MOBILE_BROWSER_VERIFIED = PARTIAL (cloud desktop viewport + responsive source/artifact checks)
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES (local regression)
@@ -127,6 +153,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 릴리스 상태
 
-`HOLD`
+`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
 
-새 dual-retrieval 및 editorial gate가 실제 NCP selected story 전부에서 false-positive를 제거하는지 확인하기 전에는 원격 완료를 주장하지 않는다.
+다음 실제 `07:30 KST` schedule에서 selected stories 전수 human audit, schedule provenance, push 및 iPhone physical gate를 확인하기 전에는 `PRODUCTION_FINAL`을 주장하지 않는다.
