@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import datetime
 
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster
@@ -11,6 +12,7 @@ from .editorial import (
     assess_relevance,
     assess_semantic_relevance,
     best_headline_item,
+    daily_freshness_reasons,
     effective_title,
     event_owned_items,
     why_selected,
@@ -112,6 +114,7 @@ def _funnel_template() -> dict[str, int]:
         "event_pass": 0,
         "evidence_pass": 0,
         "novelty_pass": 0,
+        "freshness_pass": 0,
         "qualified": 0,
         "selected": 0,
         "synthesis_veto": 0,
@@ -133,6 +136,7 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
         and (assessment.evidence.passed or "SUPPORTED_SINGLE_SOURCE" in assessment.reasons)
         and assessment.novelty != "UNCHANGED"
         and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+        and "FRESHNESS_FAILED" not in assessment.reasons
     )
     canonical = assessment.event.canonical_event
     # "Strong" means the event already owns a complete, typed fact bundle.
@@ -170,6 +174,7 @@ def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
         "AUTHORITY_CONFLICT",
         "EVIDENCE_FAILED",
         "NOVELTY_UNCHANGED",
+        "FRESHNESS_FAILED",
         "SYNTHESIS_FACT_LOSS",
         "SYNTHESIS_NOT_EDITORIAL_READY",
         "GENERIC_HEADLINE",
@@ -304,6 +309,7 @@ def select_clusters(
     *,
     limit: int = 10,
     previous_signatures: tuple[str, ...] = (),
+    now: datetime | None = None,
 ) -> SelectionResult:
     """Select only qualified events, then apply coverage and diversity.
 
@@ -332,6 +338,18 @@ def select_clusters(
         provisional = assess_cluster(cluster, topic)
         novelty = classify_novelty(provisional.event_signature, previous_signatures)
         assessment = assess_cluster(cluster, topic, novelty=novelty)
+        freshness_reasons = daily_freshness_reasons(
+            cluster,
+            assessment.event,
+            now=now,
+            novelty=novelty,
+        )
+        if freshness_reasons:
+            assessment = replace(
+                assessment,
+                qualified=False,
+                reasons=(*assessment.reasons, *freshness_reasons),
+            )
         if (assessment.qualified or (assessment.relevance.passed and assessment.event.passed)) and not _synthesis_is_editorial_ready(
             cluster,
             topic,
@@ -355,6 +373,8 @@ def select_clusters(
             funnel[topic.id]["evidence_pass"] += 1
         if novelty != "UNCHANGED":
             funnel[topic.id]["novelty_pass"] += 1
+        if not freshness_reasons:
+            funnel[topic.id]["freshness_pass"] += 1
         if assessment.qualified:
             funnel[topic.id]["qualified"] += 1
         if "SYNTHESIS_NOT_EDITORIAL_READY" in assessment.reasons:

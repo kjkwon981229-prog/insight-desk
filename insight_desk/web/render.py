@@ -614,9 +614,12 @@ def _story_row(story: object, news_by_id: Mapping[str, object], index: int) -> s
     published = getattr(first_item, "metadata_published_at", None) or getattr(first_item, "published_at", None)
     facts = getattr(story, "facts", None)
     uncertainty = str(getattr(facts, "uncertainty", "") or "")
-    detail_blocks = [
-        f'<div class="detail-block"><span class="label">확인된 내용</span><p>{_esc(getattr(story, "why_it_matters", ""))}</p></div>'
-    ]
+    detail_blocks: list[str] = []
+    why_it_matters = str(getattr(story, "why_it_matters", "") or "").strip()
+    if why_it_matters:
+        detail_blocks.append(
+            f'<div class="detail-block"><span class="label">확인된 내용</span><p>{_esc(why_it_matters)}</p></div>'
+        )
     if uncertainty:
         detail_blocks.append(
             f'<div class="detail-block"><span class="label">추가 확인</span><p>{_esc(uncertainty)}</p></div>'

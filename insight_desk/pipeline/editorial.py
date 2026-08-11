@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, replace
+from datetime import date, datetime, timedelta
 
 from ..domain.models import EvidenceType, NewsItem, Topic
 from .clustering import StoryCluster, market_primary_text
@@ -105,6 +106,33 @@ _HEADLINE_ACTION_MARKERS = (
     "선발", "중단", "멈춘", "재개", "취소", "경기", "매각", "인수", "인상", "인하",
     "규제", "유치", "투자", "트레이드", "부상", "승리", "패배", "컴백", "전략",
     "할당", "계약",
+)
+
+_DAILY_RECENCY_DAYS = 1
+_CURRENT_ACTIONABILITY_MARKERS = (
+    "오늘",
+    "내일",
+    "모레",
+    "예정",
+    "접수 중",
+    "신청 중",
+    "진행 중",
+    "현재",
+    "앞두고",
+    "임박",
+    "마감일",
+    "시험일",
+    "시험 일정",
+    "결과 발표일",
+    "시행일",
+    "개최 예정",
+    "공연 예정",
+    "출시 예정",
+    "발매 예정",
+    "재개 예정",
+)
+_SCHEDULE_DATE_RE = re.compile(
+    r"(?:(?P<year>20\d{2})\s?년\s*)?(?P<month>\d{1,2})\s?월\s?(?P<day>\d{1,2})\s?일"
 )
 
 
@@ -288,6 +316,90 @@ class EditorialAssessment:
     qualified: bool
     final_score: float
     reasons: tuple[str, ...]
+
+
+def _parse_publication_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_current_actionability(text: str, now: datetime) -> bool:
+    normalized = normalize_text(text)
+    if any(marker in normalized for marker in _CURRENT_ACTIONABILITY_MARKERS):
+        return True
+    for match in _SCHEDULE_DATE_RE.finditer(normalized):
+        try:
+            scheduled = date(
+                int(match.group("year") or now.year),
+                int(match.group("month")),
+                int(match.group("day")),
+            )
+        except ValueError:
+            continue
+        if scheduled >= now.date() and any(
+            marker in normalized
+            for marker in ("시험", "접수", "신청", "마감", "발표", "시행", "개최", "공연", "출시", "발매", "재개")
+        ):
+            return True
+    return False
+
+
+def daily_freshness_reasons(
+    cluster: StoryCluster,
+    event: EventAssessment,
+    *,
+    now: datetime | None,
+    novelty: str,
+) -> tuple[str, ...]:
+    """Apply the daily publication contract after the 30-day search window.
+
+    A search lookback is a retrieval bound, not permission to republish every
+    completed event it contains.  Older evidence remains eligible only when
+    it carries a current/future action signal or a canonical lifecycle update.
+    Missing publication metadata is left for the existing evidence gates; it
+    is not silently treated as fresh or stale here.
+    """
+
+    if now is None:
+        return ()
+    owned_items = event_owned_items(cluster, event.canonical_event)
+    items = owned_items or cluster.items
+    published_dates = tuple(
+        published.date()
+        for item in items
+        for published in (
+            _parse_publication_datetime(item.metadata_published_at),
+            _parse_publication_datetime(item.published_at),
+        )
+        if published is not None
+    )
+    if not published_dates:
+        return ()
+    latest_publication = max(published_dates)
+    if latest_publication >= now.date() - timedelta(days=_DAILY_RECENCY_DAYS):
+        return ()
+    if novelty == "UPDATE":
+        return ()
+    evidence_text = " ".join(
+        value
+        for item in items
+        for value in (effective_title(item), effective_lead(item))
+        if value
+    )
+    if _has_current_actionability(evidence_text, now):
+        return ()
+    if event.canonical_event is not None:
+        future_roles = {"START_DATE", "SCHEDULE_DATE", "RESUMPTION_DATE", "END_DATE"}
+        if any(
+            fact.role in future_roles and fact.value in {"오늘", "내일", "모레"}
+            for fact in event.canonical_event.temporal_facts
+        ):
+            return ()
+    return ("FRESHNESS_FAILED", "STALE_COMPLETED_EVENT", "NO_CURRENT_ACTIONABILITY")
 
 
 def assess_relevance(

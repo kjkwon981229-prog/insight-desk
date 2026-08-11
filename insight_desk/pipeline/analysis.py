@@ -27,7 +27,7 @@ from .editorial import (
 from .scoring import score_clusters
 from .selection import candidate_key, select_clusters
 from .semantics import contains_intent_term
-from .synthesis import synthesize_cluster
+from .synthesis import summary_why_redundant, synthesize_cluster
 from .trend_metrics import effective_trend_state
 
 
@@ -152,6 +152,7 @@ def build_briefing(
         topics,
         limit=10,
         previous_signatures=previous_signatures,
+        now=generated_at,
     )
     editorial_health = "FILTER_COLLAPSE" if selection.filter_collapse else (
         "VALID_EMPTY_DAY"
@@ -196,13 +197,14 @@ def build_briefing(
             conflict_state_override=assessment.evidence.conflict_state,
             canonical_event_override=assessment.event.canonical_event,
         )
+        why_it_matters = "" if summary_why_redundant(summary, evidence_summary) else evidence_summary
         stories.append(
             Story(
                 topic_id=cluster.topic_id,
                 topic_name=topic_name,
                 title=headline,
                 summary=summary,
-                why_it_matters=evidence_summary,
+                why_it_matters=why_it_matters,
                 trend_relationship=_story_trend_label(owned_cluster, trend_metrics),
                 industry_impact="",
                 investment_relevance="",
@@ -268,6 +270,7 @@ def build_briefing(
                 "rank": rank,
                 "headline": story.title,
                 "summary": story.summary,
+                "why_it_matters": story.why_it_matters,
                 "topic": story.topic_name,
                 "novelty": story.novelty,
                 "certainty": story.certainty.value,

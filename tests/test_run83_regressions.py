@@ -147,7 +147,8 @@ class Run83RegressionTests(unittest.TestCase):
         self.assertEqual(facts.subject, "스트레이 키즈")
         self.assertIn("스트레이 키즈", summary)
         self.assertIn("1위", summary)
-        self.assertIn("컴백부터", summary)
+        self.assertIn("컴백 후", summary)
+        self.assertNotIn("컴백부터", summary)
         self.assertTrue(summary_information_gain("스트레이 키즈, THIS & THAT 국내외 음악 차트 1위", summary))
 
     def test_award_cluster_survives_when_result_headline_beats_supporting_headline(self) -> None:

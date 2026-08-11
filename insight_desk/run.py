@@ -200,6 +200,7 @@ def execute(
             topics,
             limit=10,
             previous_signatures=previous_signatures,
+            now=current,
         )
         enriched = bounded
         enrichment_report: EnrichmentReport | None = None

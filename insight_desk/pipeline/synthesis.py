@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Callable
+from difflib import SequenceMatcher
 
 from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
 from .clustering import StoryCluster
@@ -813,6 +814,24 @@ def _award_supporting_fact(title: str, titles: tuple[str, ...]) -> str:
     return ""
 
 
+def _naturalize_release_onset(value: str) -> str:
+    """Use a natural post-release connector without adding timing certainty."""
+
+    return re.sub(r"(컴백|출시|발표|공개)\s*부터", r"\1 후", value)
+
+
+def summary_why_redundant(summary: str, why_it_matters: str) -> bool:
+    """Detect exact or near-exact information-structure duplication only."""
+
+    left = re.sub(r"[^0-9a-z가-힣]", "", normalize_text(summary).casefold())
+    right = re.sub(r"[^0-9a-z가-힣]", "", normalize_text(why_it_matters).casefold())
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    return len(left) >= 20 and len(right) >= 20 and SequenceMatcher(None, left, right).ratio() >= 0.94
+
+
 def _trend_state(topic_id: str, metrics: tuple[TrendMetric, ...]) -> str:
     relevant = [metric for metric in metrics if metric.topic_id == topic_id]
     if not relevant:
@@ -1513,6 +1532,7 @@ def _summary(
         if not summary_information_gain(title, sentence):
             supporting_fact = _award_supporting_fact(title, supporting_titles)
             if supporting_fact and chart_number and music_context:
+                supporting_fact = _naturalize_release_onset(supporting_fact)
                 connector = (
                     supporting_fact
                     if supporting_fact.endswith(("부터", "후", "당일"))

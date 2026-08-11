@@ -18,7 +18,7 @@ from insight_desk.pipeline.semantics import (
     subject_boundary_is_clean,
     summary_information_gain,
 )
-from insight_desk.pipeline.synthesis import editorial_text_issues
+from insight_desk.pipeline.synthesis import editorial_text_issues, summary_why_redundant
 
 _MARKET_ACTIONS = {
     "강보합세",
@@ -115,6 +115,7 @@ def validate(path: Path) -> list[str]:
         "sentence_completeness_error_count": 0,
         "quote_balance_error_count": 0,
         "subject_boundary_error_count": 0,
+        "summary_why_duplication_count": 0,
         "event_ownership_error_count": 0,
         "fact_provenance_error_count": 0,
         "semantic_role_error_count": 0,
@@ -126,6 +127,7 @@ def validate(path: Path) -> list[str]:
             continue
         headline = str(story.get("headline", ""))
         summary = str(story.get("summary", ""))
+        why_it_matters = str(story.get("why_it_matters", "") or "")
         headline_issues = editorial_text_issues(headline)
         summary_issues = editorial_text_issues(summary)
         quote_issues = set(headline_issues + summary_issues).intersection(
@@ -156,6 +158,9 @@ def validate(path: Path) -> list[str]:
             errors.append(f"story {index} has a generic summary")
         if headline and summary and not summary_information_gain(headline, summary):
             errors.append(f"story {index} summary has no information gain over headline")
+        if summary_why_redundant(summary, why_it_matters):
+            metrics["summary_why_duplication_count"] += 1
+            errors.append(f"story {index} duplicates summary in why_it_matters")
         if any(marker in headline or marker in summary for marker in ("...", "…", "··")):
             metrics["truncated_copy_count"] += 1
             errors.append(f"story {index} leaks truncated source copy")
