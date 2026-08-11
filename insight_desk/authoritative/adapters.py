@@ -9,11 +9,12 @@ from urllib.parse import urlencode
 
 from ..collectors.transport import HttpResponse, Transport, UrlLibTransport
 from ..domain.models import AuthorityEvidence, AuthoritySourceType, NewsItem
-from .config import KosisDataset, OpenDartConfig, OpenDartEntity
+from .config import EcosDataset, KosisDataset, OpenDartConfig, OpenDartEntity
 
 
 _DART_URL = "https://opendart.fss.or.kr/api/list.json"
 _KOSIS_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+_ECOS_URL = "https://ecos.bok.or.kr/api/StatisticSearch"
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
 _DART_ROUTINE_MARKERS = (
     "사업보고서",
@@ -334,6 +335,17 @@ def _kosis_period_keys(value: str) -> set[str]:
     return keys
 
 
+def _same_month_period(article_periods: set[str], official_period: str) -> bool:
+    """Match an observation period without dropping an explicit article year."""
+
+    normalized_official = re.sub(r"\D", "", official_period)
+    explicit_year_periods = {period for period in article_periods if len(period) == 6}
+    if explicit_year_periods:
+        return normalized_official in explicit_year_periods
+    month_periods = {period for period in article_periods if len(period) == 2}
+    return bool(normalized_official[-2:] in month_periods)
+
+
 def _kosis_title_candidate(item: NewsItem, dataset: KosisDataset) -> bool:
     """Cheap pre-request gate using article evidence only, never the query."""
 
@@ -376,8 +388,7 @@ def _kosis_item_matches(item: NewsItem, dataset: KosisDataset, evidence: Authori
     official_period = str(evidence.period or "").strip()
     if not article_periods or not official_period:
         return False
-    official_keys = {official_period, official_period[-2:]}
-    return bool(article_periods.intersection(official_keys))
+    return _same_month_period(article_periods, official_period)
 
 
 def _kosis_evidence(dataset: KosisDataset, records: tuple[dict[str, object], ...]) -> AuthorityEvidence:
@@ -483,6 +494,216 @@ class KosisAdapter:
                     matches.append((item.evidence_id, evidence))
         result = AdapterResult(
             "kosis",
+            attempted=attempted,
+            success=success_count > 0,
+            failure_reason="" if success_count else (failure_reason or "NO_CANDIDATE_MATCH"),
+            candidates_matched=len({item_id for item_id, _ in matches}),
+            events_augmented=len(matches),
+            official_facts_added=sum(len(evidence.fact_values) for _, evidence in matches),
+            stories_affected=len({item_id for item_id, _ in matches}),
+        )
+        return AdapterPayload(result, tuple(matches))
+
+
+def _ecos_records(payload: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(payload, dict):
+        raise ValueError("INVALID_RESPONSE_SHAPE")
+    search = payload.get("StatisticSearch")
+    if not isinstance(search, dict):
+        result = payload.get("RESULT")
+        if isinstance(result, dict) and result.get("CODE"):
+            raise ValueError(f"API_STATUS_{result.get('CODE')}")
+        raise ValueError("INVALID_RESPONSE_SHAPE")
+    result = search.get("RESULT")
+    if isinstance(result, dict) and result.get("CODE"):
+        raise ValueError(f"API_STATUS_{result.get('CODE')}")
+    rows = search.get("row", [])
+    if not isinstance(rows, list):
+        raise ValueError("INVALID_RESPONSE_SHAPE")
+    records = tuple(row for row in rows if isinstance(row, dict))
+    if not records:
+        raise ValueError("NO_DATA")
+    return records
+
+
+def _ecos_period_keys(value: str) -> set[str]:
+    text = re.sub(r"\s+", "", value)
+    keys: set[str] = set()
+    for match in re.finditer(r"(20\d{2})년?(\d{1,2})월", text):
+        keys.add(f"{match.group(1)}{int(match.group(2)):02d}")
+    for match in re.finditer(r"(20\d{2})[./-](\d{1,2})", text):
+        keys.add(f"{match.group(1)}{int(match.group(2)):02d}")
+    for match in re.finditer(r"(?<!\d)(\d{1,2})월", text):
+        keys.add(match.group(1).zfill(2))
+    for match in re.finditer(r"(?<!\d)(20\d{4})(?!\d)", text):
+        keys.add(match.group(1))
+    return keys
+
+
+def _ecos_title_candidate(item: NewsItem, dataset: EcosDataset) -> bool:
+    """Require article-owned statistical subject and period before lookup."""
+
+    title = " ".join(
+        value for value in (item.metadata_title, item.title) if value and not _TRUNCATION_RE.search(value)
+    )
+    lead = " ".join(
+        value for value in (item.metadata_description,) if value and not _TRUNCATION_RE.search(value)
+    )
+    if not title or not _ecos_period_keys(title):
+        return False
+    subject_match = any(keyword.casefold() in title.casefold() for keyword in dataset.keywords)
+    if not subject_match:
+        return False
+    return any(
+        marker in f"{title} {lead}"
+        for marker in ("금리", "환율", "통화", "유동성", "지표", "통계", "발표", "상승", "하락", "증가", "감소")
+    )
+
+
+def _ecos_item_matches(item: NewsItem, dataset: EcosDataset, evidence: AuthorityEvidence) -> bool:
+    if not _ecos_title_candidate(item, dataset):
+        return False
+    article_periods = _ecos_period_keys(" ".join((item.metadata_title, item.title)))
+    official_period = re.sub(r"[^0-9]", "", str(evidence.period or ""))
+    return _same_month_period(article_periods, official_period)
+
+
+def _ecos_evidence(dataset: EcosDataset, records: tuple[dict[str, object], ...]) -> AuthorityEvidence:
+    records = tuple(
+        row
+        for row in records
+        if str(row.get("ITEM_CODE1") or "").strip() == dataset.item_code
+        or str(row.get("ITEM_NAME1") or "").strip() == dataset.label
+    )
+    if not records:
+        raise ValueError("NO_MATCHING_ITEM")
+    ordered = sorted(records, key=lambda row: str(row.get("TIME") or ""))
+    current = ordered[-1]
+    period = str(current.get("TIME") or "").strip()
+    value = str(current.get("DATA_VALUE") or "").strip()
+    unit = str(current.get("UNIT_NAME") or current.get("UNIT_NM") or "").strip()
+    if not period or not value or not unit:
+        raise ValueError("INCOMPLETE_STATISTIC_RECORD")
+    if _unit_key(dataset.expected_unit) != _unit_key(unit):
+        raise ValueError(_unit_mismatch_reason(unit))
+    previous = ordered[-2] if len(ordered) >= 2 else None
+    description = f"{dataset.label} {period} 수치는 {value} {unit}이다."
+    facts = [f"{period}={value} {unit}"]
+    if previous:
+        previous_period = str(previous.get("TIME") or "").strip()
+        previous_value = str(previous.get("DATA_VALUE") or "").strip()
+        if previous_period and previous_value:
+            description += f" 직전 {previous_period} 수치는 {previous_value} {unit}이다."
+            facts.append(f"{previous_period}={previous_value} {unit}")
+            current_number = _decimal(value)
+            previous_number = _decimal(previous_value)
+            if current_number is not None and previous_number is not None:
+                direction = "상승" if current_number > previous_number else "하락" if current_number < previous_number else "보합"
+                description += f" 두 시점의 단위는 동일하며 방향은 {direction}이다."
+    return AuthorityEvidence(
+        adapter="ecos",
+        source_type=AuthoritySourceType.OFFICIAL_STATISTICAL,
+        authority_strength="HIGH",
+        title=dataset.label,
+        description=description,
+        canonical_url="https://ecos.bok.or.kr/api/",
+        publisher="한국은행 ECOS",
+        event_key=f"ECOS:{dataset.id}:{period}",
+        fact_values=tuple(facts),
+        unit=unit,
+        period=period,
+    )
+
+
+class EcosAdapter:
+    """Optional, candidate-driven ECOS corroboration.
+
+    No credential or configured dataset means an isolated audit state, not a
+    NAVER pipeline failure.  A dataset must be explicitly configured before
+    any request is possible.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        datasets: tuple[EcosDataset, ...],
+        max_requests: int,
+        transport: Transport | None = None,
+        timeout: float = 5.0,
+    ) -> None:
+        self.api_key = api_key.strip()
+        self.datasets = datasets
+        self.max_requests = max(1, min(2, max_requests))
+        self.transport = transport or UrlLibTransport()
+        self.timeout = max(1.0, min(10.0, timeout))
+
+    def fetch(self, items: tuple[NewsItem, ...], *, today: date | None = None) -> AdapterPayload:
+        if not self.api_key:
+            return AdapterPayload(AdapterResult("ecos", failure_reason="MISSING_CREDENTIAL"))
+        if not self.datasets:
+            return AdapterPayload(AdapterResult("ecos", failure_reason="NO_DATASET_CONFIG"))
+        matches: list[tuple[str, AuthorityEvidence]] = []
+        attempted = 0
+        success_count = 0
+        failure_reason = ""
+        for dataset in self.datasets:
+            if attempted >= self.max_requests:
+                break
+            candidate_items = tuple(item for item in items if _ecos_title_candidate(item, dataset))
+            if not candidate_items:
+                continue
+            period_keys = sorted(
+                {
+                    period if len(period) == 6 else f"{(today.year if today else date.today().year):04d}{period}"
+                    for item in candidate_items
+                    for period in _ecos_period_keys(" ".join((item.metadata_title, item.title)))
+                    if len(period) in {2, 6}
+                }
+            )
+            if not period_keys:
+                continue
+            start_period = period_keys[0]
+            end_period = period_keys[-1]
+            query_url = "/".join(
+                (
+                    _ECOS_URL,
+                    self.api_key,
+                    "json",
+                    "kr",
+                    "1",
+                    str(dataset.max_periods),
+                    dataset.stat_code,
+                    dataset.cycle,
+                    start_period,
+                    end_period,
+                )
+            ) + "/"
+            attempted += 1
+            try:
+                response = self.transport.request(
+                    "GET",
+                    query_url,
+                    {"Accept": "application/json", "User-Agent": "InsightDesk/1.0"},
+                    timeout=self.timeout,
+                )
+                if response.status < 200 or response.status >= 300:
+                    failure_reason = f"HTTP_{response.status}"
+                    continue
+                records = _ecos_records(_json_value(response))
+                evidence = _ecos_evidence(dataset, records)
+            except (OSError, TimeoutError):
+                failure_reason = "NETWORK_OR_TIMEOUT"
+                continue
+            except ValueError as exc:
+                failure_reason = str(exc)
+                continue
+            success_count += 1
+            for item in candidate_items:
+                if _ecos_item_matches(item, dataset, evidence):
+                    matches.append((item.evidence_id, evidence))
+        result = AdapterResult(
+            "ecos",
             attempted=attempted,
             success=success_count > 0,
             failure_reason="" if success_count else (failure_reason or "NO_CANDIDATE_MATCH"),

@@ -64,11 +64,38 @@ class KosisConfig:
 
 
 @dataclass(frozen=True)
+class EcosDataset:
+    """One explicitly configured ECOS observation family.
+
+    ECOS is intentionally dataset-driven.  The adapter never searches the
+    whole Bank of Korea catalogue and never treats an article query as a
+    statistical subject.
+    """
+
+    id: str
+    label: str
+    stat_code: str
+    item_code: str
+    cycle: str
+    keywords: tuple[str, ...]
+    expected_unit: str
+    max_periods: int = 2
+
+
+@dataclass(frozen=True)
+class EcosConfig:
+    enabled: bool
+    max_requests: int
+    datasets: tuple[EcosDataset, ...]
+
+
+@dataclass(frozen=True)
 class AuthorityConfig:
     schema_version: int
     open_dart: OpenDartConfig
     kosis: KosisConfig
     public_sources: tuple[PublicSourceConfig, ...] = ()
+    ecos: EcosConfig = EcosConfig(enabled=False, max_requests=1, datasets=())
 
 
 def _text(raw: object, field: str) -> str:
@@ -157,6 +184,33 @@ def load_authority_config(path: Path) -> AuthorityConfig:
         max_requests=_bounded_int(kosis_raw.get("max_requests", 2), "kosis.max_requests", minimum=1, maximum=4),
         datasets=tuple(datasets),
     )
+    ecos_raw = raw.get("ecos") or {}
+    if not isinstance(ecos_raw, dict):
+        raise AuthorityConfigError("ecos must be an object")
+    ecos_datasets: list[EcosDataset] = []
+    for dataset_raw in ecos_raw.get("datasets", []):
+        if not isinstance(dataset_raw, dict):
+            raise AuthorityConfigError("ECOS dataset must be an object")
+        keywords = tuple(_text(value, "ecos.datasets.keywords") for value in dataset_raw.get("keywords", []))
+        if not keywords:
+            raise AuthorityConfigError("ECOS dataset must have keywords")
+        ecos_datasets.append(
+            EcosDataset(
+                id=_text(dataset_raw.get("id"), "ecos.datasets.id"),
+                label=_text(dataset_raw.get("label"), "ecos.datasets.label"),
+                stat_code=_text(dataset_raw.get("stat_code"), "ecos.datasets.stat_code"),
+                item_code=_text(dataset_raw.get("item_code"), "ecos.datasets.item_code"),
+                cycle=_text(dataset_raw.get("cycle", "M"), "ecos.datasets.cycle"),
+                keywords=keywords,
+                expected_unit=_text(dataset_raw.get("expected_unit"), "ecos.datasets.expected_unit"),
+                max_periods=_bounded_int(dataset_raw.get("max_periods", 2), "ecos.datasets.max_periods", minimum=2, maximum=4),
+            )
+        )
+    ecos = EcosConfig(
+        enabled=bool(ecos_raw.get("enabled", False)),
+        max_requests=_bounded_int(ecos_raw.get("max_requests", 1), "ecos.max_requests", minimum=1, maximum=2),
+        datasets=tuple(ecos_datasets),
+    )
     public_sources: list[PublicSourceConfig] = []
     for source_raw in raw.get("public_sources", []):
         if not isinstance(source_raw, dict):
@@ -184,4 +238,10 @@ def load_authority_config(path: Path) -> AuthorityConfig:
                 max_requests=_bounded_int(source_raw.get("max_requests", 1), "public_sources.max_requests", minimum=1, maximum=2),
             )
         )
-    return AuthorityConfig(schema_version=1, open_dart=dart, kosis=kosis, public_sources=tuple(public_sources))
+    return AuthorityConfig(
+        schema_version=1,
+        open_dart=dart,
+        kosis=kosis,
+        public_sources=tuple(public_sources),
+        ecos=ecos,
+    )

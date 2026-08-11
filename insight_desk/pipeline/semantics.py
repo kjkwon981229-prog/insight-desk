@@ -232,7 +232,10 @@ TRUSTED_OFFICIAL_DOMAINS = frozenset(
         "koreabaseball.com",
         "hanwhaeagles.co.kr",
         "openai.com",
+        "blog.google",
         "hybecorp.com",
+        "smentertainment.com",
+        "jype.com",
     }
 )
 
@@ -257,7 +260,19 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "EARNINGS": ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"),
     "AWARD_CHART": ("1위", "차트", "관왕", "수상", "우승", "기록"),
     "PRODUCT_RELEASE": ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "상장", "예약판매", "판매 개시"),
-    "INDUSTRY_CHANGE": ("투자", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"),
+    "INDUSTRY_CHANGE": (
+        "투자",
+        "유치",
+        "인수",
+        "전략",
+        "데이터센터",
+        "서비스 전환",
+        "할당",
+        "계약",
+        "생산",
+        "확대",
+        "축소",
+    ),
     "SPORTS_INTERRUPTION": ("폭염", "중단", "멈춘", "휴식", "재개", "취소"),
     "SPORTS_RESULT": (
         "경기 결과",
@@ -382,6 +397,10 @@ class EventFact:
     value: str
     unit: str = ""
     subject: str = ""
+    related_value: str = ""
+    related_subject: str = ""
+    relation: str = ""
+    object: str = ""
 
 
 @dataclass(frozen=True)
@@ -450,6 +469,144 @@ def _normalized_number(value: str) -> str:
 
 def _fact(role: str, value: str, *, unit: str = "", subject: str = "") -> EventFact:
     return EventFact(role, _normalized_number(value), unit, normalize_text(subject))
+
+
+_INDUSTRY_VALUE_PATTERN = (
+    r"[+-]?\d[\d,.]*"
+    r"(?:\s?(?:조원|억원|만원|천만원|천만|만\s?달러|억\s?달러|달러|"
+    r"백만대|천대|만대|MW|GW|%|퍼센트|만|천|백만|원|대|건|개|명|배))?"
+)
+_INDUSTRY_VALUE_RE = re.compile(
+    rf"(?<![{_WORD_CHAR}])(?P<value>{_INDUSTRY_VALUE_PATTERN})"
+    r"(?=$|[\s,，.·:;!?]|(?:에|의|을|를|은|는|이|가|로|에서|까지))",
+    re.IGNORECASE,
+)
+_INDUSTRY_PAIR_RE = re.compile(
+    rf"(?P<left>{_INDUSTRY_VALUE_PATTERN})\s*"
+    r"(?P<relation>vs|VS|대비|→|->|에서)\s*"
+    r"(?:(?P<right_subject>[A-Za-z가-힣][A-Za-z가-힣A-Za-z0-9· ]{0,20}?)\s+)?"
+    rf"(?P<right>{_INDUSTRY_VALUE_PATTERN})\s*(?:로|까지)?",
+    re.IGNORECASE,
+)
+_INDUSTRY_ACTIONS = (
+    "투자",
+    "유치",
+    "인수",
+    "계약",
+    "공급",
+    "생산",
+    "전략",
+    "할당",
+    "고도화",
+    "확대",
+    "축소",
+)
+_INDUSTRY_AMOUNT_UNITS = ("조원", "억원", "만원", "천만원", "달러", "원")
+_INDUSTRY_QUANTITY_UNITS = ("백만대", "천대", "만대", "대", "건", "개", "명")
+
+
+def _industry_value(value: str) -> str:
+    return _normalized_number(value)
+
+
+def _industry_is_date(value: str) -> bool:
+    compact_value = _industry_value(value)
+    return bool(re.fullmatch(r"(?:20\d{2})?(?:년|월|일)", compact_value))
+
+
+def _industry_has_unit(value: str, units: tuple[str, ...]) -> bool:
+    compact_value = _industry_value(value)
+    return any(compact_value.endswith(unit) for unit in units)
+
+
+def _industry_context(text: str, start: int, end: int, radius: int = 28) -> str:
+    return text[max(0, start - radius) : min(len(text), end + radius)]
+
+
+def industry_change_facts(text: str) -> tuple[EventFact, ...]:
+    """Extract bounded fact relationships for an ``INDUSTRY_CHANGE`` event.
+
+    The parser intentionally recognizes only source-explicit relationships.
+    A bare number, a publication date, or two unrelated metrics is not
+    promoted to an industry fact.  Paired values remain one fact so synthesis
+    cannot bind one entity's number to another entity or discard the relation.
+    """
+
+    clean = normalize_text(text)
+    if not clean:
+        return ()
+    facts: list[EventFact] = []
+    occupied: list[tuple[int, int]] = []
+
+    for match in _INDUSTRY_PAIR_RE.finditer(clean):
+        left = _industry_value(match.group("left"))
+        right = _industry_value(match.group("right"))
+        if not left or not right or _industry_is_date(left) or _industry_is_date(right):
+            continue
+        context = _industry_context(clean, match.start(), match.end())
+        relation = match.group("relation").casefold()
+        if "%" in left or "%" in right or "퍼센트" in left or "퍼센트" in right or any(
+            marker in context for marker in ("점유율", "비중", "비율", "경쟁률")
+        ):
+            role = "RATIO_CHANGE"
+            unit = "PERCENT" if ("%" in left or "퍼센트" in left or "%" in right or "퍼센트" in right) else "RATIO"
+        elif any(marker.casefold() in context.casefold() for marker in ("생산", "생산량", "용량", "capacity", "가동", "처리량")):
+            role = "PRODUCTION_CHANGE"
+            unit = "QUANTITY"
+        else:
+            role = "COMPARISON"
+            unit = "VALUE"
+        facts.append(
+            EventFact(
+                role,
+                left,
+                unit=unit,
+                related_value=right,
+                related_subject=normalize_text(match.group("right_subject") or "").strip(),
+                relation="CHANGE" if relation == "에서" else relation.upper(),
+            )
+        )
+        occupied.append(match.span())
+
+    for match in _INDUSTRY_VALUE_RE.finditer(clean):
+        if _span_overlaps(match.span(), occupied):
+            continue
+        value = _industry_value(match.group("value"))
+        if not value or _industry_is_date(value):
+            continue
+        context = _industry_context(clean, match.start(), match.end())
+        actions = tuple(
+            marker
+            for marker in _INDUSTRY_ACTIONS
+            if contains_boundary_term(context, marker) or marker in context
+        )
+        if not actions:
+            continue
+        if _industry_has_unit(value, _INDUSTRY_AMOUNT_UNITS):
+            if any(marker in context for marker in ("인수",)):
+                role = "ACQUISITION_AMOUNT"
+            elif any(marker in context for marker in ("투자", "유치", "출자")):
+                role = "INVESTMENT_AMOUNT"
+            elif any(marker in context for marker in ("전략", "고도화", "확대", "축소")):
+                role = "STRATEGY_AMOUNT"
+            else:
+                continue
+            facts.append(EventFact(role, value, unit="AMOUNT"))
+            occupied.append(match.span())
+            continue
+        if _industry_has_unit(value, _INDUSTRY_QUANTITY_UNITS):
+            if any(marker in context for marker in ("계약", "공급")):
+                role = "CONTRACT_QUANTITY"
+            elif any(marker in context for marker in ("생산", "생산량", "용량", "capacity")):
+                role = "PRODUCTION_QUANTITY"
+            else:
+                continue
+            facts.append(EventFact(role, value, unit="QUANTITY"))
+            occupied.append(match.span())
+
+    # Preserve insertion order while keeping a repeated value from creating
+    # multiple independent facts in downstream summaries.
+    return tuple(dict.fromkeys(facts))
 
 
 def recruitment_facts(text: str) -> tuple[EventFact, ...]:
@@ -594,6 +751,42 @@ def _event_subject(
         return _clean_event_subject(event_type, " ".join(tokens[-3:]))
     if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):
         return _clean_event_subject(event_type, re.split(r"[,，]", clean, maxsplit=1)[0])
+    if event_type == "INDUSTRY_CHANGE":
+        marker = next(
+            (
+                match
+                for term in _EVENT_ACTION_CONTRACTS.get(event_type, ())
+                for match in (re.search(rf"(?<![{_WORD_CHAR}]){re.escape(term)}", clean),)
+                if match
+            ),
+            None,
+        )
+        if marker:
+            prefix = clean[: marker.start()].strip(" ,·-—")
+            prefix = re.sub(
+                r"\s+[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|달러|만대|대|건|개|명|%|퍼센트|만|천))?"
+                r"(?:에서|으로|로)?\s*$",
+                "",
+                prefix,
+            )
+            prefix = re.sub(
+                r"\s*[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|달러|만대|대|건|개|명|%|퍼센트|만|천))?"
+                r"(?:에서|으로|로)?",
+                " ",
+                prefix,
+            )
+            prefix = re.sub(r"^[+-]?\d[\d,.]*(?:\s?(?:조원|억원|만원|달러|만대|대|건|개|명|%|퍼센트|만|천))?\s*", "", prefix)
+            prefix = re.sub(r"\s+(?:월|주|일|공급|생산량|용량|capacity)\s*$", "", prefix, flags=re.IGNORECASE)
+            prefix = re.sub(r"\s+(?:점유율|비중|비율|경쟁률)\s*$", "", prefix)
+            prefix = re.sub(r"(?:에서|으로|로|대비)\s*$", "", prefix).strip(" ,·-—")
+            prefix = re.sub(r"(?:이|가|은|는)$", "", prefix).strip(" ,·-—")
+            if "," in prefix or "，" in prefix:
+                prefix = re.split(r"[,，]", prefix, maxsplit=1)[0].strip(" ,·-—")
+            if prefix and not re.fullmatch(r"[0-9\s]+", prefix):
+                return _clean_event_subject(event_type, prefix)
+        lead_subject = _lead_subject(lead)
+        if lead_subject and not re.search(r"\d|투자|유치|인수|계약|공급|생산|전략|고도화", lead_subject):
+            return _clean_event_subject(event_type, lead_subject)
     # For other families keep only the bounded noun phrase before a clear
     # event predicate.  If no safe boundary exists, leave the title-derived
     # subject to the existing fallback rather than inventing an entity.
@@ -834,6 +1027,8 @@ def build_canonical_event(
         facts = award_chart_facts(evidence)
     elif event_type == "SPORTS_RESULT":
         facts = sports_result_facts(evidence)
+    elif event_type == "INDUSTRY_CHANGE":
+        facts = industry_change_facts(evidence)
     else:
         facts = ()
     location_match = _LOCATION_RE.search(evidence)
@@ -868,6 +1063,23 @@ def build_canonical_event(
     elif event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
         fact_complete = bool(observations)
         needs_enrichment = not observations
+    elif event_type == "INDUSTRY_CHANGE":
+        # INDUSTRY_CHANGE is admissible only when the event owns at least one
+        # source-explicit material relationship.  The generic fallback below
+        # would mark a bare number plus an action as complete and force
+        # synthesis to invent a binding.
+        material_roles = {
+            "INVESTMENT_AMOUNT",
+            "ACQUISITION_AMOUNT",
+            "STRATEGY_AMOUNT",
+            "CONTRACT_QUANTITY",
+            "PRODUCTION_QUANTITY",
+            "PRODUCTION_CHANGE",
+            "RATIO_CHANGE",
+            "COMPARISON",
+        }
+        fact_complete = bool(subject and event_action and fact_roles.intersection(material_roles))
+        needs_enrichment = bool(subject and event_action and not fact_complete)
     else:
         fact_complete = bool(subject and event_action and (date or lead_text or observations or facts))
         needs_enrichment = bool(subject and event_action and not fact_complete)
@@ -1089,6 +1301,19 @@ def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
         if observations:
             return observations[0].direction or "LEVEL"
     terms = _EVENT_ACTION_CONTRACTS.get(event_type, ACTION_TERMS)
+    if event_type == "INDUSTRY_CHANGE":
+        # Industry headlines often use a relation such as ``투자 유치`` or
+        # ``생산 확대``.  The terminal action carries the event state more
+        # precisely than whichever vocabulary term happens to be listed
+        # first, while retaining the shared boundary-aware matcher.
+        matches = [
+            (match.start(), len(term), term)
+            for term in terms
+            for match in (re.search(rf"(?<![{_WORD_CHAR}]){re.escape(term)}", text),)
+            if match
+        ]
+        if matches:
+            return max(matches, key=lambda value: (value[0], value[1]))[2]
     for term in terms:
         matched = contains_action(text, term) if term in ACTION_TERMS else contains_intent_term(text, term)
         if matched:

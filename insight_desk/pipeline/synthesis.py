@@ -20,6 +20,7 @@ from .semantics import (
     earnings_observations,
     event_dates,
     first_action,
+    industry_change_facts,
     market_direction,
     metric_observations,
     MetricObservation,
@@ -1004,6 +1005,92 @@ def _event_fact_map(facts: tuple[EventFact, ...]) -> dict[str, str]:
     return {fact.role: _event_fact_value(fact) for fact in facts if _event_fact_value(fact)}
 
 
+def _compact_fact_value(value: str) -> str:
+    return re.sub(r"[^0-9a-z가-힣%]", "", normalize_text(value).casefold())
+
+
+def industry_summary_preserves_fact_binding(
+    headline: str,
+    summary: str,
+    facts: tuple[EventFact, ...],
+) -> bool:
+    """Require every material industry relationship to survive synthesis."""
+
+    if not facts:
+        return True
+    compact_summary = _compact_fact_value(summary)
+    if not compact_summary:
+        return False
+    for fact in facts:
+        for value in (fact.value, fact.related_value):
+            if value and _compact_fact_value(value) not in compact_summary:
+                return False
+    return True
+
+
+def _industry_fact_summary(
+    title: str,
+    subject: str,
+    action: str,
+    completion_evidence: str,
+    facts: tuple[EventFact, ...],
+) -> str:
+    """Render a fact-rich industry event without rebuilding loose numbers."""
+
+    detail = normalize_text(completion_evidence)
+    clean_title = normalize_text(title)
+    if clean_title and detail.startswith(clean_title):
+        detail = detail[len(clean_title) :].strip(" ,:·-—")
+    detail = _strip_news_byline(detail).rstrip(" .!?。！")
+    if (
+        detail
+        and not _TRUNCATION_RE.search(detail)
+        and not editorial_text_issues(detail)
+        and not any(marker in detail for marker in _GENERIC_SUMMARY_MARKERS)
+        and summary_information_gain(title, detail)
+        and industry_summary_preserves_fact_binding(title, detail, facts)
+    ):
+        return f"{detail}."
+
+    fact = next(iter(facts), None)
+    if fact is None:
+        if action == "유치" and clean_title:
+            return f"{_clean_headline(title)}."
+        return ""
+    if fact is None or not subject:
+        return ""
+    subject_particle = _subject_particle(subject)
+    if fact.role == "RATIO_CHANGE" and fact.related_value:
+        label = fact.subject or next(
+            (marker for marker in ("점유율", "비중", "비율", "경쟁률") if marker in title),
+            "비율",
+        )
+        change_word = action if action in {"확대", "축소", "증가", "감소"} else "변했다"
+        return f"{subject}의 {label}이 {fact.value}에서 {fact.related_value}로 {change_word}됐다."
+    if fact.role == "PRODUCTION_CHANGE" and fact.related_value:
+        change_word = f"{action}됐다" if action in {"확대", "축소", "증가", "감소"} else "바뀌었다"
+        return (
+            f"{subject}의 생산 관련 수치가 {fact.value}에서 "
+            f"{fact.related_value}{_instrumental_particle(fact.related_value)} {change_word}."
+        )
+    if fact.role == "COMPARISON" and fact.related_value:
+        return f"{subject} 관련 비교 수치는 {fact.value}와 {fact.related_value}로 제시됐다."
+    if fact.role == "CONTRACT_QUANTITY":
+        return f"{subject}{subject_particle} {fact.value} 규모의 공급 계약을 체결했다."
+    if fact.role == "ACQUISITION_AMOUNT":
+        return f"{subject}{subject_particle} {fact.value} 규모 인수에 나섰다."
+    if fact.role == "STRATEGY_AMOUNT":
+        return f"{subject}{subject_particle} 전략 관련 {fact.value} 규모 투자를 추진한다."
+    if fact.role == "PRODUCTION_QUANTITY":
+        return f"{subject}{subject_particle} {fact.value} 규모의 생산 계획을 제시했다."
+    if fact.role == "INVESTMENT_AMOUNT":
+        evidence_text = f"{title} {completion_evidence}"
+        if "유치" in evidence_text:
+            return f"{subject}{subject_particle} {fact.value} 규모의 투자를 유치했다."
+        return f"{subject}{subject_particle} {fact.value} 규모의 투자 계획을 제시했다."
+    return ""
+
+
 def _headline(
     title: str,
     event_type: str,
@@ -1397,28 +1484,13 @@ def _summary(
         if not sentence:
             sentence = f"{_clean_headline(title)}."
     elif event_type == "INDUSTRY_CHANGE" and subject:
-        change_action = {
-            "유치": "투자 유치" if any(marker in title for marker in ("투자", "자금", "출자")) else "유치",
-            "투자": "투자",
-            "인수": "인수",
-            "전략": "전략 변화",
-            "할당": "물량 할당",
-            "계약": "계약",
-            "생산": "생산",
-        }.get(action, action or "사업 변화")
-        key_number = next(
-            (value for value in numbers if not re.search(r"(?:년|월|일)$", value)),
-            "",
+        sentence = _industry_fact_summary(
+            title,
+            subject,
+            action,
+            completion_evidence,
+            event_facts,
         )
-        if action == "유치" and change_action == "유치":
-            sentence = f"{_clean_headline(title)}."
-        elif key_number:
-            sentence = f"{subject}의 {key_number} 규모 {change_action} 소식이 보도됐다."
-        else:
-            detail = completion_evidence
-            if title and detail.startswith(title):
-                detail = detail[len(title) :].strip(" ,:·-—")
-            sentence = detail if len(detail) >= 12 else ""
     elif event_type == "ROSTER_PERSONNEL" and subject:
         if action == "선발":
             lineup = _lineup_detail(completion_evidence)
@@ -1588,6 +1660,13 @@ def synthesize_cluster(
         if canonical_event is not None
         else event_type_override or inferred_event_type
     )
+    resolved_event_facts = (
+        canonical_event.facts
+        if canonical_event is not None
+        else industry_change_facts(f"{title} {_fact_lead(headline_item)}")
+        if event_type == "INDUSTRY_CHANGE"
+        else ()
+    )
     market_observations = (
         canonical_event.observations
         if canonical_event is not None and canonical_event.observations
@@ -1679,11 +1758,11 @@ def synthesize_cluster(
             )
     else:
         change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
-    if canonical_event is not None:
-        canonical_values = tuple(_event_fact_value(fact) for fact in canonical_event.facts)
-        if event_type.startswith("RECRUITMENT") or event_type in {"AWARD_CHART", "SPORTS_RESULT"}:
+    if resolved_event_facts:
+        canonical_values = tuple(_event_fact_value(fact) for fact in resolved_event_facts)
+        if event_type.startswith("RECRUITMENT") or event_type in {"AWARD_CHART", "SPORTS_RESULT", "INDUSTRY_CHANGE"}:
             display_numbers = _unique(list(canonical_values) + list(display_numbers))
-        if canonical_event.direction:
+        if canonical_event is not None and canonical_event.direction:
             change = canonical_event.direction
     repeated = _repeated_values(items, _numbers)
     if not repeated:
@@ -1835,7 +1914,7 @@ def synthesize_cluster(
         market_observations=market_observations,
         temporal_state=temporal_state,
         supporting_titles=tuple(effective_title(item) for item in items if effective_title(item)),
-        event_facts=canonical_event.facts if canonical_event is not None else (),
+        event_facts=resolved_event_facts,
         cause=canonical_event.cause if canonical_event is not None else "",
     )
     evidence = _evidence_summary(summary)

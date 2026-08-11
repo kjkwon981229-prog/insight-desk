@@ -37,8 +37,10 @@ class WorkflowContractTests(unittest.TestCase):
         workflow = Path(".github/workflows/insight-desk-pages.yml").read_text(encoding="utf-8")
         self.assertIn("OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}", workflow)
         self.assertIn("KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}", workflow)
+        self.assertIn("ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}", workflow)
         self.assertIn('echo "::add-mask::$OPENDART_API_KEY"', workflow)
         self.assertIn('echo "::add-mask::$KOSIS_API_KEY"', workflow)
+        self.assertIn('echo "::add-mask::$ECOS_API_KEY"', workflow)
         self.assertNotIn("echo $OPENDART_API_KEY", workflow)
         self.assertNotIn("echo $KOSIS_API_KEY", workflow)
 

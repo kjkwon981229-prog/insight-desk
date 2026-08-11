@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 from ..collectors.transport import Transport
 from ..domain.models import AuthorityEvidence, EvidenceType, NewsItem
-from .adapters import AdapterPayload, AdapterResult, KosisAdapter, OpenDartAdapter
+from .adapters import AdapterPayload, AdapterResult, EcosAdapter, KosisAdapter, OpenDartAdapter
 from .config import AuthorityConfig
 from .public import PublicOfficialAdapter
 
@@ -172,11 +172,13 @@ class AuthoritativeRouter:
         transport: Transport | None = None,
         open_dart_key: str | None = None,
         kosis_key: str | None = None,
+        ecos_key: str | None = None,
     ) -> None:
         self.config = config
         self.transport = transport
         self.open_dart_key = (open_dart_key if open_dart_key is not None else os.environ.get("OPENDART_API_KEY", "")).strip()
         self.kosis_key = (kosis_key if kosis_key is not None else os.environ.get("KOSIS_API_KEY", "")).strip()
+        self.ecos_key = (ecos_key if ecos_key is not None else os.environ.get("ECOS_API_KEY", "")).strip()
 
     def augment(self, items: tuple[NewsItem, ...], *, now: datetime) -> AuthorityReport:
         payloads: list[AdapterPayload] = []
@@ -201,6 +203,15 @@ class AuthoritativeRouter:
             )
         else:
             payloads.append(AdapterPayload(AdapterResult("kosis", failure_reason="DISABLED")))
+        if self.config.ecos.enabled:
+            payloads.append(
+                EcosAdapter(
+                    api_key=self.ecos_key,
+                    datasets=self.config.ecos.datasets,
+                    max_requests=self.config.ecos.max_requests,
+                    transport=self.transport,
+                ).fetch(items, today=now.date())
+            )
         for source in self.config.public_sources:
             try:
                 payloads.append(PublicOfficialAdapter(config=source, transport=self.transport).fetch(items))

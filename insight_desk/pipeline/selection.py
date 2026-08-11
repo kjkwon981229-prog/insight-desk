@@ -14,7 +14,12 @@ from .editorial import (
     why_selected,
 )
 from .novelty import classify_novelty
-from .synthesis import earnings_summary_preserves_fact_binding, is_usable_synthesis, synthesize_cluster
+from .synthesis import (
+    earnings_summary_preserves_fact_binding,
+    industry_summary_preserves_fact_binding,
+    is_usable_synthesis,
+    synthesize_cluster,
+)
 from .semantics import (
     CanonicalEvent,
     canonical_publisher,
@@ -195,6 +200,12 @@ def _synthesis_is_editorial_ready(
     ):
         return False
     if event_type == "EARNINGS" and not earnings_summary_preserves_fact_binding(headline, summary):
+        return False
+    if event_type == "INDUSTRY_CHANGE" and canonical_event is not None and not industry_summary_preserves_fact_binding(
+        headline,
+        summary,
+        canonical_event.facts,
+    ):
         return False
     return is_usable_synthesis(
         headline,

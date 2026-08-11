@@ -20,6 +20,7 @@ jobs:
       NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
       OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
       KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
     outputs:
       publish: ${{ steps.state.outputs.publish }}
@@ -39,6 +40,7 @@ jobs:
           echo "::add-mask::$NCP_CLIENT_SECRET"
           echo "::add-mask::$OPENDART_API_KEY"
           echo "::add-mask::$KOSIS_API_KEY"
+          echo "::add-mask::$ECOS_API_KEY"
       - name: Restore previous static site archive
         uses: actions/cache/restore@v4
         with:

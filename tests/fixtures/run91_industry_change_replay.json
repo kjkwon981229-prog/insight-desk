@@ -1,0 +1,14 @@
+{
+  "source_run_id": 31479749309,
+  "purpose": "Generalized replay of Run 91 INDUSTRY_CHANGE fact-loss without a literal headline exception.",
+  "items": [
+    {
+      "id": "run91-industry-comparison",
+      "topic_id": "ai_tech",
+      "query": "인공지능",
+      "title": "AI 보안 투자 91 vs 고도화 16",
+      "lead": "인공지능 보안 분야에서 투자 91과 고도화 16의 비교 수치가 제시됐다.",
+      "domain": "industry-replay.example"
+    }
+  ]
+}

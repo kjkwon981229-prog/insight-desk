@@ -6,9 +6,11 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from insight_desk.authoritative.adapters import KosisAdapter, OpenDartAdapter, _report_is_relevant
+from insight_desk.authoritative.adapters import EcosAdapter, KosisAdapter, OpenDartAdapter, _report_is_relevant
 from insight_desk.authoritative.config import (
     AuthorityConfig,
+    EcosConfig,
+    EcosDataset,
     KosisConfig,
     KosisDataset,
     OpenDartConfig,
@@ -90,6 +92,132 @@ def _kosis_dataset() -> KosisDataset:
 
 
 class AuthoritativeAdapterTests(unittest.TestCase):
+    def test_production_ecos_config_is_typed_and_dataset_scoped(self) -> None:
+        config = load_authority_config(Path("config/authoritative_sources.json"))
+        self.assertTrue(config.ecos.enabled)
+        self.assertEqual(config.ecos.datasets[0].stat_code, "722Y001")
+        self.assertEqual(config.ecos.datasets[0].item_code, "0101000")
+        self.assertEqual(config.ecos.datasets[0].expected_unit, "연%")
+
+    def test_ecos_normalizes_item_period_unit_and_direction(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    {
+                        "StatisticSearch": {
+                            "row": [
+                                {"ITEM_CODE1": "0101000", "ITEM_NAME1": "한국은행 기준금리", "TIME": "202606", "DATA_VALUE": "2.75", "UNIT_NAME": "연%"},
+                                {"ITEM_CODE1": "0101000", "ITEM_NAME1": "한국은행 기준금리", "TIME": "202607", "DATA_VALUE": "3.00", "UNIT_NAME": "연%"},
+                                {"ITEM_CODE1": "0102000", "ITEM_NAME1": "정부대출금금리", "TIME": "202607", "DATA_VALUE": "3.20", "UNIT_NAME": "연%"},
+                            ]
+                        }
+                    }
+                ),
+            )
+        )
+        dataset = EcosDataset(
+            id="base-rate",
+            label="한국은행 기준금리",
+            stat_code="722Y001",
+            item_code="0101000",
+            cycle="M",
+            keywords=("기준금리",),
+            expected_unit="연%",
+        )
+        item = _item("ecos-1", "한국은행 기준금리 7월 결정", "한국은행 기준금리가 7월 발표됐다.", query="다른 검색어")
+        payload = EcosAdapter(
+            api_key="placeholder-ecos-key",
+            datasets=(dataset,),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertTrue(payload.result.success)
+        self.assertEqual(payload.result.events_augmented, 1)
+        evidence = payload.evidence[0][1]
+        self.assertEqual(evidence.period, "202607")
+        self.assertEqual(evidence.unit, "연%")
+        self.assertIn("상승", evidence.description)
+        self.assertEqual(evidence.fact_values[0], "202607=3.00 연%")
+        self.assertIn("722Y001", transport.urls[0])
+        self.assertNotIn("placeholder-ecos-key", json.dumps(payload.result.to_audit(), ensure_ascii=False))
+
+    def test_ecos_query_only_candidate_does_not_trigger_lookup(self) -> None:
+        dataset = EcosDataset(
+            id="base-rate",
+            label="한국은행 기준금리",
+            stat_code="722Y001",
+            item_code="0101000",
+            cycle="M",
+            keywords=("기준금리",),
+            expected_unit="연%",
+        )
+        item = _item("ecos-query-only", "AI 모델 투자 발표", "AI 모델 출시 일정이 공개됐다.", query="기준금리")
+        transport = FakeTransport(())
+        payload = EcosAdapter(
+            api_key="placeholder-ecos-key",
+            datasets=(dataset,),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertEqual(payload.evidence, ())
+        self.assertEqual(payload.result.attempted, 0)
+        self.assertEqual(transport.urls, [])
+
+    def test_ecos_rejects_wrong_period_after_typed_lookup(self) -> None:
+        dataset = EcosDataset(
+            id="base-rate",
+            label="한국은행 기준금리",
+            stat_code="722Y001",
+            item_code="0101000",
+            cycle="M",
+            keywords=("기준금리",),
+            expected_unit="연%",
+        )
+        item = _item(
+            "ecos-wrong-period",
+            "한국은행 기준금리 2025년 7월 결정",
+            "한국은행 기준금리가 2025년 7월 발표됐다.",
+            query="기준금리",
+        )
+        response = _response(
+            {
+                "StatisticSearch": {
+                    "row": [
+                        {"ITEM_CODE1": "0101000", "ITEM_NAME1": "한국은행 기준금리", "TIME": "202607", "DATA_VALUE": "3.00", "UNIT_NAME": "연%"},
+                    ]
+                }
+            }
+        )
+        payload = EcosAdapter(
+            api_key="placeholder-ecos-key",
+            datasets=(dataset,),
+            max_requests=1,
+            transport=FakeTransport((response,)),
+        ).fetch((item,), today=date(2026, 8, 10))
+        self.assertTrue(payload.result.success)
+        self.assertEqual(payload.evidence, ())
+
+    def test_ecos_missing_credential_is_isolated(self) -> None:
+        config = EcosConfig(
+            enabled=True,
+            max_requests=1,
+            datasets=(
+                EcosDataset(
+                    id="base-rate",
+                    label="한국은행 기준금리",
+                    stat_code="722Y001",
+                    item_code="0101000",
+                    cycle="M",
+                    keywords=("기준금리",),
+                    expected_unit="연%",
+                ),
+            ),
+        )
+        self.assertTrue(config.enabled)
+        payload = EcosAdapter(api_key="", datasets=config.datasets, max_requests=1, transport=FakeTransport(())).fetch(())
+        self.assertFalse(payload.result.success)
+        self.assertEqual(payload.result.failure_reason, "MISSING_CREDENTIAL")
+
     def test_production_hanwha_source_is_explicitly_bounded_and_trusted(self) -> None:
         config = load_authority_config(Path("config/authoritative_sources.json"))
         source = next(source for source in config.public_sources if source.id == "hanwha_official")
@@ -137,6 +265,44 @@ class AuthoritativeAdapterTests(unittest.TestCase):
         ).fetch((item,))
         self.assertEqual(payload.result.events_augmented, 1)
         self.assertEqual(payload.evidence[0][1].canonical_url, "https://hybecorp.com/en/newsroom/press/123")
+
+    def test_production_ai_and_kpop_primary_sources_are_bounded(self) -> None:
+        config = load_authority_config(Path("config/authoritative_sources.json"))
+        cases = (
+            ("google_ai_news", "Google Gemini 새 모델 발표", "Google Gemini 새 모델 발표", "ai_tech", "/ai/gemini"),
+            ("sm_news", "SM엔터테인먼트 새 앨범 발매", "SM엔터테인먼트 새 앨범 발매", "kpop", "/news/album"),
+            ("jyp_news", "JYP Entertainment 새 앨범 발매", "JYP Entertainment 새 앨범 발매", "kpop", "/news/single"),
+        )
+        for source_id, title, link_text, topic_id, href in cases:
+            source = next(source for source in config.public_sources if source.id == source_id)
+            page = (
+                f"<html><head><title>{source.publisher} official</title></head><body>"
+                f"<a href=\"{href}\">{link_text}</a></body></html>"
+            ).encode("utf-8")
+            item = _item(f"{source_id}-match", title, f"{title} 관련 공식 발표", query="무관한 검색어", topic_id=topic_id)
+            payload = PublicOfficialAdapter(
+                config=source,
+                transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+            ).fetch((item,))
+            self.assertEqual(payload.result.events_augmented, 1, source_id)
+            self.assertEqual(
+                urlparse(payload.evidence[0][1].canonical_url).netloc,
+                urlparse(source.url).netloc,
+                source_id,
+            )
+
+            unrelated = _item(
+                f"{source_id}-unrelated",
+                title.replace("발표", "발매 예정").replace("새 앨범", "기존 앨범"),
+                "같은 기관의 다른 배경 설명이다.",
+                query="무관한 검색어",
+                topic_id=topic_id,
+            )
+            negative = PublicOfficialAdapter(
+                config=source,
+                transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+            ).fetch((unrelated,))
+            self.assertEqual(negative.evidence, (), source_id)
 
     def test_public_official_page_requires_same_entity_event_and_fact(self) -> None:
         source = PublicSourceConfig(
@@ -470,6 +636,24 @@ class AuthoritativeAdapterTests(unittest.TestCase):
             )
         )
         item = _item("kosis-period", "소비자물가 5월 상승", "5월 물가가 올랐다.", query="물가")
+        payload = KosisAdapter(
+            api_key="placeholder-kosis-key",
+            datasets=(_kosis_dataset(),),
+            max_requests=1,
+            transport=transport,
+        ).fetch((item,))
+        self.assertTrue(payload.result.success)
+        self.assertEqual(payload.evidence, ())
+
+    def test_kosis_does_not_match_same_month_from_a_different_year(self) -> None:
+        transport = FakeTransport(
+            (
+                _response(
+                    [{"PRD_DE": "202606", "DT": "116.5", "UNIT_NM": "2020=100", "LST_CHN_DE": "20260702"}]
+                ),
+            )
+        )
+        item = _item("kosis-year-period", "소비자물가 2025년 6월 상승", "2025년 6월 물가가 올랐다.", query="물가")
         payload = KosisAdapter(
             api_key="placeholder-kosis-key",
             datasets=(_kosis_dataset(),),
