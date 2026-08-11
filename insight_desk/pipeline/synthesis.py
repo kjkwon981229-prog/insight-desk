@@ -25,6 +25,7 @@ from .semantics import (
     MetricObservation,
     recruitment_event_type,
     summary_information_gain,
+    sports_result_facts,
     is_trusted_official_domain,
 )
 from .trend_metrics import effective_trend_state
@@ -191,6 +192,60 @@ _EVENT_DATE_MARKERS = (
     "예정", "상장", "시구", "경기", "열렸다", "성료",
 )
 _COMPLETION_MARKERS = ("대성황", "성황", "성료", "진행했다", "진행됐다", "개최했다", "열렸다", "마쳤다")
+_DISPLAY_BRACKETS = (("(", ")"), ("[", "]"), ("{", "}"))
+_BARE_NUMERIC_END_RE = re.compile(r"(?:^|\s)\d[\d,]*$")
+_DANGLING_END_RE = re.compile(
+    r"(?:^|\s)(?:및|또는|그리고|하지만|때문에|위해|대상|대상은)$"
+)
+_MALFORMED_SUBJECT_BOUNDARY_RE = re.compile(
+    r"대상\s*(?:은|는|이|가)?\s+(?:시행|도입|적용|발표|공개|시작)"
+)
+
+
+def editorial_text_issues(value: str) -> tuple[str, ...]:
+    """Return deterministic user-facing copy defects.
+
+    This is intentionally a small output contract, not a Korean NLP parser.
+    It is shared by synthesis eligibility and live acceptance so a fragment
+    that cannot be displayed cannot pass only because the validator uses a
+    different interpretation of the text.
+    """
+
+    text = normalize_text(value)
+    if not text:
+        return ("EMPTY",)
+    issues: list[str] = []
+    if _TRUNCATION_RE.search(text):
+        issues.append("TRUNCATED")
+    if text.count('"') % 2:
+        issues.append("UNMATCHED_QUOTE")
+    if text.count("'") % 2 and not re.search(r"[A-Za-z0-9]'[A-Za-z0-9]", text):
+        issues.append("UNMATCHED_QUOTE")
+    if text.count("“") != text.count("”") or text.count("‘") != text.count("’"):
+        issues.append("UNMATCHED_QUOTE")
+    for opening, closing in _DISPLAY_BRACKETS:
+        if text.count(opening) != text.count(closing):
+            issues.append("UNMATCHED_BRACKET")
+    sentence_end = text.rstrip(" .!?。！？")
+    if _BARE_NUMERIC_END_RE.search(sentence_end):
+        issues.append("BARE_NUMERIC_END")
+    if _DANGLING_END_RE.search(sentence_end):
+        issues.append("DANGLING_CLAUSE")
+    if _MALFORMED_SUBJECT_BOUNDARY_RE.search(text):
+        issues.append("MALFORMED_SUBJECT_BOUNDARY")
+    return tuple(dict.fromkeys(issues))
+
+
+def _normalise_display_sentence(value: str) -> str:
+    """Remove only unmatched decorative punctuation from display copy."""
+
+    text = normalize_text(value)
+    issues = editorial_text_issues(text)
+    if "UNMATCHED_QUOTE" in issues:
+        text = re.sub(r"[\"'“”‘’]", "", text)
+    return text
+
+
 def _earnings_fact_parts(text: str) -> tuple[str, str, str]:
     """Keep synthesis on the same fact-bound earnings parser as the event model."""
 
@@ -231,7 +286,9 @@ def is_usable_synthesis(
         return False
     if not summary_information_gain(clean_headline, clean_summary):
         return False
-    if _TRUNCATION_RE.search(clean_headline + clean_summary):
+    if _TRUNCATION_RE.search(clean_headline):
+        return False
+    if editorial_text_issues(clean_summary):
         return False
     if clean_summary.endswith("일정이 공개됐다.") and not _DATE_RE.search(clean_summary):
         return False
@@ -844,6 +901,59 @@ def _strip_news_byline(value: str) -> str:
     return re.sub(r"([.!?])(?=[A-Za-z가-힣])", r"\1 ", cleaned)
 
 
+_POLICY_AUDIENCE_TITLE_RE = re.compile(
+    r"^(?P<owner>[^,，]+)[,，]\s*(?P<object>.+?)\s+"
+    r"(?P<audience>(?:(?:전|전체|모든)\s*)?"
+    r"(?:직원|시민|주민|학생|고객|사용자|회원|관객|교사|장병|국민|기업|가구|환자)\s*대상)\s+"
+    r"(?P<verb>시행|도입|적용|배포|운영)$"
+)
+
+
+def _structured_policy_sentence(title: str, evidence: str) -> str:
+    """Render an actor/object/audience title without crossing subject bounds."""
+
+    clean_title = _clean_headline(title)
+    match = _POLICY_AUDIENCE_TITLE_RE.match(clean_title)
+    if not match:
+        return ""
+    owner = match.group("owner").strip()
+    object_text = match.group("object").strip()
+    audience = match.group("audience").strip()
+    verb = match.group("verb")
+    audience_noun = re.sub(r"\s*대상$", "", audience).strip()
+    if not owner or not object_text or not audience_noun:
+        return ""
+    target_clause = f"{audience_noun}{_object_particle(audience_noun)} 대상으로"
+    evidence_text = normalize_text(evidence)
+    if "절차" in evidence_text and any(marker in evidence_text for marker in ("시작", "착수", "들어")):
+        status = f"{verb} 절차에 들어갔다."
+    else:
+        status = f"{verb}한다."
+    return (
+        f"{owner}{_subject_particle(owner)} {object_text}{_object_particle(object_text)} "
+        f"{target_clause} {status}"
+    )
+
+
+def _sports_result_subject(subject: str, facts: tuple[EventFact, ...], title: str = "") -> str:
+    """Remove leading performance facts from a sports subject without guessing."""
+
+    clean = _normalise_display_sentence(subject)
+    for fact in facts:
+        value = _event_fact_value(fact)
+        if value:
+            clean = re.sub(rf"^{re.escape(value)}\s*", "", clean)
+    if clean in {"구단", "팀", "선수", "구단 관계자"} and title:
+        title_subject = _clean_headline(title).split(",", 1)[0].strip()
+        for fact in facts:
+            value = _event_fact_value(fact)
+            if value:
+                title_subject = re.sub(rf"^{re.escape(value)}\s*", "", title_subject)
+        if title_subject and title_subject not in {"구단", "팀", "선수"}:
+            clean = title_subject
+    return clean.strip(" ,·-—") or _normalise_display_sentence(subject)
+
+
 def _number_with_ro(value: str) -> str:
     """Attach the Korean instrumental marker without producing ``원로``."""
 
@@ -1137,6 +1247,12 @@ def _summary(
         if normalized_title and detail.startswith(normalized_title):
             detail = detail[len(normalized_title) :].strip(" ,:·-—")
         detail = _strip_news_byline(detail)
+        structured_sentence = _structured_policy_sentence(title, completion_evidence)
+        if structured_sentence and "MALFORMED_SUBJECT_BOUNDARY" in editorial_text_issues(completion_evidence):
+            sentence = structured_sentence
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
         if (
             len(detail) >= 20
             and not _TRUNCATION_RE.search(detail)
@@ -1148,6 +1264,11 @@ def _summary(
                 sentence += f" {uncertainty}"
             return sentence.strip()
         policy_action = action if action in {"발표", "공개", "시행", "고시", "확정", "요구", "촉구", "줄여라"} else "정책 변화"
+        if structured_sentence:
+            sentence = structured_sentence
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
         if policy_action in {"요구", "촉구", "줄여라"}:
             clean_title = _clean_headline(title)
             sentence = f"{clean_title}는 정책 요구로 제시됐다."
@@ -1321,15 +1442,36 @@ def _summary(
         detail = normalize_text(completion_evidence)
         if detail.startswith(normalize_text(title)):
             detail = detail[len(normalize_text(title)) :].strip(" ,:·-—")
-        if detail and not _TRUNCATION_RE.search(detail) and len(detail) >= 12:
+        if detail and not _TRUNCATION_RE.search(detail) and not editorial_text_issues(detail) and len(detail) >= 12:
             sentence = detail.rstrip(" .!?") + "."
         else:
-            score_match = re.search(r"\d+\s*[-대]\s*\d+", title)
-            if score_match:
-                result_word = "승리" if "승리" in title else "패배" if "패배" in title else "경기 결과"
-                sentence = f"{subject}의 {result_word} 스코어는 {re.sub(r'\s+', '', score_match.group(0))}로 기록됐다."
+            result_facts = event_facts or sports_result_facts(f"{title} {completion_evidence}")
+            result_map = _event_fact_map(result_facts)
+            result_subject = _sports_result_subject(subject, result_facts, title)
+            performance = [
+                value
+                for value in (result_map.get("HOME_RUN_COUNT", ""), result_map.get("RBI_COUNT", ""))
+                if value
+            ]
+            if result_map.get("AWARD") and performance:
+                period = result_map.get("PERIOD", "")
+                period_label = f"{period} " if period else ""
+                performance_text = (
+                    f"{performance[0]}과 {performance[1]}"
+                    if len(performance) == 2
+                    else performance[0]
+                )
+                sentence = (
+                    f"{result_subject}{_subject_particle(result_subject)} {period_label}월간 MVP로 선정됐다. "
+                    f"{performance_text}을 기록했다."
+                )
             else:
-                sentence = ""
+                score_match = re.search(r"\d+\s*[-대]\s*\d+", title)
+                if score_match:
+                    result_word = "승리" if "승리" in title else "패배" if "패배" in title else "경기 결과"
+                    sentence = f"{result_subject}의 {result_word} 스코어는 {re.sub(r'\s+', '', score_match.group(0))}로 기록됐다."
+                else:
+                    sentence = ""
     elif event_type == "SPORTS_INTERRUPTION" and subject:
         evidence = f"{title} {completion_evidence}".casefold()
         league = "프로야구" if "프로야구" in evidence or "프로야구" in subject.casefold() else ("KBO" if "kbo" in evidence else subject)
@@ -1371,7 +1513,7 @@ def _summary(
             sentence = "단일 검색 결과만 확인되어 세부 내용은 추가 확인이 필요하다."
     if uncertainty:
         sentence += f" {uncertainty}"
-    return sentence.replace("...", "").replace("…", "").strip()
+    return _normalise_display_sentence(sentence.replace("...", "").replace("…", "").strip())
 
 
 def clean_headline(value: str) -> str:

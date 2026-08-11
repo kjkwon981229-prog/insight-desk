@@ -60,6 +60,17 @@
       "max_requests": 1
     },
     {
+      "id": "hanwha_official",
+      "url": "https://www.hanwhaeagles.co.kr/index.do",
+      "topic_ids": ["kbo_hanwha"],
+      "source_type": "OFFICIAL_SPORTS",
+      "publisher": "한화 이글스",
+      "trusted_domains": ["hanwhaeagles.co.kr"],
+      "entity_aliases": ["한화 이글스", "한화이글스", "한화"],
+      "event_markers": ["경기", "경기일정", "선발", "부상", "트레이드", "등록", "말소", "공지"],
+      "max_requests": 1
+    },
+    {
       "id": "openai_news",
       "url": "https://openai.com/news/",
       "topic_ids": ["ai_tech"],
@@ -68,6 +79,17 @@
       "trusted_domains": ["openai.com"],
       "entity_aliases": ["OpenAI", "ChatGPT", "GPT"],
       "event_markers": ["launch", "launched", "release", "released", "announcement", "announces", "introducing", "model", "advance", "partner", "partnership", "responsible AI", "발표", "공개", "출시", "모델"],
+      "max_requests": 1
+    },
+    {
+      "id": "hybe_press",
+      "url": "https://hybecorp.com/en/newsroom/press/",
+      "topic_ids": ["kpop"],
+      "source_type": "OFFICIAL_PRIMARY",
+      "publisher": "HYBE",
+      "trusted_domains": ["hybecorp.com"],
+      "entity_aliases": ["HYBE", "하이브"],
+      "event_markers": ["launch", "launched", "release", "released", "announcement", "announces", "발표", "공개", "출시", "앨범", "공연"],
       "max_requests": 1
     }
   ]

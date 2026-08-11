@@ -8,7 +8,12 @@ from pathlib import Path
 from insight_desk.domain.models import EvidenceType, NewsItem, TrendMetric
 from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.semantics import metric_summary_preserves_entity_binding
-from insight_desk.pipeline.synthesis import earnings_summary_preserves_fact_binding, synthesize_cluster
+from insight_desk.pipeline.synthesis import (
+    earnings_summary_preserves_fact_binding,
+    editorial_text_issues,
+    is_usable_synthesis,
+    synthesize_cluster,
+)
 
 
 def _item(
@@ -855,6 +860,65 @@ class SynthesisTests(unittest.TestCase):
         cluster = StoryCluster("topic", (_item("N008", "검색어 발표", "새 발표가 나왔다.", "a.example"),))
         _, _, _, _, facts, _ = synthesize_cluster(cluster, topic_name="테스트", trend_metrics=(metric,))
         self.assertEqual(facts.trend_state, "상승")
+
+    def test_fact_rich_sports_summary_does_not_expose_a_clipped_numeric_tail(self) -> None:
+        item = _item(
+            "sports-output-quality",
+            "8홈런 21타점 서울 타자, KBO리그 6월 MVP 선정",
+            "구단은 선수가 2026년 6월 월간 MVP로 선정됐다고 밝혔다. "
+            "선수는 기자단 투표 총 30표 중 20표를 받아 총점 39.",
+            "sports.example",
+        )
+        item = replace(item, metadata_title=item.title, metadata_description=item.summary)
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kbo", (item,)),
+            topic_name="KBO·한화 이글스",
+            trend_metrics=(),
+            event_type_override="SPORTS_RESULT",
+        )
+        self.assertIn("8홈런", summary)
+        self.assertIn("21타점", summary)
+        self.assertNotIn("총점 39.", summary)
+        self.assertEqual(editorial_text_issues(summary), ())
+        self.assertTrue(is_usable_synthesis(headline, summary, source_count=1))
+        self.assertEqual(facts.event_type, "SPORTS_RESULT")
+
+    def test_generalized_quote_and_audience_boundaries_are_cleaned(self) -> None:
+        award = _item(
+            "award-output-quality",
+            "음악 ‘신예 그룹, 차트 1위",
+            "‘신예 그룹이 음악 차트 1위에 올랐다.",
+            "music.example",
+        )
+        _, award_summary, _, _, award_facts, _ = synthesize_cluster(
+            StoryCluster("kpop", (award,)),
+            topic_name="K-POP",
+            trend_metrics=(),
+            event_type_override="AWARD_CHART",
+        )
+        self.assertNotIn("‘", award_summary)
+        self.assertNotIn("’", award_summary)
+        self.assertEqual(editorial_text_issues(award_summary), ())
+        self.assertNotIn("‘", award_facts.subject)
+
+        policy = _item(
+            "policy-output-quality",
+            "시청, 자체 개발 업무시스템 ALPHA 전 직원 대상 시행",
+            "시청, 자체 개발 업무시스템 ALPHA 전 직원 대상은 시행 절차가 시작됐다.",
+            "policy.example",
+        )
+        policy = replace(policy, metadata_title=policy.title, metadata_description=policy.summary)
+        _, policy_summary, _, _, policy_facts, _ = synthesize_cluster(
+            StoryCluster("ai_tech", (policy,)),
+            topic_name="AI·테크",
+            trend_metrics=(),
+            event_type_override="REGULATION",
+        )
+        self.assertIn("전 직원을 대상으로", policy_summary)
+        self.assertIn("시행 절차", policy_summary)
+        self.assertNotIn("대상은 시행", policy_summary)
+        self.assertEqual(policy_facts.subject, "시청")
+        self.assertEqual(editorial_text_issues(policy_summary), ())
 
 
 if __name__ == "__main__":

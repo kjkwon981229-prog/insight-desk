@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import date, datetime
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from insight_desk.authoritative.adapters import KosisAdapter, OpenDartAdapter, _report_is_relevant
@@ -13,6 +14,7 @@ from insight_desk.authoritative.config import (
     OpenDartConfig,
     OpenDartEntity,
     PublicSourceConfig,
+    load_authority_config,
 )
 from insight_desk.authoritative.public import PublicOfficialAdapter
 from insight_desk.authoritative.router import AuthoritativeRouter
@@ -88,6 +90,54 @@ def _kosis_dataset() -> KosisDataset:
 
 
 class AuthoritativeAdapterTests(unittest.TestCase):
+    def test_production_hanwha_source_is_explicitly_bounded_and_trusted(self) -> None:
+        config = load_authority_config(Path("config/authoritative_sources.json"))
+        source = next(source for source in config.public_sources if source.id == "hanwha_official")
+        self.assertEqual(source.url, "https://www.hanwhaeagles.co.kr/index.do")
+        self.assertEqual(source.topic_ids, ("kbo_hanwha",))
+        self.assertEqual(source.trusted_domains, ("hanwhaeagles.co.kr",))
+        self.assertLessEqual(source.max_requests, 1)
+        page = """
+        <html><head><title>한화 이글스 공식</title></head><body>
+          <a href="/game/20260810">한화 이글스 8월 10일 경기 결과 5-3 승리</a>
+        </body></html>
+        """.encode("utf-8")
+        item = _item(
+            "hanwha-match",
+            "한화 이글스 8월 10일 경기 결과 5-3 승리",
+            "한화 이글스가 8월 10일 경기에서 5-3으로 승리했다.",
+            query="한화 이글스",
+            topic_id="kbo_hanwha",
+        )
+        payload = PublicOfficialAdapter(
+            config=source,
+            transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+        ).fetch((item,))
+        self.assertEqual(payload.result.events_augmented, 1)
+        self.assertEqual(payload.evidence[0][1].canonical_url, "https://www.hanwhaeagles.co.kr/game/20260810")
+
+    def test_production_hybe_source_uses_same_event_matching(self) -> None:
+        config = load_authority_config(Path("config/authoritative_sources.json"))
+        source = next(source for source in config.public_sources if source.id == "hybe_press")
+        page = """
+        <html><head><title>HYBE Press</title></head><body>
+          <a href="/en/newsroom/press/123">HYBE announces a new album release</a>
+        </body></html>
+        """.encode("utf-8")
+        item = _item(
+            "hybe-match",
+            "HYBE announces a new album release",
+            "HYBE announced a new album release.",
+            query="K-POP",
+            topic_id="kpop",
+        )
+        payload = PublicOfficialAdapter(
+            config=source,
+            transport=FakeTransport((HttpResponse(200, page, {"Content-Type": "text/html"}),)),
+        ).fetch((item,))
+        self.assertEqual(payload.result.events_augmented, 1)
+        self.assertEqual(payload.evidence[0][1].canonical_url, "https://hybecorp.com/en/newsroom/press/123")
+
     def test_public_official_page_requires_same_entity_event_and_fact(self) -> None:
         source = PublicSourceConfig(
             id="kbo-public",

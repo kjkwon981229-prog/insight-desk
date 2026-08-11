@@ -101,6 +101,11 @@ _ACTION_COMPOUND_SUFFIXES: dict[str, tuple[str, ...]] = {
 }
 _ACTION_SUFFIX_PATTERN = "(?:" + "|".join(map(re.escape, _ACTION_SUFFIXES)) + ")?"
 _WORD_CHAR = r"가-힣A-Za-z0-9"
+_AUDIENCE_TARGET_RE = re.compile(
+    r"\s+(?:(?:전|전체|모든)\s*)?"
+    r"(?:직원|시민|주민|학생|고객|사용자|회원|관객|교사|장병|국민|기업|가구|환자)"
+    r"\s*대상(?:으로|은|는|이|가|을|를)?$"
+)
 
 _DATE_RE = re.compile(
     r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)"
@@ -225,7 +230,9 @@ TRUSTED_OFFICIAL_DOMAINS = frozenset(
         "mpm.go.kr",
         "gosi.kr",
         "koreabaseball.com",
+        "hanwhaeagles.co.kr",
         "openai.com",
+        "hybecorp.com",
     }
 )
 
@@ -521,7 +528,27 @@ def _lead_subject(lead: str) -> str:
     if not match:
         return ""
     candidate = match.group(1).strip(" ,·-—")
+    candidate = re.sub(r"[\"'“”‘’]", "", candidate)
     return candidate if candidate and not candidate[0].isdigit() else ""
+
+
+def _clean_event_subject(event_type: str, value: str) -> str:
+    """Keep the actor separate from an audience/object tail in a title."""
+
+    text = re.sub(r"[\"'“”‘’]", "", normalize_text(value)).strip(" ,·-—")
+    had_audience_tail = bool(_AUDIENCE_TARGET_RE.search(text))
+    text = _AUDIENCE_TARGET_RE.sub("", text).strip(" ,·-—")
+    if had_audience_tail and event_type in {"POLICY", "REGULATION"} and re.search(r"[,，]", text):
+        text = re.split(r"[,，]", text, maxsplit=1)[0].strip(" ,·-—")
+    return text[:64]
+
+
+def subject_boundary_is_clean(event_type: str, subject: str) -> bool:
+    """Reject an audience tail that was accidentally stored as the actor."""
+
+    if event_type not in {"POLICY", "REGULATION"}:
+        return True
+    return not bool(_AUDIENCE_TARGET_RE.search(normalize_text(subject)))
 
 
 def _event_subject(
@@ -546,7 +573,7 @@ def _event_subject(
         # Performance headlines often put the numbers before the player.
         # A metadata lead with an explicit Korean subject particle is safer
         # than rebuilding an entity from that headline token order.
-        return _lead_subject(lead)
+        return _clean_event_subject(event_type, _lead_subject(lead))
     if event_type.startswith("RECRUITMENT"):
         clean = _RECRUITMENT_RATIO_RE.sub("", clean)
         clean = re.sub(
@@ -555,7 +582,7 @@ def _event_subject(
             clean,
         )
         clean = re.sub(r"\s+경쟁률(?:은|이)?\s*$", "", clean)
-        return clean.strip(" ,·-—")[:64]
+        return _clean_event_subject(event_type, clean)
     if event_type == "AWARD_CHART":
         prefix = re.split(r"[,，]|\s+(?:국내외\s+)?(?:음악\s+|음원\s+)?차트\b", clean, maxsplit=1)[0]
         prefix = re.sub(r"^(?:\d{1,2}월도\s+)?(?:No\.?\s*\d+\s+)?", "", prefix, flags=re.IGNORECASE)
@@ -564,9 +591,9 @@ def _event_subject(
             for token in re.findall(r"[A-Za-z0-9가-힣·&'’-]+", prefix)
             if not token.isdigit() and token.casefold() not in {"스타트렌드", "아이돌", "가수", "그룹"}
         ]
-        return " ".join(tokens[-3:]).strip()[:48]
+        return _clean_event_subject(event_type, " ".join(tokens[-3:]))
     if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):
-        return re.split(r"[,，]", clean, maxsplit=1)[0].strip(" ,·-—")[:48]
+        return _clean_event_subject(event_type, re.split(r"[,，]", clean, maxsplit=1)[0])
     # For other families keep only the bounded noun phrase before a clear
     # event predicate.  If no safe boundary exists, leave the title-derived
     # subject to the existing fallback rather than inventing an entity.
@@ -580,7 +607,7 @@ def _event_subject(
         None,
     )
     if marker and marker.start() >= 2:
-        return clean[: marker.start()].strip(" ,·-—")[:48]
+        return _clean_event_subject(event_type, clean[: marker.start()])
     return ""
 
 

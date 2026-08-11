@@ -270,6 +270,64 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(any("truncated source copy" in error for error in errors))
         self.assertTrue(any("duplicate event signatures" in error for error in errors))
 
+    def test_live_acceptance_rejects_generalized_output_quality_failures(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-output-quality-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        stories = [
+            {
+                "rank": 1,
+                "headline": "신예 그룹 차트 1위",
+                "summary": "‘신예 그룹이 음악 차트 1위에 올랐다.",
+                "event_type": "AWARD_CHART",
+                "source_count": 2,
+                "publisher_diversity": 2,
+                "concrete_fact_count": 2,
+                "topic_id": "kpop",
+                "why_selected": ["CONCRETE_EVENT"],
+                "event_signature": "AWARD_CHART|신예그룹|1위",
+                "final_score": 70.0,
+            },
+            {
+                "rank": 2,
+                "headline": "기관 8월 평가 결과",
+                "summary": "기관의 총점 39.",
+                "event_type": "STATISTIC",
+                "source_count": 2,
+                "publisher_diversity": 2,
+                "concrete_fact_count": 2,
+                "topic_id": "economy",
+                "why_selected": ["CONCRETE_EVENT"],
+                "event_signature": "STATISTIC|기관|8월",
+                "final_score": 70.0,
+            },
+            {
+                "rank": 3,
+                "headline": "시청, 업무시스템 ALPHA 전 직원 대상 시행",
+                "summary": "시청, 업무시스템 ALPHA 전 직원 대상은 시행 절차가 시작됐다.",
+                "event_type": "REGULATION",
+                "source_count": 2,
+                "publisher_diversity": 2,
+                "concrete_fact_count": 2,
+                "topic_id": "ai_tech",
+                "why_selected": ["CONCRETE_EVENT"],
+                "event_signature": "REGULATION|시청|alpha|시행",
+                "canonical_event_id": "REGULATION|시청|alpha",
+                "final_score": 70.0,
+                "facts": {
+                    "event_type": "REGULATION",
+                    "subject": "시청, 업무시스템 ALPHA 전 직원 대상",
+                    "event_signature": "REGULATION|시청|alpha|시행",
+                    "canonical_event_id": "REGULATION|시청|alpha",
+                },
+            },
+        ]
+        path = root / "live-acceptance.json"
+        path.write_text(json.dumps({"selected_stories": stories}, ensure_ascii=False), encoding="utf-8")
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("unmatched display punctuation" in error for error in errors))
+        self.assertTrue(any("incomplete or malformed summary copy" in error for error in errors))
+        self.assertTrue(any("audience phrase inside its subject" in error for error in errors))
+
     def test_live_acceptance_rejects_temporal_role_loss_and_lifecycle_duplicates(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-temporal-qa-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

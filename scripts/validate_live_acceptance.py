@@ -14,8 +14,10 @@ from insight_desk.pipeline.semantics import (
     metric_summary_preserves_entity_binding,
     metric_observations,
     same_lifecycle_signatures,
+    subject_boundary_is_clean,
     summary_information_gain,
 )
+from insight_desk.pipeline.synthesis import editorial_text_issues
 
 _MARKET_ACTIONS = {
     "강보합세",
@@ -109,6 +111,9 @@ def validate(path: Path) -> list[str]:
         "semantic_error_count": 0,
         "publisher_diversity_error_count": 0,
         "temporal_role_error_count": 0,
+        "sentence_completeness_error_count": 0,
+        "quote_balance_error_count": 0,
+        "subject_boundary_error_count": 0,
     }
     signatures: list[str] = []
     for index, story in enumerate(stories, 1):
@@ -117,6 +122,23 @@ def validate(path: Path) -> list[str]:
             continue
         headline = str(story.get("headline", ""))
         summary = str(story.get("summary", ""))
+        headline_issues = editorial_text_issues(headline)
+        summary_issues = editorial_text_issues(summary)
+        quote_issues = set(headline_issues + summary_issues).intersection(
+            {"UNMATCHED_QUOTE", "UNMATCHED_BRACKET"}
+        )
+        if quote_issues:
+            metrics["quote_balance_error_count"] += len(quote_issues)
+            errors.append(f"story {index} has unmatched display punctuation")
+        completeness_issues = set(summary_issues).intersection(
+            {"BARE_NUMERIC_END", "DANGLING_CLAUSE", "MALFORMED_SUBJECT_BOUNDARY"}
+        )
+        if completeness_issues:
+            metrics["sentence_completeness_error_count"] += len(completeness_issues)
+            errors.append(
+                f"story {index} has incomplete or malformed summary copy: "
+                f"{','.join(sorted(completeness_issues))}"
+            )
         if story.get("rank") not in (None, index):
             errors.append(f"story {index} has non-sequential editorial rank")
         if not headline or any(marker in headline for marker in generic_headline_markers):
@@ -173,6 +195,10 @@ def validate(path: Path) -> list[str]:
             if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
                 errors.append(f"story {index} has unresolved authority/event conflict: {conflict_state}")
             action = str(facts.get("action", "")).strip()
+            subject = str(facts.get("subject", "")).strip()
+            if not subject_boundary_is_clean(event_type, subject):
+                metrics["subject_boundary_error_count"] += 1
+                errors.append(f"story {index} stores an audience phrase inside its subject")
             if action in ACTION_TERMS and not contains_action(f"{headline} {summary}", action):
                 errors.append(f"story {index} has an action unsupported at a lexical boundary")
             if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"} and action and action not in _MARKET_ACTIONS:
@@ -192,7 +218,6 @@ def validate(path: Path) -> list[str]:
                     for value in key_numbers:
                         if any(char.isdigit() for char in value) and value not in summary:
                             errors.append(f"story {index} drops a bound metric value from its summary")
-                    subject = str(facts.get("subject", "")).strip()
                     if observations and subject and subject != observations[0].instrument:
                         errors.append(f"story {index} metric subject is not the first bound instrument")
                     for change in facts.get("key_changes", ()) or ():
