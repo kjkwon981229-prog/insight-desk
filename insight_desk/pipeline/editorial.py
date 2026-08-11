@@ -10,15 +10,15 @@ from .normalization import normalize_text
 from .semantics import (
     ACTION_TERMS,
     CanonicalEvent,
-    canonical_event_date,
+    build_canonical_event,
     canonical_event_signature,
+    canonical_publisher,
     compact,
     contains_action,
     contains_intent_term,
-    canonical_publisher,
-    event_action_signal,
-    event_observations,
     earnings_observations,
+    event_action_signal,
+    is_low_value_popularity_poll,
     is_trusted_official_domain,
     market_direction_class,
     metric_observations,
@@ -69,6 +69,7 @@ _GENERIC_TERMS = {
 }
 _LOW_VALUE_EVENT_TYPES = {
     "LOW_VALUE_APPEARANCE",
+    "LOW_VALUE_POLL",
     "ROUTINE_SCHEDULE",
     "ROUTINE_MARKET_QUOTE",
 }
@@ -577,6 +578,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         event_type, significance, matched_terms = recruitment_type, 70.0, [recruitment_type]
     elif heat_interruption:
         event_type, significance, matched_terms = "SPORTS_INTERRUPTION", 70.0, ["폭염"]
+    elif is_low_value_popularity_poll(f"{title_text} {lead_text}"):
+        event_type, significance, matched_terms = "LOW_VALUE_POLL", 18.0, ["LOW_VALUE_POLL"]
     elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
     elif _is_completed_entertainment_event(title_text):
@@ -633,8 +636,18 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     title_subject = any(_contains_intent_term(title_text, term) for term in topic_terms)
     action_term = event_action_signal(event_type, title_text, lead_text)
     action = bool(action_term)
-    concrete = int(bool(title_subject)) + int(action) + int(bool(numbers or dates))
-    _date_value, date_conflict = canonical_event_date(title_text, lead_text)
+    canonical_event = build_canonical_event(
+        event_type,
+        title_text,
+        lead=lead_text,
+        action=action_term,
+    )
+    concrete = (
+        int(bool(title_subject or canonical_event.subject))
+        + int(action)
+        + int(bool(numbers or dates or canonical_event.facts or canonical_event.observations))
+    )
+    date_conflict = canonical_event.conflict_state == "DATE_CONFLICT"
     if event_type == "MERCHANDISE":
         significance = min(significance, 18.0)
     if event_type in _LOW_VALUE_EVENT_TYPES:
@@ -662,6 +675,11 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
             reasons = (*reasons, "WEAK_METRIC_SIGNAL")
         if metric_direction_conflict:
             reasons = (*reasons, "METRIC_DIRECTION_CONFLICT")
+        if event_type == "EARNINGS" and not canonical_event.observations:
+            reasons = (*reasons, "WEAK_FACT_STRUCTURE")
+    fact_contract_valid = not (
+        event_type == "EARNINGS" and not canonical_event.observations
+    )
     passed = (
         event_type not in {"OTHER", *_LOW_VALUE_EVENT_TYPES}
         and significance >= 35.0
@@ -671,27 +689,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and not (event_type == "ROSTER_PERSONNEL" and not sports_context)
         and metric_signal
         and not metric_direction_conflict
-    )
-    observations = event_observations(event_type, title_text)
-    canonical_subject = observations[0].instrument if observations else title_text.split(" · ", 1)[0][:48]
-    canonical_event = CanonicalEvent(
-        event_type=event_type,
-        subject=canonical_subject,
-        action=action_term,
-        date=_date_value,
-        period=(observations[0].period if observations else ""),
-        metric=(observations[0].metric if observations else ""),
-        value=(observations[0].value if observations else ""),
-        direction=(observations[0].direction if observations else ""),
-        observations=observations,
-        event_signature=canonical_event_signature(
-            event_type,
-            title_text,
-            lead=lead_text,
-            subject=canonical_subject,
-            action=action_term,
-        ),
-        conflict_state="DATE_CONFLICT" if date_conflict else "NO_CONFLICT",
+        and fact_contract_valid
     )
     return EventAssessment(
         event_type,
@@ -1111,6 +1109,7 @@ def assess_cluster(
     if incidental_ai:
         reasons.append("QUERY_OR_ACRONYM_ONLY_TOPIC_MATCH")
     if evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
+        reasons.append("AUTHORITY_CONFLICT")
         reasons.append(evidence.conflict_state)
     if novelty == "NEW":
         novelty_value = 100.0

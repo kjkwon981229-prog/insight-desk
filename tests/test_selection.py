@@ -324,11 +324,9 @@ class SelectionTests(unittest.TestCase):
         result = select_clusters((StoryCluster("economy", (item,)),), topics, limit=10)
         self.assertEqual(result.selected, ())
         record = result.audit[0]
-        self.assertIn("SYNTHESIS_FACT_LOSS", record["selection_reasons"])
-        self.assertIn(
-            "SYNTHESIS_NOT_EDITORIAL_READY",
-            result.audit[0]["selection_reasons"],
-        )
+        self.assertIn("WEAK_FACT_STRUCTURE", record["selection_reasons"])
+        self.assertIn("EVENT_ACTION_CONTRACT_FAILED", record["selection_reasons"])
+        self.assertNotIn("SYNTHESIS_FACT_LOSS", record["selection_reasons"])
 
     def test_fact_bearing_recruitment_candidate_survives_selection(self) -> None:
         topics, _ = load_topics(Path("config/topics.json"))

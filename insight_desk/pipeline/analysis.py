@@ -186,6 +186,7 @@ def build_briefing(
             event_type_override=assessment.event.event_type,
             event_signature_override=assessment.event_signature,
             conflict_state_override=assessment.evidence.conflict_state,
+            canonical_event_override=assessment.event.canonical_event,
         )
         stories.append(
             Story(

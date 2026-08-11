@@ -1,0 +1,62 @@
+{
+  "source_run_id": 31457564674,
+  "purpose": "Generalized replay of Run 89 semantic failure classes without title blacklists.",
+  "items": [
+    {
+      "id": "heat-interruption",
+      "topic_id": "kbo_hanwha",
+      "query": "프로야구",
+      "title": "폭염 휴식기를 마친 프로야구 경기 재개",
+      "lead": "폭염으로 중단됐던 프로야구가 휴식기를 마치고 경기를 재개했다.",
+      "domain": "sports-a.example"
+    },
+    {
+      "id": "heat-resumption",
+      "topic_id": "kbo_hanwha",
+      "query": "프로야구",
+      "title": "체감 34도 더위 계속, 프로야구 오늘 재개",
+      "lead": "프로야구가 폭염 영향으로 멈춘 뒤 오늘 다시 시작한다.",
+      "domain": "sports-b.example"
+    },
+    {
+      "id": "sports-result-record",
+      "topic_id": "kbo_hanwha",
+      "query": "KBO",
+      "title": "월간 9홈런 26타점 외국인 타자 KBO 7월 MVP 선정",
+      "lead": "외국인 타자가 7월 9홈런과 26타점을 기록해 KBO 월간 MVP로 선정됐다.",
+      "domain": "sports-result.example"
+    },
+    {
+      "id": "recruitment-facts",
+      "topic_id": "psat_recruitment",
+      "query": "7급 공채",
+      "title": "부산시 지방공무원 7급 공채 경쟁률 12.4대1",
+      "lead": "30명을 선발하는 시험에 372명이 지원해 경쟁률 12.4대1을 기록했다.",
+      "domain": "recruitment.example"
+    },
+    {
+      "id": "fan-poll",
+      "topic_id": "kpop",
+      "query": "K-POP",
+      "title": "신인 걸그룹 K-POP 인기투표 1위",
+      "lead": "팬 인기투표에서 320,000표를 받아 1위를 기록했다.",
+      "domain": "poll.example"
+    },
+    {
+      "id": "ambiguous-percent",
+      "topic_id": "ai_tech",
+      "query": "AI",
+      "title": "클라우드 기업 GPU 성과로 매출 85% 실적",
+      "lead": "GPU 운영 성과를 소개한 실적 관련 보도다.",
+      "domain": "earnings.example"
+    },
+    {
+      "id": "product-facts",
+      "topic_id": "ai_tech",
+      "query": "AI",
+      "title": "통신사, 생성형 AI 결합 신규 요금제 4종 출시",
+      "lead": "통신사가 생성형 AI와 데이터 400GB를 결합한 신규 요금제 4종을 출시했다.",
+      "domain": "product.example"
+    }
+  ]
+}

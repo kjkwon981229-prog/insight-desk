@@ -70,6 +70,9 @@ _ACTION_SUFFIXES = (
     "하고",
     "하는",
     "하여",
+    "해서",
+    "해",
+    "한",
     "된",
     "될",
     "돼",
@@ -240,7 +243,19 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "PRODUCT_RELEASE": ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "상장", "예약판매", "판매 개시"),
     "INDUSTRY_CHANGE": ("투자", "유치", "인수", "전략", "데이터센터", "서비스 전환", "할당", "계약", "생산"),
     "SPORTS_INTERRUPTION": ("폭염", "중단", "멈춘", "휴식", "재개", "취소"),
-    "SPORTS_RESULT": ("경기 결과", "승리", "패배", "우승", "승률", "연승", "연패", "홈런", "순위", "기록"),
+    "SPORTS_RESULT": (
+        "경기 결과",
+        "승리",
+        "패배",
+        "우승",
+        "선정",
+        "승률",
+        "연승",
+        "연패",
+        "홈런",
+        "순위",
+        "기록",
+    ),
     "ROSTER_PERSONNEL": ("선발", "엔트리", "부상", "트레이드", "등록", "말소"),
     "RECRUITMENT_COMPETITION": ("경쟁률", "지원", "지원자", "선발"),
     "RECRUITMENT_RESULT": ("합격", "선발", "발표"),
@@ -338,6 +353,22 @@ class MetricObservation:
 
 
 @dataclass(frozen=True)
+class EventFact:
+    """A typed, source-backed fact that belongs to one canonical event.
+
+    ``role`` is deliberately small and event-family specific (for example
+    ``APPLICANT_COUNT`` or ``CHART_RANK``).  Downstream stages consume these
+    facts instead of splitting numbers out of prose and trying to bind them
+    again.
+    """
+
+    role: str
+    value: str
+    unit: str = ""
+    subject: str = ""
+
+
+@dataclass(frozen=True)
 class CanonicalEvent:
     """One bounded semantic representation shared by editorial stages."""
 
@@ -351,8 +382,281 @@ class CanonicalEvent:
     direction: str = ""
     unit: str = ""
     observations: tuple[MetricObservation, ...] = ()
+    facts: tuple[EventFact, ...] = ()
+    evidence_detail: str = ""
+    location: str = ""
+    temporal_state: str = ""
+    cause: str = ""
+    fact_complete: bool = False
+    needs_enrichment: bool = False
     event_signature: str = ""
     conflict_state: str = "NO_CONFLICT"
+
+
+_RECRUITMENT_SELECTED_RE = re.compile(
+    r"(?<!\d)(\d[\d,]*)\s*명\s*(?:을|를|이|가)?\s*(?:선발|모집)"
+)
+_RECRUITMENT_SELECTED_REVERSED_RE = re.compile(
+    r"(?:선발|모집)(?:하는|할|한|은|는|이|가|을|를)?\s*(?<!\d)(\d[\d,]*)\s*명"
+)
+_RECRUITMENT_APPLICANT_RE = re.compile(
+    r"(?<!\d)(\d[\d,]*)\s*명\s*(?:이|가|은|는|을|를)?\s*(?:지원|응시)"
+)
+_VOTE_RE = re.compile(r"(?<!\d)(\d[\d,]*)\s*표")
+_RANK_RE = re.compile(r"(?<!\d)(\d+)\s*위")
+_STREAK_RE = re.compile(r"(?<!\d)(\d+)\s*주\s*연속")
+_HOME_RUN_RE = re.compile(r"(?<!\d)(\d+)\s*홈런")
+_RBI_RE = re.compile(r"(?<!\d)(\d+)\s*타점")
+_GAME_SCORE_RE = re.compile(r"(?<!\d)(\d+)\s*[-:]\s*(\d+)(?!\d)")
+_LOCATION_RE = re.compile(
+    r"(?<![A-Za-z가-힣])(?:서울|부산|광주|대전|인천|제주|판교|여의도|뉴욕|도쿄|싱가포르|충칭|DDP)(?![A-Za-z가-힣])"
+)
+
+
+def _normalized_number(value: str) -> str:
+    return re.sub(r"\s+", "", normalize_text(value))
+
+
+def _fact(role: str, value: str, *, unit: str = "", subject: str = "") -> EventFact:
+    return EventFact(role, _normalized_number(value), unit, normalize_text(subject))
+
+
+def recruitment_facts(text: str) -> tuple[EventFact, ...]:
+    """Extract recruitment counts without confusing them with sports roster facts."""
+
+    clean = normalize_text(text)
+    facts: list[EventFact] = []
+    ratio = _RECRUITMENT_RATIO_RE.search(clean)
+    if ratio:
+        facts.append(_fact("COMPETITION_RATIO", ratio.group(0), unit="RATIO"))
+    selected = _RECRUITMENT_SELECTED_RE.search(clean) or _RECRUITMENT_SELECTED_REVERSED_RE.search(clean)
+    if selected:
+        facts.append(_fact("SELECTION_COUNT", selected.group(1), unit="명"))
+    applicants = _RECRUITMENT_APPLICANT_RE.search(clean)
+    if applicants:
+        facts.append(_fact("APPLICANT_COUNT", applicants.group(1), unit="명"))
+    return tuple(dict.fromkeys(facts))
+
+
+def award_chart_facts(text: str) -> tuple[EventFact, ...]:
+    """Return bound chart/award facts; fan popularity polls remain identifiable."""
+
+    clean = normalize_text(text)
+    facts: list[EventFact] = []
+    rank = _RANK_RE.search(clean)
+    if rank:
+        facts.append(_fact("CHART_RANK", rank.group(1), unit="위"))
+    streak = _STREAK_RE.search(clean)
+    if streak:
+        facts.append(_fact("STREAK_WEEKS", streak.group(1), unit="주"))
+    votes = _VOTE_RE.search(clean)
+    if votes:
+        facts.append(_fact("VOTE_COUNT", votes.group(1), unit="표"))
+    return tuple(facts)
+
+
+def sports_result_facts(text: str) -> tuple[EventFact, ...]:
+    """Bind a result/award and its performance numbers to one sports event."""
+
+    clean = normalize_text(text)
+    facts: list[EventFact] = []
+    if re.search(r"(?<![A-Za-z])MVP(?![A-Za-z])", clean, re.IGNORECASE):
+        facts.append(_fact("AWARD", "MVP"))
+    score = _GAME_SCORE_RE.search(clean)
+    if score:
+        facts.append(_fact("GAME_SCORE", f"{score.group(1)}-{score.group(2)}", unit="SCORE"))
+    home_runs = _HOME_RUN_RE.search(clean)
+    if home_runs:
+        facts.append(_fact("HOME_RUN_COUNT", home_runs.group(1), unit="홈런"))
+    rbi = _RBI_RE.search(clean)
+    if rbi:
+        facts.append(_fact("RBI_COUNT", rbi.group(1), unit="타점"))
+    period = _PERIOD_RE.search(clean)
+    if period:
+        facts.append(_fact("PERIOD", period.group(0).replace(" ", "")))
+    return tuple(facts)
+
+
+def is_low_value_popularity_poll(text: str) -> bool:
+    """Identify fan-vote popularity content, not recognized music-chart results."""
+
+    value = fold(text)
+    return any(
+        compact(marker) in compact(value)
+        for marker in ("인기투표", "팬 투표", "팬투표", "평점랭킹", "선호도 투표")
+    )
+
+
+def _lead_subject(lead: str) -> str:
+    """Extract only a sentence-leading, explicitly particle-bound subject."""
+
+    match = re.match(
+        r"^([A-Za-z0-9가-힣·&'’\- ]{2,48}?)(?:이|가|은|는)\s+(?=\S)",
+        normalize_text(lead).strip(),
+    )
+    if not match:
+        return ""
+    candidate = match.group(1).strip(" ,·-—")
+    return candidate if candidate and not candidate[0].isdigit() else ""
+
+
+def _event_subject(
+    event_type: str,
+    title: str,
+    observations: tuple[MetricObservation, ...],
+    lead: str = "",
+) -> str:
+    clean = normalize_text(title).strip(" ,·-—")
+    if observations:
+        return observations[0].instrument
+    if event_type == "EARNINGS":
+        return ""
+    if event_type == "SPORTS_INTERRUPTION":
+        return "프로야구" if any(term in fold(clean) for term in ("프로야구", "kbo", "야구")) else ""
+    if event_type == "SPORTS_RESULT":
+        # Performance headlines often put the numbers before the player.
+        # A metadata lead with an explicit Korean subject particle is safer
+        # than rebuilding an entity from that headline token order.
+        return _lead_subject(lead)
+    if event_type.startswith("RECRUITMENT"):
+        clean = _RECRUITMENT_RATIO_RE.sub("", clean)
+        clean = re.sub(
+            r"\s+\d[\d,]*\s*명\s*(?:선발|모집)(?:에|하고|해|,)?(?:.*)$",
+            "",
+            clean,
+        )
+        clean = re.sub(r"\s+경쟁률(?:은|이)?\s*$", "", clean)
+        return clean.strip(" ,·-—")[:64]
+    if event_type == "AWARD_CHART":
+        prefix = re.split(r"[,，]|\s+(?:국내외\s+)?(?:음악\s+|음원\s+)?차트\b", clean, maxsplit=1)[0]
+        prefix = re.sub(r"^(?:\d{1,2}월도\s+)?(?:No\.?\s*\d+\s+)?", "", prefix, flags=re.IGNORECASE)
+        tokens = [
+            token
+            for token in re.findall(r"[A-Za-z0-9가-힣·&'’-]+", prefix)
+            if not token.isdigit() and token.casefold() not in {"스타트렌드", "아이돌", "가수", "그룹"}
+        ]
+        return " ".join(tokens[-3:]).strip()[:48]
+    if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):
+        return re.split(r"[,，]", clean, maxsplit=1)[0].strip(" ,·-—")[:48]
+    # For other families keep only the bounded noun phrase before a clear
+    # event predicate.  If no safe boundary exists, leave the title-derived
+    # subject to the existing fallback rather than inventing an entity.
+    marker = next(
+        (
+            match
+            for term in _EVENT_ACTION_CONTRACTS.get(event_type, ACTION_TERMS)
+            for match in (re.search(rf"(?<![{_WORD_CHAR}]){re.escape(term)}", clean),)
+            if match
+        ),
+        None,
+    )
+    if marker and marker.start() >= 2:
+        return clean[: marker.start()].strip(" ,·-—")[:48]
+    return ""
+
+
+def _temporal_state(event_type: str, text: str) -> tuple[str, str]:
+    if event_type != "SPORTS_INTERRUPTION":
+        return "", ""
+    value = fold(text)
+    cause = "HEAT" if any(marker in value for marker in ("폭염", "더위", "고온", "열파", "체감")) else (
+        "RAIN" if any(marker in value for marker in ("우천", "비로", "폭우")) else ""
+    )
+    if "재개" in value:
+        future = any(
+            marker in value
+            for marker in ("예정", "재개한다", "재개할", "재개될", "오늘 재개", "내일", "오는")
+        )
+        return ("RESUMING" if future else "RESUMED"), cause
+    if "취소" in value:
+        return "CANCELLED", cause
+    if any(marker in value for marker in ("중단", "멈춘", "휴식", "방학")):
+        return "INTERRUPTED", cause
+    return "", cause
+
+
+def build_canonical_event(
+    event_type: str,
+    title: str,
+    *,
+    lead: str = "",
+    action: str = "",
+    conflict_state: str = "NO_CONFLICT",
+) -> CanonicalEvent:
+    """Build the one semantic object consumed by all downstream stages."""
+
+    title_text = normalize_text(title)
+    lead_text = normalize_text(lead)
+    evidence = " ".join(part for part in (title_text, lead_text) if part)
+    observations = event_observations(event_type, title_text)
+    subject = _event_subject(event_type, title_text, observations, lead_text)
+    event_action = action or event_action_signal(event_type, title_text, lead_text)
+    if event_type == "EARNINGS" and observations:
+        event_action = observations[0].direction or "기록"
+    date, date_conflict = canonical_event_date(title_text, lead_text)
+    facts: tuple[EventFact, ...]
+    if event_type.startswith("RECRUITMENT"):
+        facts = recruitment_facts(evidence)
+    elif event_type == "AWARD_CHART":
+        facts = award_chart_facts(evidence)
+    elif event_type == "SPORTS_RESULT":
+        facts = sports_result_facts(evidence)
+    else:
+        facts = ()
+    temporal_state, cause = _temporal_state(event_type, evidence)
+    location_match = _LOCATION_RE.search(evidence)
+    fact_roles = {fact.role for fact in facts}
+    if event_type == "RECRUITMENT_COMPETITION":
+        fact_complete = {
+            "COMPETITION_RATIO",
+            "SELECTION_COUNT",
+            "APPLICANT_COUNT",
+        }.issubset(fact_roles)
+        needs_enrichment = "COMPETITION_RATIO" in fact_roles and not fact_complete
+    elif event_type == "AWARD_CHART":
+        fact_complete = "CHART_RANK" in fact_roles and not is_low_value_popularity_poll(evidence)
+        needs_enrichment = "CHART_RANK" in fact_roles and not fact_complete
+    elif event_type == "SPORTS_INTERRUPTION":
+        fact_complete = bool(subject and temporal_state)
+        needs_enrichment = bool(subject and not temporal_state)
+    elif event_type == "SPORTS_RESULT":
+        result_roles = {"AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT"}
+        fact_complete = bool(subject and event_action and fact_roles.intersection(result_roles))
+        needs_enrichment = bool(event_action and fact_roles.intersection(result_roles) and not fact_complete)
+    elif event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
+        fact_complete = bool(observations)
+        needs_enrichment = not observations
+    else:
+        fact_complete = bool(subject and event_action and (date or lead_text or observations or facts))
+        needs_enrichment = bool(subject and event_action and not fact_complete)
+    canonical_conflict = "DATE_CONFLICT" if date_conflict else conflict_state
+    signature = canonical_event_signature(
+        event_type,
+        title_text,
+        lead=lead_text,
+        subject=subject,
+        action=event_action,
+    )
+    return CanonicalEvent(
+        event_type=event_type,
+        subject=subject,
+        action=event_action,
+        date=date,
+        period=(observations[0].period if observations else ""),
+        metric=(observations[0].metric if observations else ""),
+        value=(observations[0].value if observations else ""),
+        direction=(observations[0].direction if observations else ""),
+        observations=observations,
+        facts=facts,
+        evidence_detail=lead_text,
+        location=location_match.group(0) if location_match else "",
+        temporal_state=temporal_state,
+        cause=cause,
+        fact_complete=fact_complete,
+        needs_enrichment=needs_enrichment,
+        event_signature=signature,
+        conflict_state=canonical_conflict,
+    )
 
 
 def earnings_fact_parts(text: str) -> tuple[str, str, str]:
@@ -372,6 +676,14 @@ def earnings_fact_parts(text: str) -> tuple[str, str, str]:
     period = period_matches[-1].group(0).replace(" ", "") if period_matches else ""
     metric = metric_match.group(0)
     value = value_match.group(0).replace(" ", "")
+    if value.endswith(("%", "퍼센트")):
+        # A percentage is not an earnings amount by itself.  ``매출 85%``
+        # could mean growth, mix, utilization, or a clipped comparison.  It
+        # becomes a safe observation only when the same clause binds an
+        # explicit direction to it (``매출 85% 증가``).
+        direction = _DIRECTION_RE.search(clean[value_match.end() : value_match.end() + 24])
+        if direction is None:
+            return "", "", ""
     return period, metric, value
 
 
@@ -389,12 +701,18 @@ def earnings_observations(text: str) -> tuple[MetricObservation, ...]:
     subject = _earnings_subject(subject)
     if not subject:
         return ()
+    value_match = re.search(re.escape(value), clean)
+    direction_match = (
+        _DIRECTION_RE.search(clean[value_match.end() : value_match.end() + 24])
+        if value_match is not None
+        else None
+    )
     return (
         MetricObservation(
             instrument=subject,
             metric=metric,
             value=value,
-            direction="",
+            direction=direction_match.group(0).replace(" ", "") if direction_match else "",
             period=period,
             raw=clean,
         ),
@@ -684,6 +1002,42 @@ def canonical_event_signature(
             for observation in observations[:3]
         )
         parts = (event_type, bound, date)
+        return "|".join(part for part in parts if part)
+    if event_type == "SPORTS_INTERRUPTION":
+        _, cause = _temporal_state(event_type, f"{title} {lead}")
+        league = subject or _event_subject(event_type, title, ())
+        # Resuming/resumed/cancelled are states of the same league-wide
+        # interruption.  Keep the state in facts, not in event identity, so
+        # an update headline converges with the original interruption.
+        parts = (event_type, compact(league), cause, date)
+        return "|".join(part for part in parts if part)
+    if event_type == "SPORTS_RESULT":
+        facts = sports_result_facts(f"{title} {lead}")
+        fact_map = {fact.role: fact.value for fact in facts}
+        entity = subject or _event_subject(event_type, title, (), lead)
+        if fact_map.get("AWARD"):
+            identity = (fact_map["AWARD"], fact_map.get("PERIOD", ""))
+        elif fact_map.get("GAME_SCORE"):
+            identity = (fact_map["GAME_SCORE"], date)
+        else:
+            identity = (
+                fact_map.get("HOME_RUN_COUNT", ""),
+                fact_map.get("RBI_COUNT", ""),
+                fact_map.get("PERIOD", ""),
+            )
+        parts = (event_type, compact(entity), *(compact(value) for value in identity))
+        return "|".join(part for part in parts if part)
+    if event_type.startswith("RECRUITMENT"):
+        facts = recruitment_facts(f"{title} {lead}")
+        ratio = next((fact.value for fact in facts if fact.role == "COMPETITION_RATIO"), "")
+        entity = subject or _event_subject(event_type, title, ())
+        parts = (event_type, compact(entity), ratio, date)
+        return "|".join(part for part in parts if part)
+    if event_type == "AWARD_CHART":
+        facts = award_chart_facts(f"{title} {lead}")
+        rank = next((fact.value for fact in facts if fact.role == "CHART_RANK"), "")
+        entity = subject or _event_subject(event_type, title, ())
+        parts = (event_type, compact(entity), rank, date)
         return "|".join(part for part in parts if part)
     tokens = [
         token

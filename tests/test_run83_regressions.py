@@ -88,7 +88,7 @@ class Run83RegressionTests(unittest.TestCase):
         self.assertFalse(assess_relevance(StoryCluster("psat_recruitment", (negative,)), topic).passed)
 
 
-    def test_strong_synthesis_veto_is_prioritized_for_bounded_enrichment(self) -> None:
+    def test_incomplete_fact_bundle_is_prioritized_for_bounded_enrichment(self) -> None:
         topics, _ = load_topics(Path("config/topics.json"))
         item = replace(
             _item(
@@ -99,7 +99,9 @@ class Run83RegressionTests(unittest.TestCase):
         )
         cluster = StoryCluster("psat_recruitment", (item,))
         preliminary = select_clusters((cluster,), topics, limit=10)
-        self.assertEqual(preliminary.strong_rejected_candidates, 1)
+        # A ratio-only search result is an explicit enrichment gap, not a
+        # complete strong event mysteriously lost by synthesis.
+        self.assertEqual(preliminary.strong_rejected_candidates, 0)
         self.assertEqual(preliminary.enrichment_candidates, (cluster,))
         targets = topic_diverse_enrichment_candidates(
             (item,),
@@ -206,10 +208,10 @@ class Run83RegressionTests(unittest.TestCase):
         self.assertIn("임영웅이", summary)
         self.assertNotIn("아이돌가", summary)
 
-    def test_live_like_earnings_headline_strips_decorative_prefix_and_binds_percent(self) -> None:
+    def test_directional_earnings_percent_strips_decoration_and_keeps_binding(self) -> None:
         cases = (
-            ("'어화둥둥 우리 GPU' NHN 영업이익 164% 실적", "NHN"),
-            ("NHN클라우드, AI GPU 성과로 매출 85% 실적", "NHN클라우드"),
+            ("'어화둥둥 우리 GPU' NHN 영업이익 164% 증가", "NHN"),
+            ("NHN클라우드, AI GPU 성과로 매출 85% 증가", "NHN클라우드"),
         )
         for index, (title, subject) in enumerate(cases, 1):
             _, summary, _, _, facts, _ = synthesize_cluster(
@@ -223,8 +225,8 @@ class Run83RegressionTests(unittest.TestCase):
             )
             self.assertEqual(facts.subject, subject)
             self.assertIn(subject, summary)
-            self.assertIn("%를", summary)
-            self.assertNotIn("%을", summary)
+            self.assertIn("% 증가", summary)
+            self.assertNotIn("%를 기록", summary)
 
     def test_numeric_recruitment_ratio_is_competition_not_generic_application(self) -> None:
         self.assertEqual(

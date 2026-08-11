@@ -10,6 +10,8 @@ from .editorial import best_headline_item, effective_lead, effective_title, evid
 from .normalization import normalize_text
 from .semantics import (
     ACTION_TERMS,
+    CanonicalEvent,
+    EventFact,
     canonical_event_date,
     canonical_event_signature,
     contains_action,
@@ -805,12 +807,14 @@ def _subject_particle(value: str) -> str:
     if "가" <= last <= "힣":
         code = ord(last) - 0xAC00
         return "이" if code % 28 else "가"
-    # For Latin abbreviations, a final consonant sound normally takes 이
-    # (NHN이, KT이), while vowel-ending names take 가 (OpenAI가). This is
-    # a small display normalization, not an attempt at full transliteration.
+    # Use the Korean reading of the final Latin letter, not English spelling.
+    # ``N`` (엔) takes 이, while ``T`` (티) takes 가.  This stays bounded to
+    # acronyms and avoids a publisher/entity-specific exception list.
     last = value.rstrip()[-1:].casefold()
-    if last and last in "bcdfghjklmnpqrstvwxyz0123456789":
+    if last and last in "fhlmnrsx":
         return "이"
+    if last and last in "012345678":
+        return "이" if last in "013678" else "가"
     return "가"
 
 
@@ -879,17 +883,26 @@ def _next_signal(event_type: str, text: str, date: str, action: str) -> str:
     if event_type in {"SCHEDULED_EVENT", "SPORTS_EVENT", "ENTERTAINMENT_EVENT"} and date:
         noun = "경기·행사" if event_type == "SPORTS_EVENT" else "행사"
         return f"{date} {noun} 결과와 공식 후속 발표"
-    if event_type == "EARNINGS":
-        return "다음 실적 발표와 공시 수치"
     if event_type == "POLICY" and (date or "시행" in text):
         return "시행일과 세부 고시"
-    if event_type == "PRODUCT_RELEASE":
-        return "공식 출시일과 확정 사양"
     if event_type == "ANNOUNCEMENT" and (
         date or any(word in text for word in ("시행", "실행", "적용", "예정", "출시"))
     ):
         return "실행 시점과 공식 전문"
     return ""
+
+
+def _event_fact_value(fact: EventFact) -> str:
+    value = normalize_text(fact.value)
+    if not value:
+        return ""
+    if fact.unit in {"명", "위", "주", "표", "홈런", "타점"} and not value.endswith(fact.unit):
+        return f"{value}{fact.unit}"
+    return value
+
+
+def _event_fact_map(facts: tuple[EventFact, ...]) -> dict[str, str]:
+    return {fact.role: _event_fact_value(fact) for fact in facts if _event_fact_value(fact)}
 
 
 def _headline(
@@ -902,12 +915,16 @@ def _headline(
     date: str = "",
     action: str = "",
     temporal_state: str = "",
+    observations: tuple[MetricObservation, ...] = (),
 ) -> str:
     cleaned = _clean_headline(title)
     if event_type == "EARNINGS" and subject:
         period, metric, value = _earnings_fact_parts(cleaned)
         if metric and value:
             fact = " ".join(part for part in (period, metric, value) if part)
+            direction = next((item.direction for item in observations if item.direction), "")
+            if value.endswith(("%", "퍼센트")) and direction:
+                fact = f"{fact} {direction}"
             return f"{subject} {fact} 실적"
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject and numbers:
         run_phrase = _market_run_phrase(cleaned)
@@ -974,15 +991,28 @@ def _summary(
     market_observations: tuple[MetricObservation, ...] = (),
     temporal_state: str = "",
     supporting_titles: tuple[str, ...] = (),
+    event_facts: tuple[EventFact, ...] = (),
+    cause: str = "",
 ) -> str:
     if event_type == "EARNINGS" and subject:
-        period, metric, value = _earnings_fact_parts(completion_evidence or title)
+        observation = next(iter(market_observations), None)
+        period, metric, value = (
+            (observation.period, observation.metric, observation.value)
+            if observation is not None
+            else _earnings_fact_parts(completion_evidence or title)
+        )
         if metric and value:
             period_text = f"{period} " if period else ""
-            sentence = (
-                f"{subject}{_subject_particle(subject)} {period_text}{metric} "
-                f"{value}{_object_particle(value)} 기록했다고 밝혔다."
-            )
+            if observation is not None and observation.direction:
+                sentence = (
+                    f"{subject}의 {period_text}{metric}이 "
+                    f"{value} {observation.direction}했다고 밝혔다."
+                )
+            else:
+                sentence = (
+                    f"{subject}{_subject_particle(subject)} {period_text}{metric} "
+                    f"{value}{_object_particle(value)} 기록했다고 밝혔다."
+                )
             if uncertainty:
                 sentence += f" {uncertainty}"
             return sentence.strip()
@@ -1143,6 +1173,16 @@ def _summary(
             sentence = f"{subject}의 {policy_action} 내용이 확인됐다."
     elif event_type == "PRODUCT_RELEASE" and subject:
         release_subject = subject or _clean_headline(title).split(",", 1)[0].strip()
+        source_detail = normalize_text(completion_evidence)
+        if (
+            source_detail
+            and not _TRUNCATION_RE.search(source_detail)
+            and summary_information_gain(title, source_detail)
+        ):
+            sentence = _strip_news_byline(source_detail).rstrip(" .!?。！") + "."
+            if uncertainty:
+                sentence += f" {uncertainty}"
+            return sentence.strip()
         listing = re.search(
             r"(?:오는\s*)?(\d{1,2}\s?일)\s*상장\s*예정인\s*([A-Za-z0-9가-힣·&+\- ]+?(?:ETF|펀드))",
             completion_evidence,
@@ -1190,12 +1230,20 @@ def _summary(
             else:
                 sentence = f"{release_subject}의 {release_fact} 소식이 확인됐다."
     elif event_type == "AWARD_CHART" and subject:
-        chart_number = next((value for value in numbers if value.endswith("위")), "")
+        fact_map = _event_fact_map(event_facts)
+        chart_number = fact_map.get("CHART_RANK", "") or next((value for value in numbers if value.endswith("위")), "")
         music_context = any(
             marker in title for marker in ("음악", "음원", "앨범", "가요", "아이돌", "가수", "차트", "빌보드", "멜론", "노래")
         )
         if chart_number and music_context:
-            sentence = f"{subject}{_subject_particle(subject)} 음악 차트 {chart_number}에 올랐다."
+            vote_count = fact_map.get("VOTE_COUNT", "")
+            streak = fact_map.get("STREAK_WEEKS", "")
+            if vote_count and vote_count not in title:
+                sentence = f"{subject}{_particle(subject)} {vote_count}를 받아 음악 차트 {chart_number}에 올랐다."
+            elif streak and streak not in title:
+                sentence = f"{subject}{_particle(subject)} {streak} 연속 음악 차트 {chart_number}를 기록했다."
+            else:
+                sentence = f"{subject}{_subject_particle(subject)} 음악 차트 {chart_number}에 올랐다."
         elif chart_number:
             sentence = f"{_clean_headline(title)}."
         else:
@@ -1210,12 +1258,22 @@ def _summary(
                 )
                 sentence = f"{subject}{_particle(subject)} {connector} 음악 차트 {chart_number}에 올랐다."
     elif event_type.startswith("RECRUITMENT") and subject:
+        fact_map = _event_fact_map(event_facts)
+        ratio_value = fact_map.get("COMPETITION_RATIO", "")
+        selected_value = fact_map.get("SELECTION_COUNT", "")
+        applicant_value = fact_map.get("APPLICANT_COUNT", "")
         ratio_match = re.search(r"\d+(?:\.\d+)?\s?대\s?\d+", f"{title} {completion_evidence}")
         counts_match = re.search(
             r"([\d,]+명)\s*(?:이|가|을|를)?\s*(선발|모집).*?([\d,]+명)\s*(?:이|가|을|를)?\s*지원",
             completion_evidence,
         )
-        if counts_match and ratio_match:
+        if ratio_value and selected_value and applicant_value:
+            recruitment_label = "" if subject.endswith(("공채", "채용", "시험")) else " 공채"
+            sentence = (
+                f"{subject}{recruitment_label}는 {selected_value} 선발에 {applicant_value} 지원해 "
+                f"{ratio_value} 경쟁률을 기록했다."
+            )
+        elif counts_match and ratio_match:
             selected, selection_word, applicants = counts_match.groups()
             ratio = re.sub(r"\s+", "", ratio_match.group(0))
             sentence = f"{subject} {ratio} 경쟁률을 기록했고, {selected} {selection_word}에 {applicants} 지원했다."
@@ -1286,8 +1344,11 @@ def _summary(
     elif event_type == "SPORTS_INTERRUPTION" and subject:
         evidence = f"{title} {completion_evidence}".casefold()
         league = "프로야구" if "프로야구" in evidence or "프로야구" in subject.casefold() else ("KBO" if "kbo" in evidence else subject)
-        cause = next((marker for marker in ("폭염", "우천", "악천후", "기상") if marker in evidence), "")
-        cause_phrase = f"{cause}{_instrumental_particle(cause)} " if cause else ""
+        cause_label = {
+            "HEAT": "폭염",
+            "RAIN": "우천",
+        }.get(cause, "") or next((marker for marker in ("폭염", "우천", "악천후", "기상") if marker in evidence), "")
+        cause_phrase = f"{cause_label}{_instrumental_particle(cause_label)} " if cause_label else ""
         if temporal_state == "RESUMING":
             resume_date = f"{date}에 " if date else ""
             sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개될 예정이다."
@@ -1339,6 +1400,7 @@ def synthesize_cluster(
     event_type_override: str | None = None,
     event_signature_override: str | None = None,
     conflict_state_override: str | None = None,
+    canonical_event_override: CanonicalEvent | None = None,
 ) -> tuple[str, str, str, tuple[str, ...], StoryFacts, Certainty]:
     items = cluster.items
     representative = cluster.representative
@@ -1384,15 +1446,28 @@ def synthesize_cluster(
     # Production selection already has the editorial event gate. Reuse that
     # decision for synthesis so the audit and the emitted StoryFacts cannot
     # diverge when two deterministic classifiers have different precedence.
-    event_type = event_type_override or inferred_event_type
-    market_observations = metric_observations(title)
+    canonical_event = canonical_event_override
+    event_type = (
+        canonical_event.event_type
+        if canonical_event is not None
+        else event_type_override or inferred_event_type
+    )
+    market_observations = (
+        canonical_event.observations
+        if canonical_event is not None and canonical_event.observations
+        else earnings_observations(title)
+        if event_type == "EARNINGS"
+        else metric_observations(title)
+    )
     market_observation = next(iter(market_observations), None)
     # Do not borrow an action from another headline in a broad cluster. A
     # secondary article may describe a different event while sharing the
     # same entity or theme. Market stories need a market outcome as their
     # action; an explanatory phrase such as ``금리 인상`` is not that
     # outcome.
-    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
+    if canonical_event is not None and canonical_event.action:
+        action = canonical_event.action
+    elif event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         action = (
             next((observation.direction for observation in market_observations if observation.direction), "")
             or market_direction(title)
@@ -1406,8 +1481,14 @@ def synthesize_cluster(
         action = _action(title) or _action(effective_lead(headline_item))
     if event_type == "SPORTS_INTERRUPTION":
         interruption_evidence = headline_evidence.casefold()
-        subject = "프로야구" if any(term in interruption_evidence for term in ("프로야구", "kbo", "야구")) else "KBO"
-        if "재개" in interruption_evidence:
+        subject = (
+            canonical_event.subject
+            if canonical_event is not None and canonical_event.subject
+            else "프로야구" if any(term in interruption_evidence for term in ("프로야구", "kbo", "야구")) else "KBO"
+        )
+        if canonical_event is not None and canonical_event.action:
+            action = canonical_event.action
+        elif "재개" in interruption_evidence:
             action = "재개"
         elif any(term in interruption_evidence for term in ("중단", "멈춘", "취소", "휴식", "방학")):
             action = "중단"
@@ -1433,6 +1514,8 @@ def synthesize_cluster(
                 subject,
                 titles=tuple(effective_title(item) for item in items if effective_title(item)),
             )
+        if canonical_event is not None and canonical_event.subject:
+            subject = canonical_event.subject
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:
         if market_observations:
             # Keep each metric bound to its own instrument and direction.
@@ -1460,6 +1543,12 @@ def synthesize_cluster(
             )
     else:
         change = _tail_after_first_number(title, display_numbers) or (_change_phrases(title)[:1] or ("",))[0]
+    if canonical_event is not None:
+        canonical_values = tuple(_event_fact_value(fact) for fact in canonical_event.facts)
+        if event_type.startswith("RECRUITMENT") or event_type in {"AWARD_CHART", "SPORTS_RESULT"}:
+            display_numbers = _unique(list(canonical_values) + list(display_numbers))
+        if canonical_event.direction:
+            change = canonical_event.direction
     repeated = _repeated_values(items, _numbers)
     if not repeated:
         repeated = _repeated_values(items, _dates)
@@ -1482,14 +1571,19 @@ def synthesize_cluster(
     source_count = cluster.source_count
     trend_state = _trend_state(cluster.topic_id, trend_metrics)
     canonical_date, date_conflict = canonical_event_date(title, _fact_lead(headline_item))
-    date = canonical_date or (dates[0] if dates else "")
-    location = locations[0] if locations else ""
+    if canonical_event is not None:
+        date = canonical_event.date or canonical_date or (dates[0] if dates else "")
+        location = canonical_event.location or (locations[0] if locations else "")
+        date_conflict = date_conflict or canonical_event.conflict_state == "DATE_CONFLICT"
+    else:
+        date = canonical_date or (dates[0] if dates else "")
+        location = locations[0] if locations else ""
     next_signal = _next_signal(event_type, headline_evidence, date, action)
     conflict_state = conflict_state_override or "NO_CONFLICT"
     if date_conflict:
         conflict_state = "DATE_CONFLICT"
-    temporal_state = ""
-    if event_type == "SPORTS_INTERRUPTION":
+    temporal_state = canonical_event.temporal_state if canonical_event is not None else ""
+    if event_type == "SPORTS_INTERRUPTION" and not temporal_state:
         combined = f"{title} {fact_headline_evidence}".casefold()
         if "재개" in combined:
             future_resume = any(
@@ -1549,6 +1643,7 @@ def synthesize_cluster(
         next_known_event=next_signal,
         uncertainty=uncertainty,
         event_signature=event_signature_override
+        or (canonical_event.event_signature if canonical_event is not None else "")
         or canonical_event_signature(event_type, title, lead=_fact_lead(headline_item), subject=subject, action=action),
         conflict_state=conflict_state,
         temporal_state=temporal_state,
@@ -1565,6 +1660,12 @@ def synthesize_cluster(
         date=date,
         action=action,
         temporal_state=temporal_state,
+        observations=market_observations,
+    )
+    completion_evidence = (
+        canonical_event.evidence_detail
+        if canonical_event is not None and canonical_event.evidence_detail
+        else fact_headline_evidence
     )
     summary = _summary(
         title,
@@ -1577,11 +1678,13 @@ def synthesize_cluster(
         change,
         source_count,
         uncertainty,
-        fact_headline_evidence,
+        completion_evidence,
         market_observation=market_observation,
         market_observations=market_observations,
         temporal_state=temporal_state,
         supporting_titles=tuple(effective_title(item) for item in items if effective_title(item)),
+        event_facts=canonical_event.facts if canonical_event is not None else (),
+        cause=canonical_event.cause if canonical_event is not None else "",
     )
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()

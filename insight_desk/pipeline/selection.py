@@ -7,6 +7,7 @@ from .clustering import StoryCluster
 from .editorial import (
     EditorialAssessment,
     assess_cluster,
+    assess_event,
     assess_relevance,
     assess_semantic_relevance,
     effective_title,
@@ -14,7 +15,7 @@ from .editorial import (
 )
 from .novelty import classify_novelty
 from .synthesis import earnings_summary_preserves_fact_binding, is_usable_synthesis, synthesize_cluster
-from .semantics import canonical_publisher, metric_summary_preserves_entity_binding
+from .semantics import CanonicalEvent, canonical_publisher, metric_summary_preserves_entity_binding
 
 
 @dataclass(frozen=True)
@@ -121,9 +122,15 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
         and assessment.novelty != "UNCHANGED"
         and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
     )
+    canonical = assessment.event.canonical_event
+    # "Strong" means the event already owns a complete, typed fact bundle.
+    # A ratio-only headline that still needs its article lead is an enrichment
+    # gap, not evidence that synthesis discarded a complete event.
+    canonical_facts_complete = bool(canonical and canonical.fact_complete)
     if synthesis_vetoed_qualified:
         return bool(
             upstream_passed
+            and canonical_facts_complete
             and not assessment.qualified
             and assessment.event.concrete_fact_count >= 3
             and assessment.event.significance >= 60.0
@@ -131,6 +138,7 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
         )
     return bool(
         upstream_passed
+        and canonical_facts_complete
         and not assessment.qualified
         and assessment.evidence.metadata_complete
         and assessment.event.concrete_fact_count >= 3
@@ -142,6 +150,7 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
 def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
     for reason in (
         "RELEVANCE_FAILED",
+        "LOW_VALUE_EVENT",
         "EVENT_ACTION_CONTRACT_FAILED",
         "AUTHORITY_REQUIRED_UNVERIFIED",
         "AUTHORITY_CONFLICT",
@@ -152,7 +161,6 @@ def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
         "GENERIC_HEADLINE",
         "GENERIC_SUMMARY",
         "SINGLE_SOURCE_METRIC_WITHOUT_TRUSTED_LEAD",
-        "LOW_VALUE_EVENT",
     ):
         if reason in assessment.reasons:
             return reason
@@ -166,6 +174,7 @@ def _synthesis_is_editorial_ready(
     official_source: bool,
     event_type: str,
     event_signature: str,
+    canonical_event: CanonicalEvent | None = None,
 ) -> bool:
     headline, summary, _, _, _, _ = synthesize_cluster(
         cluster,
@@ -173,6 +182,7 @@ def _synthesis_is_editorial_ready(
         trend_metrics=(),
         event_type_override=event_type,
         event_signature_override=event_signature,
+        canonical_event_override=canonical_event,
     )
     if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"} and not metric_summary_preserves_entity_binding(
         headline,
@@ -187,6 +197,67 @@ def _synthesis_is_editorial_ready(
         source_count=cluster.source_count,
         official_source=official_source,
     )
+
+
+_CANONICAL_CONVERGENCE_TYPES = frozenset(
+    {
+        "SPORTS_INTERRUPTION",
+        "SPORTS_RESULT",
+        "RECRUITMENT_COMPETITION",
+        "EARNINGS",
+        "MARKET",
+        "MARKET_MOVE",
+        "STATISTIC",
+    }
+)
+
+
+def _converge_canonical_clusters(
+    clusters: tuple[StoryCluster, ...],
+    topic_by_id: dict[str, Topic],
+) -> tuple[StoryCluster, ...]:
+    """Combine lexical clusters that resolve to one high-confidence event.
+
+    Initial clustering remains conservative to prevent snippet-tail
+    over-merging.  Once the event family and bound facts are known, a narrow
+    second pass can safely converge equivalent representations (for example
+    a heat-interruption headline and its resumption update).
+    """
+
+    result: list[StoryCluster] = []
+    by_key: dict[tuple[str, str], int] = {}
+    for cluster in clusters:
+        topic = topic_by_id.get(cluster.topic_id)
+        if topic is None:
+            result.append(cluster)
+            continue
+        event = assess_event(cluster, topic)
+        canonical = event.canonical_event
+        signature = canonical.event_signature if canonical is not None else ""
+        if (
+            event.event_type not in _CANONICAL_CONVERGENCE_TYPES
+            or not signature
+            or (canonical is not None and canonical.conflict_state != "NO_CONFLICT")
+        ):
+            result.append(cluster)
+            continue
+        key = (cluster.topic_id, signature)
+        index = by_key.get(key)
+        if index is None:
+            by_key[key] = len(result)
+            result.append(cluster)
+            continue
+        existing = result[index]
+        seen: set[str] = set()
+        items: list[NewsItem] = []
+        for item in (*existing.items, *cluster.items):
+            item_key = item.canonical_url or item.content_hash or item.evidence_id
+            if item_key in seen:
+                continue
+            seen.add(item_key)
+            items.append(item)
+        result[index] = StoryCluster(cluster.topic_id, tuple(items))
+    return tuple(result)
 
 
 def select_clusters(
@@ -213,6 +284,8 @@ def select_clusters(
     enrichment_candidates: list[StoryCluster] = []
     strong_rejected_candidates = 0
 
+    clusters = _converge_canonical_clusters(clusters, topic_by_id)
+
     for cluster in clusters:
         topic = topic_by_id.get(cluster.topic_id)
         if topic is None or not topic.enabled:
@@ -227,6 +300,7 @@ def select_clusters(
             official_source=assessment.evidence.official,
             event_type=assessment.event.event_type,
             event_signature=assessment.event_signature,
+            canonical_event=assessment.event.canonical_event,
         ):
             assessment = replace(
                 assessment,
@@ -250,6 +324,12 @@ def select_clusters(
         if _is_strong_rejected(assessment):
             strong_rejected_candidates += 1
             funnel[topic.id]["strong_rejected"] += 1
+            enrichment_candidates.append(cluster)
+        elif (
+            "SYNTHESIS_NOT_EDITORIAL_READY" in assessment.reasons
+            and assessment.event.canonical_event is not None
+            and assessment.event.canonical_event.needs_enrichment
+        ):
             enrichment_candidates.append(cluster)
 
     for values in grouped.values():
