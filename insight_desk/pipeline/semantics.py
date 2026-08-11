@@ -13,6 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+from ..domain.models import TemporalFact
 from .normalization import normalize_text
 
 
@@ -105,6 +106,14 @@ _DATE_RE = re.compile(
     r"(?:20\d{2}\s?년\s?)?\d{1,2}\s?(?:월\s?\d{1,2}\s?일|일)"
 )
 _ISO_DATE_RE = re.compile(r"20\d{2}[./-]\d{1,2}[./-]\d{1,2}")
+_RELATIVE_DATE_RE = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?:어제|오늘|내일|모레)(?![가-힣A-Za-z0-9])"
+)
+_DURATION_VALUE = r"(?:\d+\s*일|하루|이틀|사흘|나흘|닷새|엿새|일주일)"
+_DURATION_RE = re.compile(rf"(?P<value>{_DURATION_VALUE})\s*(?:동안|간|째)")
+_ELAPSED_DURATION_RE = re.compile(rf"(?P<value>{_DURATION_VALUE})\s*(?:만에|후|뒤)")
+_RESUMPTION_MARKERS = ("재개", "다시 시작", "다시 문", "문을 열")
+_INTERRUPTION_MARKERS = ("중단", "멈춘", "멈춰", "휴식", "취소")
 _EVENT_DATE_MARKERS = (
     "발매",
     "출시",
@@ -386,7 +395,10 @@ class CanonicalEvent:
     evidence_detail: str = ""
     location: str = ""
     temporal_state: str = ""
+    temporal_facts: tuple[TemporalFact, ...] = ()
     cause: str = ""
+    fixture_id: str = ""
+    canonical_event_id: str = ""
     fact_complete: bool = False
     needs_enrichment: bool = False
     event_signature: str = ""
@@ -410,6 +422,18 @@ _RBI_RE = re.compile(r"(?<!\d)(\d+)\s*타점")
 _GAME_SCORE_RE = re.compile(r"(?<!\d)(\d+)\s*[-:]\s*(\d+)(?!\d)")
 _LOCATION_RE = re.compile(
     r"(?<![A-Za-z가-힣])(?:서울|부산|광주|대전|인천|제주|판교|여의도|뉴욕|도쿄|싱가포르|충칭|DDP)(?![A-Za-z가-힣])"
+)
+_SPORTS_TEAM_NAMES = (
+    "한화",
+    "두산",
+    "LG",
+    "KT",
+    "SSG",
+    "KIA",
+    "롯데",
+    "삼성",
+    "NC",
+    "키움",
 )
 
 
@@ -512,7 +536,12 @@ def _event_subject(
     if event_type == "EARNINGS":
         return ""
     if event_type == "SPORTS_INTERRUPTION":
-        return "프로야구" if any(term in fold(clean) for term in ("프로야구", "kbo", "야구")) else ""
+        sports_evidence = fold(f"{clean} {lead}")
+        return (
+            "프로야구"
+            if any(term in sports_evidence for term in ("프로야구", "kbo", "야구"))
+            else ""
+        )
     if event_type == "SPORTS_RESULT":
         # Performance headlines often put the numbers before the player.
         # A metadata lead with an explicit Korean subject particle is safer
@@ -555,7 +584,7 @@ def _event_subject(
     return ""
 
 
-def _temporal_state(event_type: str, text: str) -> tuple[str, str]:
+def sports_interruption_state(event_type: str, text: str) -> tuple[str, str]:
     if event_type != "SPORTS_INTERRUPTION":
         return "", ""
     value = fold(text)
@@ -563,6 +592,12 @@ def _temporal_state(event_type: str, text: str) -> tuple[str, str]:
         "RAIN" if any(marker in value for marker in ("우천", "비로", "폭우")) else ""
     )
     if "재개" in value:
+        completed = bool(
+            re.search(r"재개(?:됐|되었|했다|된|완료)", value)
+            or re.search(r"다시\s+(?:시작됐|시작되었|문을\s+열었)", value)
+        )
+        if completed:
+            return "RESUMED", cause
         future = any(
             marker in value
             for marker in ("예정", "재개한다", "재개할", "재개될", "오늘 재개", "내일", "오는")
@@ -573,6 +608,170 @@ def _temporal_state(event_type: str, text: str) -> tuple[str, str]:
     if any(marker in value for marker in ("중단", "멈춘", "휴식", "방학")):
         return "INTERRUPTED", cause
     return "", cause
+
+
+def _span_overlaps(span: tuple[int, int], occupied: list[tuple[int, int]]) -> bool:
+    return any(span[0] < other[1] and other[0] < span[1] for other in occupied)
+
+
+def _nearest_temporal_role(sentence: str, position: int, event_type: str) -> str:
+    markers: list[tuple[int, str]] = []
+    if event_type == "SPORTS_INTERRUPTION":
+        markers.extend(
+            (match.start(), "RESUMPTION_DATE")
+            for marker in _RESUMPTION_MARKERS
+            for match in re.finditer(re.escape(marker), sentence)
+        )
+        markers.extend(
+            (match.start(), "START_DATE" if marker != "취소" else "EVENT_DATE")
+            for marker in _INTERRUPTION_MARKERS
+            for match in re.finditer(re.escape(marker), sentence)
+        )
+    markers.extend(
+        (match.start(), "EVENT_DATE")
+        for marker in _EVENT_DATE_MARKERS
+        for match in re.finditer(re.escape(marker), sentence)
+    )
+    return min(markers, key=lambda item: abs(item[0] - position))[1] if markers else ""
+
+
+def temporal_facts(text: str, event_type: str = "") -> tuple[TemporalFact, ...]:
+    """Extract time expressions without collapsing duration and calendar roles.
+
+    Relative expressions remain relative unless a publication timestamp is
+    available to the caller.  Preserving ``오늘`` is safer than fabricating an
+    absolute date and is sufficient for synthesis and lifecycle ordering.
+    """
+
+    value = normalize_text(text)
+    facts: list[TemporalFact] = []
+    for sentence in re.split(r"(?<=[.!?])\s+", value):
+        occupied: list[tuple[int, int]] = []
+        temporal_patterns = (
+            (_DURATION_RE, "DURATION"),
+            (_ELAPSED_DURATION_RE, "ELAPSED_DURATION"),
+        )
+        for pattern, role in temporal_patterns:
+            for match in pattern.finditer(sentence):
+                raw = match.group(0)
+                normalized = re.sub(r"\s+", "", match.group("value"))
+                facts.append(TemporalFact(role, normalized, raw))
+                occupied.append(match.span())
+        for match in _RELATIVE_DATE_RE.finditer(sentence):
+            role = _nearest_temporal_role(sentence, match.start(), event_type)
+            if role:
+                facts.append(TemporalFact(role, match.group(0), match.group(0)))
+                occupied.append(match.span())
+        for match in _DATE_RE.finditer(sentence):
+            if _span_overlaps(match.span(), occupied):
+                continue
+            role = _nearest_temporal_role(sentence, match.start(), event_type)
+            if role:
+                facts.append(
+                    TemporalFact(role, re.sub(r"\s+", "", match.group(0)), match.group(0))
+                )
+    return tuple(dict.fromkeys(facts))
+
+
+def _temporal_values(facts: tuple[TemporalFact, ...], role: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(fact.value for fact in facts if fact.role == role and fact.value))
+
+
+def _primary_event_date(facts: tuple[TemporalFact, ...], event_type: str, state: str = "") -> str:
+    if event_type == "SPORTS_INTERRUPTION" and state in {"RESUMING", "RESUMED"}:
+        resumption = _temporal_values(facts, "RESUMPTION_DATE")
+        if resumption:
+            return resumption[0]
+    for role in ("EVENT_DATE", "SCHEDULE_DATE", "START_DATE", "END_DATE"):
+        values = _temporal_values(facts, role)
+        if values:
+            return values[0]
+    return ""
+
+
+def _sports_fixture_id(text: str) -> str:
+    value = normalize_text(text)
+    teams = tuple(
+        dict.fromkeys(
+            team
+            for team in _SPORTS_TEAM_NAMES
+            if re.search(
+                rf"(?<![A-Za-z가-힣]){re.escape(team)}(?![A-Za-z가-힣])",
+                value,
+                re.IGNORECASE,
+            )
+        )
+    )
+    return "-".join(sorted(teams, key=str.casefold)) if len(teams) >= 2 else ""
+
+
+def _sports_lifecycle_id(subject: str, cause: str) -> str:
+    return "|".join(part for part in ("SPORTS_INTERRUPTION", compact(subject), cause) if part)
+
+
+def _sports_event_signature(
+    lifecycle_id: str,
+    *,
+    location: str = "",
+    fixture_id: str = "",
+    temporal: tuple[TemporalFact, ...] = (),
+    state: str = "",
+) -> str:
+    parts = [lifecycle_id]
+    event_date = next(iter(_temporal_values(temporal, "EVENT_DATE")), "")
+    if location:
+        parts.append(f"LOCATION={compact(location)}")
+    if fixture_id:
+        parts.append(f"FIXTURE={compact(fixture_id)}")
+    if event_date:
+        parts.append(f"EVENT_DATE={event_date}")
+    if state:
+        parts.append(f"STATE={state}")
+    return "|".join(part for part in parts if part)
+
+
+def _signature_lifecycle_parts(signature: str) -> tuple[str, dict[str, str]]:
+    parts = tuple(part for part in signature.split("|") if part)
+    if not parts or parts[0] != "SPORTS_INTERRUPTION":
+        return "", {}
+    attributes: dict[str, str] = {}
+    base: list[str] = list(parts[:3])
+    for part in parts[3:]:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            attributes[key] = value
+        elif re.fullmatch(r"\d{1,2}일", part):
+            attributes.setdefault("EVENT_DATE", part)
+        elif part in {"INTERRUPTED", "CANCELLED", "RESUMING", "RESUMED"}:
+            attributes.setdefault("STATE", part)
+        else:
+            base.append(part)
+    return "|".join(base), attributes
+
+
+def same_lifecycle_signatures(left: str, right: str) -> bool:
+    """Compare state-independent lifecycle identity encoded in signatures."""
+
+    if left == right:
+        return bool(left)
+    left_id, left_attrs = _signature_lifecycle_parts(left)
+    right_id, right_attrs = _signature_lifecycle_parts(right)
+    if not left_id or left_id != right_id:
+        return False
+    for field in ("LOCATION", "FIXTURE", "EVENT_DATE"):
+        left_value = left_attrs.get(field, "")
+        right_value = right_attrs.get(field, "")
+        if left_value and right_value and left_value != right_value:
+            return False
+    return True
+
+
+def same_event_lifecycle(left: CanonicalEvent, right: CanonicalEvent) -> bool:
+    """Return whether two interruption states belong to one bounded event."""
+
+    if left.event_type != "SPORTS_INTERRUPTION" or right.event_type != "SPORTS_INTERRUPTION":
+        return left.event_signature == right.event_signature
+    return same_lifecycle_signatures(left.event_signature, right.event_signature)
 
 
 def build_canonical_event(
@@ -593,7 +792,14 @@ def build_canonical_event(
     event_action = action or event_action_signal(event_type, title_text, lead_text)
     if event_type == "EARNINGS" and observations:
         event_action = observations[0].direction or "기록"
-    date, date_conflict = canonical_event_date(title_text, lead_text)
+    temporal_state, cause = sports_interruption_state(event_type, evidence)
+    temporal = temporal_facts(evidence, event_type)
+    date, date_conflict = canonical_event_date(
+        title_text,
+        lead_text,
+        event_type=event_type,
+        state=temporal_state,
+    )
     facts: tuple[EventFact, ...]
     if event_type.startswith("RECRUITMENT"):
         facts = recruitment_facts(evidence)
@@ -603,8 +809,17 @@ def build_canonical_event(
         facts = sports_result_facts(evidence)
     else:
         facts = ()
-    temporal_state, cause = _temporal_state(event_type, evidence)
     location_match = _LOCATION_RE.search(evidence)
+    location = location_match.group(0) if location_match else ""
+    fixture_id = _sports_fixture_id(evidence) if event_type == "SPORTS_INTERRUPTION" else ""
+    canonical_event_id = ""
+    if event_type == "SPORTS_INTERRUPTION":
+        canonical_event_id = _sports_event_signature(
+            _sports_lifecycle_id(subject, cause),
+            location=location,
+            fixture_id=fixture_id,
+            temporal=temporal,
+        )
     fact_roles = {fact.role for fact in facts}
     if event_type == "RECRUITMENT_COMPETITION":
         fact_complete = {
@@ -630,12 +845,19 @@ def build_canonical_event(
         fact_complete = bool(subject and event_action and (date or lead_text or observations or facts))
         needs_enrichment = bool(subject and event_action and not fact_complete)
     canonical_conflict = "DATE_CONFLICT" if date_conflict else conflict_state
-    signature = canonical_event_signature(
-        event_type,
-        title_text,
-        lead=lead_text,
-        subject=subject,
-        action=event_action,
+    signature = (
+        _sports_event_signature(
+            canonical_event_id,
+            state=temporal_state,
+        )
+        if event_type == "SPORTS_INTERRUPTION"
+        else canonical_event_signature(
+            event_type,
+            title_text,
+            lead=lead_text,
+            subject=subject,
+            action=event_action,
+        )
     )
     return CanonicalEvent(
         event_type=event_type,
@@ -649,9 +871,12 @@ def build_canonical_event(
         observations=observations,
         facts=facts,
         evidence_detail=lead_text,
-        location=location_match.group(0) if location_match else "",
+        location=location,
         temporal_state=temporal_state,
+        temporal_facts=temporal,
         cause=cause,
+        fixture_id=fixture_id,
+        canonical_event_id=canonical_event_id or signature,
         fact_complete=fact_complete,
         needs_enrichment=needs_enrichment,
         event_signature=signature,
@@ -919,33 +1144,62 @@ def market_direction_class(text: str) -> str:
     return ""
 
 
-def event_dates(text: str) -> tuple[str, ...]:
+def event_dates(text: str, event_type: str = "", state: str = "") -> tuple[str, ...]:
     """Return only dates close to an event marker in trusted evidence."""
 
+    facts = temporal_facts(text, event_type)
+    if event_type == "SPORTS_INTERRUPTION":
+        primary = _primary_event_date(facts, event_type, state)
+        return (primary,) if primary else ()
+    # Preserve the established generic-event rule: one date nearest to an
+    # event marker per sentence.  Only the unsafe duration/date collapse is
+    # removed here; non-sports date precedence otherwise remains unchanged.
     value = normalize_text(text)
     result: list[str] = []
     for sentence in re.split(r"(?<=[.!?])\s+", value):
-        matches = list(_DATE_RE.finditer(sentence))
-        if not matches:
-            continue
+        occupied = [
+            match.span()
+            for pattern in (_DURATION_RE, _ELAPSED_DURATION_RE)
+            for match in pattern.finditer(sentence)
+        ]
+        matches = [
+            match
+            for match in _DATE_RE.finditer(sentence)
+            if not _span_overlaps(match.span(), occupied)
+        ]
         markers = [
             match.start()
             for marker in _EVENT_DATE_MARKERS
             for match in re.finditer(re.escape(marker), sentence)
         ]
-        if not markers:
-            continue
-        match = min(matches, key=lambda item: min(abs(item.start() - marker) for marker in markers))
-        result.append(re.sub(r"\s+", "", match.group(0)))
+        if matches and markers:
+            match = min(
+                matches,
+                key=lambda item: min(abs(item.start() - marker) for marker in markers),
+            )
+            result.append(re.sub(r"\s+", "", match.group(0)))
     return tuple(dict.fromkeys(result))
 
 
-def canonical_event_date(title: str, lead: str = "") -> tuple[str, bool]:
+def canonical_event_date(
+    title: str,
+    lead: str = "",
+    *,
+    event_type: str = "",
+    state: str = "",
+) -> tuple[str, bool]:
     """Prefer the title event date and flag disagreement with its lead."""
 
-    title_dates = event_dates(title)
-    lead_dates = event_dates(lead)
-    if title_dates and lead_dates and not set(title_dates).intersection(lead_dates):
+    title_dates = event_dates(title, event_type, state)
+    lead_dates = event_dates(lead, event_type, state)
+    relative = {"어제", "오늘", "내일", "모레"}
+    absolute_disagreement = (
+        title_dates
+        and lead_dates
+        and not set(title_dates).intersection(lead_dates)
+        and not (set(title_dates) & relative or set(lead_dates) & relative)
+    )
+    if absolute_disagreement:
         return title_dates[0], True
     return (title_dates or lead_dates or ("",))[0], False
 
@@ -984,7 +1238,8 @@ def canonical_event_signature(
 ) -> str:
     """Build a stable, fact-bound signature for novelty and audit."""
 
-    date, date_conflict = canonical_event_date(title, lead)
+    state, cause = sports_interruption_state(event_type, f"{title} {lead}")
+    date, date_conflict = canonical_event_date(title, lead, event_type=event_type, state=state)
     observations = event_observations(event_type, title)
     if observations and event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"}:
         bound = ";".join(
@@ -1004,13 +1259,20 @@ def canonical_event_signature(
         parts = (event_type, bound, date)
         return "|".join(part for part in parts if part)
     if event_type == "SPORTS_INTERRUPTION":
-        _, cause = _temporal_state(event_type, f"{title} {lead}")
         league = subject or _event_subject(event_type, title, ())
-        # Resuming/resumed/cancelled are states of the same league-wide
-        # interruption.  Keep the state in facts, not in event identity, so
-        # an update headline converges with the original interruption.
-        parts = (event_type, compact(league), cause, date)
-        return "|".join(part for part in parts if part)
+        evidence = f"{title} {lead}"
+        temporal = temporal_facts(evidence, event_type)
+        location_match = _LOCATION_RE.search(evidence)
+        canonical_event_id = _sports_event_signature(
+            _sports_lifecycle_id(league, cause),
+            location=location_match.group(0) if location_match else "",
+            fixture_id=_sports_fixture_id(evidence),
+            temporal=temporal,
+        )
+        return _sports_event_signature(
+            canonical_event_id,
+            state=state,
+        )
     if event_type == "SPORTS_RESULT":
         facts = sports_result_facts(f"{title} {lead}")
         fact_map = {fact.role: fact.value for fact in facts}

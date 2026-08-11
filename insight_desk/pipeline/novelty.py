@@ -8,7 +8,7 @@ from pathlib import Path
 from ..domain.models import NewsItem
 from .clustering import StoryCluster
 from .editorial import effective_title
-from .semantics import canonical_event_signature, first_action
+from .semantics import canonical_event_signature, first_action, same_lifecycle_signatures
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣·]{2,}")
 _GENERIC = {"관련", "보도", "소식", "뉴스", "주요", "변화", "이슈", "확인"}
@@ -202,6 +202,10 @@ def classify_novelty(signature: str, previous: tuple[str, ...]) -> str:
     for old in previous:
         old_type, old_features, old_dates = _signature_profile(old)
         if not event_type or event_type != old_type:
+            continue
+        if event_type == "SPORTS_INTERRUPTION":
+            if same_lifecycle_signatures(signature, old):
+                return "UPDATE"
             continue
         if dates and old_dates and dates.isdisjoint(old_dates):
             continue

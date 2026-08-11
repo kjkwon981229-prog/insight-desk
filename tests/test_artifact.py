@@ -270,6 +270,140 @@ class ArtifactTests(unittest.TestCase):
         self.assertTrue(any("truncated source copy" in error for error in errors))
         self.assertTrue(any("duplicate event signatures" in error for error in errors))
 
+    def test_live_acceptance_rejects_temporal_role_loss_and_lifecycle_duplicates(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-temporal-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        planned_signature = "SPORTS_INTERRUPTION|프로야구|HEAT|STATE=RESUMING"
+        resumed_signature = "SPORTS_INTERRUPTION|프로야구|HEAT|STATE=RESUMED"
+        planned = {
+            "rank": 1,
+            "headline": "프로야구 5일 경기 재개 예정",
+            "summary": (
+                "프로야구 경기가 폭염으로 중단된 뒤 5일에 재개될 예정이다."
+            ),
+            "event_type": "SPORTS_INTERRUPTION",
+            "source_count": 1,
+            "concrete_fact_count": 3,
+            "topic_id": "kbo",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": planned_signature,
+            "canonical_event_id": "SPORTS_INTERRUPTION|프로야구|HEAT",
+            "final_score": 70.0,
+            "facts": {
+                "event_type": "SPORTS_INTERRUPTION",
+                "event_signature": planned_signature,
+                "canonical_event_id": "SPORTS_INTERRUPTION|프로야구|HEAT",
+                "date": "5일",
+                "temporal_state": "RESUMING",
+                "temporal_facts": [
+                    {"role": "DURATION", "value": "5일", "raw": "5일 동안"},
+                    {"role": "RESUMPTION_DATE", "value": "오늘", "raw": "오늘"},
+                ],
+            },
+        }
+        resumed = {
+            **planned,
+            "rank": 2,
+            "headline": "프로야구 경기 재개",
+            "summary": "프로야구 경기가 폭염으로 중단된 뒤 재개됐다.",
+            "event_signature": resumed_signature,
+            "facts": {
+                **planned["facts"],
+                "event_signature": resumed_signature,
+                "date": "",
+                "temporal_state": "RESUMED",
+                "temporal_facts": [],
+            },
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(
+            json.dumps({"selected_stories": [planned, resumed]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        errors = validate_live_acceptance(path)
+        self.assertTrue(any("duration was promoted" in error for error in errors))
+        self.assertTrue(any("bound resumption date" in error for error in errors))
+        self.assertTrue(any("duplicate event signatures" in error for error in errors))
+
+    def test_live_acceptance_allows_one_fact_bound_lifecycle_update(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-temporal-positive-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        signature = "SPORTS_INTERRUPTION|프로야구|HEAT|STATE=RESUMED"
+        canonical_event_id = "SPORTS_INTERRUPTION|프로야구|HEAT"
+        story = {
+            "rank": 1,
+            "headline": "프로야구 오늘 경기 재개",
+            "summary": (
+                "프로야구 경기가 폭염으로 5일 동안 중단된 뒤 오늘 재개됐다."
+            ),
+            "event_type": "SPORTS_INTERRUPTION",
+            "source_count": 2,
+            "publisher_diversity": 2,
+            "concrete_fact_count": 3,
+            "topic_id": "kbo",
+            "why_selected": ["CONCRETE_EVENT"],
+            "event_signature": signature,
+            "canonical_event_id": canonical_event_id,
+            "final_score": 70.0,
+            "facts": {
+                "event_type": "SPORTS_INTERRUPTION",
+                "event_signature": signature,
+                "canonical_event_id": canonical_event_id,
+                "date": "오늘",
+                "temporal_state": "RESUMED",
+                "temporal_facts": [
+                    {"role": "DURATION", "value": "5일", "raw": "5일 동안"},
+                    {"role": "RESUMPTION_DATE", "value": "오늘", "raw": "오늘"},
+                ],
+            },
+        }
+        path = root / "live-acceptance.json"
+        path.write_text(
+            json.dumps({"selected_stories": [story]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.assertEqual(validate_live_acceptance(path), [])
+
+    def test_live_acceptance_keeps_different_fixture_dates_distinct(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="insight-desk-fixture-qa-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+
+        def story(rank: int, day: str) -> dict[str, object]:
+            signature = (
+                "SPORTS_INTERRUPTION|프로야구|HEAT|FIXTURE=두산한화|"
+                f"EVENT_DATE={day}|STATE=CANCELLED"
+            )
+            return {
+                "rank": rank,
+                "headline": f"{day} 한화-두산 경기 취소",
+                "summary": f"{day} 한화와 두산의 경기가 폭염으로 취소됐다.",
+                "event_type": "SPORTS_INTERRUPTION",
+                "source_count": 2,
+                "concrete_fact_count": 3,
+                "topic_id": "kbo",
+                "why_selected": ["CONCRETE_EVENT"],
+                "event_signature": signature,
+                "final_score": 70.0,
+                "facts": {
+                    "event_type": "SPORTS_INTERRUPTION",
+                    "event_signature": signature,
+                    "date": day,
+                    "temporal_state": "CANCELLED",
+                    "temporal_facts": [{"role": "EVENT_DATE", "value": day, "raw": day}],
+                },
+            }
+
+        path = root / "live-acceptance.json"
+        path.write_text(
+            json.dumps(
+                {"selected_stories": [story(1, "12일"), story(2, "13일")]},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        errors = validate_live_acceptance(path)
+        self.assertFalse(any("duplicate event signatures" in error for error in errors))
+
     def test_live_acceptance_rejects_low_value_selected_events(self) -> None:
         root = Path(tempfile.mkdtemp(prefix="insight-desk-low-value-qa-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

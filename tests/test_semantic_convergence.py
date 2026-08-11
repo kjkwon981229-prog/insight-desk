@@ -9,11 +9,14 @@ from insight_desk.config import load_topics
 from insight_desk.domain.models import EvidenceType, NewsItem
 from insight_desk.pipeline.clustering import StoryCluster
 from insight_desk.pipeline.editorial import assess_event
+from insight_desk.pipeline.novelty import classify_novelty
 from insight_desk.pipeline.selection import select_clusters, topic_diverse_enrichment_candidates
+from insight_desk.pipeline.semantics import build_canonical_event, same_event_lifecycle
 from insight_desk.pipeline.synthesis import synthesize_cluster
 
 
 FIXTURE = Path(__file__).with_name("fixtures") / "run89_semantic_replay.json"
+RUN90_FIXTURE = Path(__file__).with_name("fixtures") / "run90_temporal_replay.json"
 
 
 def _item(record: dict[str, str], *, metadata: bool = True) -> NewsItem:
@@ -29,7 +32,7 @@ def _item(record: dict[str, str], *, metadata: bool = True) -> NewsItem:
         original_url=f"https://{record['domain']}/{record['id']}",
         naver_url="",
         canonical_url=f"https://{record['domain']}/{record['id']}",
-        published_at="2026-08-10T07:00:00+09:00",
+        published_at=record.get("published_at", "2026-08-10T07:00:00+09:00"),
         source_domain=record["domain"],
         content_hash=record["id"],
         score=82.0,
@@ -286,6 +289,156 @@ class SemanticConvergenceTests(unittest.TestCase):
         )
         self.assertEqual([cluster.representative.evidence_id for cluster in result.selected], ["recognized-chart"])
         self.assertEqual(result.strong_rejected_candidates, 0)
+
+
+class ResidualTemporalConvergenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        payload = json.loads(RUN90_FIXTURE.read_text(encoding="utf-8"))
+        cls.records = {record["id"]: record for record in payload["items"]}
+        cls.topics, _ = load_topics(Path("config/topics.json"))
+
+    def test_duration_and_calendar_day_have_distinct_temporal_roles(self) -> None:
+        duration = self.records["duration-resuming"]
+        event = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            duration["title"],
+            lead=duration["lead"],
+        )
+        roles = {(fact.role, fact.value) for fact in event.temporal_facts}
+        self.assertIn(("DURATION", "5일"), roles)
+        self.assertIn(("RESUMPTION_DATE", "오늘"), roles)
+        self.assertEqual(event.date, "오늘")
+        self.assertNotIn("EVENT_DATE=5일", event.event_signature)
+
+        calendar = self.records["calendar-resuming"]
+        event = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            calendar["title"],
+            lead=calendar["lead"],
+        )
+        roles = {(fact.role, fact.value) for fact in event.temporal_facts}
+        self.assertIn(("RESUMPTION_DATE", "5일"), roles)
+        self.assertNotIn(("DURATION", "5일"), roles)
+        self.assertEqual(event.date, "5일")
+
+    def test_relative_interruption_and_resumption_bind_to_lifecycle_state(self) -> None:
+        event = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            "어제 중단됐던 프로야구 경기가 오늘 재개됐다",
+            lead="폭염으로 어제 멈춘 경기가 오늘 정상적으로 재개됐다.",
+        )
+        roles = {(fact.role, fact.value) for fact in event.temporal_facts}
+        self.assertIn(("START_DATE", "어제"), roles)
+        self.assertIn(("RESUMPTION_DATE", "오늘"), roles)
+        self.assertEqual(event.temporal_state, "RESUMED")
+        self.assertEqual(event.date, "오늘")
+
+    def test_run90_lifecycle_replay_keeps_one_latest_representation(self) -> None:
+        planned = _item(self.records["duration-resuming"])
+        resumed = _item(self.records["lifecycle-resumed"])
+        result = select_clusters(
+            (
+                StoryCluster("kbo_hanwha", (planned,)),
+                StoryCluster("kbo_hanwha", (resumed,)),
+            ),
+            self.topics,
+            limit=10,
+        )
+        self.assertEqual(len(result.selected), 1)
+        selected = result.selected[0]
+        self.assertEqual(
+            {item.evidence_id for item in selected.items},
+            {planned.evidence_id, resumed.evidence_id},
+        )
+        assessment = result.assessments[next(iter(result.assessments))]
+        canonical = assessment.event.canonical_event
+        assert canonical is not None
+        self.assertEqual(canonical.temporal_state, "RESUMED")
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            selected,
+            topic_name="KBO·한화 이글스",
+            trend_metrics=(),
+            canonical_event_override=canonical,
+            event_signature_override=assessment.event_signature,
+        )
+        self.assertEqual(headline, "프로야구 경기 재개")
+        self.assertIn("재개됐다", summary)
+        self.assertNotIn("5일에", summary)
+        self.assertEqual(facts.canonical_event_id, canonical.canonical_event_id)
+
+    def test_duration_only_candidate_synthesizes_bound_relative_resumption(self) -> None:
+        item = _item(self.records["duration-resuming"])
+        cluster = StoryCluster("kbo_hanwha", (item,))
+        topic = next(topic for topic in self.topics if topic.id == "kbo_hanwha")
+        canonical = assess_event(cluster, topic).canonical_event
+        assert canonical is not None
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name=topic.name,
+            trend_metrics=(),
+            canonical_event_override=canonical,
+        )
+        self.assertIn("오늘", headline)
+        self.assertIn("오늘 재개", summary)
+        self.assertNotIn("5일에", summary)
+        self.assertEqual(facts.date, "오늘")
+
+    def test_location_cause_and_fixture_date_prevent_overmerge(self) -> None:
+        seoul = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            self.records["seoul-heat"]["title"],
+            lead=self.records["seoul-heat"]["lead"],
+        )
+        busan = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            self.records["busan-rain"]["title"],
+            lead=self.records["busan-rain"]["lead"],
+        )
+        self.assertFalse(same_event_lifecycle(seoul, busan))
+
+        day_12 = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            self.records["fixture-day-12"]["title"],
+            lead=self.records["fixture-day-12"]["lead"],
+        )
+        day_13 = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            self.records["fixture-day-13"]["title"],
+            lead=self.records["fixture-day-13"]["lead"],
+        )
+        self.assertEqual(day_12.fixture_id, day_13.fixture_id)
+        self.assertNotEqual(day_12.canonical_event_id, day_13.canonical_event_id)
+        self.assertFalse(same_event_lifecycle(day_12, day_13))
+
+    def test_lifecycle_novelty_is_new_then_updates(self) -> None:
+        interrupted = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            "프로야구 폭염으로 경기 중단",
+            lead="폭염으로 프로야구 경기가 중단됐다.",
+        )
+        resuming = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            "중단됐던 프로야구 오늘 재개 예정",
+            lead="폭염으로 멈춘 프로야구가 오늘 재개할 예정이다.",
+        )
+        resumed = build_canonical_event(
+            "SPORTS_INTERRUPTION",
+            "프로야구 경기 재개",
+            lead="폭염으로 중단됐던 프로야구 경기가 재개됐다.",
+        )
+        self.assertEqual(
+            classify_novelty(interrupted.event_signature, ("POLICY|금리|인하",)),
+            "NEW",
+        )
+        self.assertEqual(
+            classify_novelty(resuming.event_signature, (interrupted.event_signature,)),
+            "UPDATE",
+        )
+        self.assertEqual(
+            classify_novelty(resumed.event_signature, (resuming.event_signature,)),
+            "UPDATE",
+        )
 
 
 if __name__ == "__main__":

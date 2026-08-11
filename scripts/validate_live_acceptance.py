@@ -13,6 +13,7 @@ from insight_desk.pipeline.semantics import (
     contains_action,
     metric_summary_preserves_entity_binding,
     metric_observations,
+    same_lifecycle_signatures,
     summary_information_gain,
 )
 
@@ -107,8 +108,9 @@ def validate(path: Path) -> list[str]:
         "low_information_uncertain_count": 0,
         "semantic_error_count": 0,
         "publisher_diversity_error_count": 0,
+        "temporal_role_error_count": 0,
     }
-    signatures: dict[str, int] = {}
+    signatures: list[str] = []
     for index, story in enumerate(stories, 1):
         if not isinstance(story, dict):
             errors.append(f"story {index} is not an object")
@@ -161,6 +163,12 @@ def validate(path: Path) -> list[str]:
                 errors.append(f"story {index} is missing canonical facts event signature")
             elif story_signature and facts_signature and story_signature != facts_signature:
                 errors.append(f"story {index} event signature disagrees with synthesized facts")
+            audit_event_id = str(story.get("canonical_event_id", "")).strip()
+            facts_event_id = str(facts.get("canonical_event_id", "")).strip()
+            if audit_event_id and facts_event_id and audit_event_id != facts_event_id:
+                errors.append(
+                    f"story {index} canonical event identity disagrees with synthesized facts"
+                )
             conflict_state = str(facts.get("conflict_state", "NO_CONFLICT") or "NO_CONFLICT")
             if conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
                 errors.append(f"story {index} has unresolved authority/event conflict: {conflict_state}")
@@ -194,6 +202,48 @@ def validate(path: Path) -> list[str]:
                             binding_error = True
                     if binding_error:
                         errors.append(f"story {index} loses metric entity/direction binding")
+            temporal_payload = facts.get("temporal_facts", ())
+            temporal_by_role: dict[str, set[str]] = {}
+            if isinstance(temporal_payload, list):
+                for temporal in temporal_payload:
+                    if not isinstance(temporal, dict):
+                        errors.append(f"story {index} has a malformed temporal fact")
+                        continue
+                    role = str(temporal.get("role", "")).strip()
+                    value = str(temporal.get("value", "")).strip()
+                    if role and value:
+                        temporal_by_role.setdefault(role, set()).add(value)
+            fact_date = str(facts.get("date", "")).strip()
+            date_values: set[str] = set()
+            for role in (
+                "EVENT_DATE",
+                "SCHEDULE_DATE",
+                "START_DATE",
+                "END_DATE",
+                "RESUMPTION_DATE",
+            ):
+                date_values.update(temporal_by_role.get(role, set()))
+            duration_values = set(temporal_by_role.get("DURATION", set()))
+            duration_values.update(temporal_by_role.get("ELAPSED_DURATION", set()))
+            temporal_errors: list[str] = []
+            if temporal_by_role and fact_date and fact_date not in date_values:
+                temporal_errors.append("date is not backed by a calendar/event temporal role")
+            if fact_date and fact_date in duration_values and fact_date not in date_values:
+                temporal_errors.append("duration was promoted to an event date")
+            temporal_state = str(facts.get("temporal_state", "")).strip()
+            resumption_dates = temporal_by_role.get("RESUMPTION_DATE", set())
+            if temporal_state in {"RESUMING", "RESUMED"} and resumption_dates:
+                if fact_date not in resumption_dates:
+                    temporal_errors.append("resumption state lost its bound resumption date")
+            for duration in duration_values - date_values:
+                if duration and any(
+                    f"{duration}에" in value.replace(" ", "")
+                    for value in (headline, summary)
+                ):
+                    temporal_errors.append("synthesis rendered a duration as a calendar date")
+            for detail in dict.fromkeys(temporal_errors):
+                metrics["temporal_role_error_count"] += 1
+                errors.append(f"story {index} temporal contract failure: {detail}")
         audited_conflict = str(story.get("conflict_state", "NO_CONFLICT") or "NO_CONFLICT")
         if audited_conflict not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
             errors.append(f"story {index} has unresolved audit conflict: {audited_conflict}")
@@ -232,10 +282,16 @@ def validate(path: Path) -> list[str]:
             errors.append(f"story {index} has no why_selected")
         signature = str(story.get("event_signature", "")).strip()
         if signature:
-            signatures[signature] = signatures.get(signature, 0) + 1
+            signatures.append(signature)
         if not story.get("topic_id") and not story.get("topic"):
             errors.append(f"story {index} has no user-facing topic")
-    duplicate_event_count = sum(count - 1 for count in signatures.values() if count > 1)
+    distinct_signatures: list[str] = []
+    duplicate_event_count = 0
+    for signature in signatures:
+        if any(same_lifecycle_signatures(signature, seen) for seen in distinct_signatures):
+            duplicate_event_count += 1
+        else:
+            distinct_signatures.append(signature)
     metrics["duplicate_event_count"] = duplicate_event_count
     if duplicate_event_count:
         errors.append("selected stories contain duplicate event signatures")

@@ -18,6 +18,7 @@ from .semantics import (
     contains_boundary_term,
     earnings_fact_parts,
     earnings_observations,
+    event_dates,
     first_action,
     market_direction,
     metric_observations,
@@ -429,19 +430,7 @@ def _dates(text: str) -> tuple[str, ...]:
 def _event_dates(text: str) -> tuple[str, ...]:
     """Extract dates tied to the event, not a publication-date preface."""
 
-    selected: list[str] = []
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    for sentence in sentences:
-        matches = list(_DATE_RE.finditer(sentence))
-        marker_positions = [
-            match.start()
-            for marker in _EVENT_DATE_MARKERS
-            for match in re.finditer(re.escape(marker), sentence)
-        ]
-        if matches and marker_positions:
-            match = min(matches, key=lambda value: min(abs(value.start() - position) for position in marker_positions))
-            selected.append(re.sub(r"\s+", "", match.group(0)))
-    return _unique(selected)
+    return event_dates(text)
 
 
 def _times(text: str) -> tuple[str, ...]:
@@ -1349,11 +1338,16 @@ def _summary(
             "RAIN": "우천",
         }.get(cause, "") or next((marker for marker in ("폭염", "우천", "악천후", "기상") if marker in evidence), "")
         cause_phrase = f"{cause_label}{_instrumental_particle(cause_label)} " if cause_label else ""
+        resume_date = (
+            f"{date} "
+            if date in {"어제", "오늘", "내일", "모레"}
+            else f"{date}에 "
+            if date
+            else ""
+        )
         if temporal_state == "RESUMING":
-            resume_date = f"{date}에 " if date else ""
             sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개될 예정이다."
         elif temporal_state == "RESUMED":
-            resume_date = f"{date}에 " if date else ""
             sentence = f"{league} 경기가 {cause_phrase}중단된 뒤 {resume_date}재개됐다."
         elif temporal_state == "CANCELLED" or "취소" in evidence:
             sentence = f"{league} 경기가 폭염 영향으로 취소됐다."
@@ -1570,9 +1564,18 @@ def synthesize_cluster(
     official = _official_source(items)
     source_count = cluster.source_count
     trend_state = _trend_state(cluster.topic_id, trend_metrics)
-    canonical_date, date_conflict = canonical_event_date(title, _fact_lead(headline_item))
+    canonical_date, date_conflict = canonical_event_date(
+        title,
+        _fact_lead(headline_item),
+        event_type=event_type,
+        state=canonical_event.temporal_state if canonical_event is not None else "",
+    )
     if canonical_event is not None:
-        date = canonical_event.date or canonical_date or (dates[0] if dates else "")
+        date = (
+            canonical_event.date
+            if event_type == "SPORTS_INTERRUPTION"
+            else canonical_event.date or canonical_date or (dates[0] if dates else "")
+        )
         location = canonical_event.location or (locations[0] if locations else "")
         date_conflict = date_conflict or canonical_event.conflict_state == "DATE_CONFLICT"
     else:
@@ -1647,6 +1650,13 @@ def synthesize_cluster(
         or canonical_event_signature(event_type, title, lead=_fact_lead(headline_item), subject=subject, action=action),
         conflict_state=conflict_state,
         temporal_state=temporal_state,
+        canonical_event_id=(
+            canonical_event.canonical_event_id
+            if canonical_event is not None
+            else event_signature_override or ""
+        ),
+        temporal_facts=canonical_event.temporal_facts if canonical_event is not None else (),
+        fixture_id=canonical_event.fixture_id if canonical_event is not None else "",
     )
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):

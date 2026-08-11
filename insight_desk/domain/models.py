@@ -161,6 +161,15 @@ class TrendMetric:
 
 
 @dataclass(frozen=True)
+class TemporalFact:
+    """One source-backed temporal expression with an explicit semantic role."""
+
+    role: str
+    value: str
+    raw: str = ""
+
+
+@dataclass(frozen=True)
 class StoryFacts:
     """Deterministic facts extracted from a story cluster.
 
@@ -186,8 +195,11 @@ class StoryFacts:
     next_known_event: str = ""
     uncertainty: str = ""
     event_signature: str = ""
+    canonical_event_id: str = ""
     conflict_state: str = "NO_CONFLICT"
     temporal_state: str = ""
+    temporal_facts: tuple[TemporalFact, ...] = field(default_factory=tuple)
+    fixture_id: str = ""
 
 
 @dataclass(frozen=True)

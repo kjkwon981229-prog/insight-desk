@@ -23,6 +23,7 @@ from .semantics import (
     market_direction_class,
     metric_observations,
     recruitment_event_type,
+    sports_interruption_state,
     summary_information_gain,
 )
 
@@ -174,8 +175,9 @@ def effective_text(item: NewsItem) -> str:
 def best_headline_item(items: tuple[NewsItem, ...]) -> NewsItem:
     """Choose the concrete source headline used for display and signatures."""
 
-    def quality(item: NewsItem) -> tuple[float, float, str]:
+    def quality(item: NewsItem) -> tuple[int, float, float, str, str]:
         title = effective_title(item)
+        lead = discovery_lead(item)
         compact = re.sub(r"\s+", "", title)
         score = min(32.0, len(compact))
         if item.metadata_title and safe_evidence_text(item.metadata_title):
@@ -201,7 +203,22 @@ def best_headline_item(items: tuple[NewsItem, ...]) -> NewsItem:
                 score += 12.0
             if any(term in title for term in ("→", "리셋", "체력 충전")):
                 score -= 10.0
-        return score, item.score, title
+        lifecycle_rank = 0
+        published = ""
+        if any(term in f"{title} {lead}".casefold() for term in ("kbo", "프로야구", "야구")):
+            state, cause = sports_interruption_state(
+                "SPORTS_INTERRUPTION",
+                f"{title} {lead}",
+            )
+            if state and cause:
+                lifecycle_rank = {
+                    "INTERRUPTED": 1,
+                    "CANCELLED": 2,
+                    "RESUMING": 3,
+                    "RESUMED": 4,
+                }.get(state, 0)
+                published = item.metadata_published_at or item.published_at or ""
+        return lifecycle_rank, score, item.score, published, title
 
     return max(items, key=quality)
 

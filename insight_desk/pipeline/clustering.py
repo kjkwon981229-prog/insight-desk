@@ -4,7 +4,13 @@ import re
 from dataclasses import dataclass
 
 from ..domain.models import NewsItem
-from .semantics import canonical_publisher, contains_action
+from .semantics import (
+    CanonicalEvent,
+    build_canonical_event,
+    canonical_publisher,
+    contains_action,
+    same_event_lifecycle,
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +118,12 @@ def _is_sports_heat_story(item: NewsItem) -> bool:
     )
 
 
+def _sports_interruption_event(item: NewsItem) -> CanonicalEvent:
+    title = item.metadata_title or item.title
+    lead = item.metadata_description or item.summary
+    return build_canonical_event("SPORTS_INTERRUPTION", title, lead=lead)
+
+
 def _event_parts(item: NewsItem) -> tuple[set[str], set[str], set[str]]:
     # The NAVER description is a retrieval snippet, not a trustworthy body
     # document.  Its trailing clauses often mention an unrelated person,
@@ -192,7 +204,10 @@ def _market_instruments(item: NewsItem) -> set[str]:
 
 def _similar(a: NewsItem, b: NewsItem) -> bool:
     if _is_sports_heat_story(a) and _is_sports_heat_story(b):
-        return True
+        return same_event_lifecycle(
+            _sports_interruption_event(a),
+            _sports_interruption_event(b),
+        )
     left_instruments = _market_instruments(a)
     right_instruments = _market_instruments(b)
     # A shared macro driver such as ``금리`` or ``상승`` is not enough to

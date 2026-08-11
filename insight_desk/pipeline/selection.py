@@ -15,7 +15,12 @@ from .editorial import (
 )
 from .novelty import classify_novelty
 from .synthesis import earnings_summary_preserves_fact_binding, is_usable_synthesis, synthesize_cluster
-from .semantics import CanonicalEvent, canonical_publisher, metric_summary_preserves_entity_binding
+from .semantics import (
+    CanonicalEvent,
+    canonical_publisher,
+    metric_summary_preserves_entity_binding,
+    same_event_lifecycle,
+)
 
 
 @dataclass(frozen=True)
@@ -226,6 +231,7 @@ def _converge_canonical_clusters(
 
     result: list[StoryCluster] = []
     by_key: dict[tuple[str, str], int] = {}
+    lifecycle_groups: dict[int, list[CanonicalEvent]] = {}
     for cluster in clusters:
         topic = topic_by_id.get(cluster.topic_id)
         if topic is None:
@@ -242,10 +248,25 @@ def _converge_canonical_clusters(
             result.append(cluster)
             continue
         key = (cluster.topic_id, signature)
-        index = by_key.get(key)
+        if event.event_type == "SPORTS_INTERRUPTION" and canonical is not None:
+            index = next(
+                (
+                    candidate_index
+                    for candidate_index, members in lifecycle_groups.items()
+                    if result[candidate_index].topic_id == cluster.topic_id
+                    and all(same_event_lifecycle(canonical, member) for member in members)
+                ),
+                None,
+            )
+        else:
+            index = by_key.get(key)
         if index is None:
-            by_key[key] = len(result)
+            index = len(result)
             result.append(cluster)
+            if event.event_type == "SPORTS_INTERRUPTION" and canonical is not None:
+                lifecycle_groups[index] = [canonical]
+            else:
+                by_key[key] = index
             continue
         existing = result[index]
         seen: set[str] = set()
@@ -257,6 +278,8 @@ def _converge_canonical_clusters(
             seen.add(item_key)
             items.append(item)
         result[index] = StoryCluster(cluster.topic_id, tuple(items))
+        if event.event_type == "SPORTS_INTERRUPTION" and canonical is not None:
+            lifecycle_groups[index].append(canonical)
     return tuple(result)
 
 
@@ -389,6 +412,11 @@ def select_clusters(
             "certainty_gate": "supported_single_source" if "SUPPORTED_SINGLE_SOURCE" in assessment.reasons else "multi_or_official",
             "novelty": assessment.novelty,
             "event_signature": assessment.event_signature,
+            "canonical_event_id": (
+                assessment.event.canonical_event.canonical_event_id
+                if assessment.event.canonical_event is not None
+                else assessment.event_signature
+            ),
             "final_score": assessment.final_score,
             "why_selected": list(why_selected(assessment)) if selected_value else [],
             "selection_reasons": list(assessment.reasons),
@@ -520,6 +548,16 @@ def select_clusters(
                 ),
                 "novelty": assessment.novelty,
                 "event_signature": assessment.event_signature,
+                "canonical_event_id": (
+                    assessment.event.canonical_event.canonical_event_id
+                    if assessment.event.canonical_event is not None
+                    else assessment.event_signature
+                ),
+                "fixture_id": (
+                    assessment.event.canonical_event.fixture_id
+                    if assessment.event.canonical_event is not None
+                    else ""
+                ),
                 "final_score": assessment.final_score,
                 "why_selected": list(why_selected(assessment)),
                 "selection_reason": reason,
