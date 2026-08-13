@@ -26,6 +26,8 @@ from .semantics import (
     summary_preserves_primary_focus,
 )
 from .synthesis import (
+    _event_relation_fact,
+    _relation_summary_preserves_fact,
     earnings_summary_preserves_fact_binding,
     industry_summary_preserves_fact_binding,
     is_usable_synthesis,
@@ -254,11 +256,16 @@ def _synthesis_is_editorial_ready(
         return False
     if not summary_preserves_primary_focus(summary, facts.primary_focus_terms):
         return False
+    relation_fact = _event_relation_fact(canonical_event.facts) if canonical_event is not None else None
     return is_usable_synthesis(
         headline,
         summary,
         source_count=cluster.source_count,
         official_source=official_source,
+        relation_fact_preserved=bool(
+            relation_fact
+            and _relation_summary_preserves_fact(summary, headline, relation_fact)
+        ),
     )
 
 
