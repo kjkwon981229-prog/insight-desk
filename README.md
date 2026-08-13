@@ -7,12 +7,14 @@ Insight Desk는 NAVER Search News API와 NAVER Search Trend API에서 받은 자
 - 기준 branch: `main`
 - latest Sol convergence commit: `55c31740e1e28e5410ae1232372f04114e55ad1f` (`Converge event focus and material synthesis`)
 - CI #193: Python 298개 및 Push Worker 13개 통과
-- 이번 오프라인 closure: Python 298개 및 Push Worker 13개 통과
+- targeted recall correction 오프라인 검증: Python 304개 및 Push Worker 13개 통과
 - Run #92의 KBO·경제 human acceptance 실패는 역사적 회귀 증거로 보존했고, Sol event/fact ownership 구조는 닫혔다.
 - Run #93 general production smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했다. 단, 해당 run은 KBO·경제 targeted live reproof를 실행하지 않았다.
 - Run #94·#95의 recall/focus/synthesis/Korean failure corpus는 Sol commit의 replay와 현재 validator에 포함되어 있다.
-- Run #96 fresh live acceptance는 `workflow_dispatch` 1회로 build·artifact·machine editorial acceptance·Pages·READY push까지 통과했다. selected story 1건의 human audit도 통과했다.
-- 현재 최종 상태: `READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+- Run #96은 selected story 1건의 precision audit은 통과했지만, rejected-candidate 전수 감사에서 confirmed FN 20건/15 unique event group이 확인되어 이전 closure 판정을 대체했다.
+- targeted correction은 subject + typed predicate + material object/result 관계, owned-but-unenriched fact 구분, complete title metric, recall pathology visibility만 복구한다. 20/20 FN positive와 44/44 TN precision corpus가 통과했다.
+- 현재 상태: `READY_FOR_POST_RECALL_FRESH_LIVE`
+- 다음 live는 current correction HEAD에서 최대 1회이며 아직 실행하지 않았다.
 - 남은 외부/물리 gate: ECOS credential, OpenAI public endpoint 403, source별 live positive match pending, 실제 `07:30 KST` schedule, READY 알림의 iPhone 표시·개수·tap/open, watchdog.
 
 최종 사용 경로는 다음과 같다.

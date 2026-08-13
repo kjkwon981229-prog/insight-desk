@@ -124,7 +124,13 @@ def _funnel_template() -> dict[str, int]:
 
 
 def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
-    """Detect a good upstream candidate lost by a downstream/common gate."""
+    """Detect a complete owned event lost by an editorial gate.
+
+    The signal is fact-based, never a selected-story quota.  In particular,
+    an explicit source-owned subject/action/object relation remains visible
+    if a future event, ownership, or synthesis regression drops it before the
+    old downstream-only diagnostic can see it.
+    """
 
     synthesis_vetoed_qualified = (
         "QUALIFIED" in assessment.reasons
@@ -144,6 +150,35 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
     # A ratio-only headline that still needs its article lead is an enrichment
     # gap, not evidence that synthesis discarded a complete event.
     canonical_facts_complete = bool(canonical and canonical.fact_complete)
+    owned_relation_complete = bool(
+        canonical
+        and canonical_facts_complete
+        and canonical.representative_evidence_id
+        and canonical.representative_evidence_id in canonical.evidence_owner_ids
+        and any(fact.role == "EVENT_RELATION" for fact in canonical.facts)
+    )
+    upstream_owned_relation_lost = bool(
+        assessment.relevance.passed
+        and owned_relation_complete
+        and not assessment.qualified
+        and assessment.novelty != "UNCHANGED"
+        and assessment.evidence.conflict_state in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+        and "FRESHNESS_FAILED" not in assessment.reasons
+        and "AUTHORITY_REQUIRED_UNVERIFIED" not in assessment.reasons
+        and "LOW_VALUE_EVENT" not in assessment.reasons
+        and any(
+            reason in assessment.reasons
+            for reason in (
+                "EVENT_ACTION_CONTRACT_FAILED",
+                "FACT_OWNERSHIP_UNSUPPORTED",
+                "SYNTHESIS_FACT_LOSS",
+            )
+        )
+        and assessment.event.concrete_fact_count >= 3
+        and assessment.event.significance >= 60.0
+    )
+    if upstream_owned_relation_lost:
+        return True
     if synthesis_vetoed_qualified:
         return bool(
             upstream_passed
