@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from insight_desk.pipeline.semantics import (
     ACTION_TERMS,
+    EventFact,
     compact,
     contains_action,
     metric_observations,
@@ -21,7 +22,11 @@ from insight_desk.pipeline.semantics import (
     summary_information_gain,
     summary_preserves_primary_focus,
 )
-from insight_desk.pipeline.synthesis import editorial_text_issues, summary_why_redundant
+from insight_desk.pipeline.synthesis import (
+    editorial_text_issues,
+    relation_summary_preserves_fact,
+    summary_why_redundant,
+)
 
 _MARKET_ACTIONS = {
     "강보합세",
@@ -121,6 +126,7 @@ def validate(path: Path) -> list[str]:
         "summary_why_duplication_count": 0,
         "event_ownership_error_count": 0,
         "fact_provenance_error_count": 0,
+        "relation_fact_error_count": 0,
         "semantic_role_error_count": 0,
         "primary_focus_error_count": 0,
         "korean_composition_error_count": 0,
@@ -167,8 +173,6 @@ def validate(path: Path) -> list[str]:
         ):
             metrics["generic_summary_count"] += 1
             errors.append(f"story {index} has a generic summary")
-        if headline and summary and not summary_information_gain(headline, summary):
-            errors.append(f"story {index} summary has no information gain over headline")
         if summary_why_redundant(summary, why_it_matters):
             metrics["summary_why_duplication_count"] += 1
             errors.append(f"story {index} duplicates summary in why_it_matters")
@@ -191,6 +195,39 @@ def validate(path: Path) -> list[str]:
         if final_score < 55.0:
             errors.append(f"story {index} is below the editorial quality floor")
         facts = story.get("facts")
+        relation_fact: EventFact | None = None
+        if isinstance(facts, dict):
+            relation_event_types = {
+                "ANNOUNCEMENT",
+                "REGULATION",
+                "INDUSTRY_CHANGE",
+                "ROSTER_PERSONNEL",
+            }
+            relation_action = str(facts.get("action", "")).strip()
+            relation_subject = str(facts.get("subject", "")).strip()
+            relation_object = str(facts.get("object", "")).strip()
+            if (
+                event_type in relation_event_types
+                and relation_subject
+                and relation_action
+                and relation_object
+            ):
+                relation_fact = EventFact(
+                    "EVENT_RELATION",
+                    relation_object,
+                    subject=relation_subject,
+                    relation=relation_action,
+                    object=relation_object,
+                )
+        relation_preserved = bool(
+            relation_fact
+            and relation_summary_preserves_fact(summary, headline, relation_fact)
+        )
+        if relation_fact is not None and not relation_preserved:
+            metrics["relation_fact_error_count"] += 1
+            errors.append(f"story {index} relation fact polarity or temporal commitment mismatch")
+        if headline and summary and not summary_information_gain(headline, summary) and not relation_preserved:
+            errors.append(f"story {index} summary has no information gain over headline")
         if isinstance(facts, dict):
             audited_event_type = str(story.get("event_type", "")).strip()
             synthesized_event_type = str(facts.get("event_type", "")).strip()

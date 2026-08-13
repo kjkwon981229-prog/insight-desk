@@ -295,6 +295,7 @@ def is_usable_synthesis(
     *,
     source_count: int,
     official_source: bool = False,
+    relation_fact: EventFact | None = None,
     relation_fact_preserved: bool = False,
 ) -> bool:
     """Reject display copy that cannot carry a concrete editorial fact."""
@@ -308,6 +309,14 @@ def is_usable_synthesis(
         for marker in _GENERIC_SUMMARY_MARKERS
     ):
         return False
+    if relation_fact is not None:
+        relation_fact_preserved = relation_summary_preserves_fact(
+            clean_summary,
+            clean_headline,
+            relation_fact,
+        )
+        if not relation_fact_preserved:
+            return False
     if not summary_information_gain(clean_headline, clean_summary) and not relation_fact_preserved:
         return False
     if _TRUNCATION_RE.search(clean_headline):
@@ -1192,9 +1201,41 @@ def _event_relation_fact(facts: tuple[EventFact, ...]) -> EventFact | None:
     return next((fact for fact in facts if fact.role == "EVENT_RELATION"), None)
 
 
-_RELATION_ANNOUNCED_RE = re.compile(
-    r"(?:다고|라고)\s*(?:밝혔다|전했다|말했다|발표했다)"
+_RELATION_ANNOUNCED_MARKERS = (
+    "다고 밝혔다",
+    "라고 밝혔다",
+    "다고 전했다",
+    "라고 전했다",
+    "다고 말했다",
+    "라고 말했다",
+    "다고 발표했다",
+    "라고 발표했다",
 )
+_RELATION_NEGATION_MARKERS = (
+    "않",
+    "안 ",
+    "못 ",
+    "부인",
+    "무산",
+    "없다",
+    "없다고",
+    "아니다",
+    "확정되지",
+)
+_RELATION_UNCERTAIN_MARKERS = (
+    "가능성",
+    "가능하다",
+    "가능성이",
+    "수 있다",
+    "수도 있다",
+    "검토",
+    "논의",
+    "전망",
+    "거론",
+    "여부",
+    "싶다",
+)
+_RELATION_NEGATION_EXEMPT_ACTIONS = frozenset({"영입 무산"})
 _RELATION_FUTURE_MARKERS: dict[str, tuple[str, ...]] = {
     "완화": ("완화하기로", "완화할", "완화 예정이다"),
     "착공": ("착공식을 연다", "착공식을 열 예정이다", "착공할", "착공 예정", "착공하기로"),
@@ -1219,12 +1260,15 @@ _RELATION_PRESENT_MARKERS: dict[str, tuple[str, ...]] = {
     "지원": ("지원한다",),
 }
 _RELATION_ACTION_MARKERS: dict[str, tuple[str, ...]] = {
-    "떠남": ("떠나", "결별"),
+    "선정": ("선정", "결정됐다", "결정되었다"),
+    "지정": ("지정", "결정됐다", "결정되었다"),
+    "떠남": ("떠나", "떠난", "떠났", "떠날", "결별"),
     "영입 무산": ("영입", "무산"),
     "계약 체결": ("체결",),
     "이적 확정": ("이적", "확정"),
     "트레이드 성사": ("트레이드", "성사"),
 }
+_RELATION_CLAUSE_BOUNDARIES = ",.?!;:。！？，、"
 _RELATION_COMPLETED_MARKERS: dict[str, tuple[str, ...]] = {
     "완화": ("완화했다", "완화됐다", "완화되었다"),
     "착공": ("착공식을 열었다", "착공했다", "착공에 들어갔다"),
@@ -1234,12 +1278,67 @@ _RELATION_COMPLETED_MARKERS: dict[str, tuple[str, ...]] = {
     "출범": ("출범했다",),
     "투자": ("투자했다",),
     "지원": ("지원했다", "지원됐다"),
-    "선정": ("선정됐다", "선정되었다", "선정했다"),
-    "지정": ("지정됐다", "지정되었다", "지정했다"),
+    "선정": ("선정됐다", "선정되었다", "선정했다", "결정됐다", "결정되었다"),
+    "지정": ("지정됐다", "지정되었다", "지정했다", "결정됐다", "결정되었다"),
     "떠남": ("떠났다",),
     "결별": ("결별했다",),
     "이적": ("이적했다",),
 }
+
+
+def _relation_action_markers(action: str) -> tuple[str, ...]:
+    return _RELATION_ACTION_MARKERS.get(action, (action,))
+
+
+def _relation_window_contains(text: str, action: str, markers: tuple[str, ...]) -> bool:
+    """Check polarity markers only near the bound relation predicate."""
+
+    normalized = normalize_text(text)
+    if not normalized:
+        return False
+    for action_marker in _relation_action_markers(action):
+        for match in re.finditer(re.escape(action_marker), normalized):
+            left_boundary = max(
+                (normalized.rfind(boundary, 0, match.start()) for boundary in _RELATION_CLAUSE_BOUNDARIES),
+                default=-1,
+            ) + 1
+            right_boundaries = [
+                position
+                for boundary in _RELATION_CLAUSE_BOUNDARIES
+                for position in (normalized.find(boundary, match.end()),)
+                if position >= 0
+            ]
+            right_boundary = min(right_boundaries, default=len(normalized))
+            window = normalized[
+                max(left_boundary, match.start() - 24) : min(right_boundary, match.end() + 40)
+            ]
+            if any(marker in window for marker in markers):
+                return True
+    return False
+
+
+def _relation_text_temporal_mode(text: str, action: str) -> str:
+    """Classify one bounded relation clause without inventing completion."""
+
+    normalized = normalize_text(text)
+    if not normalized:
+        return "UNKNOWN"
+    if (
+        action not in _RELATION_NEGATION_EXEMPT_ACTIONS
+        and _relation_window_contains(normalized, action, _RELATION_NEGATION_MARKERS)
+    ):
+        return "NEGATED"
+    if _relation_window_contains(normalized, action, _RELATION_UNCERTAIN_MARKERS):
+        return "POSSIBILITY"
+    if _relation_window_contains(normalized, action, _RELATION_ANNOUNCED_MARKERS):
+        return "ANNOUNCED"
+    if any(marker in normalized for marker in _RELATION_FUTURE_MARKERS.get(action, ())):
+        return "FUTURE"
+    if any(marker in normalized for marker in _RELATION_PRESENT_MARKERS.get(action, ())):
+        return "ONGOING"
+    if any(marker in normalized for marker in _RELATION_COMPLETED_MARKERS.get(action, ())):
+        return "COMPLETED"
+    return "UNKNOWN"
 
 
 def _relation_temporal_mode(title: str, evidence: str, action: str) -> str:
@@ -1252,17 +1351,9 @@ def _relation_temporal_mode(title: str, evidence: str, action: str) -> str:
     """
 
     for value in (evidence, title):
-        text = normalize_text(value)
-        if not text:
-            continue
-        if _RELATION_ANNOUNCED_RE.search(text):
-            return "ANNOUNCED"
-        if any(marker in text for marker in _RELATION_FUTURE_MARKERS.get(action, ())):
-            return "FUTURE"
-        if any(marker in text for marker in _RELATION_PRESENT_MARKERS.get(action, ())):
-            return "ONGOING"
-        if any(marker in text for marker in _RELATION_COMPLETED_MARKERS.get(action, ())):
-            return "COMPLETED"
+        mode = _relation_text_temporal_mode(value, action)
+        if mode != "UNKNOWN":
+            return mode
     return "UNKNOWN"
 
 
@@ -1283,19 +1374,35 @@ def _relation_detail_supports_fact(detail: str, fact: EventFact) -> bool:
     object_terms = re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.object)
     if not all(_compact_fact_value(term) in detail_key for term in object_terms if term):
         return False
-    action_markers = _RELATION_ACTION_MARKERS.get(fact.relation, (fact.relation,))
+    action_markers = _relation_action_markers(fact.relation)
     return any(_compact_fact_value(marker) in detail_key for marker in action_markers)
 
 
-def _relation_summary_preserves_fact(summary: str, headline: str, fact: EventFact) -> bool:
-    """Permit a compact relation headline when the summary keeps its fact."""
+def relation_summary_preserves_fact(summary: str, headline: str, fact: EventFact) -> bool:
+    """Require relation, polarity, and temporal commitment to agree."""
 
     if _compact_fact_value(headline) == _compact_fact_value(summary):
         return False
     if not _relation_detail_supports_fact(summary, fact):
         return False
-    action_markers = _RELATION_ACTION_MARKERS.get(fact.relation, (fact.relation,))
-    return any(marker in normalize_text(summary) for marker in action_markers)
+    headline_mode = _relation_text_temporal_mode(headline, fact.relation)
+    summary_mode = _relation_text_temporal_mode(summary, fact.relation)
+    if summary_mode in {"NEGATED", "POSSIBILITY"}:
+        return False
+    if headline_mode in {"NEGATED", "POSSIBILITY"}:
+        return False
+    if headline_mode == "FUTURE" and summary_mode == "COMPLETED":
+        return False
+    if headline_mode == "ANNOUNCED" and summary_mode == "COMPLETED":
+        return False
+    if headline_mode == "COMPLETED" and summary_mode in {"FUTURE", "ANNOUNCED"}:
+        return False
+    if headline_mode == "ONGOING" and summary_mode == "COMPLETED":
+        return False
+    return True
+
+
+_relation_summary_preserves_fact = relation_summary_preserves_fact
 
 
 def _relation_headline(fact: EventFact) -> str:
@@ -1334,6 +1441,16 @@ def _event_relation_summary(
     action = fact.relation
     detail_supports_fact = _relation_detail_supports_fact(detail, fact)
     temporal_mode = _relation_temporal_mode(title, completion_evidence, action)
+    if temporal_mode in {"NEGATED", "POSSIBILITY"}:
+        if (
+            detail
+            and not _TRUNCATION_RE.search(detail)
+            and not editorial_text_issues(detail)
+            and detail_supports_fact
+            and summary_information_gain(title, detail)
+        ):
+            return f"{detail}."
+        return ""
     if (
         detail
         and not _TRUNCATION_RE.search(detail)

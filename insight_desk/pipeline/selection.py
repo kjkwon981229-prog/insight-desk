@@ -262,6 +262,7 @@ def _synthesis_is_editorial_ready(
         summary,
         source_count=cluster.source_count,
         official_source=official_source,
+        relation_fact=relation_fact,
         relation_fact_preserved=bool(
             relation_fact
             and _relation_summary_preserves_fact(summary, headline, relation_fact)
