@@ -295,6 +295,7 @@ def is_usable_synthesis(
     *,
     source_count: int,
     official_source: bool = False,
+    relation_fact_preserved: bool = False,
 ) -> bool:
     """Reject display copy that cannot carry a concrete editorial fact."""
 
@@ -307,7 +308,7 @@ def is_usable_synthesis(
         for marker in _GENERIC_SUMMARY_MARKERS
     ):
         return False
-    if not summary_information_gain(clean_headline, clean_summary):
+    if not summary_information_gain(clean_headline, clean_summary) and not relation_fact_preserved:
         return False
     if _TRUNCATION_RE.search(clean_headline):
         return False
@@ -971,7 +972,10 @@ def _object_particle(value: str) -> str:
         return "을" if code % 28 else "를"
     if last.isdigit():
         return "를"
-    return "을" if last.casefold() in "bcdfghjklmnpqrstvwxyz" else "를"
+    # Acronym endings such as JYP are pronounced as Korean vowel sounds
+    # (피), while F/L/M/N/R/S/X retain a final consonant sound.  Keep this
+    # bounded to the same letter heuristic used by _subject_particle.
+    return "을" if last.casefold() in "fhlmnrsx" else "를"
 
 
 def _instrumental_particle(value: str) -> str:
@@ -1174,6 +1178,10 @@ def industry_summary_preserves_fact_binding(
     if not compact_summary:
         return False
     for fact in facts:
+        if fact.role == "EVENT_RELATION":
+            if not _relation_detail_supports_fact(summary, fact):
+                return False
+            continue
         for value in (fact.value, fact.related_value):
             if value and _compact_fact_value(value) not in compact_summary:
                 return False
@@ -1184,23 +1192,131 @@ def _event_relation_fact(facts: tuple[EventFact, ...]) -> EventFact | None:
     return next((fact for fact in facts if fact.role == "EVENT_RELATION"), None)
 
 
-def _relation_headline(fact: EventFact) -> str:
-    """Keep a typed relation headline compact while retaining its event noun."""
+_RELATION_ANNOUNCED_RE = re.compile(
+    r"(?:다고|라고)\s*(?:밝혔다|전했다|말했다|발표했다)"
+)
+_RELATION_FUTURE_MARKERS: dict[str, tuple[str, ...]] = {
+    "완화": ("완화하기로", "완화할", "완화 예정이다"),
+    "착공": ("착공식을 연다", "착공식을 열 예정이다", "착공할", "착공 예정", "착공하기로"),
+    "공급": ("공급할", "공급 예정이다", "공급하기로"),
+    "수주": ("수주할", "수주 예정이다", "수주하기로"),
+    "신설": ("신설할", "신설 예정이다", "신설하기로"),
+    "출범": ("출범할", "출범 예정이다", "출범하기로"),
+    "투자": ("투자할", "투자 예정이다", "투자하기로"),
+    "지원": ("지원할", "지원 예정이다", "지원하기로"),
+    "선정": ("선정될", "선정 예정이다", "선정하기로"),
+    "지정": ("지정될", "지정 예정이다", "지정하기로"),
+    "떠남": ("떠난다", "떠날", "떠나기로", "떠날 예정이다"),
+    "결별": ("결별할", "결별 예정이다", "결별하기로"),
+    "이적": ("이적할", "이적 예정이다", "이적하기로"),
+}
+_RELATION_PRESENT_MARKERS: dict[str, tuple[str, ...]] = {
+    "완화": ("완화한다",),
+    "공급": ("공급한다",),
+    "신설": ("신설한다",),
+    "출범": ("출범한다",),
+    "투자": ("투자한다",),
+    "지원": ("지원한다",),
+}
+_RELATION_ACTION_MARKERS: dict[str, tuple[str, ...]] = {
+    "떠남": ("떠나", "결별"),
+    "영입 무산": ("영입", "무산"),
+    "계약 체결": ("체결",),
+    "이적 확정": ("이적", "확정"),
+    "트레이드 성사": ("트레이드", "성사"),
+}
+_RELATION_COMPLETED_MARKERS: dict[str, tuple[str, ...]] = {
+    "완화": ("완화했다", "완화됐다", "완화되었다"),
+    "착공": ("착공식을 열었다", "착공했다", "착공에 들어갔다"),
+    "공급": ("공급했다", "공급됐다"),
+    "수주": ("수주했다", "수주됐다"),
+    "신설": ("신설했다", "신설됐다"),
+    "출범": ("출범했다",),
+    "투자": ("투자했다",),
+    "지원": ("지원했다", "지원됐다"),
+    "선정": ("선정됐다", "선정되었다", "선정했다"),
+    "지정": ("지정됐다", "지정되었다", "지정했다"),
+    "떠남": ("떠났다",),
+    "결별": ("결별했다",),
+    "이적": ("이적했다",),
+}
 
-    subject_tokens = re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.subject)
+
+def _relation_temporal_mode(title: str, evidence: str, action: str) -> str:
+    """Read only source-backed tense cues for a relation fallback.
+
+    The typed relation answers what the event is; this bounded adapter only
+    prevents the fallback sentence from upgrading a planned or announced
+    action into a completed one.  Evidence is checked before the title so a
+    fuller lead can resolve a nominal headline safely.
+    """
+
+    for value in (evidence, title):
+        text = normalize_text(value)
+        if not text:
+            continue
+        if _RELATION_ANNOUNCED_RE.search(text):
+            return "ANNOUNCED"
+        if any(marker in text for marker in _RELATION_FUTURE_MARKERS.get(action, ())):
+            return "FUTURE"
+        if any(marker in text for marker in _RELATION_PRESENT_MARKERS.get(action, ())):
+            return "ONGOING"
+        if any(marker in text for marker in _RELATION_COMPLETED_MARKERS.get(action, ())):
+            return "COMPLETED"
+    return "UNKNOWN"
+
+
+def _relation_detail_supports_fact(detail: str, fact: EventFact) -> bool:
+    """Allow source modifiers without losing subject/object ownership."""
+
+    detail_key = _compact_fact_value(detail)
+    subject_key = _compact_fact_value(fact.subject)
+    subject_terms = [
+        _compact_fact_value(term)
+        for term in re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.subject)
+        if _compact_fact_value(term)
+    ]
+    if subject_key not in detail_key and not any(
+        len(term) >= 2 and term in detail_key for term in subject_terms[-1:]
+    ):
+        return False
+    object_terms = re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.object)
+    if not all(_compact_fact_value(term) in detail_key for term in object_terms if term):
+        return False
+    action_markers = _RELATION_ACTION_MARKERS.get(fact.relation, (fact.relation,))
+    return any(_compact_fact_value(marker) in detail_key for marker in action_markers)
+
+
+def _relation_summary_preserves_fact(summary: str, headline: str, fact: EventFact) -> bool:
+    """Permit a compact relation headline when the summary keeps its fact."""
+
+    if _compact_fact_value(headline) == _compact_fact_value(summary):
+        return False
+    if not _relation_detail_supports_fact(summary, fact):
+        return False
+    action_markers = _RELATION_ACTION_MARKERS.get(fact.relation, (fact.relation,))
+    return any(marker in normalize_text(summary) for marker in action_markers)
+
+
+def _relation_headline(fact: EventFact) -> str:
+    """Keep the subject and minimum identifying object in a relation headline."""
+
     object_tokens = [
         token
         for token in re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.object)
         if not re.fullmatch(r"\d+(?:[.,]\d+)?(?:년|월|일|주)?", token)
         and token not in {"만에", "조기", "공식"}
     ]
-    object_label = object_tokens[-1] if object_tokens else fact.object
-    short_subject = subject_tokens[-1] if len(object_tokens) >= 2 else ""
+    # Keep the identifying tail of a long object phrase.  This preserves a
+    # place/product/program context without making the headline a copy of the
+    # source lead, leaving the summary room for a material supporting detail.
+    object_label = " ".join(object_tokens[-4:]) if object_tokens else fact.object
+    subject = normalize_text(fact.subject)
     action_label = {
         "떠남": "결별",
         "영입 무산": "영입 무산",
     }.get(fact.relation, fact.relation)
-    return " ".join(part for part in (short_subject + "," if short_subject else "", object_label, action_label) if part)
+    return " ".join(part for part in (f"{subject}," if subject else "", object_label, action_label) if part)
 
 
 def _event_relation_summary(
@@ -1215,22 +1331,77 @@ def _event_relation_summary(
     if normalized_title and detail.startswith(normalized_title):
         detail = detail[len(normalized_title) :].strip(" ,:·-—")
     detail = _strip_news_byline(detail).rstrip(" .!?。！")
-    detail_key = _compact_fact_value(detail)
+    action = fact.relation
+    detail_supports_fact = _relation_detail_supports_fact(detail, fact)
+    temporal_mode = _relation_temporal_mode(title, completion_evidence, action)
     if (
         detail
         and not _TRUNCATION_RE.search(detail)
         and not editorial_text_issues(detail)
         and summary_information_gain(title, detail)
-        and _compact_fact_value(fact.subject) in detail_key
-        and _compact_fact_value(fact.object) in detail_key
+        and detail_supports_fact
     ):
         return f"{detail}."
+    if (
+        detail
+        and not _TRUNCATION_RE.search(detail)
+        and not editorial_text_issues(detail)
+        and detail_supports_fact
+        and action in {"선정", "지정"}
+    ):
+        role_marker = next(
+            (marker for marker in ("참여사", "파트너", "협력사", "Partner") if marker in detail),
+            "",
+        )
+        if role_marker and temporal_mode == "COMPLETED":
+            subject_particle = _subject_particle(fact.subject)
+            if role_marker == "Partner" and fact.object.rstrip().casefold().endswith("partner"):
+                return f"{fact.subject}{subject_particle} {fact.object}로 선정됐다."
+            return f"{fact.subject}{subject_particle} {fact.object} {role_marker}로 결정됐다."
 
     subject = fact.subject
     object_text = fact.object
     if not subject or not object_text:
         return ""
-    action = fact.relation
+    if temporal_mode == "ANNOUNCED":
+        subject_prefix = f"{subject}{_particle(subject)}"
+        if action == "떠남":
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} 떠난다고 밝혔다."
+        if action == "착공":
+            return f"{subject_prefix} {object_text} 착공 계획을 밝혔다."
+        if action == "투자":
+            return f"{subject_prefix} {object_text}에 투자하겠다고 밝혔다."
+    if temporal_mode == "FUTURE":
+        subject_prefix = f"{subject}{_particle(subject)}"
+        date_match = _DATE_RE.search(f"{completion_evidence} {title}")
+        date = f"{date_match.group(0).replace(' ', '')} " if date_match else ""
+        if action == "착공":
+            return f"{subject_prefix} {date}{object_text} 착공 예정이다."
+        if action == "떠남":
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} 떠날 예정이다."
+        if action == "투자":
+            return f"{subject_prefix} {object_text}에 투자할 예정이다."
+        if action == "완화":
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} 완화할 예정이다."
+        if action in {"선정", "지정"}:
+            return f"{subject_prefix} {object_text}{_instrumental_particle(object_text)} {action}될 예정이다."
+        if action in {"공급", "지원", "수주", "신설", "출범"}:
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} {action}할 예정이다."
+    if temporal_mode == "ONGOING":
+        subject_prefix = f"{subject}{_particle(subject)}"
+        if action == "완화":
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} 완화한다."
+        if action in {"공급", "지원", "수주", "신설", "출범"}:
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} {action}한다."
+        if action == "투자":
+            return f"{subject_prefix} {object_text}에 투자한다."
+    if temporal_mode == "UNKNOWN":
+        subject_prefix = f"{subject}{_particle(subject)}"
+        if action in {"선정", "지정"}:
+            return f"{subject_prefix} {object_text} {action} 사실이 확인됐다."
+        if action == "떠남":
+            return f"{subject_prefix} {object_text}{_object_particle(object_text)} 떠나는 내용이 확인됐다."
+        return f"{subject_prefix} {object_text} {action} 소식이 확인됐다."
     if action == "완화":
         return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 완화했다."
     if action == "착공":
@@ -2237,6 +2408,11 @@ def synthesize_cluster(
         if canonical_event is not None
         else fact_headline_evidence
     )
+    relation_completion_evidence = (
+        completion_evidence or owned_fact_lead
+        if _event_relation_fact(resolved_event_facts) is not None
+        else completion_evidence
+    )
     summary = _summary(
         title,
         event_type,
@@ -2248,7 +2424,7 @@ def synthesize_cluster(
         change,
         source_count,
         uncertainty,
-        completion_evidence,
+        relation_completion_evidence,
         market_observation=market_observation,
         market_observations=market_observations,
         temporal_state=temporal_state,
