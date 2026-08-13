@@ -2,16 +2,22 @@
 
 ## 현재 post-Sol 검사 대상
 
-post-Sol code closure HEAD `421bae43a11f1e47bd4ce26f6b259927193cd88a`, 기준 CI #190(281 Python + 13 Worker), Sol ownership closure, Run #93 general production smoke 및 이번 local closure를 함께 기록한다.
+latest Sol convergence HEAD `55c31740e1e28e5410ae1232372f04114e55ad1f`, CI #193(298 Python + 13 Worker), Sol ownership/focus/material synthesis closure, Run #96 fresh live acceptance 및 이번 local closure를 함께 기록한다.
 
-- 이번 local closure: Python 289개 및 Push Worker 13개 통과
+- 이번 local closure: Python 298개 및 Push Worker 13개 통과
 - Run #92 KBO·경제 targeted live reproof: `PENDING` (Run #93에서는 해당 후보가 선택되지 않음)
-- manual workflow dispatch: `NOT RUN`
+- Run #96 fresh workflow dispatch: `PASS` (selected 1건, human audit PASS)
 - next live: actual `07:30 KST` schedule
 
 ## False-pass 철회
 
 Historical Run #12는 News·Trend 수집과 Pages 배포에는 성공했지만, 실제 selected story 10개가 모두 single-source였고 저정보·`OTHER`·generic 후보가 다수였다. PSAT biography, incidental K-POP mention, KBO merchandise/문화성 결과도 통과했다. 따라서 이전 QA의 콘텐츠 PASS와 `CONDITIONAL_PASS_EXTERNAL_ACCEPTANCE_ONLY`는 무효다. 현재 판정은 문서 하단의 post-Sol 상태를 따른다.
+
+## Fresh live acceptance
+
+Run #96 (`workflow_dispatch`, ID `31678835800`, HEAD `55c31740…`)은 build·artifact validation·live editorial acceptance·Pages deploy를 모두 통과했다. selected story는 1건이며 `semantic_error_count`, `primary_focus_error_count`, `korean_composition_error_count`, `summary_why_duplication_count`, `duplicate_event_count` 등 live validator counters가 모두 0이었다. 선택된 `BTS 아리랑, 빌보드 앨범 차트 14위`는 같은 AWARD_CHART event와 14위 fact를 유지했고, `why_it_matters`는 중복 방지를 위해 빈 값이다. READY push는 `DELIVERED`(sent 4, failed 0, pruned 0)였고, 실제 iPhone READY 표시·개수·tap/open은 아직 별도 gate다.
+
+Run #94/#95의 KBO·경제 exact live reproof는 Run #96에서 해당 event가 selected되지 않아 `PENDING`으로 유지한다. 이는 fresh general acceptance PASS와 모순되지 않는다.
 
 ## 선택·콘텐츠 검증
 
@@ -79,15 +85,17 @@ mypy = NOT CLAIMED (환경 미설치)
 ## 현재 게이트(실제 schedule 전)
 
 ```text
-BASELINE_CI_190 = PASS (281 Python + 13 Worker)
-LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+BASELINE_CI_193 = PASS (298 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (298 Python + 13 Worker)
 RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN94_RUN95_SOL_REPLAY = PASS
 RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
 RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
-MANUAL_WORKFLOW_DISPATCH = NOT RUN
+RUN96_FRESH_LIVE_ACCEPTANCE = PASS
+MANUAL_WORKFLOW_DISPATCH = RUN96 ONLY
 ACTUAL_SCHEDULE_0730 = PENDING
-PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
-PAGES_URL_VERIFIED = PASS (Run #93)
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #96)
+PAGES_URL_VERIFIED = PASS (Run #96)
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES
@@ -98,6 +106,6 @@ SCHEDULED_RUN_VERIFIED = PENDING
 
 ## 현재 판정
 
-`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+`READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
 
-Run #93의 general smoke와 이번 오프라인 closure는 통과했지만, 실제 schedule provenance·selected-story 전수 audit·iPhone physical evidence 전에는 `PRODUCTION_FINAL`로 올리지 않는다.
+Run #96 fresh live의 selected-story 전수 human audit까지 통과했지만, 실제 schedule provenance·READY 알림의 iPhone 표시·개수·tap/open·watchdog 전에는 `PRODUCTION_FINAL`로 올리지 않는다.

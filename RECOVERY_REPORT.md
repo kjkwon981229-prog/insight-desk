@@ -2,13 +2,25 @@
 
 ## 현재 post-Sol 상태
 
-- post-Sol code closure HEAD: `421bae43a11f1e47bd4ce26f6b259927193cd88a`
-- 기준 CI #190: Python 281개 및 Push Worker 13개 통과
-- 이번 local closure: Python 289개 및 Push Worker 13개 통과
+- latest Sol convergence HEAD: `55c31740e1e28e5410ae1232372f04114e55ad1f`
+- 기준 CI #193: Python 298개 및 Push Worker 13개 통과
+- 이번 local closure: Python 298개 및 Push Worker 13개 통과
 - Run #92 human acceptance 실패는 Sol event/fact ownership closure 전의 historical regression이다.
 - Run #93 general production smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했지만 KBO·경제 targeted live reproof는 실행되지 않았다.
-- manual workflow dispatch는 실행하지 않았다. 다음 live evidence는 실제 `07:30 KST` schedule이다.
-- 현재 판정: `READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+- Run #94/#95 Sol replay는 통과했다. Run #96 fresh `workflow_dispatch`는 build·artifact·machine editorial acceptance·Pages·READY push와 selected story human audit까지 통과했다.
+- 다음 live evidence는 실제 `07:30 KST` schedule이다.
+- 현재 판정: `READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+
+## Latest fresh live evidence
+
+- Run #96: [Actions run 31678835800](https://github.com/kjkwon981229-prog/insight-desk/actions/runs/31678835800)
+- trigger: `workflow_dispatch`; HEAD: `55c31740e1e28e5410ae1232372f04114e55ad1f`
+- build/artifact/live editorial/deploy: `PASS`
+- selected: `1`; strong rejected: `0`; live semantic/editorial counters: all `0`
+- selected story: `BTS 아리랑, 빌보드 앨범 차트 14위` — focus, event ownership, material 14위 fact, Korean output: `PASS`
+- public URL: <https://kjkwon981229-prog.github.io/insight-desk/> (published payload `COMPLETE`, `publish=true`)
+- READY push: `DELIVERED`, sent `4`, failed `0`, pruned `0`; physical READY display remains `PENDING`
+- KBO·경제 exact live reproof: `PENDING` because those event classes were not selected in Run #96
 
 ## 복구 수준
 
@@ -76,15 +88,17 @@
 이전 Pages Run #12는 배포 자체에는 성공했지만 실제 콘텐츠 selection false pass가 확인되어 완료 판정을 철회했다. 현재 작업은 원본 복구가 아니라, 그 false pass를 일반화된 deterministic retrieval/relevance/event/evidence/novelty/selection gate로 교정하는 production recovery다.
 
 ```text
-BASELINE_CI_190 = PASS (281 Python + 13 Worker)
-LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+BASELINE_CI_193 = PASS (298 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (298 Python + 13 Worker)
 RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN94_RUN95_SOL_REPLAY = PASS
 RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
 RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
-MANUAL_WORKFLOW_DISPATCH = NOT RUN
+RUN96_FRESH_LIVE_ACCEPTANCE = PASS
+MANUAL_WORKFLOW_DISPATCH = RUN96 ONLY
 ACTUAL_SCHEDULE_0730 = PENDING
-PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
-PAGES_URL_VERIFIED = PASS (Run #93)
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #96)
+PAGES_URL_VERIFIED = PASS (Run #96)
 MOBILE_BROWSER_VERIFIED = PARTIAL
 IPHONE_SAFARI_VERIFIED = PENDING
 SCHEDULED_RUN_VERIFIED = PENDING
@@ -100,6 +114,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 판정
 
-`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+`READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
 
-실제 schedule event의 selected stories 전수 audit, push provenance, iPhone 표시·tap/open 및 watchdog 확인 전에는 `PRODUCTION_FINAL`로 올리지 않는다.
+Run #96의 selected story 전수 audit과 manual READY push backend는 통과했지만, 실제 schedule event의 provenance, READY 알림 iPhone 표시·개수·tap/open 및 watchdog 확인 전에는 `PRODUCTION_FINAL`로 올리지 않는다.

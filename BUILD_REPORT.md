@@ -3,13 +3,29 @@
 ## 현재 판정
 
 - 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION` 이후 post-Sol hardening
-- 현재 상태: `READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
-- post-Sol code closure HEAD: `421bae43a11f1e47bd4ce26f6b259927193cd88a`
-- 기준 CI #190: Python 281개 및 Push Worker 13개 통과
-- 이번 오프라인 closure: Python 289개 및 Push Worker 13개 통과
+- 현재 상태: `READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+- latest Sol convergence HEAD: `55c31740e1e28e5410ae1232372f04114e55ad1f`
+- 기준 CI #193: Python 298개 및 Push Worker 13개 통과
+- 이번 오프라인 closure: Python 298개 및 Push Worker 13개 통과
 - Run #92 human acceptance 실패는 ownership closure 전의 historical evidence이며, Run #93 general smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했다.
-- 수동 workflow는 이 closure에서 실행하지 않았고, 다음 live acceptance는 실제 `07:30 KST` schedule이다.
+- Run #94/#95 replay와 Sol focus/material synthesis/Korean composition validator closure는 현재 HEAD에서 통과했다.
+- Run #96 fresh `workflow_dispatch`는 build·artifact·machine editorial acceptance·Pages·READY push까지 통과했고 selected story 1건 human audit도 통과했다. 실제 `07:30 KST` schedule은 아직 별도 gate다.
 - Run #12의 원격 NCP/Pages 성공은 수집·배포 성공 증거일 뿐이며, 실제 selected story 품질 감사에서 false pass가 확인되어 최종 판정을 철회했다.
+
+## 최신 fresh live acceptance
+
+| 항목 | 결과 |
+|---|---|
+| Run | [#96 · 31678835800](https://github.com/kjkwon981229-prog/insight-desk/actions/runs/31678835800) |
+| trigger / HEAD | `workflow_dispatch` / `55c31740e1e28e5410ae1232372f04114e55ad1f` |
+| build / artifact / editorial | `SUCCESS` / `PASS` / `PASS` |
+| selected / strong rejected | `1` / `0` |
+| semantic counters | all `0` |
+| deploy / public URL | `SUCCESS` / <https://kjkwon981229-prog.github.io/insight-desk/> |
+| READY push | `DELIVERED`, sent `4`, failed `0`, pruned `0` |
+| human audit | selected story 1건 `PASS` |
+
+선택 story는 `BTS 아리랑, 빌보드 앨범 차트 14위`이며 summary는 같은 AWARD_CHART event의 14위 fact를 보존한다. `why_it_matters`는 summary 반복을 피하기 위해 비워졌다. KBO·경제 exact live reproof는 이번 run에서 selected되지 않아 별도 `PENDING`이다.
 
 ## 현재 공식 source 상태
 
@@ -127,15 +143,17 @@ Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 �
 ## 현재 post-Sol 게이트
 
 ```text
-BASELINE_CI_190 = PASS (281 Python + 13 Worker)
-LOCAL_POST_SOL_CLOSURE = PASS (289 Python + 13 Worker)
+BASELINE_CI_193 = PASS (298 Python + 13 Worker)
+LOCAL_POST_SOL_CLOSURE = PASS (298 Python + 13 Worker)
 RUN93_GENERAL_PRODUCTION_SMOKE = PASS
+RUN94_RUN95_SOL_REPLAY = PASS
 RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
 RUN92_TARGETED_ECON_LIVE_REPROOF = PENDING
-MANUAL_WORKFLOW_DISPATCH = NOT RUN
+RUN96_FRESH_LIVE_ACCEPTANCE = PASS (workflow_dispatch, human audit PASS)
+MANUAL_WORKFLOW_DISPATCH = RUN96 ONLY
 ACTUAL_SCHEDULE_0730 = PENDING
-PAGES_DEPLOYMENT_VERIFIED = PASS (Run #93)
-PAGES_URL_VERIFIED = PASS (Run #93)
+PAGES_DEPLOYMENT_VERIFIED = PASS (Run #96)
+PAGES_URL_VERIFIED = PASS (Run #96)
 MOBILE_BROWSER_VERIFIED = PARTIAL (cloud desktop viewport + responsive source/artifact checks)
 IPHONE_SAFARI_VERIFIED = PENDING
 PARTIAL_FAILURE_VERIFIED = YES (local regression)
@@ -153,6 +171,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 릴리스 상태
 
-`READY_FOR_ACTUAL_SCHEDULED_ACCEPTANCE`
+`READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
 
-다음 실제 `07:30 KST` schedule에서 selected stories 전수 human audit, schedule provenance, push 및 iPhone physical gate를 확인하기 전에는 `PRODUCTION_FINAL`을 주장하지 않는다.
+Run #96 fresh live의 selected story 전수 human audit까지 통과했지만, 실제 schedule provenance·READY push의 iPhone 표시·개수·tap/open·watchdog 전에는 `PRODUCTION_FINAL`을 주장하지 않는다.
