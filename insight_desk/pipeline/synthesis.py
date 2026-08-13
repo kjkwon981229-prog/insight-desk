@@ -5,7 +5,7 @@ from collections import Counter
 from collections.abc import Callable
 from difflib import SequenceMatcher
 
-from ..domain.models import Certainty, EvidenceType, StoryFacts, TrendMetric
+from ..domain.models import Certainty, EvidenceType, NewsItem, StoryFacts, TrendMetric
 from .clustering import StoryCluster
 from .editorial import (
     best_headline_item,
@@ -29,15 +29,18 @@ from .semantics import (
     contains_boundary_term,
     earnings_fact_parts,
     earnings_observations,
+    event_action_signal,
     event_dates,
     first_action,
     industry_change_facts,
     is_trusted_official_domain,
     market_direction,
     metric_observations,
+    primary_event_focus_terms,
     recruitment_event_type,
     sports_result_facts,
     summary_information_gain,
+    summary_preserves_primary_focus,
 )
 from .trend_metrics import effective_trend_state
 
@@ -122,11 +125,14 @@ _LOCATION_TERMS = (
 _KBO_TEAM_RE = re.compile(
     r"(?<![A-Za-z가-힣])(?:한화(?:\s*이글스)?|두산(?:\s*베어스)?|LG(?:\s*트윈스)?|"
     r"KT(?:\s*위즈)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|NC(?:\s*다이노스)?|"
-    r"롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|키움(?:\s*히어로즈)?)(?![A-Za-z가-힣])",
+    r"롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|키움(?:\s*히어로즈)?)"
+    r"(?=(?:와|과|의|은|는|이|가|을|를)?(?:\s|$|[,，.:：;；]))",
     re.IGNORECASE,
 )
 _LINEUP_LABEL_RE = re.compile(r"^(?:선발(?:투수)?|투수|예고|라인업)\s*", re.IGNORECASE)
 _PLAYER_TOKEN_RE = re.compile(r"[A-Za-z가-힣][A-Za-z가-힣·.'’-]{1,11}")
+_LINEUP_PREFIX_PARTICLE_RE = re.compile(r"^(?:와|과|의|은|는|이|가|을|를)(?:\s+|$)")
+_GRAMMATICAL_PARTICLE_TOKENS = frozenset({"와", "과", "의", "은", "는", "이", "가", "을", "를"})
 _STOPWORDS = {
     "관련",
     "보도",
@@ -211,6 +217,10 @@ _DANGLING_END_RE = re.compile(
 _MALFORMED_SUBJECT_BOUNDARY_RE = re.compile(
     r"대상\s*(?:은|는|이|가)?\s+(?:시행|도입|적용|발표|공개|시작)"
 )
+_MALFORMED_PARTICLE_STACK_RE = re.compile(
+    r"(?:와과|과와|의가|을를|를을|은는|는은)(?=$|[\s,.!?。！？])|"
+    r"[A-Za-z가-힣·]{2,}가가(?=$|[\s,.!?。！？])"
+)
 
 
 def editorial_text_issues(value: str) -> tuple[str, ...]:
@@ -244,6 +254,8 @@ def editorial_text_issues(value: str) -> tuple[str, ...]:
         issues.append("DANGLING_CLAUSE")
     if _MALFORMED_SUBJECT_BOUNDARY_RE.search(text):
         issues.append("MALFORMED_SUBJECT_BOUNDARY")
+    if _MALFORMED_PARTICLE_STACK_RE.search(text):
+        issues.append("MALFORMED_PARTICLE_STACK")
     return tuple(dict.fromkeys(issues))
 
 
@@ -400,6 +412,49 @@ def _fact_lead(item: object) -> str:
     return ""
 
 
+def _best_event_completion_evidence(
+    items: tuple[NewsItem, ...],
+    canonical_event: CanonicalEvent | None,
+    title: str,
+    focus_terms: tuple[str, ...],
+) -> str:
+    """Choose a same-event, same-focus fact lead from all owned sources.
+
+    A canonical event may have several legitimate owners. Restricting
+    synthesis to the representative lead can discard a fact supplied by a
+    corroborating owner; accepting every paragraph from one owner can switch
+    to a secondary event. This bounded chooser closes both failure modes.
+    """
+
+    candidates: list[str] = []
+    if canonical_event is not None and canonical_event.evidence_detail:
+        candidates.append(canonical_event.evidence_detail)
+    for item in items:
+        raw = (
+            event_owned_lead(item, canonical_event.event_type)
+            if canonical_event is not None
+            else _fact_lead(item)
+        )
+        if raw:
+            candidates.append(raw)
+    scored: list[tuple[tuple[int, int, int], str]] = []
+    for order, raw in enumerate(dict.fromkeys(candidates)):
+        detail = _fact_evidence_text(raw)
+        if not detail or editorial_text_issues(detail):
+            continue
+        if not summary_information_gain(title, detail):
+            continue
+        if not summary_preserves_primary_focus(detail, focus_terms):
+            continue
+        material = int(bool(_NUMBER_RE.search(detail))) + int(
+            bool(event_action_signal(canonical_event.event_type, title, detail))
+            if canonical_event is not None
+            else bool(_action(detail))
+        )
+        scored.append(((material, min(len(detail), 240), -order), detail))
+    return max(scored, default=((0, 0, 0), ""))[1]
+
+
 def _lineup_detail(evidence: str) -> tuple[str, ...]:
     """Extract only explicit team/player pairs from a complete lineup lead."""
 
@@ -408,14 +463,24 @@ def _lineup_detail(evidence: str) -> tuple[str, ...]:
     for index, team_match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(evidence)
         fragment = evidence[team_match.end() : end]
-        fragment = _LINEUP_LABEL_RE.sub("", fragment.lstrip(" \t:：·,/()[]{}-"))
+        fragment = fragment.lstrip(" \t:：·,/()[]{}-")
+        fragment = _LINEUP_PREFIX_PARTICLE_RE.sub("", fragment)
+        fragment = _LINEUP_LABEL_RE.sub("", fragment)
         player_match = _PLAYER_TOKEN_RE.match(fragment)
         if not player_match:
             continue
         player = player_match.group(0).strip("·-—")
-        if not player or player in {"경기", "예고", "선발", "투수", "라인업"}:
+        if not player or player in {
+            "경기",
+            "예고",
+            "선발",
+            "투수",
+            "라인업",
+            *_GRAMMATICAL_PARTICLE_TOKENS,
+        }:
             continue
-        pair = f"{re.sub(r'\s+', ' ', team_match.group(0)).strip()} {player}"
+        team = re.sub(r"\s+", " ", team_match.group(0)).strip()
+        pair = f"{team} {player}"
         if pair not in pairs:
             pairs.append(pair)
     return tuple(pairs[:4])
@@ -923,6 +988,17 @@ def _instrumental_particle(value: str) -> str:
     return "으로"
 
 
+def _conjunction_particle(value: str) -> str:
+    """Return ``과/와`` for a clean noun phrase used by our templates."""
+
+    if not value:
+        return "과"
+    last = value.rstrip()[-1]
+    if "가" <= last <= "힣":
+        return "과" if (ord(last) - 0xAC00) % 28 else "와"
+    return "과" if last.casefold() in "bcdfghjklmnpqrstvwxyz" else "와"
+
+
 def _strip_news_byline(value: str) -> str:
     """Remove a wire-service dateline/byline from a reader-facing fact."""
 
@@ -1134,6 +1210,11 @@ def _industry_fact_summary(
             return f"{_clean_headline(title)}."
         return ""
     if fact is None or not subject:
+        return ""
+    if fact.role == "TREND_CHANGE":
+        # A trend headline needs an additional same-focus source detail to
+        # provide information gain. Without it, returning a polished copy of
+        # the headline would recreate the old mixed-focus false pass.
         return ""
     subject_particle = _subject_particle(subject)
     if fact.role == "RATIO_CHANGE" and fact.related_value:
@@ -1580,7 +1661,7 @@ def _summary(
         if action == "선발":
             lineup = _lineup_detail(completion_evidence)
             if len(lineup) >= 2:
-                detail = "과 ".join(lineup[:2])
+                detail = f"{lineup[0]}{_conjunction_particle(lineup[0])} {lineup[1]}"
                 context = " ".join(part for part in (date, location) if part)
                 context = f"{context} 경기의 " if context else "경기의 "
                 sentence = f"{context}선발로 {detail}{_subject_particle(detail)} 예고됐다."
@@ -2016,6 +2097,11 @@ def synthesize_cluster(
         representative_evidence_id=(
             canonical_event.representative_evidence_id if canonical_event is not None else ""
         ),
+        primary_focus_terms=(
+            canonical_event.primary_focus_terms
+            if canonical_event is not None
+            else primary_event_focus_terms(event_type, title, subject, resolved_event_facts)
+        ),
     )
     headline_source = effective_title(headline_item)
     if not headline_item.metadata_title or not safe_evidence_text(headline_item.metadata_title):
@@ -2032,8 +2118,13 @@ def synthesize_cluster(
         observations=market_observations,
     )
     completion_evidence = (
-        canonical_event.evidence_detail
-        if canonical_event is not None and canonical_event.evidence_detail
+        _best_event_completion_evidence(
+            items,
+            canonical_event,
+            title,
+            facts.primary_focus_terms,
+        )
+        if canonical_event is not None
         else fact_headline_evidence
     )
     summary = _summary(
@@ -2057,6 +2148,11 @@ def synthesize_cluster(
         condition=canonical_event.condition if canonical_event is not None else "",
         policy_object=canonical_event.object if canonical_event is not None else "",
     )
+    if canonical_event is not None and not summary_preserves_primary_focus(
+        summary,
+        facts.primary_focus_terms,
+    ):
+        summary = ""
     evidence = _evidence_summary(summary)
     watch = (next_signal,) if next_signal else ()
     corroborated, _ = evidence_corroborated(items)

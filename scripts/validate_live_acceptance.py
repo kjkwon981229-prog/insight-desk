@@ -12,11 +12,14 @@ from insight_desk.pipeline.semantics import (
     ACTION_TERMS,
     compact,
     contains_action,
-    metric_summary_preserves_entity_binding,
     metric_observations,
+    metric_summary_preserves_entity_binding,
+    primary_event_focus_terms,
+    roster_selection_action_supported,
     same_lifecycle_signatures,
     subject_boundary_is_clean,
     summary_information_gain,
+    summary_preserves_primary_focus,
 )
 from insight_desk.pipeline.synthesis import editorial_text_issues, summary_why_redundant
 
@@ -119,6 +122,8 @@ def validate(path: Path) -> list[str]:
         "event_ownership_error_count": 0,
         "fact_provenance_error_count": 0,
         "semantic_role_error_count": 0,
+        "primary_focus_error_count": 0,
+        "korean_composition_error_count": 0,
     }
     signatures: list[str] = []
     for index, story in enumerate(stories, 1):
@@ -145,6 +150,12 @@ def validate(path: Path) -> list[str]:
                 f"story {index} has incomplete or malformed summary copy: "
                 f"{','.join(sorted(completeness_issues))}"
             )
+        composition_issues = set(headline_issues + summary_issues).intersection(
+            {"MALFORMED_PARTICLE_STACK"}
+        )
+        if composition_issues:
+            metrics["korean_composition_error_count"] += len(composition_issues)
+            errors.append(f"story {index} has malformed deterministic Korean composition")
         if story.get("rank") not in (None, index):
             errors.append(f"story {index} has non-sequential editorial rank")
         if not headline or any(marker in headline for marker in generic_headline_markers):
@@ -208,6 +219,14 @@ def validate(path: Path) -> list[str]:
             cause = str(facts.get("cause", "")).strip()
             condition = str(facts.get("condition", "")).strip()
             policy_object = str(facts.get("object", "")).strip()
+            focus_terms = tuple(
+                str(value).strip()
+                for value in facts.get("primary_focus_terms", ()) or ()
+                if str(value).strip()
+            ) or primary_event_focus_terms(event_type, headline, subject)
+            if not summary_preserves_primary_focus(summary, focus_terms):
+                metrics["primary_focus_error_count"] += 1
+                errors.append(f"story {index} summary leaves the canonical primary event focus")
             owner_ids = {
                 str(value).strip()
                 for value in facts.get("event_owner_ids", ()) or ()
@@ -253,6 +272,18 @@ def validate(path: Path) -> list[str]:
                 role_errors.append("policy object occupies the action role")
             if event_type == "POLICY" and compact(action) in {"기준금리", "정책금리"}:
                 role_errors.append("policy noun occupies the action role")
+            if event_type == "AWARD_CHART" and compact(action) in {
+                "차트",
+                "음악차트",
+                "앨범차트",
+            }:
+                role_errors.append("chart context noun occupies the action role")
+            if (
+                event_type == "ROSTER_PERSONNEL"
+                and action == "선발"
+                and not roster_selection_action_supported(headline)
+            ):
+                role_errors.append("starting-role noun occupies a personnel action role")
             if condition and compact(condition) and compact(condition) in compact(subject):
                 role_errors.append("condition remains inside the subject")
             if event_type == "POLICY" and any(

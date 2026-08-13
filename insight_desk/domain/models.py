@@ -207,6 +207,7 @@ class StoryFacts:
     event_owner_ids: tuple[str, ...] = field(default_factory=tuple)
     fact_evidence_ids: tuple[str, ...] = field(default_factory=tuple)
     representative_evidence_id: str = ""
+    primary_focus_terms: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

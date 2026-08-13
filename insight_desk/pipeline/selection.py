@@ -23,6 +23,7 @@ from .semantics import (
     canonical_publisher,
     metric_summary_preserves_entity_binding,
     same_event_lifecycle,
+    summary_preserves_primary_focus,
 )
 from .synthesis import (
     earnings_summary_preserves_fact_binding,
@@ -146,7 +147,7 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
     if synthesis_vetoed_qualified:
         return bool(
             upstream_passed
-            and canonical_facts_complete
+            and (canonical is None or not canonical.needs_enrichment)
             and not assessment.qualified
             and assessment.event.concrete_fact_count >= 3
             and assessment.event.significance >= 60.0
@@ -195,7 +196,7 @@ def _synthesis_is_editorial_ready(
     event_signature: str,
     canonical_event: CanonicalEvent | None = None,
 ) -> bool:
-    headline, summary, _, _, _, _ = synthesize_cluster(
+    headline, summary, _, _, facts, _ = synthesize_cluster(
         cluster,
         topic_name=topic.name,
         trend_metrics=(),
@@ -215,6 +216,8 @@ def _synthesis_is_editorial_ready(
         summary,
         canonical_event.facts,
     ):
+        return False
+    if not summary_preserves_primary_focus(summary, facts.primary_focus_terms):
         return False
     return is_usable_synthesis(
         headline,

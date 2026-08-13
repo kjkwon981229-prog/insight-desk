@@ -16,7 +16,6 @@ from urllib.parse import urlsplit
 from ..domain.models import TemporalFact
 from .normalization import normalize_text
 
-
 ACTION_TERMS: tuple[str, ...] = (
     "요구",
     "촉구",
@@ -273,14 +272,12 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
         "줄여라",
     ),
     "EARNINGS": ("실적", "매출", "영업이익", "순이익", "가이던스", "공시"),
-    "AWARD_CHART": ("1위", "차트", "관왕", "수상", "우승", "기록"),
-    "PRODUCT_RELEASE": ("출시", "발매", "선공개", "음원", "신곡", "싱글", "데뷔곡", "상장", "예약판매", "판매 개시"),
+    "AWARD_CHART": ("관왕", "수상", "우승", "기록"),
+    "PRODUCT_RELEASE": ("출시", "발매", "선공개", "발표", "공개", "상장", "예약판매", "판매 개시"),
     "INDUSTRY_CHANGE": (
         "투자",
         "유치",
         "인수",
-        "전략",
-        "데이터센터",
         "서비스 전환",
         "할당",
         "계약",
@@ -314,6 +311,47 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "MARKET": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
     "MARKET_MOVE": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
 }
+
+_INDUSTRY_MATERIAL_ACTIONS = (
+    "투자",
+    "유치",
+    "인수",
+    "서비스 전환",
+    "할당",
+    "계약",
+    "확대",
+    "축소",
+    "증가",
+    "감소",
+)
+_INDUSTRY_TREND_RE = re.compile(
+    r"^(?P<domain>[A-Za-z0-9가-힣·& ]{2,28}?)(?:에|에서)\s+"
+    r"(?:부는|번지는|퍼지는|확산하는)\s+"
+    r"(?P<object>[A-Za-z0-9가-힣·&'’\- ]{2,32}?)\s+"
+    r"(?:붐|열풍|유행)(?:[,，]|$)"
+)
+_ROSTER_SELECTION_PREDICATE_RE = re.compile(
+    r"(?:선발(?:\s*투수)?(?:로|은|이|을)?\s*"
+    r"(?:[^.!?]{0,24})?(?:예고|확정|발탁|지명|등록|선정|됐다|되었다|한다|예정)|"
+    r"(?:예고|확정|발탁|지명|등록|선정)[^.!?]{0,16}선발)"
+)
+_FOCUS_STOPWORDS = frozenset(
+    {
+        "관련",
+        "소식",
+        "기사",
+        "보도",
+        "주요",
+        "원전",
+        "온다",
+        "부는",
+        "붐",
+        "열풍",
+        "유행",
+        "변화",
+        "전략",
+    }
+)
 
 
 def fold(value: str) -> str:
@@ -365,6 +403,12 @@ def contains_boundary_term(text: str, term: str) -> bool:
 
 def contains_action(text: str, term: str) -> bool:
     return contains_boundary_term(text, term)
+
+
+def roster_selection_action_supported(text: str) -> bool:
+    """Require an explicit personnel predicate, not the role noun 선발."""
+
+    return bool(_ROSTER_SELECTION_PREDICATE_RE.search(normalize_text(text)))
 
 
 def first_action(text: str, terms: tuple[str, ...] = ACTION_TERMS) -> str:
@@ -452,6 +496,7 @@ class CanonicalEvent:
     conflict_state: str = "NO_CONFLICT"
     evidence_owner_ids: tuple[str, ...] = ()
     representative_evidence_id: str = ""
+    primary_focus_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -467,6 +512,75 @@ class PolicyRoles:
     condition: str = ""
     object: str = ""
     action: str = ""
+
+
+def _focus_token(value: str) -> str:
+    token = normalize_text(value).strip(" ,:·-—()[]{}\"'“”‘’")
+    for suffix in (
+        "에서는",
+        "에게서",
+        "으로",
+        "에서",
+        "에게",
+        "까지",
+        "부터",
+        "에",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "의",
+    ):
+        if len(compact(token)) >= len(compact(suffix)) + 2 and token.endswith(suffix):
+            token = token[: -len(suffix)].strip()
+            break
+    return token
+
+
+def primary_event_focus_terms(
+    event_type: str,
+    title: str,
+    subject: str,
+    facts: tuple[EventFact, ...] = (),
+) -> tuple[str, ...]:
+    """Return bounded terms that identify the story's primary event focus.
+
+    Evidence ownership is source-level. These terms add the smaller guard
+    needed when one owned article contains a headline event plus unrelated
+    examples or background events in its lead.
+    """
+
+    candidates: list[str] = []
+    for fact in facts:
+        if fact.role == "TREND_CHANGE":
+            candidates.extend((fact.subject, fact.value, fact.object))
+    candidates.extend(re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", subject))
+    if not candidates:
+        candidates.extend(re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", title)[:3])
+    terms: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        token = _focus_token(candidate)
+        folded = compact(token)
+        if len(folded) < 2 or folded in _FOCUS_STOPWORDS or folded in seen:
+            continue
+        seen.add(folded)
+        terms.append(token)
+    return tuple(terms[:5])
+
+
+def summary_preserves_primary_focus(
+    summary: str,
+    focus_terms: tuple[str, ...],
+) -> bool:
+    """Reject a summary that silently switches to a secondary sub-event."""
+
+    if not focus_terms:
+        return True
+    summary_key = compact(summary)
+    return any(compact(term) and compact(term) in summary_key for term in focus_terms)
 
 
 _POLICY_OBJECT_RE = re.compile(r"(?<![가-힣A-Za-z0-9])(?:기준금리|정책금리)(?![가-힣A-Za-z0-9])")
@@ -733,6 +847,30 @@ def industry_change_facts(text: str) -> tuple[EventFact, ...]:
     # Preserve insertion order while keeping a repeated value from creating
     # multiple independent facts in downstream summaries.
     return tuple(dict.fromkeys(facts))
+
+
+def industry_trend_fact(title: str) -> EventFact | None:
+    """Represent an explicitly framed multi-entity trend as one event fact.
+
+    This is deliberately narrower than treating words such as ``전략`` or
+    ``트렌드`` as actions. The headline itself must bind a domain, a trend
+    object, and an explicit spread/boom marker.
+    """
+
+    match = _INDUSTRY_TREND_RE.search(normalize_text(title))
+    if match is None:
+        return None
+    domain = match.group("domain").strip(" ,·-—")
+    trend_object = match.group("object").strip(" ,·-—")
+    if not domain or not trend_object:
+        return None
+    return EventFact(
+        "TREND_CHANGE",
+        trend_object,
+        subject=domain,
+        relation="확산",
+        object=trend_object,
+    )
 
 
 def recruitment_facts(text: str) -> tuple[EventFact, ...]:
@@ -1304,7 +1442,18 @@ def build_canonical_event(
     elif event_type == "SPORTS_RESULT":
         facts = sports_result_facts(evidence)
     elif event_type == "INDUSTRY_CHANGE":
-        facts = industry_change_facts(evidence)
+        trend_fact = industry_trend_fact(title_text)
+        facts = tuple(
+            dict.fromkeys(
+                (
+                    *industry_change_facts(evidence),
+                    *((trend_fact,) if trend_fact is not None else ()),
+                )
+            )
+        )
+        if trend_fact is not None:
+            subject = trend_fact.subject
+            event_action = trend_fact.relation
     else:
         facts = ()
     location_match = _LOCATION_RE.search(evidence)
@@ -1336,7 +1485,10 @@ def build_canonical_event(
         result_roles = {"AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT"}
         fact_complete = bool(subject and event_action and fact_roles.intersection(result_roles))
         needs_enrichment = bool(event_action and fact_roles.intersection(result_roles) and not fact_complete)
-    elif event_type in {"MARKET", "MARKET_MOVE", "STATISTIC", "EARNINGS"}:
+    elif event_type in {"MARKET", "MARKET_MOVE"}:
+        fact_complete = bool(observations and any(item.direction for item in observations))
+        needs_enrichment = not fact_complete
+    elif event_type in {"STATISTIC", "EARNINGS"}:
         fact_complete = bool(observations)
         needs_enrichment = not observations
     elif event_type == "INDUSTRY_CHANGE":
@@ -1353,6 +1505,7 @@ def build_canonical_event(
             "PRODUCTION_CHANGE",
             "RATIO_CHANGE",
             "COMPARISON",
+            "TREND_CHANGE",
         }
         fact_complete = bool(subject and event_action and fact_roles.intersection(material_roles))
         needs_enrichment = bool(subject and event_action and not fact_complete)
@@ -1383,6 +1536,7 @@ def build_canonical_event(
         )
         for fact in facts
     )
+    focus_terms = primary_event_focus_terms(event_type, title_text, subject, facts)
     return CanonicalEvent(
         event_type=event_type,
         subject=subject,
@@ -1410,6 +1564,7 @@ def build_canonical_event(
         conflict_state=canonical_conflict,
         evidence_owner_ids=tuple(dict.fromkeys(evidence_owner_ids)),
         representative_evidence_id=(evidence_owner_ids or ("",))[0],
+        primary_focus_terms=focus_terms,
     )
 
 
@@ -1598,19 +1753,44 @@ def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
         roles = policy_roles(title, lead)
         if roles.action:
             return roles.action
-    if event_type in {"MARKET", "MARKET_MOVE", "STATISTIC"}:
+    if event_type in {"MARKET", "MARKET_MOVE"}:
         observations = metric_observations(title)
-        if observations:
-            return observations[0].direction or "LEVEL"
+        return next((item.direction for item in observations if item.direction), "") or market_direction(text)
+    if event_type == "STATISTIC":
+        observations = metric_observations(title)
+        directional = next((item.direction for item in observations if item.direction), "")
+        if directional:
+            return directional
+    if event_type == "AWARD_CHART":
+        if any(fact.role == "CHART_RANK" for fact in award_chart_facts(text)):
+            return "순위 기록"
+        for term in ("수상", "우승", "관왕", "기록"):
+            if contains_intent_term(text, term):
+                return term
+        return ""
+    if event_type == "PRODUCT_RELEASE":
+        for term in _EVENT_ACTION_CONTRACTS[event_type]:
+            if contains_intent_term(text, term):
+                return term
+        return ""
+    if event_type == "ROSTER_PERSONNEL":
+        if roster_selection_action_supported(text):
+            return "선발"
+        for term in ("엔트리", "부상", "트레이드", "등록", "말소"):
+            if contains_action(text, term):
+                return term
+        return ""
     terms = _EVENT_ACTION_CONTRACTS.get(event_type, ACTION_TERMS)
     if event_type == "INDUSTRY_CHANGE":
+        if industry_trend_fact(title) is not None:
+            return "확산"
         # Industry headlines often use a relation such as ``투자 유치`` or
         # ``생산 확대``.  The terminal action carries the event state more
         # precisely than whichever vocabulary term happens to be listed
         # first, while retaining the shared boundary-aware matcher.
         matches = [
             (match.start(), len(term), term)
-            for term in terms
+            for term in _INDUSTRY_MATERIAL_ACTIONS
             for match in (re.search(rf"(?<![{_WORD_CHAR}]){re.escape(term)}", text),)
             if match
         ]

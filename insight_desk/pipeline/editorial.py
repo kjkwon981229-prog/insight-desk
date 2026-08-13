@@ -19,6 +19,7 @@ from .semantics import (
     contains_intent_term,
     earnings_observations,
     event_action_signal,
+    industry_trend_fact,
     is_low_value_popularity_poll,
     is_trusted_official_domain,
     market_direction_class,
@@ -718,6 +719,8 @@ def _event_profile(title: str, lead: str) -> tuple[str, float, list[str]]:
         return recruitment, 70.0, [recruitment]
     if sports_interruption_title_support(title, lead):
         return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]
+    if industry_trend_fact(title) is not None:
+        return "INDUSTRY_CHANGE", 66.0, ["TREND_CHANGE"]
     if (
         _sports_context(title)
         and any(_contains(title, marker) for marker in ("관중", "입장객"))
@@ -754,6 +757,14 @@ def _owned_lead(event_type: str, title: str, lead: str) -> str:
         return lead if recruitment_event_type(f"{title} {lead}") == event_type else ""
     if event_type == "ENTERTAINMENT_EVENT" and _is_completed_entertainment_event(lead):
         return lead
+    if event_type == "INDUSTRY_CHANGE":
+        trend_fact = industry_trend_fact(title)
+        if trend_fact is not None and all(
+            compact(value) in compact(lead)
+            for value in (trend_fact.subject, trend_fact.value)
+            if value
+        ):
+            return lead
     if event_type == "SPORTS_INTERRUPTION":
         supports_event = sports_interruption_title_support(
             title, lead
@@ -948,9 +959,23 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
             reasons = (*reasons, "METRIC_DIRECTION_CONFLICT")
         if event_type == "EARNINGS" and not canonical_event.observations:
             reasons = (*reasons, "WEAK_FACT_STRUCTURE")
-    fact_contract_valid = not (
-        event_type == "EARNINGS" and not canonical_event.observations
-    )
+    fact_contract_valid = True
+    if event_type in {"EARNINGS", "SPORTS_RESULT", "AWARD_CHART", "INDUSTRY_CHANGE"}:
+        fact_contract_valid = canonical_event.fact_complete
+    elif event_type == "MARKET_MOVE":
+        fact_contract_valid = bool(
+            canonical_event.observations
+            and any(observation.direction for observation in canonical_event.observations)
+        )
+    elif event_type == "STATISTIC":
+        fact_contract_valid = bool(action and (canonical_event.observations or numbers))
+    elif event_type == "ROSTER_PERSONNEL" and action_term == "선발":
+        # A bare role noun (``선발 화이트의 역투``) is not a personnel
+        # announcement. The typed action parser admits only an explicit
+        # selection/starting-pitcher predicate.
+        fact_contract_valid = bool(action)
+    if not fact_contract_valid and "WEAK_FACT_STRUCTURE" not in reasons:
+        reasons = (*reasons, "WEAK_FACT_STRUCTURE")
     passed = (
         event_type not in {"OTHER", *_LOW_VALUE_EVENT_TYPES}
         and significance >= 35.0
