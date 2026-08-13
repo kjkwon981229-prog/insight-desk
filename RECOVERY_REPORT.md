@@ -4,12 +4,12 @@
 
 - latest Sol convergence HEAD: `55c31740e1e28e5410ae1232372f04114e55ad1f`
 - 기준 CI #193: Python 298개 및 Push Worker 13개 통과
-- 이번 local closure: Python 298개 및 Push Worker 13개 통과
+- targeted recall correction 오프라인 검증: Python 304개 및 Push Worker 13개 통과
 - Run #92 human acceptance 실패는 Sol event/fact ownership closure 전의 historical regression이다.
 - Run #93 general production smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했지만 KBO·경제 targeted live reproof는 실행되지 않았다.
-- Run #94/#95 Sol replay는 통과했다. Run #96 fresh `workflow_dispatch`는 build·artifact·machine editorial acceptance·Pages·READY push와 selected story human audit까지 통과했다.
-- 다음 live evidence는 실제 `07:30 KST` schedule이다.
-- 현재 판정: `READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+- Run #94/#95 Sol replay는 통과했다. Run #96 selected story precision은 통과했지만 rejected-candidate 전수 감사에서 confirmed FN 20건/15 unique event group이 확인됐다.
+- targeted correction 후 20/20 FN positive, 44/44 TN, Run #94/#95/#96 replay가 통과했다. 다음 evidence는 corrected HEAD의 fresh live 최대 1회다.
+- 현재 판정: `READY_FOR_POST_RECALL_FRESH_LIVE`
 
 ## Latest fresh live evidence
 
@@ -90,6 +90,9 @@
 ```text
 BASELINE_CI_193 = PASS (298 Python + 13 Worker)
 LOCAL_POST_SOL_CLOSURE = PASS (298 Python + 13 Worker)
+TARGETED_RECALL_CORRECTION_OFFLINE = PASS (304 Python + 13 Worker)
+RUN96_RECALL_AUDIT = FAIL (20 confirmed FN / 15 unique event groups)
+POST_RECALL_FRESH_LIVE = PENDING
 RUN93_GENERAL_PRODUCTION_SMOKE = PASS
 RUN94_RUN95_SOL_REPLAY = PASS
 RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
@@ -114,6 +117,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 판정
 
-`READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+`READY_FOR_POST_RECALL_FRESH_LIVE`
 
-Run #96의 selected story 전수 audit과 manual READY push backend는 통과했지만, 실제 schedule event의 provenance, READY 알림 iPhone 표시·개수·tap/open 및 watchdog 확인 전에는 `PRODUCTION_FINAL`로 올리지 않는다.
+Run #96의 selected story precision과 manual READY push backend는 통과했지만 recall closure는 corrected HEAD의 fresh live 전에는 완료로 올리지 않는다.

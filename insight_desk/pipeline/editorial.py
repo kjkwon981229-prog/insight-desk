@@ -29,6 +29,7 @@ from .semantics import (
     sports_interruption_state,
     sports_interruption_title_support,
     summary_information_gain,
+    typed_event_relation,
 )
 
 _TRUNCATION_RE = re.compile(r"\.{2,}|…|·{2,}")
@@ -721,6 +722,17 @@ def _event_profile(title: str, lead: str) -> tuple[str, float, list[str]]:
         return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]
     if industry_trend_fact(title) is not None:
         return "INDUSTRY_CHANGE", 66.0, ["TREND_CHANGE"]
+    relation = typed_event_relation(title)
+    if relation is not None:
+        event_type, fact = relation
+        significance = {
+            "REGULATION": 84.0,
+            "AWARD_CHART": 74.0,
+            "ROSTER_PERSONNEL": 74.0,
+            "INDUSTRY_CHANGE": 66.0,
+            "ANNOUNCEMENT": 62.0,
+        }[event_type]
+        return event_type, significance, [fact.relation]
     if (
         _sports_context(title)
         and any(_contains(title, marker) for marker in ("관중", "입장객"))
@@ -825,6 +837,12 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     matched_terms: list[str] = []
     reasons: tuple[str, ...] = ()
     sports_context = _sports_context(text)
+    title_relation = typed_event_relation(title_text)
+    typed_roster_context = bool(
+        title_relation is not None
+        and title_relation[0] == "ROSTER_PERSONNEL"
+        and "kbo" in _compact(f"{topic.id} {topic.name}")
+    )
     profiled_type, profiled_significance, profiled_terms = _event_profile(title_text, lead_text)
 
     # The title is the strongest intent/event evidence.  Only fall back to
@@ -983,7 +1001,7 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
         and action
         and ownership_valid
         and not date_conflict
-        and not (event_type == "ROSTER_PERSONNEL" and not sports_context)
+        and not (event_type == "ROSTER_PERSONNEL" and not (sports_context or typed_roster_context))
         and metric_signal
         and not metric_direction_conflict
         and fact_contract_valid
@@ -1344,11 +1362,21 @@ def assess_cluster(
         and not completed_event_headline
         and not _truncated_prefix_has_event_fact(representative)
     )
+    owned_relation_complete = bool(
+        event.canonical_event is not None
+        and event.canonical_event.fact_complete
+        and any(fact.role == "EVENT_RELATION" for fact in event.canonical_event.facts)
+    )
     single_source_supported = (
         owned_cluster.source_count == 1
         and (
             evidence.official
             or evidence.metadata_complete
+            or (
+                owned_relation_complete
+                and relevance.passed
+                and relevance.direct_title_match
+            )
             or (
                 relevance.passed
                 and relevance.direct_title_match
@@ -1376,6 +1404,16 @@ def assess_cluster(
         and not evidence.official
         and not evidence.metadata_complete
         and event.event_type in {"STATISTIC", "MARKET_MOVE", "MARKET"}
+        and not (
+            event.canonical_event is not None
+            and event.canonical_event.fact_complete
+            and bool(event.canonical_event.observations)
+            and all(
+                observation.instrument and observation.value and observation.direction
+                for observation in event.canonical_event.observations
+            )
+            and not _TRUNCATION_RE.search(representative.title)
+        )
         and (
             not _fact_bearing_discovery(representative)
             or (

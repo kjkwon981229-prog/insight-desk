@@ -335,6 +335,74 @@ _ROSTER_SELECTION_PREDICATE_RE = re.compile(
     r"(?:[^.!?]{0,24})?(?:예고|확정|발탁|지명|등록|선정|됐다|되었다|한다|예정)|"
     r"(?:예고|확정|발탁|지명|등록|선정)[^.!?]{0,16}선발)"
 )
+_RELATION_SUBJECT = r"[A-Za-z0-9가-힣·&'’\- ]{2,56}?"
+_RELATION_OBJECT = r"[A-Za-z0-9가-힣·&'’\-–—%., ]{2,96}?"
+_RELATION_ACTOR_BOUNDARY = r"(?:(?:은|는|이|가|에서)\s+|[,，]\s*)"
+_REGULATION_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT}){_RELATION_ACTOR_BOUNDARY}"
+    rf"(?P<object>{_RELATION_OBJECT}(?:규제|법안|법률|고시|제도))(?:을|를)?\s*"
+    r"(?P<action>완화|폐지|강화|개정|시행|허용|금지|해제|확정|푼다|"
+    r"풀(?:기로(?:\s+확정)?|었다|었다|어|고|기로)?)(?:했다|한다|됐다|된다|하기로\s+했다|키로\s+했다)?$",
+    re.IGNORECASE,
+)
+_INDUSTRY_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT}){_RELATION_ACTOR_BOUNDARY}"
+    rf"(?P<object>{_RELATION_OBJECT})\s+"
+    r"(?P<action>착공식|착공|공급|수주|신설|출범|투자|지원)"
+    r"(?:을|를|에)?\s*(?:했다|한다|됐다|된다|하기로\s+했다|키로\s+했다|"
+    r"예정이다|나섰다|시작했다|연다|열었다|들어갔다|확정했다)?$",
+    re.IGNORECASE,
+)
+_SELECTION_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT}){_RELATION_ACTOR_BOUNDARY}"
+    rf"(?P<object>{_RELATION_OBJECT}(?:프로그램|파트너|협력사|참여사|대상|기업|회사|Program|Partner))"
+    r"(?:에|로|으로|을|를)?\s*(?P<action>선정|지정)"
+    r"(?:됐다|되었다|했다|한다|확정됐다)?$",
+    re.IGNORECASE,
+)
+_CONTRACT_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT})(?:(?:은|는|이|가)\s+|[,，]\s*)"
+    rf"(?P<object>{_RELATION_OBJECT}(?:전속\s*계약|계약))(?:을|를)?\s*"
+    r"(?P<action>해지|종료|만료|해제)(?:했다|한다|됐다|된다|하기로\s+했다)?$",
+    re.IGNORECASE,
+)
+_AFFILIATION_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT})(?:(?:도|은|는|이|가)\s+|[,，]\s*)"
+    rf"(?P<object>{_RELATION_OBJECT}(?:JYP|YG|SM|HYBE|하이브|소속사|기획사))(?:를|을)?\s*"
+    r"(?P<action>떠난다|떠났다|결별|이적)(?:했다|한다|됐다|된다)?$",
+    re.IGNORECASE,
+)
+_ROSTER_OUTCOME_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT})(?:(?:은|는|이|가)\s+|[,，]\s*)"
+    rf"(?P<object>{_RELATION_OBJECT})\s+"
+    r"(?P<action>영입\s*무산|영입\s*확정|계약\s*체결|방출|이적\s*확정|트레이드\s*성사)"
+    r"(?:됐다|되었다|했다|한다)?$",
+    re.IGNORECASE,
+)
+_ENGLISH_CHART_RELATION_RE = re.compile(
+    r"^(?P<subject>.+?)\s+(?P<action>ranks?|ranked|debuts?|debuted|enters?|entered|"
+    r"stays?|stayed|remains?|remained|lands?|landed|reaches?|reached)\s+"
+    r"(?P<object>.+?\b(?:billboard|chart|charts)\b.+)$",
+    re.IGNORECASE,
+)
+_ENGLISH_CHART_RANK_RE = re.compile(
+    r"(?:\bno\.?\s*|#)(\d+)|\b(\d+)(?:st|nd|rd|th)\s+(?:place|position)\b",
+    re.IGNORECASE,
+)
+_ENGLISH_CHART_STREAK_RE = re.compile(r"\b(\d+)(?:st|nd|rd|th)\s+week\b", re.IGNORECASE)
+_RELATION_NON_EVENT_TAIL_RE = re.compile(
+    r"(?:필요성|가능성|전망|거론|제기|검토|논의|분석|설명|주장|촉구|요구)(?:을|를|이|가|은|는)?\s*"
+    r"(?:제기|거론|설명|전망|주장|촉구|요구)?(?:했다|한다|됐다|된다)?$"
+)
+_INDUSTRY_RELATION_OBJECT_MARKERS: dict[str, tuple[str, ...]] = {
+    "착공": ("공장", "센터", "시설", "단지", "라인", "캠퍼스", "기지"),
+    "공급": ("솔루션", "서비스", "제품", "장비", "시스템", "반도체", "계약", "부처", "기관"),
+    "수주": ("공장", "계약", "사업", "프로젝트", "달러", "원"),
+    "신설": ("사업단", "센터", "조직", "법인", "부서", "본부"),
+    "출범": ("스타트업", "법인", "회사", "사업", "서비스", "센터"),
+    "투자": ("금", "반도체", "공장", "사업", "설비", "기술", "달러", "원"),
+    "지원": ("투자", "착공", "이행", "사업", "규제", "공장"),
+}
 _FOCUS_STOPWORDS = frozenset(
     {
         "관련",
@@ -463,6 +531,114 @@ class EventFact:
     object: str = ""
     evidence_owner_ids: tuple[str, ...] = ()
     canonical_event_id: str = ""
+
+
+def _relation_subject(value: str) -> str:
+    subject = normalize_text(value).strip(" ,·-—")
+    subject = re.sub(r"^(?:규정\s+착오|행정\s+착오|절차\s+문제)(?:로|때문에)\s+", "", subject)
+    subject = re.sub(r"(?:\d+\s*년\s*만에|\d+\s*일\s*만에)\s*", "", subject)
+    subject = re.sub(r"(?:은|는|이|가|도|에서)$", "", subject).strip(" ,·-—")
+    if re.search(r"[,，]", subject):
+        subject = re.split(r"[,，]", subject)[-1].strip(" ,·-—")
+    return subject[:56]
+
+
+def _relation_object(value: str, *, strip_elapsed: bool = False) -> str:
+    object_text = re.sub(
+        r"(?:은|는|이|가|을|를|에|로|으로)$",
+        "",
+        normalize_text(value).strip(" ,·-—"),
+    ).strip(" ,·-—")
+    if strip_elapsed:
+        object_text = re.sub(r"^(?:\d+\s*년\s*만에|\d+\s*일\s*만에)\s+", "", object_text)
+    return object_text[:96]
+
+
+def _relation_fact(
+    event_type: str,
+    match: re.Match[str],
+    action: str,
+    *,
+    strip_elapsed_object: bool = False,
+) -> tuple[str, EventFact] | None:
+    subject = _relation_subject(match.group("subject"))
+    object_text = _relation_object(match.group("object"), strip_elapsed=strip_elapsed_object)
+    if len(compact(subject)) < 2 or len(compact(object_text)) < 2:
+        return None
+    return (
+        event_type,
+        EventFact(
+            "EVENT_RELATION",
+            object_text,
+            subject=subject,
+            relation=action,
+            object=object_text,
+        ),
+    )
+
+
+def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
+    """Return one explicit subject-predicate-object relation from a headline.
+
+    The matcher is deliberately narrower than an action vocabulary.  A word
+    such as ``전략`` or ``선정`` is never sufficient by itself: the headline
+    must bind an actor, a compatible material object, and a completed or
+    headline-nominal predicate.  This relation is reused by classification,
+    ownership, synthesis, and recall diagnostics.
+    """
+
+    clean = normalize_text(text).strip(" .!?。！？")
+    if not clean or _RELATION_NON_EVENT_TAIL_RE.search(clean):
+        return None
+
+    regulation = _REGULATION_RELATION_RE.match(clean)
+    if regulation is not None:
+        raw_action = regulation.group("action")
+        action = "완화" if raw_action.startswith(("풀", "푼", "해제")) else re.match(
+            r"완화|폐지|강화|개정|시행|허용|금지|확정",
+            raw_action,
+        ).group(0)
+        return _relation_fact("REGULATION", regulation, action)
+
+    selection = _SELECTION_RELATION_RE.match(clean)
+    if selection is not None:
+        return _relation_fact("ANNOUNCEMENT", selection, selection.group("action")[:2])
+
+    contract = _CONTRACT_RELATION_RE.match(clean)
+    if contract is not None:
+        return _relation_fact("ANNOUNCEMENT", contract, contract.group("action")[:2])
+
+    affiliation = _AFFILIATION_RELATION_RE.match(clean)
+    if affiliation is not None:
+        raw_action = affiliation.group("action")
+        action = "떠남" if raw_action.startswith("떠") else "결별" if raw_action.startswith("결별") else "이적"
+        return _relation_fact(
+            "ANNOUNCEMENT",
+            affiliation,
+            action,
+            strip_elapsed_object=True,
+        )
+
+    roster = _ROSTER_OUTCOME_RELATION_RE.match(clean)
+    if roster is not None:
+        return _relation_fact("ROSTER_PERSONNEL", roster, normalize_text(roster.group("action")))
+
+    industry = _INDUSTRY_RELATION_RE.match(clean)
+    if industry is not None:
+        raw_action = industry.group("action")
+        action = "착공" if raw_action.startswith("착공") else raw_action
+        object_text = normalize_text(industry.group("object"))
+        compatible = _INDUSTRY_RELATION_OBJECT_MARKERS.get(action, ())
+        if compatible and not any(marker.casefold() in object_text.casefold() for marker in compatible):
+            return None
+        return _relation_fact("INDUSTRY_CHANGE", industry, action)
+
+    chart = _ENGLISH_CHART_RELATION_RE.match(clean)
+    if chart is not None and (
+        _ENGLISH_CHART_RANK_RE.search(clean) or _ENGLISH_CHART_STREAK_RE.search(clean)
+    ):
+        return _relation_fact("AWARD_CHART", chart, "순위 기록")
+    return None
 
 
 @dataclass(frozen=True)
@@ -898,9 +1074,17 @@ def award_chart_facts(text: str) -> tuple[EventFact, ...]:
     rank = _RANK_RE.search(clean)
     if rank:
         facts.append(_fact("CHART_RANK", rank.group(1), unit="위"))
+    else:
+        english_rank = _ENGLISH_CHART_RANK_RE.search(clean)
+        if english_rank:
+            facts.append(_fact("CHART_RANK", next(value for value in english_rank.groups() if value), unit="위"))
     streak = _STREAK_RE.search(clean)
     if streak:
         facts.append(_fact("STREAK_WEEKS", streak.group(1), unit="주"))
+    else:
+        english_streak = _ENGLISH_CHART_STREAK_RE.search(clean)
+        if english_streak:
+            facts.append(_fact("STREAK_WEEKS", english_streak.group(1), unit="주"))
     votes = _VOTE_RE.search(clean)
     if votes:
         facts.append(_fact("VOTE_COUNT", votes.group(1), unit="표"))
@@ -1005,6 +1189,16 @@ def _event_subject(
         clean = re.sub(r"\s+경쟁률(?:은|이)?\s*$", "", clean)
         return _clean_event_subject(event_type, clean)
     if event_type == "AWARD_CHART":
+        english_marker = re.search(
+            r"\b(?:ranks?|ranked|debuts?|debuted|enters?|entered|stays?|stayed|"
+            r"remains?|remained|lands?|landed|reaches?|reached|billboard|charts?)\b",
+            clean,
+            re.IGNORECASE,
+        )
+        if english_marker is not None:
+            prefix = clean[: english_marker.start()].strip(" ,·-—'\"")
+            tokens = re.findall(r"[A-Za-z0-9가-힣·&'’-]+", prefix)
+            return _clean_event_subject(event_type, " ".join(tokens[-4:]))
         prefix = re.split(r"[,，]|\s+(?:국내외\s+)?(?:음악\s+|음원\s+)?차트\b", clean, maxsplit=1)[0]
         prefix = re.sub(r"^(?:\d{1,2}월도\s+)?(?:No\.?\s*\d+\s+)?", "", prefix, flags=re.IGNORECASE)
         tokens = [
@@ -1403,9 +1597,15 @@ def build_canonical_event(
     title_text = normalize_text(title)
     lead_text = normalize_text(lead)
     evidence = " ".join(part for part in (title_text, lead_text) if part)
+    typed_relation = typed_event_relation(title_text)
+    relation_fact = (
+        typed_relation[1]
+        if typed_relation is not None and typed_relation[0] == event_type
+        else None
+    )
     observations = event_observations(event_type, title_text)
     policy = policy_roles(title_text, lead_text) if event_type == "POLICY" else PolicyRoles()
-    subject = policy.actor or _event_subject(
+    subject = (relation_fact.subject if relation_fact is not None else "") or policy.actor or _event_subject(
         event_type,
         title_text,
         observations,
@@ -1414,7 +1614,7 @@ def build_canonical_event(
     if event_type == "EARNINGS" and observations:
         event_action = observations[0].direction or "기록"
     else:
-        event_action = policy.action or action or event_action_signal(
+        event_action = (relation_fact.relation if relation_fact is not None else "") or policy.action or action or event_action_signal(
             event_type,
             title_text,
             lead_text,
@@ -1443,11 +1643,13 @@ def build_canonical_event(
         facts = sports_result_facts(evidence)
     elif event_type == "INDUSTRY_CHANGE":
         trend_fact = industry_trend_fact(title_text)
+        material_facts = industry_change_facts(evidence)
         facts = tuple(
             dict.fromkeys(
                 (
-                    *industry_change_facts(evidence),
+                    *material_facts,
                     *((trend_fact,) if trend_fact is not None else ()),
+                    *((relation_fact,) if relation_fact is not None and not material_facts and trend_fact is None else ()),
                 )
             )
         )
@@ -1455,7 +1657,7 @@ def build_canonical_event(
             subject = trend_fact.subject
             event_action = trend_fact.relation
     else:
-        facts = ()
+        facts = (relation_fact,) if relation_fact is not None else ()
     location_match = _LOCATION_RE.search(evidence)
     location = location_match.group(0) if location_match else ""
     fixture_id = _sports_fixture_id(evidence) if event_type == "SPORTS_INTERRUPTION" else ""
@@ -1476,8 +1678,9 @@ def build_canonical_event(
         }.issubset(fact_roles)
         needs_enrichment = "COMPETITION_RATIO" in fact_roles and not fact_complete
     elif event_type == "AWARD_CHART":
-        fact_complete = "CHART_RANK" in fact_roles and not is_low_value_popularity_poll(evidence)
-        needs_enrichment = "CHART_RANK" in fact_roles and not fact_complete
+        chart_result = bool({"CHART_RANK", "STREAK_WEEKS"}.intersection(fact_roles))
+        fact_complete = chart_result and not is_low_value_popularity_poll(evidence)
+        needs_enrichment = chart_result and not fact_complete
     elif event_type == "SPORTS_INTERRUPTION":
         fact_complete = bool(subject and temporal_state)
         needs_enrichment = bool(subject and not temporal_state)
@@ -1506,6 +1709,7 @@ def build_canonical_event(
             "RATIO_CHANGE",
             "COMPARISON",
             "TREND_CHANGE",
+            "EVENT_RELATION",
         }
         fact_complete = bool(subject and event_action and fact_roles.intersection(material_roles))
         needs_enrichment = bool(subject and event_action and not fact_complete)
@@ -1542,7 +1746,7 @@ def build_canonical_event(
         subject=subject,
         action=event_action,
         actor=policy.actor or subject,
-        object=policy.object,
+        object=policy.object or (relation_fact.object if relation_fact is not None else ""),
         condition=policy.condition,
         date=date,
         period=(observations[0].period if observations else ""),
@@ -1741,6 +1945,9 @@ def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
     """Return an action/fact signal accepted by the event-family contract."""
 
     text = f"{title} {lead}".strip()
+    relation = typed_event_relation(title)
+    if relation is not None and relation[0] == event_type:
+        return relation[1].relation
     if event_type == "SPORTS_INTERRUPTION":
         state, _ = sports_interruption_state(event_type, text)
         return {
@@ -1762,7 +1969,7 @@ def event_action_signal(event_type: str, title: str, lead: str = "") -> str:
         if directional:
             return directional
     if event_type == "AWARD_CHART":
-        if any(fact.role == "CHART_RANK" for fact in award_chart_facts(text)):
+        if any(fact.role in {"CHART_RANK", "STREAK_WEEKS"} for fact in award_chart_facts(text)):
             return "순위 기록"
         for term in ("수상", "우승", "관왕", "기록"):
             if contains_intent_term(text, term):

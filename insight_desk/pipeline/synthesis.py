@@ -1180,6 +1180,91 @@ def industry_summary_preserves_fact_binding(
     return True
 
 
+def _event_relation_fact(facts: tuple[EventFact, ...]) -> EventFact | None:
+    return next((fact for fact in facts if fact.role == "EVENT_RELATION"), None)
+
+
+def _relation_headline(fact: EventFact) -> str:
+    """Keep a typed relation headline compact while retaining its event noun."""
+
+    subject_tokens = re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.subject)
+    object_tokens = [
+        token
+        for token in re.findall(r"[A-Za-z0-9가-힣·&'’\-]+", fact.object)
+        if not re.fullmatch(r"\d+(?:[.,]\d+)?(?:년|월|일|주)?", token)
+        and token not in {"만에", "조기", "공식"}
+    ]
+    object_label = object_tokens[-1] if object_tokens else fact.object
+    short_subject = subject_tokens[-1] if len(object_tokens) >= 2 else ""
+    action_label = {
+        "떠남": "결별",
+        "영입 무산": "영입 무산",
+    }.get(fact.relation, fact.relation)
+    return " ".join(part for part in (short_subject + "," if short_subject else "", object_label, action_label) if part)
+
+
+def _event_relation_summary(
+    title: str,
+    completion_evidence: str,
+    fact: EventFact,
+) -> str:
+    """Render only the subject/object/predicate already owned by the event."""
+
+    detail = normalize_text(completion_evidence)
+    normalized_title = normalize_text(title)
+    if normalized_title and detail.startswith(normalized_title):
+        detail = detail[len(normalized_title) :].strip(" ,:·-—")
+    detail = _strip_news_byline(detail).rstrip(" .!?。！")
+    detail_key = _compact_fact_value(detail)
+    if (
+        detail
+        and not _TRUNCATION_RE.search(detail)
+        and not editorial_text_issues(detail)
+        and summary_information_gain(title, detail)
+        and _compact_fact_value(fact.subject) in detail_key
+        and _compact_fact_value(fact.object) in detail_key
+    ):
+        return f"{detail}."
+
+    subject = fact.subject
+    object_text = fact.object
+    if not subject or not object_text:
+        return ""
+    action = fact.relation
+    if action == "완화":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 완화했다."
+    if action == "착공":
+        return f"{subject}{_particle(subject)} {object_text} 착공에 들어갔다."
+    if action == "공급":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 공급한다."
+    if action == "수주":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 수주했다."
+    if action == "신설":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 신설했다."
+    if action == "출범":
+        return f"{subject}{_particle(subject)} {object_text}{_instrumental_particle(object_text)} 출범했다."
+    if action == "투자":
+        return f"{subject}{_particle(subject)} {object_text}에 투자했다."
+    if action == "지원":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 지원한다."
+    if action in {"선정", "지정"}:
+        marker = "에" if re.search(r"(?:프로그램|Program)$", object_text, re.IGNORECASE) else "로"
+        return f"{subject}{_particle(subject)} {object_text}{marker} {action}됐다."
+    if action in {"해지", "종료", "만료", "해제"}:
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} {action}했다."
+    if action == "떠남":
+        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 떠났다."
+    if action == "결별":
+        return f"{subject}{_particle(subject)} {object_text}{_conjunction_particle(object_text)} 결별했다."
+    if action == "이적":
+        return f"{subject}{_particle(subject)} {object_text}{_instrumental_particle(object_text)} 이적했다."
+    if action == "영입 무산":
+        return f"{subject}의 {object_text} 영입이 무산됐다."
+    if action in {"영입 확정", "계약 체결", "방출", "이적 확정", "트레이드 성사"}:
+        return f"{subject}의 {object_text} {action}이 확인됐다."
+    return ""
+
+
 def _industry_fact_summary(
     title: str,
     subject: str,
@@ -1216,6 +1301,8 @@ def _industry_fact_summary(
         # provide information gain. Without it, returning a polished copy of
         # the headline would recreate the old mixed-focus false pass.
         return ""
+    if fact.role == "EVENT_RELATION":
+        return _event_relation_summary(title, completion_evidence, fact)
     subject_particle = _subject_particle(subject)
     if fact.role == "RATIO_CHANGE" and fact.related_value:
         label = fact.subject or next(
@@ -1259,8 +1346,12 @@ def _headline(
     action: str = "",
     temporal_state: str = "",
     observations: tuple[MetricObservation, ...] = (),
+    event_facts: tuple[EventFact, ...] = (),
 ) -> str:
     cleaned = _clean_headline(title)
+    relation_fact = _event_relation_fact(event_facts)
+    if relation_fact is not None:
+        return _relation_headline(relation_fact)
     if event_type == "EARNINGS" and subject:
         period, metric, value = _earnings_fact_parts(cleaned)
         if metric and value:
@@ -1269,6 +1360,12 @@ def _headline(
             if value.endswith(("%", "퍼센트")) and direction:
                 fact = f"{fact} {direction}"
             return f"{subject} {fact} 실적"
+    if event_type == "AWARD_CHART" and subject and re.search(r"\bbillboard\b", cleaned, re.IGNORECASE):
+        fact_map = _event_fact_map(event_facts)
+        rank = fact_map.get("CHART_RANK", "")
+        chart = "빌보드 200" if re.search(r"\bbillboard\s*200\b", cleaned, re.IGNORECASE) else "빌보드 차트"
+        if rank:
+            return f"{subject}, {chart} {rank}"
     if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE", "EARNINGS"} and subject and numbers:
         run_phrase = _market_run_phrase(cleaned)
         if run_phrase:
@@ -1339,6 +1436,11 @@ def _summary(
     condition: str = "",
     policy_object: str = "",
 ) -> str:
+    relation_fact = _event_relation_fact(event_facts)
+    if relation_fact is not None:
+        relation_sentence = _event_relation_summary(title, completion_evidence, relation_fact)
+        if relation_sentence:
+            return relation_sentence
     if event_type == "EARNINGS" and subject:
         observation = next(iter(market_observations), None)
         period, metric, value = (
@@ -1595,15 +1697,22 @@ def _summary(
         fact_map = _event_fact_map(event_facts)
         chart_number = fact_map.get("CHART_RANK", "") or next((value for value in numbers if value.endswith("위")), "")
         music_context = any(
-            marker in title for marker in ("음악", "음원", "앨범", "가요", "아이돌", "가수", "차트", "빌보드", "멜론", "노래")
+            marker in title for marker in (
+                "음악", "음원", "앨범", "가요", "아이돌", "가수", "차트", "빌보드",
+                "Billboard", "billboard", "멜론", "노래",
+            )
         )
         if chart_number and music_context:
             vote_count = fact_map.get("VOTE_COUNT", "")
             streak = fact_map.get("STREAK_WEEKS", "")
             if vote_count and vote_count not in title:
                 sentence = f"{subject}{_particle(subject)} {vote_count}를 받아 음악 차트 {chart_number}에 올랐다."
+            elif streak and re.search(r"[A-Za-z]$", subject):
+                sentence = f"{subject}의 음악 차트 {chart_number} 기록이 {streak}째 이어졌다."
             elif streak and streak not in title:
                 sentence = f"{subject}{_particle(subject)} {streak} 연속 음악 차트 {chart_number}를 기록했다."
+            elif re.search(r"[A-Za-z]$", subject):
+                sentence = f"음악 차트에서 {subject}의 순위는 {chart_number}였다."
             else:
                 sentence = f"{subject}{_subject_particle(subject)} 음악 차트 {chart_number}에 올랐다."
         elif chart_number:
@@ -2116,6 +2225,7 @@ def synthesize_cluster(
         action=action,
         temporal_state=temporal_state,
         observations=market_observations,
+        event_facts=resolved_event_facts,
     )
     completion_evidence = (
         _best_event_completion_evidence(
@@ -2148,6 +2258,20 @@ def synthesize_cluster(
         condition=canonical_event.condition if canonical_event is not None else "",
         policy_object=canonical_event.object if canonical_event is not None else "",
     )
+    if (
+        event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}
+        and market_observation is not None
+        and market_observation.instrument
+        and market_observation.value
+        and market_observation.direction
+        and len(market_observations) == 1
+        and summary
+        and not summary_information_gain(headline, summary)
+    ):
+        # Keep the complete value in the summary and use a compact factual
+        # headline.  This preserves the metric tuple without requiring an
+        # unrelated lead solely to manufacture headline/summary difference.
+        headline = f"{market_observation.instrument} {market_observation.direction}"
     if canonical_event is not None and not summary_preserves_primary_focus(
         summary,
         facts.primary_focus_terms,

@@ -3,13 +3,13 @@
 ## 현재 판정
 
 - 복구 수준: `LEVEL D — CONTRACT RECONSTRUCTION` 이후 post-Sol hardening
-- 현재 상태: `READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+- 현재 상태: `READY_FOR_POST_RECALL_FRESH_LIVE`
 - latest Sol convergence HEAD: `55c31740e1e28e5410ae1232372f04114e55ad1f`
 - 기준 CI #193: Python 298개 및 Push Worker 13개 통과
-- 이번 오프라인 closure: Python 298개 및 Push Worker 13개 통과
+- targeted recall correction 오프라인 검증: Python 304개 및 Push Worker 13개 통과
 - Run #92 human acceptance 실패는 ownership closure 전의 historical evidence이며, Run #93 general smoke는 build·artifact·machine editorial acceptance·Pages·push까지 통과했다.
 - Run #94/#95 replay와 Sol focus/material synthesis/Korean composition validator closure는 현재 HEAD에서 통과했다.
-- Run #96 fresh `workflow_dispatch`는 build·artifact·machine editorial acceptance·Pages·READY push까지 통과했고 selected story 1건 human audit도 통과했다. 실제 `07:30 KST` schedule은 아직 별도 gate다.
+- Run #96의 selected story precision은 통과했지만 rejected-candidate 전수 감사에서 confirmed FN 20건/15 unique event group이 확인됐다. targeted correction 후 20/20 FN positive, 44/44 TN, Run #94/#95/#96 replay가 통과했으며 post-recall fresh live는 아직 실행하지 않았다.
 - Run #12의 원격 NCP/Pages 성공은 수집·배포 성공 증거일 뿐이며, 실제 selected story 품질 감사에서 false pass가 확인되어 최종 판정을 철회했다.
 
 ## 최신 fresh live acceptance
@@ -145,6 +145,9 @@ Run #12는 최종 콘텐츠 안전 수정과 Candidate 5 icon/head contract가 �
 ```text
 BASELINE_CI_193 = PASS (298 Python + 13 Worker)
 LOCAL_POST_SOL_CLOSURE = PASS (298 Python + 13 Worker)
+TARGETED_RECALL_CORRECTION_OFFLINE = PASS (304 Python + 13 Worker)
+RUN96_RECALL_AUDIT = FAIL (20 confirmed FN / 15 unique event groups)
+POST_RECALL_FRESH_LIVE = PENDING
 RUN93_GENERAL_PRODUCTION_SMOKE = PASS
 RUN94_RUN95_SOL_REPLAY = PASS
 RUN92_TARGETED_KBO_LIVE_REPROOF = PENDING
@@ -171,6 +174,6 @@ PWA_ICON_VERIFIED = YES (artifact + public page head)
 
 ## 현재 릴리스 상태
 
-`READY_FOR_FINAL_PHYSICAL_TIME_ACCEPTANCE`
+`READY_FOR_POST_RECALL_FRESH_LIVE`
 
-Run #96 fresh live의 selected story 전수 human audit까지 통과했지만, 실제 schedule provenance·READY push의 iPhone 표시·개수·tap/open·watchdog 전에는 `PRODUCTION_FINAL`을 주장하지 않는다.
+Run #96 selected-story precision PASS는 rejected-candidate recall을 증명하지 못했다. targeted correction의 fresh live를 최대 1회 통과한 뒤에만 scheduled/physical acceptance 단계로 진행한다.
