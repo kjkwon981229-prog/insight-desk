@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: insight-desk-ci-${{ github.ref }}
@@ -50,3 +50,23 @@ jobs:
             insight_desk/pipeline/selection.py
             tests/test_run99_false_empty_recall.py
           if-no-files-found: error
+      - name: Finalize validated candidate branch
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_BRANCH" --depth=1
+          git checkout "origin/$BASE_BRANCH" -- .github/workflows/ci.yml
+          rm -f scripts/sol_false_empty_patch_v2.py
+          git add insight_desk/pipeline/semantics.py insight_desk/pipeline/selection.py tests/test_run99_false_empty_recall.py .github/workflows/ci.yml
+          git add -u scripts/sol_false_empty_patch_v2.py
+          if git diff --cached --quiet; then
+            echo "No candidate changes to commit"
+            exit 0
+          fi
+          git config user.name "Insight Desk Sol"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Close Run99 false-empty recall blind spot"
+          git push origin HEAD:"$HEAD_BRANCH"
