@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: insight-desk-ci-${{ github.ref }}
@@ -17,15 +17,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12.10"
           cache: pip
-      - name: Apply bounded Run99 candidate patch
-        run: python scripts/sol_false_empty_patch_v2.py
       - name: Compile source
         run: python -m compileall -q insight_desk scripts tests
       - name: Run unit and contract tests
@@ -43,32 +39,3 @@ jobs:
       - name: Run push Worker tests
         working-directory: push-worker
         run: npm ci && npm test
-      - name: Upload patched candidate files
-        uses: actions/upload-artifact@v4
-        with:
-          name: sol-run99-candidate-${{ github.sha }}
-          path: |
-            insight_desk/pipeline/semantics.py
-            insight_desk/pipeline/selection.py
-            tests/test_run99_false_empty_recall.py
-          if-no-files-found: error
-      - name: Finalize validated candidate branch
-        if: github.event_name == 'pull_request'
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-          BASE_BRANCH: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          git fetch origin "$BASE_BRANCH" --depth=1
-          git checkout "origin/$BASE_BRANCH" -- .github/workflows/ci.yml
-          rm -f scripts/sol_false_empty_patch_v2.py
-          git add insight_desk/pipeline/semantics.py insight_desk/pipeline/selection.py tests/test_run99_false_empty_recall.py .github/workflows/ci.yml
-          git add -u scripts/sol_false_empty_patch_v2.py
-          if git diff --cached --quiet; then
-            echo "No candidate changes to commit"
-            exit 0
-          fi
-          git config user.name "Insight Desk Sol"
-          git config user.email "actions@users.noreply.github.com"
-          git commit -m "Close Run99 false-empty recall blind spot"
-          git push origin HEAD:"$HEAD_BRANCH"

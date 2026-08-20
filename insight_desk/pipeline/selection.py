@@ -21,6 +21,7 @@ from .novelty import classify_novelty
 from .semantics import (
     CanonicalEvent,
     canonical_publisher,
+    explicit_unclassified_event_signal,
     metric_summary_preserves_entity_binding,
     same_event_lifecycle,
     summary_preserves_primary_focus,
@@ -123,6 +124,27 @@ def _funnel_template() -> dict[str, int]:
         "synthesis_veto": 0,
         "strong_rejected": 0,
     }
+
+
+def _is_unclassified_event_recall_risk(
+    cluster: StoryCluster,
+    assessment: EditorialAssessment,
+    *,
+    novelty: str,
+    freshness_reasons: tuple[str, ...],
+) -> bool:
+    """Expose a concrete OTHER event to diagnostics without selecting it."""
+
+    if (
+        not assessment.relevance.passed
+        or assessment.event.event_type != "OTHER"
+        or novelty == "UNCHANGED"
+        or freshness_reasons
+        or assessment.evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}
+    ):
+        return False
+    title = effective_title(best_headline_item(cluster.items))
+    return explicit_unclassified_event_signal(title)
 
 
 def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
@@ -425,7 +447,12 @@ def select_clusters(
             funnel[topic.id]["qualified"] += 1
         if "SYNTHESIS_NOT_EDITORIAL_READY" in assessment.reasons:
             funnel[topic.id]["synthesis_veto"] += 1
-        if _is_strong_rejected(assessment):
+        if _is_unclassified_event_recall_risk(
+            cluster,
+            assessment,
+            novelty=novelty,
+            freshness_reasons=freshness_reasons,
+        ) or _is_strong_rejected(assessment):
             strong_rejected_candidates += 1
             funnel[topic.id]["strong_rejected"] += 1
             enrichment_candidates.append(cluster)

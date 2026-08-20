@@ -390,6 +390,58 @@ _ENGLISH_CHART_RANK_RE = re.compile(
     re.IGNORECASE,
 )
 _ENGLISH_CHART_STREAK_RE = re.compile(r"\b(\d+)(?:st|nd|rd|th)\s+week\b", re.IGNORECASE)
+_ENGLISH_EXECUTIVE_ROLE = (
+    r"(?:chief\s+(?:executive|financial|operating|technology|revenue|product|legal|"
+    r"marketing|commercial|strategy)\s+officer|CEO|CFO|COO|CTO|CRO|CPO|CLO|CMO|"
+    r"president|chair(?:man|woman|person)?|general\s+counsel)"
+)
+_ENGLISH_CORPORATE_REPLACEMENT_RE = re.compile(
+    rf"^(?P<subject>[A-Za-z0-9][A-Za-z0-9&.'’\- ]{{1,79}}?)\s+"
+    rf"(?P<action>replaces?|replaced)\s+(?:its\s+|the\s+)?"
+    rf"(?P<object>{_ENGLISH_EXECUTIVE_ROLE})"
+    r"(?:\s+(?:after|following|amid)\b.*)?$",
+    re.IGNORECASE,
+)
+_ENGLISH_CORPORATE_REPLACEMENT_UNSAFE_RE = re.compile(
+    r"\b(?:may|might|could|would|will|reportedly|allegedly|rumou?red|"
+    r"plans?\s+to|seeks?\s+to|aims?\s+to|expected\s+to)\s+replac(?:e|es|ed)\b",
+    re.IGNORECASE,
+)
+_INDUSTRY_BARE_RELATION_RE = re.compile(
+    rf"^(?P<subject>[A-Za-z0-9가-힣·&'’\-]{{2,40}})\s+"
+    rf"(?P<object>{_RELATION_OBJECT})\s+"
+    r"(?P<action>착공식|착공|공급|수주|신설|출범|투자|지원)"
+    r"(?:을|를|에)?\s*(?:했다|한다|됐다|된다|하기로\s+했다|키로\s+했다|"
+    r"예정이다|나섰다|시작했다|연다|열었다|들어갔다|확정했다)?$",
+    re.IGNORECASE,
+)
+_AFFILIATION_BARE_RELATION_RE = re.compile(
+    rf"^(?P<subject>{_RELATION_SUBJECT})\s+"
+    r"(?P<object>(?:\d+\s*년\s*만에\s+)?(?:JYP|YG|SM|HYBE|하이브|소속사|기획사))"
+    r"(?:를|을)?\s*(?P<action>떠난다|떠났다|결별|이적)(?:했다|한다|됐다|된다)?$",
+    re.IGNORECASE,
+)
+_ROSTER_CAUSE_OUTCOME_RELATION_RE = re.compile(
+    r"^(?:KBO\s+)?(?:규정\s+착오|행정\s+착오|절차\s+문제)(?:로|때문에)\s+"
+    rf"(?P<subject>{_RELATION_SUBJECT})\s+"
+    rf"(?P<object>{_RELATION_OBJECT})\s+"
+    r"(?P<action>영입\s*무산|영입\s*확정|계약\s*체결|방출|이적\s*확정|트레이드\s*성사)"
+    r"(?:됐다|되었다|했다|한다)?$",
+    re.IGNORECASE,
+)
+_UNCLASSIFIED_EVENT_SIGNAL_RE = re.compile(
+    r"(?:\b(?:replaces?|replaced|appoints?|appointed|acquires?|acquired)\b|"
+    r"(?:편입|편출|교체|선임|임명|공급|수주|신설|출범|인수)"
+    r"(?:했다|됐다|한다|된다)?(?=$|[\s,，:;])|"
+    r"영입\s*무산|계약\s*체결|떠난다|떠났다)",
+    re.IGNORECASE,
+)
+_UNCLASSIFIED_EVENT_UNSAFE_RE = re.compile(
+    r"(?:가능성|전망|거론|검토|논의|분석|설명|주장|rumou?red|reportedly|"
+    r"\bmay\b|\bmight\b|\bcould\b|\bwould\b|\bwill\b|\bplans?\s+to\b)",
+    re.IGNORECASE,
+)
+
 _RELATION_NON_EVENT_TAIL_RE = re.compile(
     r"(?:필요성|가능성|전망|거론|제기|검토|논의|분석|설명|주장|촉구|요구)(?:을|를|이|가|은|는)?\s*"
     r"(?:제기|거론|설명|전망|주장|촉구|요구)?(?:했다|한다|됐다|된다)?$"
@@ -591,6 +643,11 @@ def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
     if not clean or _RELATION_NON_EVENT_TAIL_RE.search(clean):
         return None
 
+    if not _ENGLISH_CORPORATE_REPLACEMENT_UNSAFE_RE.search(clean):
+        corporate_replacement = _ENGLISH_CORPORATE_REPLACEMENT_RE.match(clean)
+        if corporate_replacement is not None:
+            return _relation_fact("ANNOUNCEMENT", corporate_replacement, "교체")
+
     regulation = _REGULATION_RELATION_RE.match(clean)
     if regulation is not None:
         raw_action = regulation.group("action")
@@ -608,7 +665,7 @@ def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
     if contract is not None:
         return _relation_fact("ANNOUNCEMENT", contract, contract.group("action")[:2])
 
-    affiliation = _AFFILIATION_RELATION_RE.match(clean)
+    affiliation = _AFFILIATION_RELATION_RE.match(clean) or _AFFILIATION_BARE_RELATION_RE.match(clean)
     if affiliation is not None:
         raw_action = affiliation.group("action")
         action = "떠남" if raw_action.startswith("떠") else "결별" if raw_action.startswith("결별") else "이적"
@@ -619,11 +676,11 @@ def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
             strip_elapsed_object=True,
         )
 
-    roster = _ROSTER_OUTCOME_RELATION_RE.match(clean)
+    roster = _ROSTER_OUTCOME_RELATION_RE.match(clean) or _ROSTER_CAUSE_OUTCOME_RELATION_RE.match(clean)
     if roster is not None:
         return _relation_fact("ROSTER_PERSONNEL", roster, normalize_text(roster.group("action")))
 
-    industry = _INDUSTRY_RELATION_RE.match(clean)
+    industry = _INDUSTRY_RELATION_RE.match(clean) or _INDUSTRY_BARE_RELATION_RE.match(clean)
     if industry is not None:
         raw_action = industry.group("action")
         action = "착공" if raw_action.startswith("착공") else raw_action
@@ -639,6 +696,24 @@ def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
     ):
         return _relation_fact("AWARD_CHART", chart, "순위 기록")
     return None
+
+
+def explicit_unclassified_event_signal(text: str) -> bool:
+    """Return a review-only signal for a concrete-looking unclassified event.
+
+    This helper never selects a story. It only prevents a zero-story run from
+    being declared safely empty when a directly phrased event predicate fell
+    outside the canonical parser. Uncertainty and question forms fail closed.
+    """
+
+    clean = normalize_text(text).strip(" .!?。！？")
+    if not clean or text.rstrip().endswith(("?", "？")):
+        return False
+    if typed_event_relation(clean) is not None:
+        return False
+    if _RELATION_NON_EVENT_TAIL_RE.search(clean) or _UNCLASSIFIED_EVENT_UNSAFE_RE.search(clean):
+        return False
+    return bool(_UNCLASSIFIED_EVENT_SIGNAL_RE.search(clean))
 
 
 @dataclass(frozen=True)
