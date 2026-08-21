@@ -1,0 +1,81 @@
+name: Final Editorial Notification Closure Validation
+
+on:
+  push:
+    branches:
+      - fix/final-editorial-notification-closure
+
+permissions:
+  contents: write
+
+concurrency:
+  group: final-editorial-notification-closure
+  cancel-in-progress: true
+
+jobs:
+  validate-and-finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validation branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/final-editorial-notification-closure
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+      - name: Apply candidate patch
+        run: python scripts/apply_final_closure_patch.py
+      - name: Compile Python
+        run: python -m compileall -q insight_desk scripts tests
+      - name: Run all Python tests
+        run: python -m unittest discover -s tests -v
+      - name: Build fixture site
+        run: python scripts/build_fixture_site.py
+      - name: Validate fixture artifact
+        run: python scripts/validate_artifact.py build/fixture-site
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+      - name: Run Push Worker tests
+        working-directory: push-worker
+        run: npm ci && npm test
+      - name: Validate Worker deploy package
+        working-directory: push-worker
+        run: npx wrangler deploy --dry-run
+      - name: Check whether live Worker deploy credential exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "CF_DEPLOY_CREDENTIAL=CONFIGURED"
+          else
+            echo "CF_DEPLOY_CREDENTIAL=MISSING"
+          fi
+      - name: Finalize validated branch tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Insight Desk Validation"
+          git config user.email "actions@users.noreply.github.com"
+          git rm scripts/apply_final_closure_patch.py .github/workflows/final-closure-validate.yml
+          git add \
+            push-worker/src/index.js \
+            push-worker/test/worker.test.js \
+            insight_desk/pipeline/editorial.py \
+            tests/test_briefing_materiality.py \
+            insight_desk/pipeline/synthesis.py \
+            scripts/validate_live_acceptance.py \
+            tests/test_news_summary_principles.py \
+            docs/news-summary-korean-principles.md
+          echo "--- FINAL STAGED DIFF ---"
+          git diff --cached --stat
+          git status --short
+          git commit -m "Close editorial quality and manual notification regressions"
+          git push origin HEAD:fix/final-editorial-notification-closure
