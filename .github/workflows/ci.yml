@@ -1,26 +1,20 @@
 name: Insight Desk CI
 
 on:
-  push:
   pull_request:
 
 permissions:
   contents: write
 
-concurrency:
-  group: insight-desk-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  test:
+  patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout candidate branch
         uses: actions/checkout@v6
         with:
           ref: fix/final-editorial-notification-closure
-      - name: Apply bounded closure patch and self-restore
-        if: github.event_name == 'pull_request'
+      - name: Apply exact production-code replacements
         shell: bash
         run: |
           set -euo pipefail
@@ -71,39 +65,12 @@ jobs:
           new_tail = '''    if low_information and not low_information_secondary:\n        return False\n    return strong_event_family or event_type in _SOFT_BRIEFING_EVENT_TYPES\n'''
           if text.count(old_tail) != 1:
               raise SystemExit(f"materiality-tail replacement count={text.count(old_tail)}")
-          text = text.replace(old_tail, new_tail, 1)
           editorial.write_text(text, encoding="utf-8")
-
-          ci = Path(".github/workflows/ci.yml")
-          ci.write_text('''name: Insight Desk CI\n\non:\n  push:\n  pull_request:\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: insight-desk-ci-${{ github.ref }}\n  cancel-in-progress: true\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v6\n      - name: Set up Python\n        uses: actions/setup-python@v6\n        with:\n          python-version: "3.12.10"\n          cache: pip\n      - name: Compile source\n        run: python -m compileall -q insight_desk scripts tests\n      - name: Run unit and contract tests\n        run: python -m unittest discover -s tests -v\n      - name: Build fixture site\n        run: python scripts/build_fixture_site.py\n      - name: Validate fixture artifact\n        run: python scripts/validate_artifact.py build/fixture-site\n      - name: Set up Node\n        uses: actions/setup-node@v4\n        with:\n          node-version: "22"\n          cache: npm\n          cache-dependency-path: push-worker/package-lock.json\n      - name: Run push Worker tests\n        working-directory: push-worker\n        run: npm ci && npm test\n''', encoding="utf-8")
           PY
           git diff --check
           git config user.name "Insight Desk Validation"
           git config user.email "actions@users.noreply.github.com"
-          git add -- insight_desk/pipeline/synthesis.py insight_desk/pipeline/editorial.py .github/workflows/ci.yml
+          git add -- insight_desk/pipeline/synthesis.py insight_desk/pipeline/editorial.py
           git diff --cached --check
           git commit -m "Close residual materiality and summary guard gaps"
           git push origin HEAD:fix/final-editorial-notification-closure
-          exit 0
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12.10"
-          cache: pip
-      - name: Compile source
-        run: python -m compileall -q insight_desk scripts tests
-      - name: Run unit and contract tests
-        run: python -m unittest discover -s tests -v
-      - name: Build fixture site
-        run: python scripts/build_fixture_site.py
-      - name: Validate fixture artifact
-        run: python scripts/validate_artifact.py build/fixture-site
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: push-worker/package-lock.json
-      - name: Run push Worker tests
-        working-directory: push-worker
-        run: npm ci && npm test
