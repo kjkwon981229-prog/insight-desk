@@ -156,6 +156,12 @@ def _is_strong_rejected(assessment: EditorialAssessment) -> bool:
     old downstream-only diagnostic can see it.
     """
 
+    if any(
+        reason in assessment.reasons
+        for reason in ("LOW_VALUE_EVENT", "LOW_BRIEFING_MATERIALITY")
+    ):
+        return False
+
     synthesis_vetoed_qualified = (
         "QUALIFIED" in assessment.reasons
         and "SYNTHESIS_FACT_LOSS" in assessment.reasons
@@ -227,6 +233,7 @@ def _predicate_rejection_reason(assessment: EditorialAssessment) -> str:
     for reason in (
         "RELEVANCE_FAILED",
         "LOW_VALUE_EVENT",
+        "LOW_BRIEFING_MATERIALITY",
         "EVENT_ACTION_CONTRACT_FAILED",
         "EVENT_OWNERSHIP_FAILED",
         "FACT_OWNERSHIP_UNSUPPORTED",

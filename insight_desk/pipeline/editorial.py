@@ -630,6 +630,104 @@ def _is_low_value_kpop_promo_content(title_text: str, topic: Topic) -> bool:
     return not material_event
 
 
+_SOFT_BRIEFING_EVENT_TYPES = frozenset({"ANNOUNCEMENT", "SCHEDULED_EVENT", "ENTERTAINMENT_EVENT"})
+_COMMON_LOW_INFORMATION_CONTENT_MARKERS = (
+    "인터뷰", "화보", "포토", "티저", "로고 모션", "로고모션", "무드 필름", "무드필름",
+    "콘셉트 포토", "콘셉트포토", "트랙리스트", "하이라이트 메들리", "스케줄러",
+    "플레이리스트", "추천 플리", "챌린지", "커버", "퍼포먼스 영상", "퍼포먼스영상",
+    "안무 영상", "안무영상", "숏폼", "비하인드", "브이로그", "셀카", "팬사인회",
+    "캠페인", "게스트", "리액션", "반응 영상",
+)
+_KPOP_BRIEFING_MATERIAL_PATTERNS = (
+    *_KPOP_MATERIAL_EVENT_PATTERNS,
+    re.compile(r"(?:내달|다음\s?달|오는\s?\d{1,2}\s?월|\d{1,2}\s?월\s?\d{1,2}\s?일).{0,16}컴백"),
+    re.compile(r"컴백.{0,16}(?:확정|예고|발표|예정|일정|날짜)"),
+    re.compile(r"(?:확정|예고|발표|예정).{0,16}컴백"),
+    re.compile(r"(?:콘서트|공연|월드투어).{0,20}(?:개최|개막|시작|확정|발표|예정|성료|마쳤다)"),
+)
+_AI_MATERIAL_OBJECT_MARKERS = (
+    "인공지능", "AI", "모델", "에이전트", "GPU", "HBM", "반도체", "칩", "데이터센터",
+    "클라우드", "플랫폼", "API", "서비스", "제품", "로봇", "로보틱스",
+)
+_AI_MATERIAL_ACTION_MARKERS = (
+    "출시", "공개", "발표", "도입", "투자", "인수", "계약", "규제", "허가", "공급", "수주", "전환",
+)
+_ECONOMY_MATERIAL_MARKERS = (
+    "한국은행", "기준금리", "금통위", "연준", "FOMC", "금융당국", "정부", "규제", "정책", "공시",
+    "실적", "매출", "영업이익", "투자", "인수", "계약", "통계", "물가", "환율", "코스피", "증시",
+)
+_KBO_MATERIAL_MARKERS = (
+    "트레이드", "영입", "등록", "말소", "부상", "징계", "규정", "계약", "방출", "은퇴",
+    "중단", "취소", "재개", "순위", "홈런", "기록", "승리", "패배", "우승",
+)
+_PSAT_MATERIAL_MARKERS = (
+    "원서접수", "시험일", "시험 일정", "공고", "합격자", "선발", "경쟁률", "시행", "개편", "제도", "채용", "공채",
+)
+_PSAT_LOW_INFORMATION_MARKERS = ("공부법", "합격수기", "강의", "교재", "학원", "팁", "전략", "인터뷰")
+_ECONOMY_LOW_INFORMATION_MARKERS = ("전망", "추천", "인터뷰", "칼럼", "기고", "리포트", "가이드")
+
+
+def _topic_family(topic: Topic) -> str:
+    key = _compact(f"{topic.id} {topic.name}")
+    if "kpop" in key or "케이팝" in key:
+        return "kpop"
+    if topic.id in {"ai", "ai_tech"} or key.startswith("ai") or "인공지능" in key:
+        return "ai"
+    if "economy" in key or "경제" in key or "투자" in key:
+        return "economy"
+    if "kbo" in key or "프로야구" in key or "한화이글스" in key:
+        return "kbo"
+    if "psat" in key or "공채" in key or "공직적격성평가" in key:
+        return "psat"
+    return "other"
+
+
+def _briefing_materiality_passes(title_text: str, topic: Topic, event_type: str) -> bool:
+    """Separate factual event validity from scarce daily-briefing value."""
+
+    if event_type not in _SOFT_BRIEFING_EVENT_TYPES:
+        return True
+
+    # Reuse the already-locked semantic relation contract. Personnel changes,
+    # partner/program selections, affiliation changes, and other complete
+    # actor-action-object relations are material even when their broad event
+    # family is ANNOUNCEMENT.
+    if typed_event_relation(title_text) is not None:
+        return True
+
+    family = _topic_family(topic)
+    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)
+
+    if family == "kpop":
+        if event_type == "ENTERTAINMENT_EVENT":
+            return bool(
+                any(_contains(title_text, marker) for marker in ("컴백", "콘서트", "공연", "월드투어", "앨범", "음원", "발매"))
+                and not low_information
+            )
+        return bool(
+            any(pattern.search(normalize_text(title_text)) for pattern in _KPOP_BRIEFING_MATERIAL_PATTERNS)
+            and not low_information
+        )
+
+    if family == "ai":
+        technical_object = any(_contains(title_text, marker) for marker in _AI_MATERIAL_OBJECT_MARKERS)
+        material_action = any(_contains(title_text, marker) for marker in _AI_MATERIAL_ACTION_MARKERS)
+        return bool(technical_object and material_action and not low_information)
+
+    if family == "economy":
+        low_information = low_information or any(_contains(title_text, marker) for marker in _ECONOMY_LOW_INFORMATION_MARKERS)
+        return bool(any(_contains(title_text, marker) for marker in _ECONOMY_MATERIAL_MARKERS) and not low_information)
+
+    if family == "kbo":
+        return bool(any(_contains(title_text, marker) for marker in _KBO_MATERIAL_MARKERS) and not low_information)
+
+    if family == "psat":
+        low_information = low_information or any(_contains(title_text, marker) for marker in _PSAT_LOW_INFORMATION_MARKERS)
+        return bool(any(_contains(title_text, marker) for marker in _PSAT_MATERIAL_MARKERS) and not low_information)
+
+    return not low_information
+
+
 def _is_routine_market_quote(title_text: str) -> bool:
     lowered = title_text.casefold()
     return any(marker in lowered for marker in ("ndf", "선물환")) and not any(
@@ -1389,6 +1487,9 @@ def assess_cluster(
         event.event_type,
         any(contains_action(effective_title(representative), term) for term in ("투자", "전략", "유치")),
     )
+    briefing_material = _briefing_materiality_passes(
+        effective_title(representative), topic, event.event_type
+    )
     truncated_title_without_lead = bool(
         representative.title
         and _TRUNCATION_RE.search(representative.title)
@@ -1504,6 +1605,8 @@ def assess_cluster(
         reasons.append("FACT_OWNERSHIP_UNSUPPORTED")
     if incidental_ai:
         reasons.append("QUERY_OR_ACRONYM_ONLY_TOPIC_MATCH")
+    if not briefing_material:
+        reasons.append("LOW_BRIEFING_MATERIALITY")
     if evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}:
         reasons.append("AUTHORITY_CONFLICT")
         reasons.append(evidence.conflict_state)
@@ -1544,6 +1647,7 @@ def assess_cluster(
         or unresolved_single_source_metric
         or ownership_fact_gap
         or incidental_ai
+        or not briefing_material
         or evidence.conflict_state not in {"NO_CONFLICT", "CONFIRMED_MATCH"}
         or (owned_cluster.source_count == 1 and not single_source_supported)
         or (
