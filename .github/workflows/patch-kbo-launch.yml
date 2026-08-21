@@ -1,0 +1,96 @@
+name: Patch KBO Launch Relation
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'verify/final-live-closure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact candidate branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/ceremonial-appearance-classification
+      - name: Require regression-first head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "8052bc0bc1c1ac24f8ea0605f1e3808bf17f6823"
+      - name: Apply bounded launch relation fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          semantics = Path('insight_desk/pipeline/semantics.py')
+          text = semantics.read_text(encoding='utf-8')
+
+          old = '    "공개",\n    "시행",'
+          new = '    "공개",\n    "출범",\n    "시행",'
+          if old not in text:
+              raise SystemExit('ACTION_TERMS anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '    "ANNOUNCEMENT": ("발표", "공지", "공개"),'
+          new = '    "ANNOUNCEMENT": ("발표", "공지", "공개", "출범"),'
+          if old not in text:
+              raise SystemExit('ANNOUNCEMENT contract anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''        object_text = normalize_text(industry.group("object"))\n        compatible = _INDUSTRY_RELATION_OBJECT_MARKERS.get(action, ())\n'''
+          new = '''        object_text = normalize_text(industry.group("object"))\n        if action == "출범" and re.search(\n            r"(?:위원회|협의체|기구|조직|재단|사무국|본부)$", object_text\n        ):\n            return _relation_fact("ANNOUNCEMENT", industry, action)\n        compatible = _INDUSTRY_RELATION_OBJECT_MARKERS.get(action, ())\n'''
+          if old not in text:
+              raise SystemExit('industry relation anchor missing')
+          text = text.replace(old, new, 1)
+          semantics.write_text(text, encoding='utf-8')
+
+          editorial = Path('insight_desk/pipeline/editorial.py')
+          text = editorial.read_text(encoding='utf-8')
+          old = '''    normalized_source = normalize_text(source)\n    industry_discussion_only = bool(\n'''
+          new = '''    normalized_source = normalize_text(source)\n    bound_relation = typed_event_relation(normalized_source)\n    if (\n        bound_relation is not None\n        and bound_relation[0] == "ANNOUNCEMENT"\n        and bound_relation[1].relation == "출범"\n    ):\n        return "ANNOUNCEMENT", 62.0, ["출범"]\n    industry_discussion_only = bool(\n'''
+          if old not in text:
+              raise SystemExit('editorial detection anchor missing')
+          text = text.replace(old, new, 1)
+          editorial.write_text(text, encoding='utf-8')
+
+          synthesis = Path('insight_desk/pipeline/synthesis.py')
+          text = synthesis.read_text(encoding='utf-8')
+          old = '    "출범": ("출범했다",),'
+          new = '    "출범": ("출범했다", "출범시켰다"),'
+          if old not in text:
+              raise SystemExit('relation completion anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''    if action == "출범":\n        return f"{subject}{_particle(subject)} {object_text}{_instrumental_particle(object_text)} 출범했다."\n'''
+          new = '''    if action == "출범":\n        return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 출범시켰다."\n'''
+          if old not in text:
+              raise SystemExit('launch synthesis anchor missing')
+          text = text.replace(old, new, 1)
+          synthesis.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate bounded regression set
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python -m compileall -q insight_desk tests
+          python -m unittest \
+            tests.test_live_residual_regressions \
+            tests.test_ceremonial_appearance_regression \
+            tests.test_run96_targeted_recall \
+            tests.test_polarity_acceptance -v
+      - name: Commit source fix only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- insight_desk/pipeline/semantics.py insight_desk/pipeline/editorial.py insight_desk/pipeline/synthesis.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Classify bounded organizational launches"
+          git push origin HEAD:fix/ceremonial-appearance-classification
