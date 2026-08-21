@@ -1,0 +1,193 @@
+name: Final Production Closure
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: final-production-closure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      payload_sha: ${{ steps.meta.outputs.payload_sha }}
+      generated_at: ${{ steps.meta.outputs.generated_at }}
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+    steps:
+      - name: Checkout exact production code
+        uses: actions/checkout@v6
+        with:
+          ref: 18a304b5b153c7c2237ce06f111c2e3ff62923fb
+      - name: Require exact production SHA
+        run: test "$(git rev-parse HEAD)" = "18a304b5b153c7c2237ce06f111c2e3ff62923fb"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+          cache: pip
+      - name: Restore durable public history
+        shell: bash
+        run: |
+          mkdir -p build/site/latest
+          curl --fail --silent --show-error --location --max-time 15 \
+            "https://kjkwon981229-prog.github.io/insight-desk/latest/data.json?before=${GITHUB_RUN_ID}" \
+            -o build/site/latest/data.json || rm -f build/site/latest/data.json
+      - name: Build production fresh live
+        run: python -m insight_desk.cli --config config/topics.json --output build/site --state-file build/run-state.json --cache .cache/responses.json
+      - name: Hard-gate production output
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_artifact.py build/site
+          python scripts/validate_live_acceptance.py build/live-acceptance.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state=json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          assert state.get('status') == 'COMPLETE', state
+          assert state.get('publish') is True, state
+          assert state.get('news',{}).get('failed') == 0, state
+          audit=json.loads(Path('build/selection-audit.json').read_text(encoding='utf-8'))
+          strong=sum(int(v.get('strong_rejected',0) or 0) for v in audit.get('funnel',{}).values())
+          assert strong == 0, audit.get('funnel')
+          acceptance=json.loads(Path('build/live-acceptance.json').read_text(encoding='utf-8'))
+          assert acceptance.get('semantic_error_count',0) == 0, acceptance
+          payload=json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
+          stories=payload.get('stories',[])
+          for story in stories:
+              title=story.get('title','')
+              summary=story.get('summary','')
+              assert title and summary, story
+              assert '출범 소식이 확인됐다' not in summary, story
+              assert '빅 멜론' not in title, story
+          launch=[s for s in stories if '선정위원회 출범' in s.get('title','')]
+          if launch:
+              assert launch[0].get('summary') == 'KBO의 한국야구 명예의 전당 선정위원회가 출범했다.', launch[0]
+          print('PRODUCTION_STATE', json.dumps(state,ensure_ascii=False,sort_keys=True))
+          print('PRODUCTION_ACCEPTANCE', json.dumps(acceptance,ensure_ascii=False,sort_keys=True))
+          print('PRODUCTION_STORIES', json.dumps(stories,ensure_ascii=False,sort_keys=True))
+          PY
+      - name: Record public payload identity
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload_sha="$(sha256sum build/site/latest/data.json | awk '{print $1}')"
+          generated_at="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))['state']['generated_at'])
+          PY
+          )"
+          echo "payload_sha=$payload_sha" >> "$GITHUB_OUTPUT"
+          echo "generated_at=$generated_at" >> "$GITHUB_OUTPUT"
+          echo "PRODUCTION_PAYLOAD_SHA=$payload_sha"
+          echo "PRODUCTION_GENERATED_AT=$generated_at"
+      - name: Upload closure evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-production-closure-evidence-${{ github.run_id }}
+          path: |
+            build/run-state.json
+            build/selection-audit.json
+            build/live-acceptance.json
+            build/site/latest/data.json
+          if-no-files-found: error
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy exact production artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  verify_public:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require public Pages payload to equal deployed artifact
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.build.outputs.payload_sha }}
+          EXPECTED_GENERATED_AT: ${{ needs.build.outputs.generated_at }}
+        run: |
+          set -euo pipefail
+          tmp="${RUNNER_TEMP}/public-data.json"
+          matched=false
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error --location --max-time 15 \
+              "https://kjkwon981229-prog.github.io/insight-desk/latest/data.json?closure=${GITHUB_RUN_ID}-${attempt}" \
+              -o "$tmp"; then
+              actual_sha="$(sha256sum "$tmp" | awk '{print $1}')"
+              if [[ "$actual_sha" == "$EXPECTED_SHA" ]]; then
+                matched=true
+                break
+              fi
+            fi
+            sleep 5
+          done
+          if [[ "$matched" != "true" ]]; then
+            echo "::error::Public Pages payload never matched the deployed artifact."
+            exit 1
+          fi
+          actual_generated_at="$(python - "$tmp" <<'PY'
+          import json,sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))['state']['generated_at'])
+          PY
+          )"
+          test "$actual_generated_at" = "$EXPECTED_GENERATED_AT"
+          echo "PUBLIC_PAYLOAD_VERIFIED sha=$EXPECTED_SHA generated_at=$actual_generated_at"
+
+  push_notify:
+    needs: [build, deploy, verify_public]
+    runs-on: ubuntu-latest
+    env:
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
+    steps:
+      - name: Send and require actual READY delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$PUSH_SEND_TOKEN"
+          [[ "$PUSH_WORKER_URL" == https://* ]]
+          [[ -n "$PUSH_SEND_TOKEN" ]]
+          briefing_date="$(TZ=Asia/Seoul date +%F)"
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload="$(printf '{"date":"%s","run_id":"%s","type":"READY","source":"manual"}' "$briefing_date" "$run_id")"
+          response_file="${RUNNER_TEMP}/push-response.json"
+          http_status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' \
+            -X POST "${PUSH_WORKER_URL%/}/send" \
+            -H "Authorization: Bearer $PUSH_SEND_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$payload")"
+          [[ "$http_status" =~ ^2[0-9][0-9]$ ]]
+          jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0)' "$response_file" >/dev/null
+          echo "PUSH_DELIVERY_VERIFIED state=$(jq -r '.delivery_state' "$response_file") sent=$(jq -r '.sent' "$response_file") failed=$(jq -r '.failed' "$response_file") subscriptions=$(jq -r '.subscription_count' "$response_file")"
+
+  closure:
+    needs: [build, deploy, verify_public, push_notify]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'FINAL_PRODUCTION_CLOSURE_PASS'
