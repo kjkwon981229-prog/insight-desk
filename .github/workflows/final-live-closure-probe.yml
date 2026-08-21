@@ -60,6 +60,36 @@ jobs:
           --output build/site
           --state-file build/run-state.json
           --cache .cache/responses.json
+      - name: Print exact StarNews first-pitch evidence when present
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('.cache/responses.json')
+          if not path.exists():
+              print('DIAGNOSTIC_CACHE_MISSING')
+              raise SystemExit(0)
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          needle = '2026082113530654094'
+          hits = []
+          def walk(value):
+              if isinstance(value, dict):
+                  scalars = {str(k): v for k, v in value.items() if not isinstance(v, (dict, list))}
+                  if any(needle in str(v) for v in scalars.values()):
+                      safe = {
+                          k: v for k, v in scalars.items()
+                          if any(token in k.casefold() for token in ('title', 'description', 'summary', 'link', 'url', 'pubdate', 'publisher'))
+                      }
+                      hits.append(safe)
+                  for child in value.values():
+                      walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      walk(child)
+          walk(payload)
+          print('DIAGNOSTIC_STARNEWS_HITS', json.dumps(hits, ensure_ascii=False, sort_keys=True))
+          PY
       - name: Require publishable run state
         shell: bash
         run: |
