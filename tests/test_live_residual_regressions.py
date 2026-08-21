@@ -166,6 +166,34 @@ class LiveResidualRegressionTests(unittest.TestCase):
         self.assertEqual(facts.action, "출범")
         self.assertEqual(facts.object, "한국야구 명예의 전당 선정위원회")
 
+    def test_search_snippet_committee_launch_uses_natural_completed_summary(self) -> None:
+        item = _item(
+            "kbo-hall-of-fame-committee-launch-search-only",
+            "kbo_hanwha",
+            "KBO, 한국야구 명예의 전당 선정위원회 출범",
+            "KBO, 한국야구 명예의 전당 선정위원회 출범",
+            "https://www.yna.co.kr/view/AKR20260821144000007?input=1195m",
+            enriched=False,
+        )
+        cluster = StoryCluster("kbo_hanwha", (item,))
+        event = assess_event(cluster, _kbo_topic())
+        self.assertEqual(event.event_type, "ANNOUNCEMENT")
+        self.assertTrue(event.passed)
+        assert event.canonical_event is not None
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name="KBO·한화 이글스",
+            trend_metrics=(),
+            event_type_override=event.event_type,
+            event_signature_override=event.canonical_event.event_signature,
+            canonical_event_override=event.canonical_event,
+        )
+        self.assertEqual(headline, "KBO, 한국야구 명예의 전당 선정위원회 출범")
+        self.assertEqual(summary, "KBO의 한국야구 명예의 전당 선정위원회가 출범했다.")
+        self.assertEqual(facts.subject, "KBO")
+        self.assertEqual(facts.action, "출범")
+        self.assertEqual(facts.object, "한국야구 명예의 전당 선정위원회")
+
     # Exact 2026-08-21 human-audit P1: the chart/platform name must not be
     # absorbed into the song/entity subject.
     def test_bigbang_song_chart_platform_is_not_absorbed_into_subject(self) -> None:
