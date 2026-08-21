@@ -52,6 +52,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git show 57ace97116c30c1ca24c30157304fbec8be50346:.github/workflows/ci.yml > .github/workflows/ci.yml
           rm scripts/patch_kpop_promo_materiality.py
+          rm -rf push-worker/node_modules
           git add -A
           git diff --cached --stat
           git commit -m "Reject low-value K-pop promo content"
