@@ -14,22 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: final-live-probe
-      url: ${{ steps.deployment.outputs.page_url }}
     env:
       NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
       NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
       OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
       KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
       ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
-      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
-      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
     steps:
-      - name: Checkout verified production tree
+      - name: Checkout exact PR11 candidate
         uses: actions/checkout@v6
+        with:
+          ref: fix/ceremonial-appearance-classification
+      - name: Require exact candidate head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "1c33df905b24e324aadbffda8305c8af02a17f0c"
+          echo "CANDIDATE_HEAD=$(git rev-parse HEAD)"
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -43,7 +44,6 @@ jobs:
           echo "::add-mask::$OPENDART_API_KEY"
           echo "::add-mask::$KOSIS_API_KEY"
           echo "::add-mask::$ECOS_API_KEY"
-          echo "::add-mask::$PUSH_SEND_TOKEN"
       - name: Restore durable history from last-good Pages payload
         shell: bash
         run: |
@@ -53,43 +53,13 @@ jobs:
           if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
             rm -f build/site/latest/data.json
           fi
-      - name: Build fresh live briefing
+      - name: Build candidate fresh live briefing
         run: >-
           python -m insight_desk.cli
           --config config/topics.json
           --output build/site
           --state-file build/run-state.json
           --cache .cache/responses.json
-      - name: Print exact StarNews first-pitch evidence when present
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          path = Path('.cache/responses.json')
-          if not path.exists():
-              print('DIAGNOSTIC_CACHE_MISSING')
-              raise SystemExit(0)
-          payload = json.loads(path.read_text(encoding='utf-8'))
-          needle = '2026082113530654094'
-          hits = []
-          def walk(value):
-              if isinstance(value, dict):
-                  scalars = {str(k): v for k, v in value.items() if not isinstance(v, (dict, list))}
-                  if any(needle in str(v) for v in scalars.values()):
-                      safe = {
-                          k: v for k, v in scalars.items()
-                          if any(token in k.casefold() for token in ('title', 'description', 'summary', 'link', 'url', 'pubdate', 'publisher'))
-                      }
-                      hits.append(safe)
-                  for child in value.values():
-                      walk(child)
-              elif isinstance(value, list):
-                  for child in value:
-                      walk(child)
-          walk(payload)
-          print('DIAGNOSTIC_STARNEWS_HITS', json.dumps(hits, ensure_ascii=False, sort_keys=True))
-          PY
       - name: Require publishable run state
         shell: bash
         run: |
@@ -99,7 +69,7 @@ jobs:
           state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
           assert state.get('publish') is True, state
           assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
-          print(json.dumps(state, ensure_ascii=False, sort_keys=True))
+          print('RUN_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
           PY
       - name: Validate Pages artifact
         run: python scripts/validate_artifact.py build/site
@@ -107,31 +77,55 @@ jobs:
         if: always() && hashFiles('build/selection-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: final-live-selection-audit-${{ github.run_id }}
+          name: candidate-live-selection-audit-${{ github.run_id }}
           path: |
             build/selection-audit.json
             build/live-acceptance.json
           if-no-files-found: error
       - name: Validate live editorial acceptance
         run: python scripts/validate_live_acceptance.py build/live-acceptance.json
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: build/site
-      - name: Deploy fresh live briefing
-        id: deployment
-        uses: actions/deploy-pages@v4
-      - name: Require new Worker manual-run delivery
+      - name: Print candidate public stories for human audit
         shell: bash
         run: |
-          set -euo pipefail
-          test -n "$PUSH_WORKER_URL"
-          test -n "$PUSH_SEND_TOKEN"
-          briefing_date="$(TZ=Asia/Seoul date +%F)"
-          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          payload="$(printf '{\"date\":\"%s\",\"run_id\":\"%s\",\"type\":\"READY\",\"source\":\"manual\"}' "$briefing_date" "$run_id")"
-          response_file="${RUNNER_TEMP}/push-response.json"
-          http_status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' -X POST "${PUSH_WORKER_URL%/}/send" -H "Authorization: Bearer $PUSH_SEND_TOKEN" -H "Content-Type: application/json" --data "$payload")"
-          test "$http_status" = "200"
-          jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0)' "$response_file" >/dev/null
-          jq '{request_state,duplicate,delivery_state,subscription_count,sent,failed,pruned,source}' "$response_file"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('build/site/latest/data.json')
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          hits = []
+
+          def walk(value, path='root'):
+              if isinstance(value, dict):
+                  headline = value.get('headline') or value.get('title')
+                  summary = value.get('summary')
+                  if isinstance(headline, str) and isinstance(summary, str):
+                      hits.append({
+                          'path': path,
+                          'headline': headline,
+                          'summary': summary,
+                          'why': value.get('why'),
+                          'topic_id': value.get('topic_id'),
+                          'event_type': value.get('event_type'),
+                          'source_count': len(value.get('sources', [])) if isinstance(value.get('sources'), list) else None,
+                      })
+                  for key, child in value.items():
+                      walk(child, f'{path}.{key}')
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      walk(child, f'{path}[{index}]')
+
+          walk(payload)
+          unique = []
+          seen = set()
+          for hit in hits:
+              key = (hit['headline'], hit['summary'])
+              if key in seen:
+                  continue
+              seen.add(key)
+              unique.append(hit)
+          print('PUBLIC_STORY_COUNT', len(unique))
+          print('PUBLIC_STORIES', json.dumps(unique, ensure_ascii=False, sort_keys=True))
+          acceptance = json.loads(Path('build/live-acceptance.json').read_text(encoding='utf-8'))
+          print('LIVE_ACCEPTANCE', json.dumps(acceptance, ensure_ascii=False, sort_keys=True))
+          PY
