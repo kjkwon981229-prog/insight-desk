@@ -6,7 +6,7 @@ on:
 
 concurrency:
   group: final-production-closure
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event.head_commit.message != 'Record final production closure pass'
     runs-on: ubuntu-latest
     outputs:
       payload_sha: ${{ steps.meta.outputs.payload_sha }}
@@ -162,11 +163,17 @@ jobs:
   push_notify:
     needs: [build, deploy, verify_public]
     runs-on: ubuntu-latest
+    outputs:
+      delivery_state: ${{ steps.push.outputs.delivery_state }}
+      sent: ${{ steps.push.outputs.sent }}
+      failed: ${{ steps.push.outputs.failed }}
+      subscription_count: ${{ steps.push.outputs.subscription_count }}
     env:
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
       PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
     steps:
       - name: Send and require actual READY delivery
+        id: push
         shell: bash
         run: |
           set -euo pipefail
@@ -184,10 +191,61 @@ jobs:
             --data "$payload")"
           [[ "$http_status" =~ ^2[0-9][0-9]$ ]]
           jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0)' "$response_file" >/dev/null
-          echo "PUSH_DELIVERY_VERIFIED state=$(jq -r '.delivery_state' "$response_file") sent=$(jq -r '.sent' "$response_file") failed=$(jq -r '.failed' "$response_file") subscriptions=$(jq -r '.subscription_count' "$response_file")"
+          delivery_state="$(jq -r '.delivery_state' "$response_file")"
+          sent="$(jq -r '.sent' "$response_file")"
+          failed="$(jq -r '.failed' "$response_file")"
+          subscription_count="$(jq -r '.subscription_count' "$response_file")"
+          echo "delivery_state=$delivery_state" >> "$GITHUB_OUTPUT"
+          echo "sent=$sent" >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "subscription_count=$subscription_count" >> "$GITHUB_OUTPUT"
+          echo "PUSH_DELIVERY_VERIFIED state=$delivery_state sent=$sent failed=$failed subscriptions=$subscription_count"
 
   closure:
     needs: [build, deploy, verify_public, push_notify]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PAYLOAD_SHA: ${{ needs.build.outputs.payload_sha }}
+      GENERATED_AT: ${{ needs.build.outputs.generated_at }}
+      DELIVERY_STATE: ${{ needs.push_notify.outputs.delivery_state }}
+      SENT: ${{ needs.push_notify.outputs.sent }}
+      FAILED: ${{ needs.push_notify.outputs.failed }}
+      SUBSCRIPTION_COUNT: ${{ needs.push_notify.outputs.subscription_count }}
     steps:
-      - run: echo 'FINAL_PRODUCTION_CLOSURE_PASS'
+      - name: Checkout current main for success marker
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Record verified production closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verification
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          record = {
+              'status': 'FINAL_PRODUCTION_CLOSURE_PASS',
+              'production_code_sha': '18a304b5b153c7c2237ce06f111c2e3ff62923fb',
+              'workflow_event_sha': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'payload_sha': os.environ['PAYLOAD_SHA'],
+              'generated_at': os.environ['GENERATED_AT'],
+              'delivery_state': os.environ['DELIVERY_STATE'],
+              'sent': int(os.environ['SENT']),
+              'failed': int(os.environ['FAILED']),
+              'subscription_count': int(os.environ['SUBSCRIPTION_COUNT']),
+          }
+          Path('verification/final-production-closure-pass.json').write_text(
+              json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add verification/final-production-closure-pass.json
+          git commit -m 'Record final production closure pass'
+          git push origin HEAD:main
