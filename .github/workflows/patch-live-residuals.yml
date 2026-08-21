@@ -1,0 +1,75 @@
+name: Patch Live Residuals
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/ceremonial-appearance-classification'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/ceremonial-appearance-classification
+      - name: Apply bounded residual fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          # 1) Discussion-only expansion plans are not executed industry changes.
+          editorial = Path('insight_desk/pipeline/editorial.py')
+          text = editorial.read_text(encoding='utf-8')
+          old = '''def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float, list[str]]:\n    detected_type = "OTHER"\n    detected_value = 0.0\n    detected_terms: list[str] = []\n    sports_context = _sports_context(f"{source} {context}")\n    for candidate_type, patterns, value in _EVENT_PATTERNS:\n        if (\n            candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}\n            and not sports_context\n        ):\n            continue\n        hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]\n        if hits and value > detected_value:\n            detected_type = candidate_type\n            detected_value = value\n            detected_terms = hits\n    return detected_type, detected_value, detected_terms\n'''
+          new = '''def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float, list[str]]:\n    detected_type = "OTHER"\n    detected_value = 0.0\n    detected_terms: list[str] = []\n    sports_context = _sports_context(f"{source} {context}")\n    normalized_source = normalize_text(source)\n    industry_discussion_only = bool(\n        re.search(\n            r"(?:확대|축소|전략)\\s*(?:방안|계획|대책)?[^.!?]{0,32}(?:논의|검토|협의|모색)",\n            normalized_source,\n        )\n    )\n    for candidate_type, patterns, value in _EVENT_PATTERNS:\n        if (\n            candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}\n            and not sports_context\n        ):\n            continue\n        hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]\n        if candidate_type == "INDUSTRY_CHANGE" and hits and industry_discussion_only:\n            continue\n        if hits and value > detected_value:\n            detected_type = candidate_type\n            detected_value = value\n            detected_terms = hits\n    return detected_type, detected_value, detected_terms\n'''
+          if old in text:
+              text = text.replace(old, new, 1)
+              editorial.write_text(text, encoding='utf-8')
+          elif 'industry_discussion_only = bool(' not in text:
+              raise SystemExit('editorial patch anchor missing')
+
+          # 2) For dated scheduled/entertainment headlines, a comma-delimited
+          # entity before the date is the bounded subject, not the date phrase.
+          semantics = Path('insight_desk/pipeline/semantics.py')
+          text = semantics.read_text(encoding='utf-8')
+          anchor = '''    if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):\n        return _clean_event_subject(event_type, re.split(r"[,，]", clean, maxsplit=1)[0])\n    if event_type == "INDUSTRY_CHANGE":\n'''
+          replacement = '''    if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):\n        return _clean_event_subject(event_type, re.split(r"[,，]", clean, maxsplit=1)[0])\n    if event_type in {"SCHEDULED_EVENT", "ENTERTAINMENT_EVENT"} and re.search(r"[,，]", clean):\n        prefix, remainder = re.split(r"[,，]", clean, maxsplit=1)\n        if _DATE_RE.search(remainder):\n            bounded = _clean_event_subject(event_type, prefix)\n            if bounded:\n                return bounded\n    if event_type == "INDUSTRY_CHANGE":\n'''
+          if anchor in text:
+              text = text.replace(anchor, replacement, 1)
+              semantics.write_text(text, encoding='utf-8')
+          elif 'prefix, remainder = re.split(r"[,，]", clean, maxsplit=1)' not in text:
+              raise SystemExit('semantics patch anchor missing')
+
+          # 3) Render a dated comeback as a natural Korean fact sentence.
+          synthesis = Path('insight_desk/pipeline/synthesis.py')
+          text = synthesis.read_text(encoding='utf-8')
+          anchor = '''        elif date or location:\n            when = f"{date} " if date else ""\n            where = f"{location}에서 " if location else ""\n            phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"\n            sentence = f"{subject} {phrase} {when}{where}예정돼 있다."\n'''
+          replacement = '''        elif event_phrase == "컴백" and date:\n            sentence = f"{subject}의 컴백은 {date}로 예정돼 있다."\n        elif date or location:\n            when = f"{date} " if date else ""\n            where = f"{location}에서 " if location else ""\n            phrase = f"{event_phrase} 일정이" if event_phrase else "일정이"\n            sentence = f"{subject} {phrase} {when}{where}예정돼 있다."\n'''
+          if anchor in text:
+              text = text.replace(anchor, replacement, 1)
+              synthesis.write_text(text, encoding='utf-8')
+          elif 'elif event_phrase == "컴백" and date:' not in text:
+              raise SystemExit('synthesis patch anchor missing')
+          PY
+      - name: Validate targeted regressions
+        shell: bash
+        run: |
+          git diff --check
+          python -m compileall -q insight_desk tests
+          python -m unittest tests.test_live_residual_regressions tests.test_ceremonial_appearance_regression -v
+      - name: Commit source patches only
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- insight_desk/pipeline/editorial.py insight_desk/pipeline/semantics.py insight_desk/pipeline/synthesis.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix residual live classification and comeback synthesis"
+          git push origin HEAD:fix/ceremonial-appearance-classification
