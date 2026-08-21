@@ -109,6 +109,7 @@ class LiveResidualRegressionTests(unittest.TestCase):
         self.assertEqual(compact_summary.count("9월3일"), 1)
         self.assertEqual(summary, "권은비의 컴백은 9월3일로 예정돼 있다.")
 
+    # Exact 2026-08-21 live recall miss: a bounded committee launch is material.
     def test_kbo_committee_launch_is_a_bound_announcement(self) -> None:
         source_summary = "KBO는 21일 한국야구 명예의 전당 선정위원회를 공식 출범했다고 밝혔다."
         item = _item(
