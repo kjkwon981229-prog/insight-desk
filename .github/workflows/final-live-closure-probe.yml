@@ -1,0 +1,106 @@
+name: Final Live Closure Probe
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: insight-desk-final-live-closure-probe
+  cancel-in-progress: true
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
+    steps:
+      - name: Checkout verified production tree
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+      - name: Mask secrets
+        shell: bash
+        run: |
+          echo "::add-mask::$NCP_CLIENT_ID"
+          echo "::add-mask::$NCP_CLIENT_SECRET"
+          echo "::add-mask::$OPENDART_API_KEY"
+          echo "::add-mask::$KOSIS_API_KEY"
+          echo "::add-mask::$ECOS_API_KEY"
+          echo "::add-mask::$PUSH_SEND_TOKEN"
+      - name: Restore durable history from last-good Pages payload
+        shell: bash
+        run: |
+          set -u
+          mkdir -p build/site/latest
+          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
+          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
+            rm -f build/site/latest/data.json
+          fi
+      - name: Build fresh live briefing
+        run: >-
+          python -m insight_desk.cli
+          --config config/topics.json
+          --output build/site
+          --state-file build/run-state.json
+          --cache .cache/responses.json
+      - name: Require publishable run state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          assert state.get('publish') is True, state
+          assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
+          print(json.dumps(state, ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Validate Pages artifact
+        run: python scripts/validate_artifact.py build/site
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Upload selection audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-live-selection-audit-${{ github.run_id }}
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
+          if-no-files-found: error
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+      - name: Deploy fresh live briefing
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Require new Worker manual-run delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PUSH_WORKER_URL"
+          test -n "$PUSH_SEND_TOKEN"
+          briefing_date="$(TZ=Asia/Seoul date +%F)"
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload="$(printf '{\"date\":\"%s\",\"run_id\":\"%s\",\"type\":\"READY\",\"source\":\"manual\"}' "$briefing_date" "$run_id")"
+          response_file="${RUNNER_TEMP}/push-response.json"
+          http_status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' -X POST "${PUSH_WORKER_URL%/}/send" -H "Authorization: Bearer $PUSH_SEND_TOKEN" -H "Content-Type: application/json" --data "$payload")"
+          test "$http_status" = "200"
+          jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0)' "$response_file" >/dev/null
+          jq '{request_state,duplicate,delivery_state,subscription_count,sent,failed,pruned,source}' "$response_file"
