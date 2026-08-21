@@ -47,8 +47,36 @@ jobs:
           PY
       - name: Validate Pages artifact
         run: python scripts/validate_artifact.py build/site
-      - name: Validate live editorial acceptance
-        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Print pre-gate audit diagnostics
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('build/selection-audit.json').read_text(encoding='utf-8'))
+          print('CANDIDATE_FUNNEL', json.dumps(audit.get('funnel', {}), ensure_ascii=False, sort_keys=True))
+          suspects = []
+          for row in audit.get('selection_audit', []):
+              reasons = list(row.get('selection_reasons', []) or [])
+              if (
+                  not row.get('qualifying')
+                  and (
+                      float(row.get('event_significance', 0) or 0) >= 60
+                      or any(reason in reasons for reason in ('EVENT_ACTION_CONTRACT_FAILED','FACT_OWNERSHIP_UNSUPPORTED','SYNTHESIS_FACT_LOSS','SYNTHESIS_NOT_EDITORIAL_READY'))
+                  )
+              ):
+                  suspects.append({
+                      'topic_id': row.get('topic_id'),
+                      'rank': row.get('topic_local_rank'),
+                      'candidate_key': row.get('candidate_key'),
+                      'event_type': row.get('event_type'),
+                      'event_significance': row.get('event_significance'),
+                      'final_score': row.get('final_score'),
+                      'reason': row.get('reason'),
+                      'selection_reasons': reasons,
+                  })
+          print('STRONG_REJECT_SUSPECTS', json.dumps(suspects, ensure_ascii=False, sort_keys=True))
+          PY
       - name: Print public stories for human audit
         shell: bash
         run: |
@@ -61,7 +89,7 @@ jobs:
           bigbang = [story for story in stories if '빅뱅' in json.dumps(story, ensure_ascii=False) or 'BiiiG' in json.dumps(story, ensure_ascii=False)]
           print('BIGBANG_STORIES', json.dumps(bigbang, ensure_ascii=False, sort_keys=True))
           PY
-      - name: Upload candidate audit
+      - name: Upload candidate audit before gate
         uses: actions/upload-artifact@v4
         with:
           name: candidate-award-chart-audit-${{ github.run_id }}
@@ -70,3 +98,5 @@ jobs:
             build/live-acceptance.json
             build/site/latest/data.json
           if-no-files-found: error
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
