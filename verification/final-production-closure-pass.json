@@ -1,0 +1,12 @@
+{
+  "status": "FINAL_PRODUCTION_CLOSURE_PASS",
+  "production_code_sha": "18a304b5b153c7c2237ce06f111c2e3ff62923fb",
+  "workflow_event_sha": "24406372ebb85889c393b421ff373c58ce2e09f2",
+  "run_id": "32483232812",
+  "payload_sha": "40b55acc706a8ef276bd857b90a92a5a16df400d4aaf1798a96708c2bfdcaa1e",
+  "generated_at": "2026-08-21T21:43:52+09:00",
+  "delivery_state": "DELIVERED",
+  "sent": 4,
+  "failed": 0,
+  "subscription_count": 4
+}
