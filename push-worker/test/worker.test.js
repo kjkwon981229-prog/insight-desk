@@ -203,6 +203,36 @@ test("manual READY and scheduled READY have separate idempotency identities", as
   assert.equal(calls, 2);
 });
 
+test("distinct manual runs deliver independently while the same manual run dedupes", async () => {
+  const env = environment();
+  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
+  const auth = { Authorization: `Bearer ${sendToken}` };
+  const tags = [];
+  const sendNotification = async (_stored, message) => { tags.push(message.tag); };
+  const send = (runId) => handleRequest(
+    request("/send", {
+      method: "POST",
+      body: { date: "2026-08-21", run_id: runId, type: "READY", source: "manual" },
+      headers: auth,
+    }),
+    env,
+    undefined,
+    { sendNotification },
+  );
+
+  const first = await send("manual-100-1");
+  const retry = await send("manual-100-1");
+  const secondRun = await send("manual-101-1");
+
+  assert.equal(first.status, 200);
+  assert.equal((await retry.json()).duplicate, true);
+  assert.equal((await secondRun.json()).duplicate, false);
+  assert.equal(tags.length, 2);
+  assert.notEqual(tags[0], tags[1]);
+  assert.match(tags[0], /manual-100-1$/);
+  assert.match(tags[1], /manual-101-1$/);
+});
+
 test("same-isolate concurrent retries share one delivery operation", async () => {
   const env = environment();
   await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
@@ -247,7 +277,7 @@ test("legacy delivery markers are normalized without an invalid response state",
   const response = await handleRequest(
     request("/send", {
       method: "POST",
-      body: { date: "2026-08-16", run_id: "retry", type: "READY", source: "manual" },
+      body: { date: "2026-08-16", run_id: "retry", type: "READY", source: "other" },
       headers: { Authorization: `Bearer ${sendToken}` },
     }),
     env,
@@ -259,7 +289,7 @@ test("legacy delivery markers are normalized without an invalid response state",
     request_state: "REQUEST_ACCEPTED",
     date: "2026-08-16",
     type: "READY",
-    source: "manual",
+    source: "other",
     delivery_state: "NO_SUBSCRIBERS",
     subscription_count: 0,
     sent: 0,

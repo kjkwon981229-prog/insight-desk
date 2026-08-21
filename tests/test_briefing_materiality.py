@@ -84,6 +84,27 @@ class BriefingMaterialityTests(unittest.TestCase):
             self.assertNotIn("LOW_BRIEFING_MATERIALITY", assessment.reasons, title)
             self.assertTrue(assessment.qualified, (title, assessment.reasons, assessment.final_score))
 
+    def test_low_information_primary_focus_cannot_hide_in_strong_event_family(self) -> None:
+        rejected = (
+            ("kpop-release-background", "kpop", "K-POP", "아이브, 신곡 발매 기념 댄스 챌린지 공개", "아이브가 신곡 발매를 기념해 댄스 챌린지 영상을 공개했다."),
+            ("ai-release-background", "ai_tech", "OpenAI", "OpenAI 새 AI 모델 출시 기념 CEO 인터뷰 영상 공개", "OpenAI가 새 AI 모델 출시를 기념해 CEO 인터뷰 영상을 공개했다."),
+            ("psat-study-strong", "psat_recruitment", "7급 공채", "7급 공채 PSAT 합격 공부법 영상 공개", "7급 공채 PSAT 합격 공부법을 설명하는 영상을 공개했다."),
+        )
+        for key, topic_id, query, title, summary in rejected:
+            assessment = self.assessment(key, topic_id, query, title, summary)
+            self.assertFalse(assessment.qualified, (title, assessment.event.event_type, assessment.reasons))
+            self.assertIn("LOW_BRIEFING_MATERIALITY", assessment.reasons, title)
+
+        kept = self.assessment(
+            "ai-real-release-with-interview",
+            "ai_tech",
+            "OpenAI",
+            "OpenAI 새 AI 모델 출시, CEO 인터뷰도 공개",
+            "OpenAI가 8월 21일 새 AI 모델을 출시했고 CEO 인터뷰도 공개했다.",
+        )
+        self.assertNotIn("LOW_BRIEFING_MATERIALITY", kept.reasons)
+        self.assertTrue(kept.event.passed)
+
     def test_intentional_materiality_rejection_is_not_false_empty_recall_risk(self) -> None:
         story = item("low-materiality-only", "kpop", "K-POP", "아이브, 새 앨범 콘셉트 포토 공개", "아이브가 8월 21일 새 앨범 콘셉트 포토를 공식 SNS에 공개했다.")
         result = select_clusters(

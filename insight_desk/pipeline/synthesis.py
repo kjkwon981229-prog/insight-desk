@@ -223,6 +223,52 @@ _MALFORMED_PARTICLE_STACK_RE = re.compile(
 )
 
 
+_SUMMARY_TRANSLATIONESE_RE = re.compile(
+    r"(?:결정을\s*내렸|영향을\s*미쳤|(?:발표|진행|검토)를\s*했)"
+)
+_SUMMARY_ABSTRACT_SENTENCE_RE = re.compile(
+    r"(?:^|(?<=[.!?。！？])\s+)(?:논란이\s*커졌다|우려가\s*제기됐다|성과를\s*냈다)(?=$|[.!?。！？])"
+)
+_SUMMARY_REDUNDANT_CONCLUSION_RE = re.compile(
+    r"(?:^|(?<=[.!?。！？])\s+)(?:종합하면|요약하면|결론적으로)\b"
+)
+_SUMMARY_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+")
+_SUMMARY_LEADING_SUBJECT_RE = re.compile(
+    r"^\s*([A-Za-z0-9가-힣·&.'’-]{2,30})(?:은|는|이|가)(?=\s)"
+)
+
+
+def summary_style_issues(value: str) -> tuple[str, ...]:
+    """Return deterministic violations of the Korean news-summary SSOT.
+
+    This deliberately enforces only the subset that can be judged without
+    guessing: obvious translationese nominalization, unattributed abstract
+    evaluation as a whole sentence, forced concluding prose, and immediate
+    repetition of the same explicit subject across adjacent sentences.
+    """
+
+    text = normalize_text(value)
+    if not text:
+        return ("EMPTY",)
+    issues: list[str] = []
+    if _SUMMARY_TRANSLATIONESE_RE.search(text):
+        issues.append("TRANSLATIONESE")
+    if _SUMMARY_ABSTRACT_SENTENCE_RE.search(text):
+        issues.append("ABSTRACT_EVALUATION")
+    if _SUMMARY_REDUNDANT_CONCLUSION_RE.search(text):
+        issues.append("REDUNDANT_CONCLUSION")
+
+    previous_subject = ""
+    for sentence in _SUMMARY_SENTENCE_SPLIT_RE.split(text):
+        match = _SUMMARY_LEADING_SUBJECT_RE.match(sentence)
+        subject = normalize_text(match.group(1)) if match else ""
+        if subject and previous_subject and subject == previous_subject:
+            issues.append("REPEATED_SUBJECT")
+            break
+        previous_subject = subject or previous_subject
+    return tuple(dict.fromkeys(issues))
+
+
 def editorial_text_issues(value: str) -> tuple[str, ...]:
     """Return deterministic user-facing copy defects.
 
@@ -322,6 +368,8 @@ def is_usable_synthesis(
     if _TRUNCATION_RE.search(clean_headline):
         return False
     if editorial_text_issues(clean_summary):
+        return False
+    if summary_style_issues(clean_summary):
         return False
     if clean_summary.endswith("일정이 공개됐다.") and not _DATE_RE.search(clean_summary):
         return False
