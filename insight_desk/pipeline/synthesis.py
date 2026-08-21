@@ -872,6 +872,14 @@ def _award_subject(title: str, subject: str, *, titles: tuple[str, ...] = ()) ->
     marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", clean)
     if not marker:
         return subject
+    # A canonical artist+work subject extracted from the article lead is
+    # stronger than extending the title prefix through a chart/platform token.
+    if subject and any(support in subject for support in _AWARD_SUPPORT_MARKERS):
+        prefix = clean[: marker.start()].strip(" ,·-—")
+        subject_key = re.sub(r"[^0-9A-Za-z가-힣]", "", subject).casefold()
+        prefix_key = re.sub(r"[^0-9A-Za-z가-힣]", "", prefix).casefold()
+        if subject_key and prefix_key.startswith(subject_key):
+            return subject
 
     def prefix_tokens(value: str) -> list[str]:
         candidate = _clean_headline(value)
@@ -1566,6 +1574,11 @@ def _event_relation_summary(
             return f"{subject_prefix} {object_text} {action} 사실이 확인됐다."
         if action == "떠남":
             return f"{subject_prefix} {object_text}{_object_particle(object_text)} 떠나는 내용이 확인됐다."
+        # A bare Korean launch headline ("기관, 위원회 출범") conventionally
+        # reports that the named body has launched. Render that owned relation
+        # directly instead of generic meta-copy such as "출범 소식이 확인됐다".
+        if action == "출범":
+            return f"{subject}의 {object_text}{_subject_particle(object_text)} 출범했다."
         return f"{subject_prefix} {object_text} {action} 소식이 확인됐다."
     if action == "완화":
         return f"{subject}{_particle(subject)} {object_text}{_object_particle(object_text)} 완화했다."

@@ -1236,6 +1236,28 @@ def subject_boundary_is_clean(event_type: str, subject: str) -> bool:
     return not bool(_AUDIENCE_TARGET_RE.search(normalize_text(subject)))
 
 
+_AWARD_WORK_LEAD_RE = re.compile(
+    r"(?P<artist>[A-Za-z0-9가-힣·&'’\- ]{2,40}?)의\s+"
+    r"(?P<label>신곡|곡|싱글|앨범|데뷔곡)\s+"
+    r"[\"'“‘]?(?P<work>[A-Za-z0-9가-힣·&'’\- ]{1,40}?)"
+    r"(?:\([^)]{1,40}\))?[\"'”’]?(?:이|가)\s+"
+)
+
+
+def _award_work_subject_from_lead(lead: str) -> str:
+    """Bind artist and work from an explicit Korean chart-result lead."""
+
+    match = _AWARD_WORK_LEAD_RE.search(normalize_text(lead))
+    if match is None:
+        return ""
+    artist = re.sub(r"^(?:그룹|가수|아이돌)\s+", "", match.group("artist")).strip(" ,·-—")
+    label = match.group("label").strip()
+    work = match.group("work").strip(" ,·-—\"'“”‘’")
+    if not artist or not work:
+        return ""
+    return _clean_event_subject("AWARD_CHART", f"{artist} {label} {work}")
+
+
 def _event_subject(
     event_type: str,
     title: str,
@@ -1269,6 +1291,9 @@ def _event_subject(
         clean = re.sub(r"\s+경쟁률(?:은|이)?\s*$", "", clean)
         return _clean_event_subject(event_type, clean)
     if event_type == "AWARD_CHART":
+        lead_subject = _award_work_subject_from_lead(lead)
+        if lead_subject:
+            return lead_subject
         english_marker = re.search(
             r"\b(?:ranks?|ranked|debuts?|debuted|enters?|entered|stays?|stayed|"
             r"remains?|remained|lands?|landed|reaches?|reached|billboard|charts?)\b",

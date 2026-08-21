@@ -56,16 +56,25 @@ def _kbo_topic() -> Topic:
 
 
 def _kpop_topic() -> Topic:
+    # Mirror config/topics.json so the regression cannot pass by injecting a
+    # test-only chart or artist signal.
     return Topic(
         "kpop",
         "엔터·음악·K-POP",
         True,
-        True,
-        50,
-        ("가요계", "K-POP"),
-        candidate_budget=6,
-        intent_anchors=("가수", "K-POP", "가요계", "컴백"),
-        event_terms=("컴백", "발매", "신곡", "싱글", "공연", "콘서트"),
+        False,
+        70,
+        ("K-POP", "HYBE", "음원 차트", "음반 시장"),
+        candidate_budget=40,
+        intent_anchors=(
+            "K-POP", "케이팝", "HYBE", "하이브", "SM", "JYP", "YG", "가수", "그룹",
+            "앨범", "음원", "차트", "음악방송", "음악중심", "공연", "콘서트", "컴백", "데뷔",
+            "블랙핑크", "BTS", "아이브", "뉴진스", "세븐틴", "트로트",
+        ),
+        event_terms=(
+            "발표", "공개", "앨범", "음원", "차트", "컴백", "데뷔", "공연", "콘서트", "수상",
+            "계약", "매출", "음반", "기록",
+        ),
     )
 
 
@@ -77,6 +86,19 @@ class LiveResidualRegressionTests(unittest.TestCase):
             '日야구 고위 관계자 KBO 방문, 허구연 총재와 "야구 인기 확대방안" 논의',
             "20일 KBO를 방문했다. 구리야마 히데키 닛폰햄 CBO는 허구연 총재와 야구 인기 확대 방안을 논의했다.",
             "https://www.sportschosun.com/baseball/2026-08-21/202608210100126560008034",
+        )
+        assessment = assess_event(StoryCluster("kbo_hanwha", (item,)), _kbo_topic())
+        self.assertEqual(assessment.event_type, "OTHER")
+        self.assertFalse(assessment.passed)
+
+    def test_historical_wbc_championship_credential_is_not_a_current_sports_result(self) -> None:
+        item = _item(
+            "sportschosun-wbc-champion-manager-visit",
+            "kbo_hanwha",
+            'WBC 우승 감독의 KBO 방문, 허구연 총재와 "야구 인기 확대방안" 논의',
+            "20일 KBO를 방문했다. 구리야마 히데키 닛폰햄 CBO는 허구연 총재와 야구 인기 확대 방안을 논의했다.",
+            "https://www.sportschosun.com/baseball/2026-08-21/202608210100126560008034",
+            enriched=True,
         )
         assessment = assess_event(StoryCluster("kbo_hanwha", (item,)), _kbo_topic())
         self.assertEqual(assessment.event_type, "OTHER")
@@ -143,6 +165,72 @@ class LiveResidualRegressionTests(unittest.TestCase):
         self.assertEqual(facts.subject, "KBO")
         self.assertEqual(facts.action, "출범")
         self.assertEqual(facts.object, "한국야구 명예의 전당 선정위원회")
+
+    def test_search_snippet_committee_launch_uses_natural_completed_summary(self) -> None:
+        item = _item(
+            "kbo-hall-of-fame-committee-launch-search-only",
+            "kbo_hanwha",
+            "KBO, 한국야구 명예의 전당 선정위원회 출범",
+            "KBO, 한국야구 명예의 전당 선정위원회 출범",
+            "https://www.yna.co.kr/view/AKR20260821144000007?input=1195m",
+            enriched=False,
+        )
+        cluster = StoryCluster("kbo_hanwha", (item,))
+        event = assess_event(cluster, _kbo_topic())
+        self.assertEqual(event.event_type, "ANNOUNCEMENT")
+        self.assertTrue(event.passed)
+        assert event.canonical_event is not None
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name="KBO·한화 이글스",
+            trend_metrics=(),
+            event_type_override=event.event_type,
+            event_signature_override=event.canonical_event.event_signature,
+            canonical_event_override=event.canonical_event,
+        )
+        self.assertEqual(headline, "KBO, 한국야구 명예의 전당 선정위원회 출범")
+        self.assertEqual(summary, "KBO의 한국야구 명예의 전당 선정위원회가 출범했다.")
+        self.assertEqual(facts.subject, "KBO")
+        self.assertEqual(facts.action, "출범")
+        self.assertEqual(facts.object, "한국야구 명예의 전당 선정위원회")
+
+    # Exact 2026-08-21 human-audit P1: the chart/platform name must not be
+    # absorbed into the song/entity subject.
+    def test_bigbang_song_chart_platform_is_not_absorbed_into_subject(self) -> None:
+        item = _item(
+            "N074",
+            "kpop",
+            "빅뱅 신곡 빅 멜론 차트 톱100 차트 1위 유지",
+            "빅뱅의 신곡 '빅(BiiiG)'이 멜론 톱100 차트 1위에 올랐다.",
+            "https://news.jtbc.co.kr/article/NB12314522?influxDiv=NAVER",
+            enriched=True,
+        )
+        cluster = StoryCluster("kpop", (item,))
+        event = assess_event(cluster, _kpop_topic())
+        self.assertEqual(event.event_type, "AWARD_CHART")
+        self.assertTrue(event.passed)
+        self.assertIsNotNone(event.canonical_event)
+        assert event.canonical_event is not None
+        self.assertIn("빅뱅", event.canonical_event.subject)
+        self.assertIn("빅", event.canonical_event.subject)
+        self.assertNotIn("멜론", event.canonical_event.subject)
+        self.assertNotIn("차트", event.canonical_event.subject)
+        self.assertIn("1", event.canonical_event.event_signature)
+
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name="엔터·음악·K-POP",
+            trend_metrics=(),
+            event_type_override=event.event_type,
+            event_signature_override=event.canonical_event.event_signature,
+            canonical_event_override=event.canonical_event,
+        )
+        self.assertNotIn("신곡 빅 멜론이", summary)
+        self.assertIn("빅뱅", summary)
+        self.assertIn("빅", summary)
+        self.assertIn("1위", summary)
+        self.assertNotIn("멜론", facts.subject)
+        self.assertNotIn("차트", facts.subject)
 
 
 if __name__ == "__main__":
