@@ -1,0 +1,253 @@
+name: Final Production Closure Evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/final-production-closure-evidence.yml
+
+concurrency:
+  group: insight-desk-final-production-closure-evidence
+  cancel-in-progress: false
+
+jobs:
+  closure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
+    steps:
+      - name: Checkout one-shot commit
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Prove production code tree unchanged
+        id: tree_gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "83c5b98ec22898da890013a4f872aeeabe5f28bf"
+          git diff --exit-code HEAD^ HEAD -- . ':(exclude).github/workflows/final-production-closure-evidence.yml'
+          echo "PRODUCTION_SHA=83c5b98ec22898da890013a4f872aeeabe5f28bf"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+
+      - name: Mask sensitive values
+        shell: bash
+        run: |
+          echo "::add-mask::$NCP_CLIENT_ID"
+          echo "::add-mask::$NCP_CLIENT_SECRET"
+          echo "::add-mask::$OPENDART_API_KEY"
+          echo "::add-mask::$KOSIS_API_KEY"
+          echo "::add-mask::$ECOS_API_KEY"
+          echo "::add-mask::$PUSH_SEND_TOKEN"
+
+      - name: Restore durable history from last-good Pages payload
+        id: history
+        shell: bash
+        run: |
+          set -u
+          mkdir -p build/site/latest
+          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
+          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
+            rm -f build/site/latest/data.json
+          fi
+
+      - name: Build fresh production live briefing
+        id: build_live
+        run: >-
+          python -m insight_desk.cli
+          --config config/topics.json
+          --output build/site
+          --state-file build/run-state.json
+          --cache .cache/responses.json
+
+      - name: Require publishable run state
+        id: state_gate
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          assert state.get('publish') is True, state
+          assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
+          print('PRODUCTION_RUN_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Validate Pages artifact
+        id: artifact_gate
+        run: python scripts/validate_artifact.py build/site
+
+      - name: Validate live editorial acceptance
+        id: live_gate
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+
+      - name: Print production public stories
+        id: public_stories
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
+          print('PRODUCTION_PUBLIC_STORIES', json.dumps(payload.get('stories', []), ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Upload closure audit
+        if: always() && hashFiles('build/selection-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-production-closure-audit-${{ github.run_id }}
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
+            build/run-state.json
+          if-no-files-found: error
+
+      - name: Upload Pages artifact
+        id: pages_artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Send and require complete manual notification
+        id: notify
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PUSH_WORKER_URL"
+          test -n "$PUSH_SEND_TOKEN"
+          case "$PUSH_WORKER_URL" in https://*) ;; *) exit 1 ;; esac
+          briefing_date="$(TZ=Asia/Seoul date +%F)"
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload="$(printf '{"date":"%s","run_id":"%s","type":"READY","source":"manual"}' "$briefing_date" "$run_id")"
+          response_file="${RUNNER_TEMP}/insight-desk-push-response.json"
+          http_status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' -X POST "${PUSH_WORKER_URL%/}/send" -H "Authorization: Bearer $PUSH_SEND_TOKEN" -H "Content-Type: application/json" --data "$payload")"
+          [[ "$http_status" =~ ^2[0-9][0-9]$ ]]
+          jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0) and (.pruned | type == "number")' "$response_file" >/dev/null
+          jq '{request_state,duplicate,delivery_state,subscription_count,sent,failed,pruned,source}' "$response_file"
+
+      - name: Persist closure evidence
+        if: always()
+        env:
+          TREE_GATE: ${{ steps.tree_gate.outcome }}
+          BUILD_LIVE: ${{ steps.build_live.outcome }}
+          STATE_GATE: ${{ steps.state_gate.outcome }}
+          ARTIFACT_GATE: ${{ steps.artifact_gate.outcome }}
+          LIVE_GATE: ${{ steps.live_gate.outcome }}
+          PAGES_ARTIFACT: ${{ steps.pages_artifact.outcome }}
+          DEPLOYMENT: ${{ steps.deployment.outcome }}
+          NOTIFY: ${{ steps.notify.outcome }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          def load_json(path):
+              p = Path(path)
+              if not p.exists():
+                  return {}
+              try:
+                  return json.loads(p.read_text(encoding='utf-8'))
+              except Exception:
+                  return {}
+
+          state = load_json('build/run-state.json')
+          acceptance = load_json('build/live-acceptance.json')
+          public = load_json('build/site/latest/data.json')
+          response = load_json(os.path.join(os.environ.get('RUNNER_TEMP', '/tmp'), 'insight-desk-push-response.json'))
+          outcomes = {
+              'tree_gate': os.environ.get('TREE_GATE', ''),
+              'build_live': os.environ.get('BUILD_LIVE', ''),
+              'state_gate': os.environ.get('STATE_GATE', ''),
+              'artifact_gate': os.environ.get('ARTIFACT_GATE', ''),
+              'live_gate': os.environ.get('LIVE_GATE', ''),
+              'pages_artifact': os.environ.get('PAGES_ARTIFACT', ''),
+              'deployment': os.environ.get('DEPLOYMENT', ''),
+              'notify': os.environ.get('NOTIFY', ''),
+          }
+          required = ('tree_gate','build_live','state_gate','artifact_gate','live_gate','pages_artifact','deployment','notify')
+          closure_pass = all(outcomes.get(key) == 'success' for key in required)
+          closure_pass = closure_pass and state.get('publish') is True
+          closure_pass = closure_pass and response.get('request_state') == 'REQUEST_ACCEPTED'
+          closure_pass = closure_pass and response.get('duplicate') is False
+          closure_pass = closure_pass and response.get('delivery_state') == 'DELIVERED'
+          closure_pass = closure_pass and int(response.get('sent', 0) or 0) >= 1
+          closure_pass = closure_pass and int(response.get('failed', 0) or 0) == 0
+          evidence = {
+              'closure_pass': closure_pass,
+              'production_sha': '83c5b98ec22898da890013a4f872aeeabe5f28bf',
+              'workflow_commit': os.environ.get('GITHUB_SHA', ''),
+              'run_id': os.environ.get('GITHUB_RUN_ID', ''),
+              'run_attempt': os.environ.get('GITHUB_RUN_ATTEMPT', ''),
+              'page_url': os.environ.get('PAGE_URL', ''),
+              'outcomes': outcomes,
+              'run_state': state,
+              'acceptance_summary': {
+                  key: acceptance.get(key)
+                  for key in (
+                      'selected_total','strong_rejected_candidates','semantic_error_count',
+                      'korean_composition_error_count','primary_focus_error_count',
+                      'relation_fact_error_count','temporal_role_error_count'
+                  )
+              },
+              'push': {
+                  key: response.get(key)
+                  for key in ('request_state','duplicate','delivery_state','subscription_count','sent','failed','pruned','source')
+              },
+              'stories': public.get('stories', []),
+          }
+          Path('/tmp/final-production-closure.json').write_text(
+              json.dumps(evidence, ensure_ascii=False, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print('FINAL_PRODUCTION_CLOSURE_EVIDENCE', json.dumps(evidence, ensure_ascii=False, sort_keys=True))
+          PY
+
+          git fetch origin verify/final-production-closure-evidence
+          git checkout -B verify/final-production-closure-evidence origin/verify/final-production-closure-evidence
+          mkdir -p verification
+          cp /tmp/final-production-closure.json verification/final-production-closure.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add verification/final-production-closure.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Record final production closure evidence"
+            git push origin HEAD:verify/final-production-closure-evidence
+          fi
+
+      - name: Require final closure pass
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path('/tmp/final-production-closure.json').read_text(encoding='utf-8'))
+          assert evidence.get('closure_pass') is True, evidence
+          print('FINAL_PRODUCTION_CLOSURE_PASS')
+          PY
