@@ -1913,6 +1913,8 @@ def _summary(
             sentence = f"{subject}가 {date} 컴백한다."
         elif event_type == "ENTERTAINMENT_EVENT" and ("앨범" in title or action == "발매") and date:
             sentence = f"{subject}가 {date} 앨범을 발매한다."
+        elif event_phrase == "컴백" and date:
+            sentence = f"{subject}의 컴백은 {date}로 예정돼 있다."
         elif date or location:
             when = f"{date} " if date else ""
             where = f"{location}에서 " if location else ""

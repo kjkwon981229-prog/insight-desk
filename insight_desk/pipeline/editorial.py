@@ -549,11 +549,20 @@ def _is_routine_schedule(title_text: str) -> bool:
 def _is_ceremonial_appearance(title_text: str) -> bool:
     # A first-pitch/first-bat announcement is an entertainment appearance,
     # not a baseball result, roster change, or meaningful game event.
-    return any(_contains(title_text, marker) for marker in ("시구", "시타")) and not any(
+    if not any(_contains(title_text, marker) for marker in ("시구", "시타")):
+        return False
+    if any(
         _contains(title_text, marker)
-        for marker in ("경기 결과", "승리", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")
-    )
-
+        for marker in ("경기 결과", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")
+    ):
+        return False
+    # Headlines often quote an attendee wishing for the team's victory. That is
+    # aspirational appearance copy, not evidence that a game result occurred.
+    if _contains(title_text, "승리") and not re.search(
+        r"승리(?:를)?\s*(?:위해|기원|응원|바라|요정)", title_text
+    ):
+        return False
+    return True
 
 def _is_low_value_fan_event(title_text: str) -> bool:
     """Reject fan-invite/thank-you coverage that is not a core music event."""
@@ -908,6 +917,20 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
     detected_value = 0.0
     detected_terms: list[str] = []
     sports_context = _sports_context(f"{source} {context}")
+    normalized_source = normalize_text(source)
+    bound_relation = typed_event_relation(normalized_source)
+    if (
+        bound_relation is not None
+        and bound_relation[0] == "ANNOUNCEMENT"
+        and bound_relation[1].relation == "출범"
+    ):
+        return "ANNOUNCEMENT", 62.0, ["출범"]
+    industry_discussion_only = bool(
+        re.search(
+            r"(?:확대|축소|전략)\s*(?:방안|계획|대책)?[^.!?]{0,32}(?:논의|검토|협의|모색)",
+            normalized_source,
+        )
+    )
     for candidate_type, patterns, value in _EVENT_PATTERNS:
         if (
             candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}
@@ -915,6 +938,8 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
         ):
             continue
         hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
+        if candidate_type == "INDUSTRY_CHANGE" and hits and industry_discussion_only:
+            continue
         if hits and value > detected_value:
             detected_type = candidate_type
             detected_value = value
