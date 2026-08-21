@@ -917,6 +917,13 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
     detected_value = 0.0
     detected_terms: list[str] = []
     sports_context = _sports_context(f"{source} {context}")
+    normalized_source = normalize_text(source)
+    industry_discussion_only = bool(
+        re.search(
+            r"(?:확대|축소|전략)\s*(?:방안|계획|대책)?[^.!?]{0,32}(?:논의|검토|협의|모색)",
+            normalized_source,
+        )
+    )
     for candidate_type, patterns, value in _EVENT_PATTERNS:
         if (
             candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}
@@ -924,6 +931,8 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
         ):
             continue
         hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
+        if candidate_type == "INDUSTRY_CHANGE" and hits and industry_discussion_only:
+            continue
         if hits and value > detected_value:
             detected_type = candidate_type
             detected_value = value

@@ -1284,6 +1284,12 @@ def _event_subject(
         return _clean_event_subject(event_type, " ".join(tokens[-3:]))
     if event_type == "PRODUCT_RELEASE" and re.search(r"[,，]", clean):
         return _clean_event_subject(event_type, re.split(r"[,，]", clean, maxsplit=1)[0])
+    if event_type in {"SCHEDULED_EVENT", "ENTERTAINMENT_EVENT"} and re.search(r"[,，]", clean):
+        prefix, remainder = re.split(r"[,，]", clean, maxsplit=1)
+        if _DATE_RE.search(remainder):
+            bounded = _clean_event_subject(event_type, prefix)
+            if bounded:
+                return bounded
     if event_type == "INDUSTRY_CHANGE":
         marker = next(
             (
