@@ -1,0 +1,197 @@
+name: One-Shot Production Closure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/one-shot-production-closure.yml
+
+concurrency:
+  group: insight-desk-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+    outputs:
+      publish: ${{ steps.state.outputs.publish }}
+      status: ${{ steps.state.outputs.status }}
+    steps:
+      - name: Checkout production closure commit
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Prove production code tree is unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "15fcf7f2656efa0f3088e75657b16c31da89d3d2"
+          git diff --exit-code HEAD^ HEAD -- . ':(exclude).github/workflows/one-shot-production-closure.yml'
+          echo "PRODUCTION_PARENT=15fcf7f2656efa0f3088e75657b16c31da89d3d2"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+      - name: Mask API values in logs
+        shell: bash
+        run: |
+          echo "::add-mask::$NCP_CLIENT_ID"
+          echo "::add-mask::$NCP_CLIENT_SECRET"
+          echo "::add-mask::$OPENDART_API_KEY"
+          echo "::add-mask::$KOSIS_API_KEY"
+          echo "::add-mask::$ECOS_API_KEY"
+      - name: Restore previous static site archive
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/site
+            build/history
+          key: insight-desk-site-main-${{ github.run_id }}
+          restore-keys: |
+            insight-desk-site-main-
+      - name: Restore durable history from last-good Pages payload
+        shell: bash
+        run: |
+          set -u
+          if [ -f build/history/publication-signatures.json ]; then
+            exit 0
+          fi
+          mkdir -p build/site/latest
+          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
+          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
+            rm -f build/site/latest/data.json
+          fi
+      - name: Build production fresh live briefing
+        run: >-
+          python -m insight_desk.cli
+          --config config/topics.json
+          --output build/site
+          --state-file build/run-state.json
+          --cache .cache/responses.json
+      - name: Read run state
+        id: state
+        shell: bash
+        run: |
+          if [ ! -f build/run-state.json ]; then
+            echo "status=TOTAL_FAILURE" >> "$GITHUB_OUTPUT"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+              output.write(f"status={state.get('status', 'TOTAL_FAILURE')}\n")
+              output.write(f"publish={'true' if state.get('publish') is True else 'false'}\n")
+          print('PRODUCTION_RUN_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Fail closed on total failure
+        if: steps.state.outputs.status == 'TOTAL_FAILURE'
+        run: exit 1
+      - name: Fail closed on editorial or publication failure
+        if: steps.state.outputs.status == 'FILTER_COLLAPSE' || steps.state.outputs.status == 'RENDER_FAILURE' || steps.state.outputs.status == 'VALIDATION_FAILURE'
+        run: exit 1
+      - name: Validate Pages artifact
+        if: steps.state.outputs.publish == 'true'
+        run: python scripts/validate_artifact.py build/site
+      - name: Validate live editorial acceptance
+        if: steps.state.outputs.publish == 'true'
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Print production public stories
+        if: steps.state.outputs.publish == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
+          print('PRODUCTION_PUBLIC_STORIES', json.dumps(payload.get('stories', []), ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Upload selection audit
+        if: always() && hashFiles('build/selection-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-closure-selection-audit-${{ github.run_id }}
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
+          if-no-files-found: error
+      - name: Upload Pages artifact
+        if: steps.state.outputs.publish == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+      - name: Save successful site archive
+        if: steps.state.outputs.publish == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            build/site
+            build/history
+          key: insight-desk-site-main-${{ github.run_id }}
+
+  deploy:
+    needs: build
+    if: needs.build.result == 'success' && needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  push_notify:
+    needs: [build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      BUILD_RESULT: ${{ needs.build.result }}
+      BUILD_PUBLISH: ${{ needs.build.outputs.publish }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
+    steps:
+      - name: Mask push token
+        shell: bash
+        run: echo "::add-mask::$PUSH_SEND_TOKEN"
+      - name: Send and require complete manual delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$BUILD_RESULT" = "success"
+          test "$BUILD_PUBLISH" = "true"
+          test "$DEPLOY_RESULT" = "success"
+          test -n "$PUSH_WORKER_URL"
+          test -n "$PUSH_SEND_TOKEN"
+          case "$PUSH_WORKER_URL" in https://*) ;; *) exit 1 ;; esac
+          briefing_date="$(TZ=Asia/Seoul date +%F)"
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload="$(printf '{"date":"%s","run_id":"%s","type":"READY","source":"manual"}' "$briefing_date" "$run_id")"
+          response_file="${RUNNER_TEMP}/insight-desk-push-response.json"
+          http_status="$(curl --silent --show-error --max-time 20 --output "$response_file" --write-out '%{http_code}' -X POST "${PUSH_WORKER_URL%/}/send" -H "Authorization: Bearer $PUSH_SEND_TOKEN" -H "Content-Type: application/json" --data "$payload")"
+          [[ "$http_status" =~ ^2[0-9][0-9]$ ]]
+          jq -e '(.request_state == "REQUEST_ACCEPTED") and (.duplicate == false) and (.delivery_state == "DELIVERED") and (.sent >= 1) and (.failed == 0) and (.pruned | type == "number")' "$response_file" >/dev/null
+          duplicate="$(jq -r '.duplicate' "$response_file")"
+          delivery_state="$(jq -r '.delivery_state' "$response_file")"
+          sent="$(jq -r '.sent' "$response_file")"
+          failed="$(jq -r '.failed' "$response_file")"
+          pruned="$(jq -r '.pruned' "$response_file")"
+          echo "PRODUCTION_PUSH_RESULT duplicate=$duplicate state=$delivery_state sent=$sent failed=$failed pruned=$pruned"
