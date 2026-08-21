@@ -22,6 +22,8 @@ jobs:
         with:
           python-version: "3.12.10"
           cache: pip
+      - name: Apply isolated K-pop promo materiality candidate
+        run: python scripts/patch_kpop_promo_materiality.py
       - name: Compile source
         run: python -m compileall -q insight_desk scripts tests
       - name: Run unit and contract tests
@@ -39,3 +41,11 @@ jobs:
       - name: Run push Worker tests
         working-directory: push-worker
         run: npm ci && npm test
+      - name: Upload validated candidate source
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpop-promo-materiality-candidate
+          path: |
+            insight_desk/pipeline/editorial.py
+            tests/test_kpop_promo_materiality.py
+          if-no-files-found: error
