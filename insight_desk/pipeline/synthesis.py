@@ -265,7 +265,7 @@ def summary_style_issues(value: str) -> tuple[str, ...]:
         if subject and previous_subject and subject == previous_subject:
             issues.append("REPEATED_SUBJECT")
             break
-        previous_subject = subject or previous_subject
+        previous_subject = subject
     return tuple(dict.fromkeys(issues))
 
 
