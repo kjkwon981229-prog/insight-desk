@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import unittest
+
+from insight_desk.domain.models import EvidenceType, NewsItem, Topic
+from insight_desk.pipeline.clustering import StoryCluster
+from insight_desk.pipeline.editorial import assess_event
+from insight_desk.pipeline.synthesis import synthesize_cluster
+
+
+def _item(evidence_id: str, topic_id: str, title: str, summary: str, url: str) -> NewsItem:
+    return NewsItem(
+        evidence_id=evidence_id,
+        topic_id=topic_id,
+        query="KBO" if topic_id == "kbo_hanwha" else "가요계",
+        title=title,
+        summary=summary,
+        original_url=url,
+        naver_url="",
+        canonical_url=url,
+        published_at="2026-08-21T18:23:00+09:00",
+        source_domain=url.split('/')[2],
+        content_hash=evidence_id,
+        score=70.0,
+        provenance=(EvidenceType.SEARCH_SNIPPET,),
+        matched_topic_ids=(topic_id,),
+        retrieval_channels=("SIM",),
+    )
+
+
+def _kbo_topic() -> Topic:
+    return Topic(
+        "kbo_hanwha",
+        "KBO·한화 이글스",
+        True,
+        True,
+        50,
+        ("KBO", "프로야구"),
+        candidate_budget=6,
+        intent_anchors=("KBO", "프로야구", "한화", "야구"),
+        event_terms=("경기", "승리", "선발", "트레이드", "일정"),
+    )
+
+
+class LiveResidualRegressionTests(unittest.TestCase):
+    def test_discussion_of_expansion_plan_is_not_industry_change(self) -> None:
+        item = _item(
+            "sportschosun-kbo-discussion",
+            "kbo_hanwha",
+            '日야구 고위 관계자 KBO 방문, 허구연 총재와 "야구 인기 확대방안" 논의',
+            "20일 KBO를 방문했다. 구리야마 히데키 닛폰햄 CBO는 허구연 총재와 야구 인기 확대 방안을 논의했다.",
+            "https://www.sportschosun.com/baseball/2026-08-21/202608210100126560008034",
+        )
+        assessment = assess_event(StoryCluster("kbo_hanwha", (item,)), _kbo_topic())
+        self.assertEqual(assessment.event_type, "OTHER")
+        self.assertFalse(assessment.passed)
+
+    def test_comeback_date_is_not_absorbed_into_subject_or_repeated(self) -> None:
+        item = _item(
+            "kwon-eunbi-comeback",
+            "kpop",
+            "권은비, 9월 3일 가요계 컴백 확정…소속사 이적 후 첫 귀환(공식)",
+            "가수 권은비가 약 1년 4개월 만에 신곡을 발매한다. 소속사 RBW는 공식 SNS를 통해 새 디지털 싱글 로고 모션을 공개하고 9월 3일 컴백 소식을 알렸다.",
+            "http://www.joynews24.com/view/1996925",
+        )
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            StoryCluster("kpop", (item,)),
+            topic_name="엔터·음악·K-POP",
+            trend_metrics=(),
+            event_type_override="SCHEDULED_EVENT",
+        )
+        compact_headline = headline.replace(" ", "")
+        compact_summary = summary.replace(" ", "")
+        self.assertEqual(facts.subject, "권은비")
+        self.assertEqual(compact_headline.count("9월3일"), 1)
+        self.assertEqual(compact_summary.count("9월3일"), 1)
+        self.assertEqual(summary, "권은비의 컴백은 9월3일로 예정돼 있다.")
+
+
+if __name__ == "__main__":
+    unittest.main()
