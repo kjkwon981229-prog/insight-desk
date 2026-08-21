@@ -30,6 +30,12 @@ class KoreanNewsSummaryPrincipleTests(unittest.TestCase):
         )
         self.assertIn("REPEATED_SUBJECT", issues)
 
+    def test_repeated_subject_check_is_adjacent_only(self) -> None:
+        issues = summary_style_issues(
+            "삼성전자는 2분기 영업이익이 20% 늘었다. 설비투자도 확대했다. 삼성전자는 하반기 투자를 유지한다."
+        )
+        self.assertNotIn("REPEATED_SUBJECT", issues)
+
     def test_unattributed_abstract_evaluation_and_forced_conclusion_are_rejected(self) -> None:
         self.assertIn("ABSTRACT_EVALUATION", summary_style_issues("우려가 제기됐다."))
         self.assertIn(
