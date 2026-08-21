@@ -73,9 +73,8 @@ jobs:
           PY
       - name: Validate Pages artifact
         run: python scripts/validate_artifact.py build/site
-      - name: Validate live editorial acceptance
-        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
-      - name: Upload selection audit
+      - name: Upload selection audit before gate
+        if: always() && hashFiles('build/selection-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: final-live-selection-audit-${{ github.run_id }}
@@ -83,6 +82,8 @@ jobs:
             build/selection-audit.json
             build/live-acceptance.json
           if-no-files-found: error
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
