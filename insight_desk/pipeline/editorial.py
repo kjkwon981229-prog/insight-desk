@@ -931,6 +931,9 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
             normalized_source,
         )
     )
+    historical_sports_credential = bool(
+        re.search(r"우승\s*(?:감독|코치|사령탑|멤버|주역)", normalized_source)
+    )
     for candidate_type, patterns, value in _EVENT_PATTERNS:
         if (
             candidate_type in {"SPORTS_INTERRUPTION", "SPORTS_RESULT", "ROSTER_PERSONNEL"}
@@ -938,6 +941,11 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
         ):
             continue
         hits = [pattern for pattern in patterns if _event_term_match(source, pattern)]
+        # "우승 감독/코치/사령탑" is a historical credential, not evidence
+        # that the article reports a current game result. Remove only that
+        # bare championship hit; independent current-result predicates remain.
+        if candidate_type == "SPORTS_RESULT" and hits and historical_sports_credential:
+            hits = [hit for hit in hits if hit != "우승"]
         if candidate_type == "INDUSTRY_CHANGE" and hits and industry_discussion_only:
             continue
         if hits and value > detected_value:

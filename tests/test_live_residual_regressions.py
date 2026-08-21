@@ -91,6 +91,19 @@ class LiveResidualRegressionTests(unittest.TestCase):
         self.assertEqual(assessment.event_type, "OTHER")
         self.assertFalse(assessment.passed)
 
+    def test_historical_wbc_championship_credential_is_not_a_current_sports_result(self) -> None:
+        item = _item(
+            "sportschosun-wbc-champion-manager-visit",
+            "kbo_hanwha",
+            'WBC 우승 감독의 KBO 방문, 허구연 총재와 "야구 인기 확대방안" 논의',
+            "20일 KBO를 방문했다. 구리야마 히데키 닛폰햄 CBO는 허구연 총재와 야구 인기 확대 방안을 논의했다.",
+            "https://www.sportschosun.com/baseball/2026-08-21/202608210100126560008034",
+            enriched=True,
+        )
+        assessment = assess_event(StoryCluster("kbo_hanwha", (item,)), _kbo_topic())
+        self.assertEqual(assessment.event_type, "OTHER")
+        self.assertFalse(assessment.passed)
+
     def test_comeback_date_is_not_absorbed_into_subject_or_repeated(self) -> None:
         item = _item(
             "kwon-eunbi-comeback",
