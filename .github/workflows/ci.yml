@@ -5,7 +5,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: insight-desk-ci-${{ github.ref }}
@@ -15,18 +15,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout feature head
+      - name: Checkout
         uses: actions/checkout@v6
-        with:
-          ref: fix/kpop-promo-materiality
-          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12.10"
           cache: pip
-      - name: Apply isolated K-pop promo materiality candidate
-        run: python scripts/patch_kpop_promo_materiality.py
       - name: Compile source
         run: python -m compileall -q insight_desk scripts tests
       - name: Run unit and contract tests
@@ -44,16 +39,3 @@ jobs:
       - name: Run push Worker tests
         working-directory: push-worker
         run: npm ci && npm test
-      - name: Finalize validated feature candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git show 57ace97116c30c1ca24c30157304fbec8be50346:.github/workflows/ci.yml > .github/workflows/ci.yml
-          rm scripts/patch_kpop_promo_materiality.py
-          rm -rf push-worker/node_modules
-          git add -A
-          git diff --cached --stat
-          git commit -m "Reject low-value K-pop promo content"
-          git push origin HEAD:fix/kpop-promo-materiality
