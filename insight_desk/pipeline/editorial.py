@@ -76,6 +76,7 @@ _GENERIC_TERMS = {
 _LOW_VALUE_EVENT_TYPES = {
     "LOW_VALUE_APPEARANCE",
     "LOW_VALUE_POLL",
+    "LOW_VALUE_PROMO_CONTENT",
     "ROUTINE_SCHEDULE",
     "ROUTINE_MARKET_QUOTE",
 }
@@ -587,6 +588,48 @@ def _is_low_value_kpop_institutional_event(title_text: str, topic: Topic) -> boo
     return institutional_context and not music_subject_or_event
 
 
+_KPOP_PROMO_CONTENT_MARKERS = (
+    "댄스 커버",
+    "댄스커버",
+    "커버 영상",
+    "커버영상",
+    "커버 무대",
+    "커버무대",
+    "댄스 챌린지",
+    "댄스챌린지",
+    "챌린지 영상",
+    "챌린지영상",
+    "퍼포먼스 영상",
+    "퍼포먼스영상",
+    "안무 영상",
+    "안무영상",
+    "숏폼 영상",
+    "숏폼영상",
+)
+_KPOP_MATERIAL_EVENT_PATTERNS = (
+    re.compile(r"(?:신곡|싱글|앨범|음원).{0,24}(?:발매|출시)"),
+    re.compile(r"컴백.{0,12}(?:확정|발표|한다|예정)"),
+    re.compile(r"(?:콘서트|공연|월드투어).{0,16}(?:개최|확정|발표|예정)"),
+    re.compile(r"(?:차트|빌보드).{0,16}(?:1위|진입|기록|돌파)"),
+    re.compile(r"(?:수상|대상|본상|신인상)"),
+    re.compile(r"(?:전속계약|계약).{0,16}(?:체결|종료|해지|갱신)"),
+)
+
+
+def _is_low_value_kpop_promo_content(title_text: str, topic: Topic) -> bool:
+    """Reject promotional performance content that is not itself a material music event."""
+
+    topic_key = _compact(f"{topic.id} {topic.name}")
+    if "kpop" not in topic_key and "케이팝" not in topic_key:
+        return False
+    if not any(_contains(title_text, marker) for marker in _KPOP_PROMO_CONTENT_MARKERS):
+        return False
+
+    normalized = normalize_text(title_text)
+    material_event = any(pattern.search(normalized) for pattern in _KPOP_MATERIAL_EVENT_PATTERNS)
+    return not material_event
+
+
 def _is_routine_market_quote(title_text: str) -> bool:
     lowered = title_text.casefold()
     return any(marker in lowered for marker in ("ndf", "선물환")) and not any(
@@ -851,6 +894,8 @@ def assess_event(cluster: StoryCluster, topic: Topic) -> EventAssessment:
     # sports article) from changing the story's event type.
     if is_low_value_popularity_poll(f"{title_text} {lead_text}"):
         event_type, significance, matched_terms = "LOW_VALUE_POLL", 18.0, ["LOW_VALUE_POLL"]
+    elif _is_low_value_kpop_promo_content(title_text, topic):
+        event_type, significance, matched_terms = "LOW_VALUE_PROMO_CONTENT", 16.0, ["LOW_VALUE_PROMO_CONTENT"]
     elif _is_low_value_fan_event(title_text) or _is_low_value_kpop_institutional_event(title_text, topic):
         event_type, significance, matched_terms = "LOW_VALUE_APPEARANCE", 20.0, ["LOW_VALUE_APPEARANCE"]
     elif _is_completed_entertainment_event(title_text):
