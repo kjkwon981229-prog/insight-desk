@@ -872,6 +872,14 @@ def _award_subject(title: str, subject: str, *, titles: tuple[str, ...] = ()) ->
     marker = re.search(r"\s+(?:국내외\s+)?(?:음악\s+)?차트\b", clean)
     if not marker:
         return subject
+    # A canonical artist+work subject extracted from the article lead is
+    # stronger than extending the title prefix through a chart/platform token.
+    if subject and any(support in subject for support in _AWARD_SUPPORT_MARKERS):
+        prefix = clean[: marker.start()].strip(" ,·-—")
+        subject_key = re.sub(r"[^0-9A-Za-z가-힣]", "", subject).casefold()
+        prefix_key = re.sub(r"[^0-9A-Za-z가-힣]", "", prefix).casefold()
+        if subject_key and prefix_key.startswith(subject_key):
+            return subject
 
     def prefix_tokens(value: str) -> list[str]:
         candidate = _clean_headline(value)
