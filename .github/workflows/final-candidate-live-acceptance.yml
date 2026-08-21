@@ -1,0 +1,81 @@
+name: Final Candidate Live Acceptance
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  live:
+    if: github.head_ref == 'fix/award-chart-subject-binding'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+    steps:
+      - name: Checkout exact clean candidate
+        uses: actions/checkout@v6
+        with:
+          ref: d1f8e86a25ca3fea26bb6901a5f45e99e5f8c33d
+      - name: Require exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "d1f8e86a25ca3fea26bb6901a5f45e99e5f8c33d"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+          cache: pip
+      - name: Restore durable public history
+        shell: bash
+        run: |
+          mkdir -p build/site/latest
+          curl --fail --silent --show-error --location --max-time 15 https://kjkwon981229-prog.github.io/insight-desk/latest/data.json -o build/site/latest/data.json || rm -f build/site/latest/data.json
+      - name: Build fresh live
+        run: python -m insight_desk.cli --config config/topics.json --output build/site --state-file build/run-state.json --cache .cache/responses.json
+      - name: Require publishable state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          assert state.get('publish') is True, state
+          assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
+          assert state.get('news', {}).get('failed') == 0, state
+          print('FINAL_CANDIDATE_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Validate artifact and live editorial acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/validate_artifact.py build/site
+          python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Require zero strong rejected and print human-audit payload
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          audit = json.loads(Path('build/selection-audit.json').read_text(encoding='utf-8'))
+          funnel = audit.get('funnel', {})
+          strong = sum(int(row.get('strong_rejected', 0) or 0) for row in funnel.values())
+          assert strong == 0, funnel
+          acceptance = json.loads(Path('build/live-acceptance.json').read_text(encoding='utf-8'))
+          assert acceptance.get('semantic_error_count', 0) == 0, acceptance
+          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
+          print('FINAL_CANDIDATE_FUNNEL', json.dumps(funnel, ensure_ascii=False, sort_keys=True))
+          print('FINAL_CANDIDATE_ACCEPTANCE', json.dumps(acceptance, ensure_ascii=False, sort_keys=True))
+          print('FINAL_CANDIDATE_PUBLIC_STORIES', json.dumps(payload.get('stories', []), ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Upload final candidate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-candidate-live-evidence-${{ github.run_id }}
+          path: |
+            build/run-state.json
+            build/selection-audit.json
+            build/live-acceptance.json
+            build/site/latest/data.json
+          if-no-files-found: error
