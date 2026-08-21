@@ -1,0 +1,47 @@
+name: Patch Ceremonial Appearance
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/ceremonial-appearance-classification'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/ceremonial-appearance-classification
+      - name: Apply narrow ceremonial victory-context fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('insight_desk/pipeline/editorial.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''def _is_ceremonial_appearance(title_text: str) -> bool:\n    """Reject first-pitch/first-bat appearances unless the title carries a real sports event."""\n\n    return any(_contains(title_text, marker) for marker in ("시구", "시타")) and not any(\n        _contains(title_text, marker)\n        for marker in ("경기 결과", "승리", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")\n    )\n'''
+          new = '''def _is_ceremonial_appearance(title_text: str) -> bool:\n    """Reject first-pitch/first-bat appearances unless the title carries a real sports event."""\n\n    if not any(_contains(title_text, marker) for marker in ("시구", "시타")):\n        return False\n    if any(\n        _contains(title_text, marker)\n        for marker in ("경기 결과", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")\n    ):\n        return False\n    if _contains(title_text, "승리") and not re.search(\n        r"승리(?:를)?\\s*(?:위해|기원|응원|바라|요정)", title_text\n    ):\n        return False\n    return True\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one ceremonial function block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Validate patch
+        shell: bash
+        run: |
+          git diff --check
+          python -m unittest tests.test_ceremonial_appearance_regression -v
+      - name: Commit source patch only
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- insight_desk/pipeline/editorial.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Classify aspirational first-pitch coverage as low value"
+          git push origin HEAD:fix/ceremonial-appearance-classification
