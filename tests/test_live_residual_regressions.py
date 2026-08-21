@@ -8,7 +8,18 @@ from insight_desk.pipeline.editorial import assess_event
 from insight_desk.pipeline.synthesis import synthesize_cluster
 
 
-def _item(evidence_id: str, topic_id: str, title: str, summary: str, url: str) -> NewsItem:
+def _item(
+    evidence_id: str,
+    topic_id: str,
+    title: str,
+    summary: str,
+    url: str,
+    *,
+    enriched: bool = False,
+) -> NewsItem:
+    provenance = (EvidenceType.SEARCH_SNIPPET,)
+    if enriched:
+        provenance += (EvidenceType.ENRICHED_METADATA,)
     return NewsItem(
         evidence_id=evidence_id,
         topic_id=topic_id,
@@ -22,7 +33,9 @@ def _item(evidence_id: str, topic_id: str, title: str, summary: str, url: str) -
         source_domain=url.split('/')[2],
         content_hash=evidence_id,
         score=70.0,
-        provenance=(EvidenceType.SEARCH_SNIPPET,),
+        metadata_title=title if enriched else "",
+        metadata_description=summary if enriched else "",
+        provenance=provenance,
         matched_topic_ids=(topic_id,),
         retrieval_channels=("SIM",),
     )
@@ -39,6 +52,20 @@ def _kbo_topic() -> Topic:
         candidate_budget=6,
         intent_anchors=("KBO", "프로야구", "한화", "야구"),
         event_terms=("경기", "승리", "선발", "트레이드", "일정"),
+    )
+
+
+def _kpop_topic() -> Topic:
+    return Topic(
+        "kpop",
+        "엔터·음악·K-POP",
+        True,
+        True,
+        50,
+        ("가요계", "K-POP"),
+        candidate_budget=6,
+        intent_anchors=("가수", "K-POP", "가요계", "컴백"),
+        event_terms=("컴백", "발매", "신곡", "싱글", "공연", "콘서트"),
     )
 
 
@@ -60,17 +87,23 @@ class LiveResidualRegressionTests(unittest.TestCase):
             "kwon-eunbi-comeback",
             "kpop",
             "권은비, 9월 3일 가요계 컴백 확정…소속사 이적 후 첫 귀환(공식)",
-            "가수 권은비가 약 1년 4개월 만에 신곡을 발매한다. 소속사 RBW는 공식 SNS를 통해 새 디지털 싱글 로고 모션을 공개하고 9월 3일 컴백 소식을 알렸다.",
+            "가수 권은비가 약 1년 4개월 만에 신곡을 발매한다. 소속사 RBW는 20일 공식 SNS를 통해 권은비의 새 디지털 싱글 '데자부(DEJAVU)' 로고 모션을 공개하고 9월 3일 컴백 소식을 알렸다.",
             "http://www.joynews24.com/view/1996925",
+            enriched=True,
         )
+        cluster = StoryCluster("kpop", (item,))
+        event = assess_event(cluster, _kpop_topic())
         headline, summary, _, _, facts, _ = synthesize_cluster(
-            StoryCluster("kpop", (item,)),
+            cluster,
             topic_name="엔터·음악·K-POP",
             trend_metrics=(),
-            event_type_override="SCHEDULED_EVENT",
+            event_type_override=event.event_type,
+            event_signature_override=event.canonical_event.event_signature if event.canonical_event else "",
+            canonical_event_override=event.canonical_event,
         )
         compact_headline = headline.replace(" ", "")
         compact_summary = summary.replace(" ", "")
+        self.assertEqual(event.event_type, "SCHEDULED_EVENT")
         self.assertEqual(facts.subject, "권은비")
         self.assertEqual(compact_headline.count("9월3일"), 1)
         self.assertEqual(compact_summary.count("9월3일"), 1)
