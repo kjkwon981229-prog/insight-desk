@@ -109,6 +109,39 @@ class LiveResidualRegressionTests(unittest.TestCase):
         self.assertEqual(compact_summary.count("9월3일"), 1)
         self.assertEqual(summary, "권은비의 컴백은 9월3일로 예정돼 있다.")
 
+    def test_kbo_committee_launch_is_a_bound_announcement(self) -> None:
+        item = _item(
+            "kbo-hall-of-fame-committee-launch",
+            "kbo_hanwha",
+            "KBO, 한국야구 명예의 전당 선정위원회 출범",
+            "KBO는 21일 한국야구 명예의 전당 선정위원회를 공식 출범했다고 밝혔다.",
+            "https://www.yna.co.kr/view/AKR20260821144000007?input=1195m",
+            enriched=True,
+        )
+        cluster = StoryCluster("kbo_hanwha", (item,))
+        event = assess_event(cluster, _kbo_topic())
+        self.assertEqual(event.event_type, "ANNOUNCEMENT")
+        self.assertTrue(event.passed)
+        self.assertIsNotNone(event.canonical_event)
+        assert event.canonical_event is not None
+        self.assertEqual(event.canonical_event.subject, "KBO")
+        self.assertEqual(event.canonical_event.action, "출범")
+        self.assertEqual(event.canonical_event.object, "한국야구 명예의 전당 선정위원회")
+
+        headline, summary, _, _, facts, _ = synthesize_cluster(
+            cluster,
+            topic_name="KBO·한화 이글스",
+            trend_metrics=(),
+            event_type_override=event.event_type,
+            event_signature_override=event.canonical_event.event_signature,
+            canonical_event_override=event.canonical_event,
+        )
+        self.assertEqual(headline, "KBO, 한국야구 명예의 전당 선정위원회 출범")
+        self.assertEqual(summary, "KBO가 한국야구 명예의 전당 선정위원회를 출범시켰다.")
+        self.assertEqual(facts.subject, "KBO")
+        self.assertEqual(facts.action, "출범")
+        self.assertEqual(facts.object, "한국야구 명예의 전당 선정위원회")
+
 
 if __name__ == "__main__":
     unittest.main()
