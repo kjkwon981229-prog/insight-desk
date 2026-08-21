@@ -918,6 +918,13 @@ def _detect_event_source(source: str, *, context: str = "") -> tuple[str, float,
     detected_terms: list[str] = []
     sports_context = _sports_context(f"{source} {context}")
     normalized_source = normalize_text(source)
+    bound_relation = typed_event_relation(normalized_source)
+    if (
+        bound_relation is not None
+        and bound_relation[0] == "ANNOUNCEMENT"
+        and bound_relation[1].relation == "출범"
+    ):
+        return "ANNOUNCEMENT", 62.0, ["출범"]
     industry_discussion_only = bool(
         re.search(
             r"(?:확대|축소|전략)\s*(?:방안|계획|대책)?[^.!?]{0,32}(?:논의|검토|협의|모색)",

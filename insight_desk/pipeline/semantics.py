@@ -28,6 +28,7 @@ ACTION_TERMS: tuple[str, ...] = (
     "발매",
     "발표",
     "공개",
+    "출범",
     "시행",
     "선발",
     "중단",
@@ -306,7 +307,7 @@ _EVENT_ACTION_CONTRACTS: dict[str, tuple[str, ...]] = {
     "RECRUITMENT_SCHEDULE": ("일정", "시험일", "원서접수", "공고", "접수"),
     "RECRUITMENT_APPLICATION": ("채용", "공채", "모집", "지원"),
     "SCHEDULED_EVENT": ("일정", "예정", "개최", "시구", "공연", "콘서트", "컴백", "월드투어"),
-    "ANNOUNCEMENT": ("발표", "공지", "공개"),
+    "ANNOUNCEMENT": ("발표", "공지", "공개", "출범"),
     "STATISTIC": ("통계", "지표", "평균", "변동폭", "최고", "최대", "최저", "상승", "하락", "증가", "감소"),
     "MARKET": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
     "MARKET_MOVE": (*_MARKET_DIRECTION_TERMS, "환율", "코스피", "코스닥", "증시", "주가", "금리"),
@@ -685,6 +686,10 @@ def typed_event_relation(text: str) -> tuple[str, EventFact] | None:
         raw_action = industry.group("action")
         action = "착공" if raw_action.startswith("착공") else raw_action
         object_text = normalize_text(industry.group("object"))
+        if action == "출범" and re.search(
+            r"(?:위원회|협의체|기구|조직|재단|사무국|본부)$", object_text
+        ):
+            return _relation_fact("ANNOUNCEMENT", industry, action)
         compatible = _INDUSTRY_RELATION_OBJECT_MARKERS.get(action, ())
         if compatible and not any(marker.casefold() in object_text.casefold() for marker in compatible):
             return None
