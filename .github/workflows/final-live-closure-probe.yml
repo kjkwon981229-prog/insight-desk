@@ -5,166 +5,32 @@ on:
     branches:
       - main
 
-concurrency:
-  group: insight-desk-final-live-closure-probe
-  cancel-in-progress: true
-
 jobs:
-  live:
+  inspect-production-run:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
-    env:
-      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
-      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
-      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
-      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
-      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
     steps:
-      - name: Checkout exact PR11 candidate
-        uses: actions/checkout@v6
-        with:
-          ref: fix/ceremonial-appearance-classification
-      - name: Require exact candidate head
+      - name: Read already-triggered production closure run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 1fec75541d4b603b548cd5106572571603b398d3
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "cdce8dc2cfadcf86383ac9b8720e458ed7e7f16d"
-          echo "CANDIDATE_HEAD=$(git rev-parse HEAD)"
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12.10"
-          cache: pip
-      - name: Mask secrets
-        shell: bash
-        run: |
-          echo "::add-mask::$NCP_CLIENT_ID"
-          echo "::add-mask::$NCP_CLIENT_SECRET"
-          echo "::add-mask::$OPENDART_API_KEY"
-          echo "::add-mask::$KOSIS_API_KEY"
-          echo "::add-mask::$ECOS_API_KEY"
-      - name: Restore durable history from last-good Pages payload
-        shell: bash
-        run: |
-          set -u
-          mkdir -p build/site/latest
-          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
-          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
-            rm -f build/site/latest/data.json
-          fi
-      - name: Build candidate fresh live briefing
-        run: >-
-          python -m insight_desk.cli
-          --config config/topics.json
-          --output build/site
-          --state-file build/run-state.json
-          --cache .cache/responses.json
-      - name: Print exact remaining source evidence
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(Path('.cache/responses.json').read_text(encoding='utf-8'))
-          sports_id = '202608210100126560008034'
-          evidence = {'sportschosun': [], 'kwoneunbi': []}
-
-          def safe_scalars(value):
-              allowed = ('title', 'description', 'summary', 'link', 'url', 'pubdate', 'publisher', 'originallink')
-              return {
-                  str(k): v for k, v in value.items()
-                  if not isinstance(v, (dict, list))
-                  and any(token in str(k).casefold() for token in allowed)
-              }
-
-          def walk(value):
-              if isinstance(value, dict):
-                  scalars = {str(k): v for k, v in value.items() if not isinstance(v, (dict, list))}
-                  blob = ' '.join(str(v) for v in scalars.values())
-                  if sports_id in blob:
-                      evidence['sportschosun'].append(safe_scalars(value))
-                  if '권은비' in blob and ('9월 3일' in blob or '9월3일' in blob):
-                      evidence['kwoneunbi'].append(safe_scalars(value))
-                  for child in value.values():
-                      walk(child)
-              elif isinstance(value, list):
-                  for child in value:
-                      walk(child)
-
-          walk(payload)
-          for key in evidence:
-              unique = []
-              seen = set()
-              for item in evidence[key]:
-                  marker = json.dumps(item, ensure_ascii=False, sort_keys=True)
-                  if marker in seen:
-                      continue
-                  seen.add(marker)
-                  unique.append(item)
-              evidence[key] = unique
-          print('EXACT_SOURCE_EVIDENCE', json.dumps(evidence, ensure_ascii=False, sort_keys=True))
-          PY
-      - name: Require publishable run state
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
-          assert state.get('publish') is True, state
-          assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
-          print('RUN_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
-          PY
-      - name: Validate Pages artifact
-        run: python scripts/validate_artifact.py build/site
-      - name: Print candidate public stories for human audit
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
-          hits = []
-          def walk(value, path='root'):
-              if isinstance(value, dict):
-                  headline = value.get('headline') or value.get('title')
-                  summary = value.get('summary')
-                  if isinstance(headline, str) and isinstance(summary, str):
-                      hits.append({
-                          'path': path,
-                          'headline': headline,
-                          'summary': summary,
-                          'why': value.get('why'),
-                          'topic_id': value.get('topic_id'),
-                          'event_type': value.get('event_type'),
-                      })
-                  for key, child in value.items():
-                      walk(child, f'{path}.{key}')
-              elif isinstance(value, list):
-                  for index, child in enumerate(value):
-                      walk(child, f'{path}[{index}]')
-          walk(payload)
-          unique = []
-          seen = set()
-          for hit in hits:
-              key = (hit['headline'], hit['summary'])
-              if key in seen:
-                  continue
-              seen.add(key)
-              unique.append(hit)
-          print('PUBLIC_STORIES', json.dumps(unique, ensure_ascii=False, sort_keys=True))
-          PY
-      - name: Upload selection audit before gate
-        if: always() && hashFiles('build/selection-audit.json') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-live-selection-audit-${{ github.run_id }}
-          path: |
-            build/selection-audit.json
-            build/live-acceptance.json
-          if-no-files-found: error
-      - name: Validate live editorial acceptance
-        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+          runs_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&per_page=20"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$runs_url" > runs.json
+          jq -c '{total_count, runs: [.workflow_runs[] | {id,name,event,status,conclusion,head_sha,run_number,run_attempt,created_at,updated_at,jobs_url,html_url}]}' runs.json
+          run_id="$(jq -r '.workflow_runs[] | select(.name == "One-Shot Production Closure") | .id' runs.json | head -1)"
+          test -n "$run_id"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > jobs.json
+          jq -c --arg run_id "$run_id" '{run_id:$run_id, jobs:[.jobs[] | {id,name,status,conclusion,started_at,completed_at,steps:[.steps[]? | {name,status,conclusion,number}]}]}' jobs.json
