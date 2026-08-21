@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "ded0b97ee4dcbb54892aa7f28ca8169172d5e129"
+          test "$(git rev-parse HEAD)" = "cdce8dc2cfadcf86383ac9b8720e458ed7e7f16d"
           echo "CANDIDATE_HEAD=$(git rev-parse HEAD)"
       - name: Set up Python
         uses: actions/setup-python@v6
