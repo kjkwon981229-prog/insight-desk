@@ -1,0 +1,72 @@
+name: Candidate Award Chart Live Probe
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  live:
+    if: github.head_ref == 'fix/award-chart-subject-binding'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+    steps:
+      - name: Checkout exact clean candidate
+        uses: actions/checkout@v6
+        with:
+          ref: f97753b54bd7dee6154ba9a02f014442b7d1c887
+      - name: Require exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "f97753b54bd7dee6154ba9a02f014442b7d1c887"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+          cache: pip
+      - name: Restore durable history
+        shell: bash
+        run: |
+          mkdir -p build/site/latest
+          curl --fail --silent --show-error --location --max-time 15 https://kjkwon981229-prog.github.io/insight-desk/latest/data.json -o build/site/latest/data.json || rm -f build/site/latest/data.json
+      - name: Build candidate fresh live
+        run: python -m insight_desk.cli --config config/topics.json --output build/site --state-file build/run-state.json --cache .cache/responses.json
+      - name: Require publishable state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          assert state.get('publish') is True, state
+          assert state.get('status') not in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}, state
+          print('CANDIDATE_RUN_STATE', json.dumps(state, ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Validate Pages artifact
+        run: python scripts/validate_artifact.py build/site
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Print public stories for human audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
+          stories = payload.get('stories', [])
+          print('CANDIDATE_PUBLIC_STORIES', json.dumps(stories, ensure_ascii=False, sort_keys=True))
+          bigbang = [story for story in stories if '빅뱅' in json.dumps(story, ensure_ascii=False) or 'BiiiG' in json.dumps(story, ensure_ascii=False)]
+          print('BIGBANG_STORIES', json.dumps(bigbang, ensure_ascii=False, sort_keys=True))
+          PY
+      - name: Upload candidate audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-award-chart-audit-${{ github.run_id }}
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
+            build/site/latest/data.json
+          if-no-files-found: error
