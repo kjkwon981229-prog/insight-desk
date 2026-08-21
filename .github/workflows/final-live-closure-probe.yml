@@ -60,6 +60,52 @@ jobs:
           --output build/site
           --state-file build/run-state.json
           --cache .cache/responses.json
+      - name: Print exact remaining source evidence
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('.cache/responses.json').read_text(encoding='utf-8'))
+          sports_id = '202608210100126560008034'
+          evidence = {'sportschosun': [], 'kwoneunbi': []}
+
+          def safe_scalars(value):
+              allowed = ('title', 'description', 'summary', 'link', 'url', 'pubdate', 'publisher', 'originallink')
+              return {
+                  str(k): v for k, v in value.items()
+                  if not isinstance(v, (dict, list))
+                  and any(token in str(k).casefold() for token in allowed)
+              }
+
+          def walk(value):
+              if isinstance(value, dict):
+                  scalars = {str(k): v for k, v in value.items() if not isinstance(v, (dict, list))}
+                  blob = ' '.join(str(v) for v in scalars.values())
+                  if sports_id in blob:
+                      evidence['sportschosun'].append(safe_scalars(value))
+                  if '권은비' in blob and ('9월 3일' in blob or '9월3일' in blob):
+                      evidence['kwoneunbi'].append(safe_scalars(value))
+                  for child in value.values():
+                      walk(child)
+              elif isinstance(value, list):
+                  for child in value:
+                      walk(child)
+
+          walk(payload)
+          for key in evidence:
+              unique = []
+              seen = set()
+              for item in evidence[key]:
+                  marker = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                  if marker in seen:
+                      continue
+                  seen.add(marker)
+                  unique.append(item)
+              evidence[key] = unique
+          print('EXACT_SOURCE_EVIDENCE', json.dumps(evidence, ensure_ascii=False, sort_keys=True))
+          PY
       - name: Require publishable run state
         shell: bash
         run: |
@@ -73,17 +119,6 @@ jobs:
           PY
       - name: Validate Pages artifact
         run: python scripts/validate_artifact.py build/site
-      - name: Upload selection audit before gate
-        if: always() && hashFiles('build/selection-audit.json') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-live-selection-audit-${{ github.run_id }}
-          path: |
-            build/selection-audit.json
-            build/live-acceptance.json
-          if-no-files-found: error
-      - name: Validate live editorial acceptance
-        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
       - name: Print candidate public stories for human audit
         shell: bash
         run: |
@@ -91,10 +126,8 @@ jobs:
           import json
           from pathlib import Path
 
-          path = Path('build/site/latest/data.json')
-          payload = json.loads(path.read_text(encoding='utf-8'))
+          payload = json.loads(Path('build/site/latest/data.json').read_text(encoding='utf-8'))
           hits = []
-
           def walk(value, path='root'):
               if isinstance(value, dict):
                   headline = value.get('headline') or value.get('title')
@@ -107,14 +140,12 @@ jobs:
                           'why': value.get('why'),
                           'topic_id': value.get('topic_id'),
                           'event_type': value.get('event_type'),
-                          'source_count': len(value.get('sources', [])) if isinstance(value.get('sources'), list) else None,
                       })
                   for key, child in value.items():
                       walk(child, f'{path}.{key}')
               elif isinstance(value, list):
                   for index, child in enumerate(value):
                       walk(child, f'{path}[{index}]')
-
           walk(payload)
           unique = []
           seen = set()
@@ -124,8 +155,16 @@ jobs:
                   continue
               seen.add(key)
               unique.append(hit)
-          print('PUBLIC_STORY_COUNT', len(unique))
           print('PUBLIC_STORIES', json.dumps(unique, ensure_ascii=False, sort_keys=True))
-          acceptance = json.loads(Path('build/live-acceptance.json').read_text(encoding='utf-8'))
-          print('LIVE_ACCEPTANCE', json.dumps(acceptance, ensure_ascii=False, sort_keys=True))
           PY
+      - name: Upload selection audit before gate
+        if: always() && hashFiles('build/selection-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-live-selection-audit-${{ github.run_id }}
+          path: |
+            build/selection-audit.json
+            build/live-acceptance.json
+          if-no-files-found: error
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
