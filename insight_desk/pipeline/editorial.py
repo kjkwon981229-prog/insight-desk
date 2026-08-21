@@ -549,11 +549,20 @@ def _is_routine_schedule(title_text: str) -> bool:
 def _is_ceremonial_appearance(title_text: str) -> bool:
     # A first-pitch/first-bat announcement is an entertainment appearance,
     # not a baseball result, roster change, or meaningful game event.
-    return any(_contains(title_text, marker) for marker in ("시구", "시타")) and not any(
+    if not any(_contains(title_text, marker) for marker in ("시구", "시타")):
+        return False
+    if any(
         _contains(title_text, marker)
-        for marker in ("경기 결과", "승리", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")
-    )
-
+        for marker in ("경기 결과", "패배", "홈런", "순위", "선발", "엔트리", "부상", "트레이드")
+    ):
+        return False
+    # Headlines often quote an attendee wishing for the team's victory. That is
+    # aspirational appearance copy, not evidence that a game result occurred.
+    if _contains(title_text, "승리") and not re.search(
+        r"승리(?:를)?\s*(?:위해|기원|응원|바라|요정)", title_text
+    ):
+        return False
+    return True
 
 def _is_low_value_fan_event(title_text: str) -> bool:
     """Reject fan-invite/thank-you coverage that is not a core music event."""
