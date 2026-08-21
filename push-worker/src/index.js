@@ -215,7 +215,10 @@ function normalizeStoredMarker(marker) {
   };
 }
 
-function notificationMarkerKey(date, type, source) {
+function notificationMarkerKey(date, type, source, runId = "") {
+  if (source === "manual") {
+    return `${NOTIFICATION_PREFIX}${date}:${type}:${source}:${runId}`;
+  }
   return `${NOTIFICATION_PREFIX}${date}:${type}:${source}`;
 }
 
@@ -223,12 +226,13 @@ function legacyNotificationMarkerKey(date, type) {
   return `${NOTIFICATION_PREFIX}${date}:${type}`;
 }
 
-function notificationPayload(type, env) {
+function notificationPayload(type, env, { source = "other", runId = "" } = {}) {
   const ready = type === "READY";
+  const baseTag = ready ? "insight-desk-ready" : "insight-desk-failure";
   return {
     title: ready ? "오늘 브리핑 준비 완료" : "오늘 브리핑 업데이트 실패",
     body: ready ? "Insight Desk 오늘 브리핑을 확인하세요." : "마지막 정상 브리핑을 유지하고 있습니다.",
-    tag: ready ? "insight-desk-ready" : "insight-desk-failure",
+    tag: source === "manual" && runId ? `${baseTag}-${runId}` : baseTag,
     url: `${configuredOrigin(env)}/insight-desk/`,
   };
 }
@@ -282,13 +286,14 @@ async function dispatchNotificationOnce(env, requestPayload, dependencies = {}) 
     throw new Error("VAPID_NOT_CONFIGURED");
   }
   const { date, run_id: runId, type, source } = requestPayload;
-  // Source is part of the idempotency identity.  A manual READY must not
-  // consume the schedule READY slot for the same date and type.
-  const markerKey = notificationMarkerKey(date, type, source);
+  // Scheduled delivery is idempotent for the day. Manual workflow runs
+  // are idempotent per run so a fresh operator-triggered validation can emit
+  // its own result without consuming or being consumed by another run.
+  const markerKey = notificationMarkerKey(date, type, source, runId);
   let existing = await env.PUSH_SUBSCRIPTIONS.get(markerKey);
-  // Read legacy markers only for non-schedule callers.  Existing pre-source
-  // markers remain compatible without allowing them to mask a schedule run.
-  if (!existing && source !== "schedule") {
+  // Pre-source legacy markers correspond to the old generic caller only.
+  // They must never suppress a new explicit manual run.
+  if (!existing && source === "other") {
     existing = await env.PUSH_SUBSCRIPTIONS.get(legacyNotificationMarkerKey(date, type));
   }
   if (existing) {
@@ -320,7 +325,7 @@ async function dispatchNotificationOnce(env, requestPayload, dependencies = {}) 
     env.PUSH_SUBSCRIPTIONS,
     Number(env.MAX_SUBSCRIPTIONS || DEFAULT_MAX_SUBSCRIPTIONS),
   );
-  const payload = notificationPayload(type, env);
+  const payload = notificationPayload(type, env, { source, runId });
   let sent = 0;
   let failed = 0;
   let pruned = 0;
@@ -403,7 +408,7 @@ async function dispatchNotificationOnce(env, requestPayload, dependencies = {}) 
 
 async function dispatchNotification(env, requestPayload, dependencies = {}) {
   const { date, run_id: runId, type, source } = requestPayload;
-  const markerKey = notificationMarkerKey(date, type, source);
+  const markerKey = notificationMarkerKey(date, type, source, runId);
   const active = inFlightNotifications.get(markerKey);
   if (active) {
     const result = await active;

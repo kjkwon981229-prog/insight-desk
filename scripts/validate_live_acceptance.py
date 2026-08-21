@@ -25,6 +25,7 @@ from insight_desk.pipeline.semantics import (
 from insight_desk.pipeline.synthesis import (
     editorial_text_issues,
     relation_summary_preserves_fact,
+    summary_style_issues,
     summary_why_redundant,
 )
 
@@ -141,6 +142,7 @@ def validate(path: Path) -> list[str]:
         why_it_matters = str(story.get("why_it_matters", "") or "")
         headline_issues = editorial_text_issues(headline)
         summary_issues = editorial_text_issues(summary)
+        summary_style = summary_style_issues(summary)
         quote_issues = set(headline_issues + summary_issues).intersection(
             {"UNMATCHED_QUOTE", "UNMATCHED_BRACKET"}
         )
@@ -158,7 +160,7 @@ def validate(path: Path) -> list[str]:
             )
         composition_issues = set(headline_issues + summary_issues).intersection(
             {"MALFORMED_PARTICLE_STACK"}
-        )
+        ) | set(summary_style)
         if composition_issues:
             metrics["korean_composition_error_count"] += len(composition_issues)
             errors.append(f"story {index} has malformed deterministic Korean composition")

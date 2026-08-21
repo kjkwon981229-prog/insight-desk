@@ -682,50 +682,133 @@ def _topic_family(topic: Topic) -> str:
     return "other"
 
 
+_BRIEFING_PRIMARY_EVENT_MARKERS = (
+    "출시", "발매", "컴백", "데뷔", "공연", "콘서트", "월드투어", "수상", "1위", "차트",
+    "승리", "패배", "우승", "홈런", "기록", "규제", "시행", "투자", "인수", "계약",
+    "공급", "수주", "선발", "합격", "경쟁률",
+)
+
+
+def _low_information_is_secondary(title_text: str) -> bool:
+    """Allow filler markers only after a completed material primary clause."""
+
+    normalized = normalize_text(title_text)
+    positions = sorted(
+        {
+            position
+            for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS
+            for position in (normalized.find(marker),)
+            if position >= 0
+        }
+    )
+    if not positions:
+        return False
+    for position in positions:
+        prefix = normalized[:position]
+        boundary = max(prefix.rfind(separator) for separator in (",", "，", ";", "；"))
+        if boundary < 0:
+            return False
+        primary_clause = prefix[:boundary].strip()
+        if not primary_clause:
+            return False
+        if typed_event_relation(primary_clause) is None and not any(
+            _contains(primary_clause, marker) for marker in _BRIEFING_PRIMARY_EVENT_MARKERS
+        ):
+            return False
+    return True
+
+
 def _briefing_materiality_passes(title_text: str, topic: Topic, event_type: str) -> bool:
-    """Separate factual event validity from scarce daily-briefing value."""
+    """Separate factual event validity from scarce daily-briefing value.
 
-    if event_type not in _SOFT_BRIEFING_EVENT_TYPES:
-        return True
-
-    # Reuse the already-locked semantic relation contract. Personnel changes,
-    # partner/program selections, affiliation changes, and other complete
-    # actor-action-object relations are material even when their broad event
-    # family is ANNOUNCEMENT.
-    if typed_event_relation(title_text) is not None:
-        return True
+    Event typing answers "did something happen?"; this gate answers the
+    separate question "does this deserve one of today's scarce briefing
+    slots?"  Low-information primary focus therefore remains rejectable even
+    when a generic marker accidentally promotes it into a strong event family.
+    """
 
     family = _topic_family(topic)
+    normalized = normalize_text(title_text)
     low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)
+    low_information_secondary = bool(low_information and _low_information_is_secondary(title_text))
+    background_material_context = bool(
+        low_information
+        and not low_information_secondary
+        and re.search(
+            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|1위|차트|승리|패배|우승|홈런|기록|발표|공개|규제|시행|경기|선발)"
+            r".{0,12}(?:기념|앞두고|맞아|맞이해)",
+            normalized,
+        )
+    )
+    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES
+
+    # A typed relation proves that an event happened, not that filler deserves
+    # a briefing slot. Preserve material relations only when low-information
+    # content is absent or clearly follows a separate material primary clause.
+    if typed_event_relation(title_text) is not None and (not low_information or low_information_secondary):
+        return True
 
     if family == "kpop":
+        material_event = any(pattern.search(normalized) for pattern in _KPOP_BRIEFING_MATERIAL_PATTERNS)
+        if background_material_context:
+            return False
+        if low_information and not low_information_secondary:
+            return False
+        if material_event:
+            return True
+        if strong_event_family:
+            return True
         if event_type == "ENTERTAINMENT_EVENT":
-            return bool(
-                any(_contains(title_text, marker) for marker in ("컴백", "콘서트", "공연", "월드투어", "앨범", "음원", "발매"))
-                and not low_information
+            return any(
+                _contains(title_text, marker)
+                for marker in ("컴백", "콘서트", "공연", "월드투어", "앨범", "음원", "발매")
             )
-        return bool(
-            any(pattern.search(normalize_text(title_text)) for pattern in _KPOP_BRIEFING_MATERIAL_PATTERNS)
-            and not low_information
-        )
+        return False
 
     if family == "ai":
         technical_object = any(_contains(title_text, marker) for marker in _AI_MATERIAL_OBJECT_MARKERS)
         material_action = any(_contains(title_text, marker) for marker in _AI_MATERIAL_ACTION_MARKERS)
-        return bool(technical_object and material_action and not low_information)
+        strong_action = any(
+            _contains(title_text, marker)
+            for marker in ("출시", "도입", "투자", "인수", "계약", "규제", "허가", "공급", "수주", "전환")
+        )
+        if background_material_context:
+            return False
+        if low_information:
+            return bool(technical_object and strong_action)
+        if strong_event_family:
+            return True
+        return bool(technical_object and material_action)
 
     if family == "economy":
         low_information = low_information or any(_contains(title_text, marker) for marker in _ECONOMY_LOW_INFORMATION_MARKERS)
-        return bool(any(_contains(title_text, marker) for marker in _ECONOMY_MATERIAL_MARKERS) and not low_information)
+        if low_information:
+            return False
+        if strong_event_family:
+            return True
+        return any(_contains(title_text, marker) for marker in _ECONOMY_MATERIAL_MARKERS)
 
     if family == "kbo":
-        return bool(any(_contains(title_text, marker) for marker in _KBO_MATERIAL_MARKERS) and not low_information)
+        material = any(_contains(title_text, marker) for marker in _KBO_MATERIAL_MARKERS)
+        if background_material_context:
+            return False
+        if low_information and not low_information_secondary:
+            return False
+        if strong_event_family:
+            return True
+        return material
 
     if family == "psat":
         low_information = low_information or any(_contains(title_text, marker) for marker in _PSAT_LOW_INFORMATION_MARKERS)
-        return bool(any(_contains(title_text, marker) for marker in _PSAT_MATERIAL_MARKERS) and not low_information)
+        if low_information:
+            return False
+        if strong_event_family:
+            return True
+        return any(_contains(title_text, marker) for marker in _PSAT_MATERIAL_MARKERS)
 
-    return not low_information
+    if low_information:
+        return False
+    return strong_event_family or event_type in _SOFT_BRIEFING_EVENT_TYPES
 
 
 def _is_routine_market_quote(title_text: str) -> bool:
