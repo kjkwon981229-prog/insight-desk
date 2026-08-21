@@ -13,11 +13,17 @@ def _topic() -> Topic:
         "KBO·한화 이글스",
         True,
         True,
-        50,
-        ("한화 야구", "한화 이글스"),
-        candidate_budget=12,
-        intent_anchors=("KBO", "프로야구", "한화", "야구"),
-        event_terms=("출범", "발표", "위원회"),
+        65,
+        ("한화 이글스", "KBO", "프로야구"),
+        candidate_budget=36,
+        intent_anchors=(
+            "한화 이글스", "한화 경기", "한화 야구", "KBO", "프로야구", "야구", "선수", "구단",
+            "경기", "선발", "엔트리", "트레이드", "부상", "홈런", "순위",
+        ),
+        event_terms=(
+            "경기", "결과", "승리", "패배", "순위", "일정", "선발", "엔트리", "부상", "트레이드",
+            "홈런", "기록", "규정", "중단", "재개",
+        ),
     )
 
 
@@ -31,7 +37,7 @@ def _item() -> NewsItem:
     return NewsItem(
         evidence_id="kbo-hall-of-fame-committee-launch",
         topic_id="kbo_hanwha",
-        query="한화 야구",
+        query="KBO",
         title=title,
         summary=truncated_live_lead,
         original_url="https://example.com/kbo-hall-of-fame-committee-launch",
