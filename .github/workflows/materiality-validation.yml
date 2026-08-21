@@ -1,0 +1,67 @@
+name: Briefing materiality isolated validation
+
+on:
+  push:
+    branches:
+      - fix/briefing-materiality-gate
+
+permissions:
+  contents: write
+
+concurrency:
+  group: briefing-materiality-validation
+  cancel-in-progress: true
+
+jobs:
+  validate-and-finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout validation branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/briefing-materiality-gate
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+          cache: pip
+
+      - name: Apply isolated patch
+        run: python scripts/apply_briefing_materiality_gate.py
+
+      - name: Compile source
+        run: python -m compileall -q insight_desk scripts tests
+
+      - name: Run unit and contract tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build fixture site
+        run: python scripts/build_fixture_site.py
+
+      - name: Validate fixture artifact
+        run: python scripts/validate_artifact.py build/fixture-site
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+
+      - name: Run push Worker tests
+        working-directory: push-worker
+        run: npm ci && npm test
+
+      - name: Finalize clean validation tree
+        run: |
+          rm -rf push-worker/node_modules
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -- .github/workflows/materiality-validation.yml scripts/apply_briefing_materiality_gate.py
+          git add -- insight_desk/pipeline/editorial.py insight_desk/pipeline/selection.py tests/test_briefing_materiality.py
+          git diff --cached --check
+          git status --short
+          git commit -m "Enforce daily briefing materiality gate"
+          git push origin HEAD:fix/briefing-materiality-gate
