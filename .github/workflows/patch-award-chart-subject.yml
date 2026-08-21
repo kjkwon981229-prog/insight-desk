@@ -1,0 +1,60 @@
+name: Patch Award Chart Subject
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'fix/award-chart-subject-binding'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/award-chart-subject-binding
+      - name: Patch canonical and display subject boundaries
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          semantics = Path('insight_desk/pipeline/semantics.py')
+          text = semantics.read_text(encoding='utf-8')
+          anchor = 'def _event_subject(\n'
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one _event_subject anchor, found {text.count(anchor)}')
+          helper = '''_AWARD_WORK_LEAD_RE = re.compile(\n    r"(?P<artist>[A-Za-z0-9가-힣·&'’\\- ]{2,40}?)의\\s+"\n    r"(?P<label>신곡|곡|싱글|앨범|데뷔곡)\\s+"\n    r"[\\\"'“‘]?(?P<work>[A-Za-z0-9가-힣·&'’\\- ]{1,40}?)"\n    r"(?:\\([^)]{1,40}\\))?[\\\"'”’]?(?:이|가)\\s+"\n)\n\n\ndef _award_work_subject_from_lead(lead: str) -> str:\n    """Bind artist and work from an explicit Korean chart-result lead."""\n\n    match = _AWARD_WORK_LEAD_RE.search(normalize_text(lead))\n    if match is None:\n        return ""\n    artist = re.sub(r"^(?:그룹|가수|아이돌)\\s+", "", match.group("artist")).strip(" ,·-—")\n    label = match.group("label").strip()\n    work = match.group("work").strip(" ,·-—\\\"'“”‘’")\n    if not artist or not work:\n        return ""\n    return _clean_event_subject("AWARD_CHART", f"{artist} {label} {work}")\n\n\n'''
+          text = text.replace(anchor, helper + anchor, 1)
+          old = '''    if event_type == "AWARD_CHART":\n        english_marker = re.search(\n'''
+          new = '''    if event_type == "AWARD_CHART":\n        lead_subject = _award_work_subject_from_lead(lead)\n        if lead_subject:\n            return lead_subject\n        english_marker = re.search(\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one AWARD_CHART subject branch, found {text.count(old)}')
+          semantics.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          synthesis = Path('insight_desk/pipeline/synthesis.py')
+          text = synthesis.read_text(encoding='utf-8')
+          old = '''    clean = _clean_headline(title)\n    marker = re.search(r"\\s+(?:국내외\\s+)?(?:음악\\s+)?차트\\b", clean)\n    if not marker:\n        return subject\n'''
+          new = '''    clean = _clean_headline(title)\n    marker = re.search(r"\\s+(?:국내외\\s+)?(?:음악\\s+)?차트\\b", clean)\n    if not marker:\n        return subject\n    # A canonical artist+work subject extracted from the article lead is\n    # stronger than extending the title prefix through a chart/platform token.\n    if subject and any(support in subject for support in _AWARD_SUPPORT_MARKERS):\n        prefix = clean[: marker.start()].strip(" ,·-—")\n        subject_key = re.sub(r"[^0-9A-Za-z가-힣]", "", subject).casefold()\n        prefix_key = re.sub(r"[^0-9A-Za-z가-힣]", "", prefix).casefold()\n        if subject_key and prefix_key.startswith(subject_key):\n            return subject\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one synthesis award marker block, found {text.count(old)}')
+          synthesis.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Validate exact live regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python -m unittest tests.test_live_residual_regressions.LiveResidualRegressionTests.test_bigbang_song_chart_platform_is_not_absorbed_into_subject -v
+      - name: Commit source patch only
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- insight_desk/pipeline/semantics.py insight_desk/pipeline/synthesis.py
+          git diff --cached --quiet && exit 0
+          git commit -m "Bind chart subjects before platform context"
+          git push origin HEAD:fix/award-chart-subject-binding
