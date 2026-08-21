@@ -105,6 +105,55 @@ class BriefingMaterialityTests(unittest.TestCase):
         self.assertNotIn("LOW_BRIEFING_MATERIALITY", kept.reasons)
         self.assertTrue(kept.event.passed)
 
+    def test_low_information_relation_and_result_context_do_not_bypass_materiality(self) -> None:
+        rejected = (
+            (
+                "kpop-promo-selection",
+                "kpop",
+                "K-POP",
+                "아이브, 신곡 발매 기념 챌린지 파트너 선정",
+                "아이브가 신곡 발매를 기념한 챌린지 파트너를 선정했다.",
+            ),
+            (
+                "kpop-chart-interview",
+                "kpop",
+                "K-POP",
+                "아이브, 빌보드 1위 기념 인터뷰 공개",
+                "아이브가 빌보드 1위를 기념해 인터뷰 영상을 공개했다.",
+            ),
+            (
+                "kbo-win-interview",
+                "kbo_hanwha",
+                "한화 이글스",
+                "한화 이글스, 승리 기념 인터뷰 공개",
+                "한화 이글스가 승리를 기념해 선수 인터뷰 영상을 공개했다.",
+            ),
+        )
+        for key, topic_id, query, title, summary in rejected:
+            assessment = self.assessment(key, topic_id, query, title, summary)
+            self.assertFalse(assessment.qualified, (title, assessment.event.event_type, assessment.reasons))
+            self.assertIn("LOW_BRIEFING_MATERIALITY", assessment.reasons, title)
+
+        material_relation = self.assessment(
+            "ai-selection-material-control",
+            "ai_tech",
+            "NVIDIA",
+            "코팅솔루션포유, NVIDIA 협업 프로그램 선정",
+            "코팅솔루션포유가 NVIDIA 협업 프로그램 참여사로 선정됐다.",
+        )
+        self.assertNotIn("LOW_BRIEFING_MATERIALITY", material_relation.reasons)
+        self.assertTrue(material_relation.event.passed)
+
+        material_release = self.assessment(
+            "kpop-release-secondary-interview",
+            "kpop",
+            "K-POP",
+            "아이브 새 싱글 발매, 제작 인터뷰도 공개",
+            "아이브가 새 싱글을 발매하고 제작 인터뷰도 공개했다.",
+        )
+        self.assertNotIn("LOW_BRIEFING_MATERIALITY", material_release.reasons)
+        self.assertTrue(material_release.event.passed)
+
     def test_intentional_materiality_rejection_is_not_false_empty_recall_risk(self) -> None:
         story = item("low-materiality-only", "kpop", "K-POP", "아이브, 새 앨범 콘셉트 포토 공개", "아이브가 8월 21일 새 앨범 콘셉트 포토를 공식 SNS에 공개했다.")
         result = select_clusters(
