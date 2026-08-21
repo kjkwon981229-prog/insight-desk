@@ -1,0 +1,29 @@
+name: Inspect Final Closure Run
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  inspect:
+    if: github.head_ref == 'verify/inspect-final-closure-run'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Inspect one-shot production closure run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=ea9a6fab3afaab0ab6b064f83d92a9a4efab3589&per_page=20"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$api" > /tmp/runs.json
+          jq -c '[.workflow_runs[] | {id,name,event,status,conclusion,head_sha,created_at,updated_at,html_url}]' /tmp/runs.json
+          count="$(jq '[.workflow_runs[] | select(.name == "Final Production Closure Evidence")] | length' /tmp/runs.json)"
+          test "$count" -ge 1
+          jq -e '.workflow_runs[] | select(.name == "Final Production Closure Evidence")' /tmp/runs.json >/dev/null
