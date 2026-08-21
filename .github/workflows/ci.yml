@@ -1,76 +1,41 @@
 name: Insight Desk CI
 
 on:
+  push:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: insight-desk-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  patch:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout candidate branch
+      - name: Checkout
         uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
-          ref: fix/final-editorial-notification-closure
-      - name: Apply exact production-code replacements
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          synthesis = Path("insight_desk/pipeline/synthesis.py")
-          text = synthesis.read_text(encoding="utf-8")
-          old = "        previous_subject = subject or previous_subject\n"
-          new = "        previous_subject = subject\n"
-          if text.count(old) != 1:
-              raise SystemExit(f"synthesis replacement count={text.count(old)}")
-          synthesis.write_text(text.replace(old, new, 1), encoding="utf-8")
-
-          editorial = Path("insight_desk/pipeline/editorial.py")
-          text = editorial.read_text(encoding="utf-8")
-
-          old_relation = '''    # Reuse the already-locked semantic relation contract. Personnel changes,\n    # partner/program selections, affiliation changes, and other complete\n    # actor-action-object relations are material regardless of their broad\n    # event family.\n    if typed_event_relation(title_text) is not None:\n        return True\n\n'''
-          if text.count(old_relation) != 1:
-              raise SystemExit(f"relation-block replacement count={text.count(old_relation)}")
-          text = text.replace(old_relation, "", 1)
-
-          anchor = '''def _briefing_materiality_passes(title_text: str, topic: Topic, event_type: str) -> bool:\n'''
-          helper = '''_BRIEFING_PRIMARY_EVENT_MARKERS = (\n    "출시", "발매", "컴백", "데뷔", "공연", "콘서트", "월드투어", "수상", "1위", "차트",\n    "승리", "패배", "우승", "홈런", "기록", "규제", "시행", "투자", "인수", "계약",\n    "공급", "수주", "선발", "합격", "경쟁률",\n)\n\n\ndef _low_information_is_secondary(title_text: str) -> bool:\n    """Allow filler markers only after a completed material primary clause."""\n\n    normalized = normalize_text(title_text)\n    positions = sorted(\n        {\n            position\n            for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS\n            for position in (normalized.find(marker),)\n            if position >= 0\n        }\n    )\n    if not positions:\n        return False\n    for position in positions:\n        prefix = normalized[:position]\n        boundary = max(prefix.rfind(separator) for separator in (",", "，", ";", "；"))\n        if boundary < 0:\n            return False\n        primary_clause = prefix[:boundary].strip()\n        if not primary_clause:\n            return False\n        if typed_event_relation(primary_clause) is None and not any(\n            _contains(primary_clause, marker) for marker in _BRIEFING_PRIMARY_EVENT_MARKERS\n        ):\n            return False\n    return True\n\n\n''' + anchor
-          if text.count(anchor) != 1:
-              raise SystemExit(f"materiality-anchor replacement count={text.count(anchor)}")
-          text = text.replace(anchor, helper, 1)
-
-          old_setup = '''    family = _topic_family(topic)\n    normalized = normalize_text(title_text)\n    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)\n    background_material_context = bool(\n        low_information\n        and re.search(\n            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|발표|공개|규제|시행|경기|선발)"\n            r".{0,12}(?:기념|앞두고|맞아|맞이해)",\n            normalized,\n        )\n    )\n    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES\n'''
-          new_setup = '''    family = _topic_family(topic)\n    normalized = normalize_text(title_text)\n    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)\n    low_information_secondary = bool(low_information and _low_information_is_secondary(title_text))\n    background_material_context = bool(\n        low_information\n        and not low_information_secondary\n        and re.search(\n            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|1위|차트|승리|패배|우승|홈런|기록|발표|공개|규제|시행|경기|선발)"\n            r".{0,12}(?:기념|앞두고|맞아|맞이해)",\n            normalized,\n        )\n    )\n    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES\n\n    # A typed relation proves that an event happened, not that filler deserves\n    # a briefing slot. Preserve material relations only when low-information\n    # content is absent or clearly follows a separate material primary clause.\n    if typed_event_relation(title_text) is not None and (not low_information or low_information_secondary):\n        return True\n'''
-          if text.count(old_setup) != 1:
-              raise SystemExit(f"materiality-setup replacement count={text.count(old_setup)}")
-          text = text.replace(old_setup, new_setup, 1)
-
-          old_kpop = '''        if background_material_context:\n            return False\n        if material_event:\n            return True\n        if low_information:\n            return False\n'''
-          new_kpop = '''        if background_material_context:\n            return False\n        if low_information and not low_information_secondary:\n            return False\n        if material_event:\n            return True\n'''
-          if text.count(old_kpop) != 1:
-              raise SystemExit(f"kpop-order replacement count={text.count(old_kpop)}")
-          text = text.replace(old_kpop, new_kpop, 1)
-
-          old_kbo = '''        if background_material_context:\n            return False\n        if low_information:\n            return material\n        if strong_event_family:\n            return True\n'''
-          new_kbo = '''        if background_material_context:\n            return False\n        if low_information and not low_information_secondary:\n            return False\n        if strong_event_family:\n            return True\n'''
-          if text.count(old_kbo) != 1:
-              raise SystemExit(f"kbo-order replacement count={text.count(old_kbo)}")
-          text = text.replace(old_kbo, new_kbo, 1)
-
-          old_tail = '''    if low_information:\n        return False\n    return strong_event_family or event_type in _SOFT_BRIEFING_EVENT_TYPES\n'''
-          new_tail = '''    if low_information and not low_information_secondary:\n        return False\n    return strong_event_family or event_type in _SOFT_BRIEFING_EVENT_TYPES\n'''
-          if text.count(old_tail) != 1:
-              raise SystemExit(f"materiality-tail replacement count={text.count(old_tail)}")
-          editorial.write_text(text, encoding="utf-8")
-          PY
-          git diff --check
-          git config user.name "Insight Desk Validation"
-          git config user.email "actions@users.noreply.github.com"
-          git add -- insight_desk/pipeline/synthesis.py insight_desk/pipeline/editorial.py
-          git diff --cached --check
-          git commit -m "Close residual materiality and summary guard gaps"
-          git push origin HEAD:fix/final-editorial-notification-closure
+          python-version: "3.12.10"
+          cache: pip
+      - name: Compile source
+        run: python -m compileall -q insight_desk scripts tests
+      - name: Run unit and contract tests
+        run: python -m unittest discover -s tests -v
+      - name: Build fixture site
+        run: python scripts/build_fixture_site.py
+      - name: Validate fixture artifact
+        run: python scripts/validate_artifact.py build/fixture-site
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+      - name: Run push Worker tests
+        working-directory: push-worker
+        run: npm ci && npm test
