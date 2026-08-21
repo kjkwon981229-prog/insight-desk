@@ -17,8 +17,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: fix/final-editorial-notification-closure
       - name: Apply bounded closure patch and self-restore
-        if: github.event_name == 'push' && github.ref == 'refs/heads/fix/final-editorial-notification-closure'
+        if: github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -48,7 +50,7 @@ jobs:
           text = text.replace(anchor, helper, 1)
 
           old_setup = '''    family = _topic_family(topic)\n    normalized = normalize_text(title_text)\n    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)\n    background_material_context = bool(\n        low_information\n        and re.search(\n            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|발표|공개|규제|시행|경기|선발)"\n            r".{0,12}(?:기념|앞두고|맞아|맞이해)",\n            normalized,\n        )\n    )\n    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES\n'''
-          new_setup = '''    family = _topic_family(topic)\n    normalized = normalize_text(title_text)\n    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)\n    low_information_secondary = bool(low_information and _low_information_is_secondary(title_text))\n    background_material_context = bool(\n        low_information\n        and not low_information_secondary\n        and re.search(\n            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|1위|차트|승리|패배|우승|홈런|기록|발표|공개|규제|시행|경기|선발)"\n            r".{0,12}(?:기념|앞두고|맞아|맞이해)",\n            normalized,\n        )\n    )\n    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES\n\n    # A typed relation proves that an event happened, not that filler deserves\n    # a briefing slot.  Preserve material relations only when low-information\n    # content is absent or clearly follows a separate material primary clause.\n    if typed_event_relation(title_text) is not None and (not low_information or low_information_secondary):\n        return True\n'''
+          new_setup = '''    family = _topic_family(topic)\n    normalized = normalize_text(title_text)\n    low_information = any(_contains(title_text, marker) for marker in _COMMON_LOW_INFORMATION_CONTENT_MARKERS)\n    low_information_secondary = bool(low_information and _low_information_is_secondary(title_text))\n    background_material_context = bool(\n        low_information\n        and not low_information_secondary\n        and re.search(\n            r"(?:출시|발매|컴백|데뷔|공연|콘서트|수상|1위|차트|승리|패배|우승|홈런|기록|발표|공개|규제|시행|경기|선발)"\n            r".{0,12}(?:기념|앞두고|맞아|맞이해)",\n            normalized,\n        )\n    )\n    strong_event_family = event_type not in _SOFT_BRIEFING_EVENT_TYPES\n\n    # A typed relation proves that an event happened, not that filler deserves\n    # a briefing slot. Preserve material relations only when low-information\n    # content is absent or clearly follows a separate material primary clause.\n    if typed_event_relation(title_text) is not None and (not low_information or low_information_secondary):\n        return True\n'''
           if text.count(old_setup) != 1:
               raise SystemExit(f"materiality-setup replacement count={text.count(old_setup)}")
           text = text.replace(old_setup, new_setup, 1)
@@ -76,7 +78,6 @@ jobs:
           ci.write_text('''name: Insight Desk CI\n\non:\n  push:\n  pull_request:\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: insight-desk-ci-${{ github.ref }}\n  cancel-in-progress: true\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v6\n      - name: Set up Python\n        uses: actions/setup-python@v6\n        with:\n          python-version: "3.12.10"\n          cache: pip\n      - name: Compile source\n        run: python -m compileall -q insight_desk scripts tests\n      - name: Run unit and contract tests\n        run: python -m unittest discover -s tests -v\n      - name: Build fixture site\n        run: python scripts/build_fixture_site.py\n      - name: Validate fixture artifact\n        run: python scripts/validate_artifact.py build/fixture-site\n      - name: Set up Node\n        uses: actions/setup-node@v4\n        with:\n          node-version: "22"\n          cache: npm\n          cache-dependency-path: push-worker/package-lock.json\n      - name: Run push Worker tests\n        working-directory: push-worker\n        run: npm ci && npm test\n''', encoding="utf-8")
           PY
           git diff --check
-          git diff --exit-code -- .github/workflows/ci.yml >/dev/null || true
           git config user.name "Insight Desk Validation"
           git config user.email "actions@users.noreply.github.com"
           git add -- insight_desk/pipeline/synthesis.py insight_desk/pipeline/editorial.py .github/workflows/ci.yml
