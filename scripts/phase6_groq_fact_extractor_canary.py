@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -84,7 +83,10 @@ def require_fact(result, case_id: str) -> None:
 def require_temporal(result, case_id: str, expected: TemporalState) -> None:
     require_fact(result, case_id)
     states = {fact.temporal_state for fact in result.facts}
-    require(expected in states, f"{case_id}: expected temporal_state={expected.value}, got={sorted(str(x) for x in states)}")
+    require(
+        expected in states,
+        f"{case_id}: expected temporal_state={expected.value}, got={sorted(str(x) for x in states)}",
+    )
 
 
 def require_literals(result, case_id: str, *literals: str) -> None:
@@ -132,8 +134,8 @@ def check_missing_lineup(result) -> None:
     text = flattened(result)
     require("한화 이글스와과" not in text, f"{case_id}: malformed Korean regression returned")
     require("두산 베어스의가" not in text, f"{case_id}: malformed Korean regression returned")
-    # The source contains no starter names. Any named participants emitted by the adapter are
-    # already required to be exact source literals, so the canary only permits source-bound names.
+    # The source contains no starter names. Source-literal subject/object/participant gates prevent
+    # the extractor from introducing an unseen starter name through those semantic slots.
 
 
 def check_explicit_lineup(result) -> None:
@@ -142,20 +144,29 @@ def check_explicit_lineup(result) -> None:
     require_literals(result, case_id, "한화", "두산", "왕옌청", "곽빈")
     text = flattened(result)
     require("선발" in text and "예고" in text, f"{case_id}: explicit lineup action was not preserved")
+    subjects = {fact.subject for fact in result.facts}
+    require("한화" in subjects, f"{case_id}: Hanwha subject absorbed location/context: {sorted(subjects)}")
+    require("두산" in subjects, f"{case_id}: Doosan subject absorbed location/context: {sorted(subjects)}")
 
 
 def check_groundbreaking_future(result) -> None:
     case_id = "run97-groundbreaking-future"
     require_temporal(result, case_id, TemporalState.PLANNED)
     require_literals(result, case_id, "SK하이닉스", "미국 인디애나", "HBM 패키징 공장", "27일")
-    require(TemporalState.COMPLETED not in {fact.temporal_state for fact in result.facts}, f"{case_id}: future event shifted to completed")
+    require(
+        TemporalState.COMPLETED not in {fact.temporal_state for fact in result.facts},
+        f"{case_id}: future event shifted to completed",
+    )
 
 
 def check_departure_announcement(result) -> None:
     case_id = "run97-departure-announcement"
     require_temporal(result, case_id, TemporalState.ANNOUNCED_PROSPECTIVE)
     require_literals(result, case_id, "트와이스 채영", "JYP")
-    require(TemporalState.COMPLETED not in {fact.temporal_state for fact in result.facts}, f"{case_id}: announced departure shifted to completed")
+    require(
+        TemporalState.COMPLETED not in {fact.temporal_state for fact in result.facts},
+        f"{case_id}: announced departure shifted to completed",
+    )
 
 
 CASES: tuple[tuple[str, dict, str, Callable], ...] = (
