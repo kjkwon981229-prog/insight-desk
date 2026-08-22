@@ -1,0 +1,33 @@
+name: Phase 6 Fact Material Tool Audit
+
+on:
+  pull_request:
+    branches:
+      - phase4-core-contracts
+    paths:
+      - 'scripts/phase6_kss_fact_scaffold_canary.py'
+      - '.github/workflows/phase6-fact-material-tool-audit.yml'
+      - 'config/phase6_fact_material_tool_candidates_v1.json'
+      - 'insight_desk/semantic/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kss-kiwi-scaffold:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+      - name: Install audited local-only helpers
+        run: |
+          python -m pip install --disable-pip-version-check '.[semantic-local]' 'kss==6.0.6'
+      - name: Run bounded diagnostic
+        env:
+          PYTHONPATH: .
+        run: python scripts/phase6_kss_fact_scaffold_canary.py
