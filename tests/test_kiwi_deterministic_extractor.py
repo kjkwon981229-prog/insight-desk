@@ -14,6 +14,8 @@ from insight_desk.semantic.pipeline import SemanticPipeline
 
 HAS_KIWI = importlib.util.find_spec("kiwipiepy") is not None
 NOW = datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc)
+_EXTRACTOR: KiwiDeterministicFactExtractor | None = None
+_PIPELINE = SemanticPipeline()
 
 
 def raw_article(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str = "x") -> RawArticle:
@@ -33,11 +35,18 @@ def raw_article(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str
     )
 
 
+def extractor() -> KiwiDeterministicFactExtractor:
+    global _EXTRACTOR
+    if _EXTRACTOR is None:
+        _EXTRACTOR = KiwiDeterministicFactExtractor()
+    return _EXTRACTOR
+
+
 def extract(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str = "x"):
-    return SemanticPipeline().extract_article(
+    return _PIPELINE.extract_article(
         raw_article(title, body, topic_id=topic_id, suffix=suffix),
         topic_id=topic_id,
-        extractor=KiwiDeterministicFactExtractor(),
+        extractor=extractor(),
     )
 
 
