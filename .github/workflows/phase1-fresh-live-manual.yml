@@ -19,11 +19,11 @@ jobs:
       - name: Checkout exact Phase 1 candidate
         uses: actions/checkout@v6
         with:
-          ref: 03be40abf44e40678656124409cb28717dea7363
+          ref: 8ff9e2bdbf1c3d2264551d26cce114d180310871
           fetch-depth: 0
       - name: Require exact candidate SHA
         shell: bash
-        run: test "$(git rev-parse HEAD)" = "03be40abf44e40678656124409cb28717dea7363"
+        run: test "$(git rev-parse HEAD)" = "8ff9e2bdbf1c3d2264551d26cce114d180310871"
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
