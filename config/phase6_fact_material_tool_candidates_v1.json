@@ -14,10 +14,16 @@
       "version_target": "6.0.6",
       "license": "BSD-3-Clause",
       "candidate_role": "korean_sentence_segmentation_only",
-      "status": "RUNTIME_CANARY",
+      "status": "REJECT",
       "network_api_required": false,
       "account_required": false,
-      "paid_path": false
+      "paid_path": false,
+      "canary": {
+        "workflow_run_id": 32600125169,
+        "job_id": 97097030067,
+        "result": "REJECT"
+      },
+      "reason": "Redundant with Kiwi split_into_sents exact offsets and introduced a very large transitive dependency surface plus test namespace/CI regression."
     },
     {
       "tool": "esupar + KoichiYasuoka/deberta-base-korean-upos",
@@ -25,9 +31,10 @@
       "library_license": "MIT",
       "model_declared_license": "Apache-2.0",
       "base_model_declared_license": "Apache-2.0",
+      "training_data_license_observed": "CC-BY-SA-4.0 for UD Korean GSD/Kaist",
       "candidate_role": "dependency_relation_candidate_only",
-      "status": "HOLD_UNTIL_KSS_KIWI_GAP_IS_PROVEN",
-      "note": "Large model/dependency surface; do not download or promote unless lighter scaffold is measurably insufficient. No final fact/event authority."
+      "status": "REJECT_FOR_CURRENT_PRODUCTION",
+      "reason": "Model/data derivative-license boundary is not clean enough for the long-lived production-core acceptance rule; model is also large and no longer needed after Kiwi sentence+offset scaffold proved sufficient for a deterministic extractor canary."
     },
     {
       "tool": "Snorkel",
@@ -44,5 +51,10 @@
       "status": "DEFER",
       "reason": "No valid material-event training labels exist yet; selection negatives must not be repurposed as material-event negatives."
     }
+  ],
+  "runtime_tool_decision": "NO_NEW_RUNTIME_DEPENDENCY",
+  "reuse": [
+    "kiwipiepy==0.23.2",
+    "RapidFuzz==3.14.5"
   ]
 }
