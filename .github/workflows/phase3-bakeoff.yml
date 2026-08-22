@@ -8,6 +8,12 @@ on:
     paths:
       - "benchmarks/**"
       - ".github/workflows/phase3-bakeoff.yml"
+  pull_request:
+    branches:
+      - phase3-bakeoff
+    paths:
+      - "benchmarks/**"
+      - ".github/workflows/phase3-bakeoff.yml"
   workflow_dispatch:
 
 permissions:
