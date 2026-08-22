@@ -1,4 +1,4 @@
-name: Phase 3 Gemini Canary
+name: Phase 3 Gemini Full Bake-off
 
 on:
   pull_request:
@@ -11,9 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  canary:
+  gemini-full:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
@@ -29,15 +29,15 @@ jobs:
           if not os.environ.get('GEMINI_API_KEY','').strip():
               raise SystemExit(2)
           PY
-      - name: Run one structured-output case and expose provider error
+      - name: Run all 85 cases with Gemini 3.7 Flash Free Tier
         run: |
           set +e
-          python benchmarks/bakeoff/run_provider.py gemini --limit 1 --output /tmp/gemini-canary.jsonl --errors /tmp/gemini-canary-errors.json
+          python benchmarks/bakeoff/run_provider.py gemini --output /tmp/gemini.jsonl --errors /tmp/gemini-errors.json
           rc=$?
-          if [ -s /tmp/gemini-canary-errors.json ]; then
-            cat /tmp/gemini-canary-errors.json
+          if [ -s /tmp/gemini-errors.json ]; then
+            cat /tmp/gemini-errors.json
           fi
-          if [ -s /tmp/gemini-canary.jsonl ]; then
-            python benchmarks/bakeoff/score.py /tmp/gemini-canary.jsonl --summary-only
+          if [ -s /tmp/gemini.jsonl ]; then
+            python benchmarks/bakeoff/score.py /tmp/gemini.jsonl --output /tmp/gemini-score.json --summary-only
           fi
           exit "$rc"
