@@ -1,16 +1,18 @@
 # Insight Desk — UI Re-Foundation
 
-## Pink Editorial Intelligence
+## Pink Editorial Intelligence / Soft Geometry V3
 
-Status: SOFT GEOMETRY V3 BUILT — VISUAL QA PENDING
+Status: `UI_DESIGN_FREEZE_V3`
 Branch: `ui-refoundation-pink-v2`
 Figma working file: `https://www.figma.com/design/hThXgfkZHUgI8BzOcFzqlU`
 
-This document is the design/source ledger for the UI redesign before renderer implementation. It does not change semantic engine logic.
+This document is the authoritative design/source ledger for the Insight Desk UI redesign.
+The visual direction is now frozen by user approval.
+Further design work must refine, implement, or regression-test this direction rather than restart visual exploration.
 
 ## 1. Product character
 
-Insight Desk must feel like a refined personal intelligence briefing rather than a generic news app, AI dashboard, BI tool, or entertainment feed.
+Insight Desk must feel like a refined personal intelligence briefing rather than a generic news app, AI dashboard, BI tool, productivity app, or entertainment feed.
 
 Target character:
 - editorial intelligence
@@ -41,54 +43,69 @@ Primary uses:
 4. brand recognition
 5. interaction focus
 
-Pink should not flood every card. Warm neutral and charcoal remain the default field so pink retains information value.
+Pink must not flood every surface. Warm neutral and charcoal remain the default field so pink retains information value.
 
 ## 3. Design grammar
 
 Primary blend:
-- Editorial Layout: information hierarchy and sequencing
-- International Typographic Style: disciplined grid and asymmetric balance
-- Monochrome UI: hierarchy through tone, line, weight and spacing
-- Layer / Page System: article → evidence → watch-next depth
+- Editorial Layout — information hierarchy and sequencing
+- International Typographic Style — disciplined grid and asymmetric balance
+- Monochrome UI — hierarchy through tone, line, weight and spacing
+- Layer / Page System — event → evidence → watch-next depth
 
 Secondary borrowing only:
-- Japandi: warmth and calm spacing
-- Data-dense enterprise UI: evidence/detail views only
-- Corporate SaaS: state clarity and controls only
+- Japandi — warmth and calm spacing
+- Data-dense enterprise UI — evidence/detail views only
+- Corporate SaaS — state clarity and controls only
 
-## 4. Architecture direction
+## 4. Product architecture
 
-The original A/A2 direction was judged too close to the preserved UI structure. Radical V2 introduced distinct modes:
+The product uses multiple view grammars rather than forcing one layout everywhere.
 
-### D — Daily Edition
-Home reads as a daily edited edition, not a card feed.
+### D3 — Daily Edition / Soft Editorial
+Primary home experience.
+- daily edited edition rather than generic card feed
+- one dominant event can lead the page
+- cover story uses a large soft feature surface
+- secondary stories remain editorially aligned
+- publication hierarchy remains visible despite softened geometry
 
 ### E — Signal Ledger
-Event continuity and state changes are shown across time.
+Event continuity/history experience.
+- article feed is not the core mental model
+- same event can persist across multiple state changes
+- timeline expresses continuity across yesterday / today / future
 
-### F — Split Intelligence Desk
-Desktop evidence/detail view uses master-detail structure.
+### F3 — Split Desk / Soft Evidence
+Desktop event-detail/evidence experience.
+- master-detail structure
+- event list on the left
+- selected event facts, evidence, confidence, why-it-matters and watch-next on the right
+- evidence units use soft rounded surfaces without becoming enterprise BI cards
 
-### G — Focus Stack
-Mobile prioritizes one event at a time.
+### G3 — Mobile Focus / 390
+Mobile focused-consumption experience.
+- one event at a time
+- pink can occupy a larger background field
+- one dominant rounded event surface contains the current judgment unit
+- state / evidence / watch-next appear as nested soft blocks
 
-Current product direction is multi-mode rather than forcing one layout everywhere:
-- Home → D
+Mapping:
+- Home → D3
 - Event continuity/history → E
-- Evidence/detail → F
-- Mobile focused consumption → G
+- Evidence/detail → F3
+- Mobile focused consumption → G3
 
-## 5. Soft Geometry V3 — latest user direction
+## 5. Soft Geometry V3 — frozen shape language
 
-The user explicitly requested a softer, chunkier silhouette while NOT asking to copy the supplied reference screen.
-
-Only the rounded/blocky feel is borrowed. The reference app's layout, colors, typography, component arrangement, productivity-app character and interaction model are not adopted.
+The supplied reference image was used only to clarify the desired rounded/blocky feel.
+Its layout, color system, typography, productivity-app structure and interaction model are NOT design references for Insight Desk.
 
 ### Core rule
 
 Straight lines organize the page. Rounded surfaces contain the units the user actually judges.
 
-This prevents the product from becoming a generic all-cards mobile app.
+This keeps the product editorial while making it visually softer and more approachable.
 
 ### Radius hierarchy
 
@@ -98,7 +115,7 @@ This prevents the product from becoming a generic all-cards mobile app.
 - `36px` — featured event / large evidence panel
 - `44px` — mobile focus / dominant single-event surface
 
-Where supported in Figma, moderate corner smoothing is applied to create a squircle-like, blunt silhouette rather than a simple geometric rounded rectangle.
+Where supported, moderate corner smoothing should create a squircle-like blunt silhouette rather than a simple geometric rounded rectangle.
 
 ### What remains straight
 
@@ -120,44 +137,16 @@ Where supported in Figma, moderate corner smoothing is applied to create a squir
 
 ### Avoid
 
-- rounding every single container
-- excessive pills
+- rounding every container indiscriminately
+- excessive pill UI
 - floating-card dashboard look
 - generic iOS clone aesthetics
 - glassmorphism
-- gradient-heavy AI UI
+- generic AI gradients
 - large soft shadows
+- productivity-app visual language
 
-## 6. Soft Geometry V3 screens created
-
-Figma page: `Soft Geometry System — V3`
-
-Created screens:
-
-### D3 — Daily Edition / Soft Editorial
-- daily-edition architecture retained
-- cover story becomes a large soft feature surface
-- editor note becomes a separate rounded editorial block
-- secondary stories become chunky but still editorially aligned
-- bottom-line and next-edition areas retain strong publication hierarchy
-
-### F3 — Split Desk / Soft Evidence
-- dark master rail retained
-- individual event rows become soft rounded selection units
-- right-side metrics use compact rounded blocks
-- why-it-matters and evidence become larger soft evidence surfaces
-- watch-next becomes a rounded charcoal panel with pink edge cue
-
-### G3 — Mobile Focus / 390
-- pink remains the dominant outer field
-- one large 34px-radius event card contains the current judgment unit
-- state / evidence / watch-next use smaller nested soft blocks
-- the design keeps a single-event mobile reading model instead of reproducing the supplied reference layout
-
-### Shape grammar board
-A separate page section documents the 14/20/28/36/44 hierarchy and the rule that soft surfaces correspond to judgment units.
-
-## 7. Typography
+## 6. Typography
 
 Typography continues to carry more hierarchy than decoration.
 
@@ -167,10 +156,11 @@ Rules:
 - Korean body text optimized for sustained reading
 - stable numeric values
 - unnecessary English avoided in product content
+- English used only where it functions as a concise system/brand label
 
-## 8. Responsive target
+## 7. Responsive targets
 
-Required eventual coverage:
+Required implementation coverage:
 - mobile 390px
 - mobile 430px
 - tablet portrait
@@ -178,9 +168,9 @@ Required eventual coverage:
 
 Mobile is not a shrunken desktop.
 
-## 9. Required product states
+## 8. Required product states
 
-The final system must support:
+Implementation/regression must support:
 - normal briefing
 - one important story only
 - 8–10 story heavy day
@@ -194,36 +184,39 @@ The final system must support:
 - dark mode
 - push permission state
 
-## 10. Current design gate
+## 9. Freeze decision
 
-A candidate cannot be frozen unless:
-- pink remains recognizably Insight Desk
-- the softened geometry feels intentional rather than generic
-- information hierarchy is clear within 2 seconds
-- one dominant story can lead the page
-- heavy days remain scannable
-- evidence expands without redesigning the screen
-- mobile and desktop both feel purpose-built
-- dark mode remains coherent
-- ordinary HTML/CSS/JS can implement the shape grammar
-
-## 11. Visual QA status
-
-Soft Geometry V3 screen construction completed successfully in Figma.
-
-Immediate screenshot inspection could not be completed because the connected Figma Starter account reached its MCP call limit. The project will not use a paid upgrade to bypass this limit.
+User approved Soft Geometry V3 as the final UI direction on 2026-08-23.
 
 Therefore:
-- V3 BUILT: YES
-- VISUAL QA: PENDING
-- DESIGN FREEZE: NO
-- PRODUCTION CSS CHANGED: NO
+- `UI_DESIGN_FREEZE_V3 = YES`
+- Pink retained = YES
+- Soft Geometry shape grammar frozen = YES
+- Multi-mode architecture frozen = YES
+- Radical visual re-exploration = STOP
+- Production CSS changed at freeze moment = NO
 
-The next Figma-capable session must begin with screenshots of D3, F3 and G3 and correct any spacing, radius, density or pink-balance defects before further design freeze work.
+The previous A/A2 visual direction is no longer the primary product direction.
+D3 / E / F3 / G3 form the frozen UI architecture.
 
-## 12. Current implementation policy
+## 10. Remaining work after design freeze
 
-Do not edit production `assets/css/style.css` yet.
-Figma remains the visual working source.
-This repository document remains the decision/source ledger.
-Only a visually audited winner may be translated into production CSS and renderer changes.
+The remaining UI work is implementation and QA, not open-ended design exploration:
+
+1. Translate the frozen V3 shape tokens and palette into implementation tokens.
+2. Build isolated HTML/CSS prototypes for D3/F3/G3 and responsive states.
+3. Implement 430px mobile and tablet portrait adaptations using the frozen grammar.
+4. Implement evidence expand/collapse and event-detail transitions.
+5. Implement push permission / notification state.
+6. Verify accessibility, contrast, touch targets, safe-area spacing and long Korean text behavior.
+7. Compare browser render against the frozen Figma reference when Figma MCP access is available.
+8. Run visual regression and PWA/Push compatibility checks.
+9. Only after implementation parity passes, integrate into production renderer.
+
+## 11. Implementation boundary
+
+Do not restart design research unless a concrete implementation failure proves the frozen direction impossible or unsafe.
+Do not edit production styling by intuition.
+Implementation must derive from this frozen design contract and the Figma V3 screens.
+
+Semantic engine logic remains outside this design freeze and is not changed by this document.
