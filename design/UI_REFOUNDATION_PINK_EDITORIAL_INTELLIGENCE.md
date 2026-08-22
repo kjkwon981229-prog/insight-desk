@@ -2,13 +2,12 @@
 
 ## Pink Editorial Intelligence / Soft Geometry V3
 
-Status: `UI_DESIGN_FREEZE_V3`
+Status: `UI_DESIGN_FREEZE_V3` + `IMPLEMENTATION_PROTOTYPE_PASS` + `RENDERER_MAPPING_PASS`
 Branch: `ui-refoundation-pink-v2`
 Figma working file: `https://www.figma.com/design/hThXgfkZHUgI8BzOcFzqlU`
 
 This document is the authoritative design/source ledger for the Insight Desk UI redesign.
-The visual direction is now frozen by user approval.
-Further design work must refine, implement, or regression-test this direction rather than restart visual exploration.
+The visual direction is frozen by user approval. Further UI work must implement or regression-test this direction rather than restart visual exploration.
 
 ## 1. Product character
 
@@ -25,8 +24,6 @@ Target character:
 - clearly non-generic
 
 ## 2. Pink remains a first-class brand primitive
-
-Pink is retained and remains structural rather than decorative.
 
 Anchor palette:
 - Brand pink: `#C35B78`
@@ -45,20 +42,7 @@ Primary uses:
 
 Pink must not flood every surface. Warm neutral and charcoal remain the default field so pink retains information value.
 
-## 3. Design grammar
-
-Primary blend:
-- Editorial Layout — information hierarchy and sequencing
-- International Typographic Style — disciplined grid and asymmetric balance
-- Monochrome UI — hierarchy through tone, line, weight and spacing
-- Layer / Page System — event → evidence → watch-next depth
-
-Secondary borrowing only:
-- Japandi — warmth and calm spacing
-- Data-dense enterprise UI — evidence/detail views only
-- Corporate SaaS — state clarity and controls only
-
-## 4. Product architecture
+## 3. Product architecture
 
 The product uses multiple view grammars rather than forcing one layout everywhere.
 
@@ -68,47 +52,44 @@ Primary home experience.
 - one dominant event can lead the page
 - cover story uses a large soft feature surface
 - secondary stories remain editorially aligned
-- publication hierarchy remains visible despite softened geometry
 
-### E — Signal Ledger
+### E — Event Ledger
 Event continuity/history experience.
 - article feed is not the core mental model
-- same event can persist across multiple state changes
+- same event persists across state changes
 - timeline expresses continuity across yesterday / today / future
+
+**Data readiness:** design frozen, production renderer NOT ready. The current `ContractBundle` is a snapshot and does not contain persistent event-state history. Real E rendering must remain disabled until a history contract exists. Do not fabricate transitions from article fetch/publish timestamps.
 
 ### F3 — Split Desk / Soft Evidence
 Desktop event-detail/evidence experience.
 - master-detail structure
 - event list on the left
-- selected event facts, evidence, confidence, why-it-matters and watch-next on the right
-- evidence units use soft rounded surfaces without becoming enterprise BI cards
+- selected event facts, evidence, verification verdict, why-it-matters and optional watch-next on the right
+- no numeric confidence is displayed because the current core contract does not define one
 
-### G3 — Mobile Focus / 390
+### G3 — Mobile Focus
 Mobile focused-consumption experience.
 - one event at a time
-- pink can occupy a larger background field
+- pink may occupy a larger background field
 - one dominant rounded event surface contains the current judgment unit
-- state / evidence / watch-next appear as nested soft blocks
+- state / evidence / optional watch-next appear as nested soft blocks
+- mobile and desktop share the same factual view model
 
 Mapping:
 - Home → D3
-- Event continuity/history → E
+- Event continuity/history → E when history contract exists
 - Evidence/detail → F3
 - Mobile focused consumption → G3
 
-## 5. Soft Geometry V3 — frozen shape language
+## 4. Soft Geometry V3 — frozen shape language
 
-The supplied reference image was used only to clarify the desired rounded/blocky feel.
-Its layout, color system, typography, productivity-app structure and interaction model are NOT design references for Insight Desk.
+The supplied reference image was used only to clarify the desired rounded/blocky feel. Its layout, color system, typography, productivity-app structure and interaction model are NOT design references for Insight Desk.
 
-### Core rule
+Core rule:
+> Straight lines organize the page. Rounded surfaces contain the units the user actually judges.
 
-Straight lines organize the page. Rounded surfaces contain the units the user actually judges.
-
-This keeps the product editorial while making it visually softer and more approachable.
-
-### Radius hierarchy
-
+Radius hierarchy:
 - `14px` — micro elements / small internal states
 - `20px` — rows / compact information blocks
 - `28px` — normal event and evidence cards
@@ -117,16 +98,14 @@ This keeps the product editorial while making it visually softer and more approa
 
 Where supported, moderate corner smoothing should create a squircle-like blunt silhouette rather than a simple geometric rounded rectangle.
 
-### What remains straight
-
+Remain straight:
 - page/canvas edges
 - masthead/grid alignment
 - major editorial rules
 - timeline axes where continuity matters
-- primary column boundaries when they express structure
+- structural column boundaries
 
-### What becomes soft
-
+Become soft:
 - cover story surfaces
 - secondary event blocks
 - evidence rows/panels
@@ -135,8 +114,7 @@ Where supported, moderate corner smoothing should create a squircle-like blunt s
 - state/value blocks
 - watch-next block
 
-### Avoid
-
+Avoid:
 - rounding every container indiscriminately
 - excessive pill UI
 - floating-card dashboard look
@@ -146,36 +124,36 @@ Where supported, moderate corner smoothing should create a squircle-like blunt s
 - large soft shadows
 - productivity-app visual language
 
-## 6. Typography
+## 5. Typography
 
-Typography continues to carry more hierarchy than decoration.
+Typography carries more hierarchy than decoration.
 
 Rules:
 - large editorial headline with tight tracking
 - compact metadata labels
 - Korean body text optimized for sustained reading
-- stable numeric values
+- stable numeric values only when the source contract actually provides them
 - unnecessary English avoided in product content
 - English used only where it functions as a concise system/brand label
 
-## 7. Responsive targets
+## 6. Responsive targets
 
-Required implementation coverage:
+Frozen implementation targets:
 - mobile 390px
 - mobile 430px
 - tablet portrait
 - desktop 1280px+
 
-Mobile is not a shrunken desktop.
+Mobile is not a shrunken desktop. At mobile widths the home presentation changes from D3 to G3 while preserving the same factual event view model.
 
-## 8. Required product states
+## 7. Required product states
 
 Implementation/regression must support:
 - normal briefing
 - one important story only
 - 8–10 story heavy day
 - no qualifying stories
-- partial source failure
+- partial source/verifier failure
 - evidence available / unavailable
 - verification indeterminate
 - future / ongoing / completed / cancelled
@@ -184,7 +162,7 @@ Implementation/regression must support:
 - dark mode
 - push permission state
 
-## 9. Freeze decision
+## 8. Freeze decision
 
 User approved Soft Geometry V3 as the final UI direction on 2026-08-23.
 
@@ -194,29 +172,92 @@ Therefore:
 - Soft Geometry shape grammar frozen = YES
 - Multi-mode architecture frozen = YES
 - Radical visual re-exploration = STOP
-- Production CSS changed at freeze moment = NO
 
-The previous A/A2 visual direction is no longer the primary product direction.
-D3 / E / F3 / G3 form the frozen UI architecture.
+The previous A/A2 direction is no longer primary. D3 / E / F3 / G3 form the frozen UI architecture.
 
-## 10. Remaining work after design freeze
+## 9. Implementation prototype result
 
-The remaining UI work is implementation and QA, not open-ended design exploration:
+Isolated implementation lives under:
+- `design/prototype-v3/index.html`
+- `design/prototype-v3/prototype.css`
+- `design/prototype-v3/prototype.js`
 
-1. Translate the frozen V3 shape tokens and palette into implementation tokens.
-2. Build isolated HTML/CSS prototypes for D3/F3/G3 and responsive states.
-3. Implement 430px mobile and tablet portrait adaptations using the frozen grammar.
-4. Implement evidence expand/collapse and event-detail transitions.
-5. Implement push permission / notification state.
-6. Verify accessibility, contrast, touch targets, safe-area spacing and long Korean text behavior.
-7. Compare browser render against the frozen Figma reference when Figma MCP access is available.
-8. Run visual regression and PWA/Push compatibility checks.
-9. Only after implementation parity passes, integrate into production renderer.
+Implemented:
+- D3 desktop/tablet home
+- E visual reference
+- F3 evidence/detail
+- G3 mobile home at <=640px
+- 14/20/28/36/44 radius tokens
+- light/dark token support
+- 390/430/tablet/desktop responsive breakpoints
+- supported / pending / context-only / partial-source-failure sample states
+- focus-visible and reduced-motion hooks
 
-## 11. Implementation boundary
+CI result after PR #38:
+- V3 prototype contract tests PASS
+- clean-room benchmark PASS
+- core/API import boundary PASS
+- preserved PWA/config validation PASS
+- preserved Push Worker tests PASS
+
+Production `assets/css/style.css` and production renderer were not changed.
+
+## 10. Renderer mapping result
+
+Mapping implementation:
+- `design/prototype-v3/view_model.py`
+- `design/prototype-v3/RENDERER_MAPPING.md`
+
+Current core fields that can populate D3/F3/G3:
+- `RenderedBriefing.entries`
+- `RenderedEntry.headline`
+- `RenderedEntry.summary`
+- `RenderedEntry.render_mode`
+- `CandidateEvent.topic_id`
+- `EventFact.temporal_state`
+- `EventFact.event_date`
+- `VerifiedClaim.verdict`
+- `VerifiedClaim.evidence_ids`
+- `EvidenceSpan`
+- `RawArticle.provenance`
+- `VerificationCheck.error_code`
+
+Renderer invariants:
+1. only supported claims may populate published entries
+2. missing values are not converted into asserted facts
+3. numeric confidence is forbidden unless a future validated contract explicitly defines it
+4. watch-next remains optional/hidden because the current core contract does not provide it
+5. event history remains unavailable until an explicit history contract exists
+6. mobile and desktop use the same factual view model
+7. partial verifier failure may be disclosed without inventing a score
+
+CI result after PR #39: full infrastructure regression PASS.
+
+## 11. Remaining UI work
+
+Completed:
+- [x] design direction freeze
+- [x] implementation tokens
+- [x] isolated D3/E/F3/G3 HTML/CSS prototype
+- [x] 390/430/tablet/desktop responsive contract
+- [x] core-to-UI renderer mapping
+- [x] unsupported numeric confidence removed
+- [x] CI regression against benchmark/API/PWA/Push
+
+Still required before production UI integration:
+- [ ] browser visual QA of the isolated prototype at target widths
+- [ ] long-title / heavy-day visual stress pass on actual browser render
+- [ ] dark-mode visual pass
+- [ ] push permission state visual implementation
+- [ ] actual event-history contract before enabling E in production
+- [ ] renderer/PWA integration after engine output contract is production-ready
+
+Figma MCP screenshot QA is currently blocked by the Starter-plan tool-call limit. No paid upgrade will be used to bypass it.
+
+## 12. Implementation boundary
 
 Do not restart design research unless a concrete implementation failure proves the frozen direction impossible or unsafe.
-Do not edit production styling by intuition.
-Implementation must derive from this frozen design contract and the Figma V3 screens.
+Do not copy prototype CSS into production by intuition.
+Production integration must derive from this frozen contract and the validated renderer mapping.
 
-Semantic engine logic remains outside this design freeze and is not changed by this document.
+Semantic engine development may now resume. UI production wiring is intentionally deferred until the engine output path is ready.
