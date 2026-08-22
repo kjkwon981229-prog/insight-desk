@@ -2,8 +2,9 @@
 
 ## Pink Editorial Intelligence
 
-Status: ACTIVE DESIGN EXPLORATION
+Status: A2 PROVISIONAL WINNER — DESIGN FREEZE NOT YET DECLARED
 Branch: `ui-refoundation-pink-v2`
+Figma working file: `https://www.figma.com/design/hThXgfkZHUgI8BzOcFzqlU`
 
 This document freezes the design DNA for the UI redesign before new renderer implementation.
 It does not change semantic engine logic.
@@ -173,19 +174,53 @@ Design exploration is not complete until these are explicitly represented:
 
 ## 10. Direction candidates
 
-### A — Pink Editorial Intelligence — PRIMARY
+### A — Pink Editorial Intelligence
 Editorial 40 / Swiss 30 / Monochrome 20 / Layer 10.
-This is the baseline to beat.
+Strongest base identity and information hierarchy.
 
 ### B — Warm Personal Briefing
 Editorial 40 / calm warm-negative-space 25 / Monochrome 20 / Swiss 15.
-More intimate, but must not become lifestyle/wellness UI.
+Strong reading comfort and personal tone, but can drift too close to lifestyle/editorial wellness aesthetics if allowed to dominate.
 
 ### C — Analytical Editorial Desk
 Editorial 35 / data-dense evidence grammar 30 / Monochrome 25 / Swiss 10.
-More analytical, but must not become enterprise BI.
+Strong evidence scanning, but too close to enterprise operations/BI when used as the primary home screen.
 
-## 11. Design gate
+### A2 — Pink Editorial Intelligence Hybrid — PROVISIONAL WINNER
+A remains the shell.
+Borrow only:
+- B: warmer neutral surface and breathing room
+- C: compact evidence ledger inside expanded story detail
+
+Do NOT borrow:
+- B's softer lifestyle tone as the dominant identity
+- C's dense operational dashboard language for the main briefing page
+
+## 11. A2 visual evaluation
+
+A2 was rendered and inspected in both desktop and 390px mobile layouts.
+
+Observed strengths:
+- pink is still clearly identifiable but does not flood the interface
+- primary signal block creates a strong first focal point without becoming a generic hero card
+- the page reads as an edited briefing rather than a card dashboard
+- evidence density appears only after story expansion
+- warm neutral surfaces reduce sterility without weakening the charcoal/pink identity
+- mobile preserves reading order instead of shrinking the desktop grid
+- dark mode keeps the same hierarchy while shifting pink to a higher-luminance accent
+
+Stress-state screens were created for:
+- long Korean headline
+- verification indeterminate
+- no qualifying stories
+- partial source failure
+- heavy day / multiple-story scanning
+- dark mode
+
+Current result: no P0 visual-architecture failure found in these states.
+This is NOT yet final design approval; interaction and implementation feasibility still need to be tested.
+
+## 12. Design gate
 
 A candidate cannot be frozen unless it passes all of the following:
 - pink remains recognizably part of Insight Desk
@@ -199,8 +234,20 @@ A candidate cannot be frozen unless it passes all of the following:
 - current preserved PWA/Push functionality can be reattached without visual conflict
 - implementation remains feasible with ordinary HTML/CSS/JS
 
-## 12. Current implementation policy
+## 13. Remaining design work before freeze
 
-Do not edit production CSS yet.
-Design candidates are developed and compared first.
-Only the final winner is translated into `assets/css/style.css` and renderer changes.
+1. Add 430px mobile and tablet portrait layouts.
+2. Design evidence expand/collapse interaction and article-detail transition.
+3. Add push permission / notification settings state.
+4. Add source-unavailable and evidence-unavailable variants.
+5. Verify minimum touch targets, contrast, long-text behavior and safe-area spacing.
+6. Translate A2 into an isolated HTML/CSS prototype on the UI branch.
+7. Compare the HTML render against the Figma reference.
+8. Only after visual + responsive + implementation parity passes, declare `UI_DESIGN_FREEZE_V2`.
+
+## 14. Current implementation policy
+
+Do not edit production `assets/css/style.css` yet.
+Figma is the current visual source of truth.
+The repository design document is the decision/source ledger.
+Only the final winner is translated into production CSS and renderer changes.
