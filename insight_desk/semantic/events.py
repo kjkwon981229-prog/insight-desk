@@ -146,6 +146,7 @@ def resolve_temporal_state(
 
     if fact.fact_id not in event.fact_ids:
         raise ValueError("fact does not belong to candidate event")
+    evidence_text = cited_evidence_text(event, fact, evidence)
     if fact.temporal_state is not None:
         return TemporalResolution(
             fact_id=fact.fact_id,
@@ -162,7 +163,6 @@ def resolve_temporal_state(
             error_code="temporal_signal_missing",
         )
 
-    evidence_text = cited_evidence_text(event, fact, evidence)
     try:
         state = auxiliary.classify_temporal(evidence_text)
     except Exception as exc:  # provider/runtime failure is contained to this event fact
