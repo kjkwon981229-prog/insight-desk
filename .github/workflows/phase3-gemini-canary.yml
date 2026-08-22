@@ -1,0 +1,35 @@
+name: Phase 3 Gemini Canary
+
+on:
+  pull_request:
+    branches:
+      - phase3-bakeoff
+    paths:
+      - ".github/workflows/phase3-gemini-canary.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Confirm key presence without exposing value
+        run: |
+          python - <<'PY'
+          import os
+          print(f"gemini={bool(os.environ.get('GEMINI_API_KEY','').strip())}")
+          if not os.environ.get('GEMINI_API_KEY','').strip():
+              raise SystemExit(2)
+          PY
+      - name: Run one structured-output case
+        run: |
+          python benchmarks/bakeoff/run_provider.py gemini --limit 1 --output /tmp/gemini-canary.jsonl --errors /tmp/gemini-canary-errors.json
+          python benchmarks/bakeoff/score.py /tmp/gemini-canary.jsonl --summary-only
