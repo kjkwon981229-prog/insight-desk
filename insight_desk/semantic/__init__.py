@@ -13,9 +13,20 @@ from .events import (
     resolve_temporal_state,
 )
 from .facts import FactDraft, FactExtractionRequest, FactExtractorPort
+from .history import (
+    EventHistory,
+    EventSnapshot,
+    StateTransition,
+    append_event_snapshot,
+    build_event_snapshot,
+    derive_state_transitions,
+    start_event_history,
+)
 from .pipeline import SemanticArticleResult, SemanticPipeline
 
 __all__ = [
+    "EventHistory",
+    "EventSnapshot",
     "EvidenceSegmenter",
     "FactDraft",
     "FactExtractionRequest",
@@ -24,11 +35,16 @@ __all__ = [
     "Phase6EventEngine",
     "SemanticArticleResult",
     "SemanticPipeline",
+    "StateTransition",
     "TemporalAuxiliaryPort",
     "TemporalResolution",
     "TemporalResolutionSource",
+    "append_event_snapshot",
+    "build_event_snapshot",
     "cited_evidence_text",
     "compare_candidate_identity",
+    "derive_state_transitions",
     "identity_key_from_fact",
     "resolve_temporal_state",
+    "start_event_history",
 ]
