@@ -1,0 +1,14 @@
+{
+  "audit_date": "2026-08-23",
+  "status": "IN_PROGRESS",
+  "operating_cost_krw": 0,
+  "user_intervention_required": 0,
+  "accepted": [],
+  "rejected": [],
+  "held": [],
+  "notes": [
+    "No candidate is promoted by this seed file.",
+    "Human gold remains optional/deferred, not a production prerequisite.",
+    "Phase 7 generation and publication verification are out of scope."
+  ]
+}
