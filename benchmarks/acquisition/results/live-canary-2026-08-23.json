@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-23",
+  "status": "pass",
+  "github_actions_run_id": 32588375679,
+  "query": "인공지능",
+  "topic_id": "ai_tech",
+  "candidate_count": 10,
+  "bounded_max_candidate_attempts": 5,
+  "success": {
+    "attempt_index": 1,
+    "domain": "www.wikitree.co.kr",
+    "route": "naver_search",
+    "method": "http+trafilatura",
+    "fallback_used": false,
+    "non_whitespace_chars": 1836,
+    "published_at_present": true,
+    "source_html_sha256_present": true
+  },
+  "privacy_and_safety": {
+    "credential_values_logged": false,
+    "article_body_logged": false,
+    "article_body_committed": false
+  },
+  "validated": [
+    "live NAVER Search credentials and request",
+    "live NAVER result normalization",
+    "direct publisher URL acquisition",
+    "live HTTP HTML fetch",
+    "live Trafilatura body extraction",
+    "RawArticle-compatible acquisition metadata"
+  ],
+  "not_proven_by_this_single_live_case": [
+    "publisher-wide extraction success rate",
+    "live Playwright fallback on a real publisher",
+    "anti-bot bypass capability",
+    "semantic or event correctness",
+    "NEWS_REWRITE_POLICY_V1"
+  ]
+}
