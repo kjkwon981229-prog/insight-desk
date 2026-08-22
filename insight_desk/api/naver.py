@@ -7,10 +7,8 @@ from dataclasses import dataclass
 from datetime import date
 from urllib.parse import urlencode
 
-from ..domain.models import KeywordGroup
-from ..security import redact_error
 from .cache import ResponseCache
-from .transport import Transport, UrlLibTransport, decode_json
+from .transport import Transport, UrlLibTransport, decode_json_value
 
 BASE_URL = "https://naverapihub.apigw.ntruss.com"
 NEWS_PATH = "/search/v1/news"
@@ -22,6 +20,12 @@ class NaverApiError(RuntimeError):
         self.kind = kind
         self.status = status
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class KeywordGroup:
+    name: str
+    keywords: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -80,19 +84,18 @@ class NaverApiClient:
                 method, url, self._headers(content_type), body=body, timeout=self.timeout
             )
         except OSError as exc:
-            raise NaverApiError("NETWORK", redact_error(exc)) from exc
+            raise NaverApiError("NETWORK", type(exc).__name__) from exc
         if response.status < 200 or response.status >= 300:
-            kind = {
-                400: "BAD_REQUEST",
-                401: "AUTH",
-                403: "PERMISSION",
-                429: "RATE_LIMIT",
-            }.get(response.status, "HTTP")
+            kind = {400: "BAD_REQUEST", 401: "AUTH", 403: "PERMISSION", 429: "RATE_LIMIT"}.get(
+                response.status, "HTTP"
+            )
             raise NaverApiError(kind, f"NAVER API returned HTTP {response.status}", response.status)
         try:
-            payload = decode_json(response)
+            payload = decode_json_value(response)
         except ValueError as exc:
             raise NaverApiError("DATA_VALIDATION", str(exc), response.status) from exc
+        if not isinstance(payload, dict):
+            raise NaverApiError("DATA_VALIDATION", "NAVER API returned non-object JSON", response.status)
         if self.cache:
             self.cache.set(cache_key, payload)
         return payload
