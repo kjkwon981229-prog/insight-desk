@@ -8,7 +8,7 @@ from typing import Any
 
 
 class ResponseCache:
-    """Small public-response cache; credentials are never accepted as cache data."""
+    """Small public-response cache; credentials are never stored."""
 
     def __init__(self, path: Path, ttl_seconds: int = 6 * 60 * 60) -> None:
         self.path = path
@@ -24,15 +24,13 @@ class ResponseCache:
 
     @staticmethod
     def key(method: str, url: str, body: bytes | None) -> str:
-        digest = hashlib.sha256((method + "\n" + url + "\n").encode() + (body or b"")).hexdigest()
-        return digest
+        return hashlib.sha256((method + "\n" + url + "\n").encode() + (body or b"")).hexdigest()
 
     def get(self, key: str) -> dict[str, Any] | None:
         entry = self._data.get(key)
         if not isinstance(entry, dict):
             return None
-        fetched_at = float(entry.get("fetched_at", 0))
-        if time.time() - fetched_at > self.ttl_seconds:
+        if time.time() - float(entry.get("fetched_at", 0)) > self.ttl_seconds:
             return None
         payload = entry.get("payload")
         return payload if isinstance(payload, dict) else None

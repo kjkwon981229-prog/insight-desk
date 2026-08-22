@@ -50,11 +50,8 @@ class UrlLibTransport:
             )
 
 
-def decode_json(response: HttpResponse) -> dict[str, object]:
+def decode_json_value(response: HttpResponse) -> object:
     try:
-        value = json.loads(response.body.decode("utf-8"))
+        return json.loads(response.body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("API returned invalid JSON") from exc
-    if not isinstance(value, dict):
-        raise ValueError("API returned a non-object JSON value")
-    return value
