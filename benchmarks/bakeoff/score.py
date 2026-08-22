@@ -63,12 +63,14 @@ def load_predictions(path: Path) -> dict[str, dict[str, Any]]:
 def score(predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     totals: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     case_rows: list[dict[str, Any]] = []
+    missing = 0
 
     for case in build_cases():
         case_id = case["id"]
         output = predictions.get(case_id)
         row = {"case_id": case_id, "task": case["task"], "checks": []}
         if output is None:
+            missing += 1
             row["missing"] = True
             case_rows.append(row)
             continue
@@ -113,27 +115,44 @@ def score(predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
         }
         for key, (passed, total) in sorted(totals.items())
     }
+    benchmark_count = len(case_rows)
     return {
         "schema_version": 1,
         "prediction_count": len(predictions),
-        "benchmark_case_count": len(case_rows),
+        "benchmark_case_count": benchmark_count,
+        "missing_case_count": missing,
+        "coverage": round((benchmark_count - missing) / benchmark_count, 4),
         "metrics": summary,
         "cases": case_rows,
         "note": "Grammar, semantic paraphrases, and unsupported-claim equivalence require an independent judge/NLI lane and are not inferred from literal matching.",
     }
 
 
+def _compact(report: dict[str, Any]) -> str:
+    fields = [
+        f"coverage={report['coverage']}",
+        f"predictions={report['prediction_count']}/{report['benchmark_case_count']}",
+    ]
+    for key, metric in sorted(report["metrics"].items()):
+        fields.append(f"{key}={metric['passed']}/{metric['total']}({metric['accuracy']})")
+    return "BAKEOFF_SCORE " + " ".join(fields)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("predictions", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--summary-only", action="store_true")
     args = parser.parse_args()
     report = score(load_predictions(args.predictions))
     rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered, encoding="utf-8")
-    print(rendered, end="")
+    if args.summary_only:
+        print(_compact(report))
+    else:
+        print(rendered, end="")
 
 
 if __name__ == "__main__":
