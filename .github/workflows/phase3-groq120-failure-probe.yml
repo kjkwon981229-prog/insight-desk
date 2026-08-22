@@ -1,0 +1,27 @@
+name: Phase 3 Groq 120B Failure Probe
+
+on:
+  push:
+    branches:
+      - phase3-contract-fairness-fix
+    paths:
+      - ".github/scripts/diagnose_groq120_failures.py"
+      - ".github/workflows/phase3-groq120-failure-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Probe only the four prior Groq 120B failures
+        run: python .github/scripts/diagnose_groq120_failures.py
