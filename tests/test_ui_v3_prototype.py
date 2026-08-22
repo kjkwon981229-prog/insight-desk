@@ -19,7 +19,7 @@ class SoftGeometryV3PrototypeTests(unittest.TestCase):
             self.assertIn(f'data-view="{view}"', HTML)
         self.assertIn('class="mobile-focus"', HTML)
         self.assertIn("D3", CSS)
-        self.assertIn("SIGNAL LEDGER", HTML)
+        self.assertIn("EVENT LEDGER", HTML)
         self.assertIn("SELECTED EVENT", HTML)
 
     def test_soft_geometry_radius_hierarchy_is_frozen(self):
