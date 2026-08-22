@@ -50,29 +50,27 @@ class FakeGroqClient:
         return self.response
 
 
+def valid_fact(evidence_id: str) -> dict:
+    return {
+        "subject": "한화와 두산 경기",
+        "action": "취소",
+        "object": None,
+        "temporal_state": "cancelled",
+        "certainty": "asserted",
+        "polarity": "negative",
+        "event_date": "12일",
+        "location": "서울",
+        "cause": "폭염",
+        "participants": ["한화", "두산"],
+        "evidence_ids": [evidence_id],
+    }
+
+
 class Groq20BFactExtractorTests(unittest.TestCase):
     def test_valid_fact_is_mapped_to_untrusted_draft(self):
         request = make_request()
         evidence_id = request.evidence[0].evidence_id
-        client = FakeGroqClient(
-            {
-                "facts": [
-                    {
-                        "subject": "한화와 두산 경기",
-                        "action": "취소",
-                        "object": None,
-                        "temporal_state": "cancelled",
-                        "certainty": "asserted",
-                        "polarity": "negative",
-                        "event_date": "12일",
-                        "location": "서울",
-                        "cause": "폭염",
-                        "participants": ["한화", "두산"],
-                        "evidence_ids": [evidence_id],
-                    }
-                ]
-            }
-        )
+        client = FakeGroqClient({"facts": [valid_fact(evidence_id)]})
         drafts = Groq20BFactExtractor(client).extract(request)
         self.assertEqual(len(drafts), 1)
         draft = drafts[0]
@@ -97,73 +95,46 @@ class Groq20BFactExtractorTests(unittest.TestCase):
 
     def test_foreign_evidence_id_is_rejected(self):
         request = make_request()
-        client = FakeGroqClient(
-            {
-                "facts": [
-                    {
-                        "subject": "경기",
-                        "action": "취소",
-                        "object": None,
-                        "temporal_state": "cancelled",
-                        "certainty": "asserted",
-                        "polarity": None,
-                        "event_date": None,
-                        "location": None,
-                        "cause": None,
-                        "participants": [],
-                        "evidence_ids": ["ev:foreign:0001"],
-                    }
-                ]
-            }
-        )
+        fact = valid_fact("ev:foreign:0001")
         with self.assertRaises(ProviderTransportError) as raised:
-            Groq20BFactExtractor(client).extract(request)
+            Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
         self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
         self.assertIn("outside extraction request", raised.exception.detail)
+
+    def test_non_literal_subject_is_rejected(self):
+        request = make_request()
+        evidence_id = request.evidence[0].evidence_id
+        fact = valid_fact(evidence_id)
+        fact["subject"] = "기아 경기"
+        with self.assertRaises(ProviderTransportError) as raised:
+            Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
+        self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
+        self.assertIn("subject is not source-literal", raised.exception.detail)
+
+    def test_non_literal_object_is_rejected(self):
+        request = make_request()
+        evidence_id = request.evidence[0].evidence_id
+        fact = valid_fact(evidence_id)
+        fact["object"] = "선발투수 왕옌청"
+        with self.assertRaises(ProviderTransportError) as raised:
+            Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
+        self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
+        self.assertIn("object is not source-literal", raised.exception.detail)
 
     def test_non_literal_participant_is_rejected(self):
         request = make_request()
         evidence_id = request.evidence[0].evidence_id
-        client = FakeGroqClient(
-            {
-                "facts": [
-                    {
-                        "subject": "경기",
-                        "action": "취소",
-                        "object": None,
-                        "temporal_state": "cancelled",
-                        "certainty": "asserted",
-                        "polarity": None,
-                        "event_date": "12일",
-                        "location": "서울",
-                        "cause": "폭염",
-                        "participants": ["기아"],
-                        "evidence_ids": [evidence_id],
-                    }
-                ]
-            }
-        )
+        fact = valid_fact(evidence_id)
+        fact["participants"] = ["기아"]
         with self.assertRaises(ProviderTransportError) as raised:
-            Groq20BFactExtractor(client).extract(request)
+            Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
         self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
         self.assertIn("participant is not source-literal", raised.exception.detail)
 
     def test_duplicate_semantic_draft_is_rejected(self):
         request = make_request()
         evidence_id = request.evidence[0].evidence_id
-        fact = {
-            "subject": "경기",
-            "action": "취소",
-            "object": None,
-            "temporal_state": "cancelled",
-            "certainty": "asserted",
-            "polarity": None,
-            "event_date": "12일",
-            "location": "서울",
-            "cause": "폭염",
-            "participants": ["한화", "두산"],
-            "evidence_ids": [evidence_id],
-        }
+        fact = valid_fact(evidence_id)
         client = FakeGroqClient({"facts": [dict(fact), dict(fact)]})
         with self.assertRaises(ProviderTransportError) as raised:
             Groq20BFactExtractor(client).extract(request)
