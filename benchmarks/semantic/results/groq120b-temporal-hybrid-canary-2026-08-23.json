@@ -124,9 +124,10 @@
     "groq120b_may_decide_event_identity": false,
     "groq120b_may_decide_selection": false,
     "groq120b_may_verify_publishable_claims": false,
+    "identity_semantic_judgment_required": false,
+    "identity_default_safe_separate_is_valid": true,
     "remaining_blockers": [
       "production FactExtractorPort implementation is unresolved after Groq 20B rejection",
-      "ambiguous same-event semantic authority is not approved; ambiguity must remain separate",
       "material-event assessment producer is unresolved and cannot be inferred from legacy selection negatives"
     ]
   },
