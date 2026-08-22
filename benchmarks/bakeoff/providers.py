@@ -149,12 +149,13 @@ def call_gemini(case: dict[str, Any]) -> dict[str, Any]:
         {
             "contents": [{"parts": [{"text": prompt_for(case)}]}],
             "generationConfig": {
+                "thinkingConfig": {"thinkingLevel": "LOW"},
                 "responseFormat": {
                     "text": {
-                        "mimeType": "application/json",
+                        "mimeType": "APPLICATION_JSON",
                         "schema": schema_for(case),
                     }
-                }
+                },
             },
         },
         {"x-goog-api-key": _env("GEMINI_API_KEY")},
