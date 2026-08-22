@@ -1,0 +1,46 @@
+"""Clean-room core contracts for the rebuilt Insight Desk engine."""
+
+from .contracts import (
+    CandidateEvent,
+    Certainty,
+    ContractBundle,
+    ContractError,
+    EvidenceField,
+    EvidenceSpan,
+    OutcomePolarity,
+    RawArticle,
+    RenderMode,
+    RenderedBriefing,
+    RenderedEntry,
+    SourceProvenance,
+    TemporalState,
+    VerificationCheck,
+    VerificationVerdict,
+    VerifiedClaim,
+    EventFact,
+)
+from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
+
+__all__ = [
+    "CandidateEvent",
+    "Certainty",
+    "ContractBundle",
+    "ContractError",
+    "EvidenceField",
+    "EvidenceSpan",
+    "EventFact",
+    "FailureKind",
+    "OutcomePolarity",
+    "PipelineStage",
+    "RawArticle",
+    "RecoveryAction",
+    "RenderMode",
+    "RenderedBriefing",
+    "RenderedEntry",
+    "SourceProvenance",
+    "TemporalState",
+    "VerificationCheck",
+    "VerificationVerdict",
+    "VerifiedClaim",
+    "recovery_action",
+]
