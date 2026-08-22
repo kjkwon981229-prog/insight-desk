@@ -1,7 +1,16 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "verified_at": "2026-08-22",
   "hard_rule": "No paid fallback. Missing credentials or exhausted free quota means skip/fail closed, never upgrade or charge.",
+  "benchmark_policy": {
+    "hard_scored_semantic_cases": 41,
+    "deferred_selection_evidence_cases": 44,
+    "claim_verifier_cases": 14,
+    "legacy_85_case_aggregate_is_architecture_gate": false,
+    "legacy_run96_true_negatives_are_material_event_gold": false,
+    "legacy_event_type_exact_scoring_enabled": false,
+    "reason": "Independent audit found that historical Run96 selection negatives mixed non-events with genuine events excluded for other policy reasons, while legacy event_type labels were exact-scored without label definitions. Historical examples remain preserved but are no longer misused as neutral semantic gold."
+  },
   "providers": [
     {
       "id": "groq_free",
@@ -11,27 +20,40 @@
       "billing_required": false,
       "free_plan_guard": "rate_limit_error_only; never switch to Developer tier",
       "verified_results": {
-        "gpt_oss_20b": "85/85 responses; temporal_state 13/15; material_event 38/59; event_type 7/15; same_event 3/5; generation concept preservation 24/24",
-        "gpt_oss_120b": "81/85 initial responses with 4 transient provider failures; all four succeeded on immediate probe; temporal_state 14/14; material_event 40/55; event_type 6/12; same_event 2/5; generation concept preservation 22/24"
+        "gpt_oss_20b": "85/85 historical responses; valid retained diagnostics include temporal_state 13/15, same_event 3/5, generation concept preservation 24/24",
+        "gpt_oss_120b": "81/85 historical initial responses with 4 transient provider failures that all succeeded on immediate probe; valid retained diagnostics include temporal_state 14/14, same_event 2/5, generation concept preservation 22/24"
       },
+      "invalidated_legacy_metrics": ["material_event aggregate", "event_type exact-match aggregate"],
       "role_decision": {
         "gpt_oss_20b": ["generation_candidate"],
         "gpt_oss_120b": ["temporal_lifecycle_auxiliary_verifier"],
-        "rejected_for": ["material_event_final_gate", "event_type_final_gate", "ownership_final_gate", "sole_fact_verifier"]
+        "rejected_for": ["ownership_final_gate", "sole_fact_verifier", "selection_policy_final_gate"]
       },
       "status": "keep_role_limited"
     },
     {
       "id": "cloudflare_workers_ai_free",
-      "role_candidates": ["independent_verifier"],
-      "model": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-      "structured_output": "json_schema_best_effort",
       "credential_env": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
       "billing_required": false,
-      "free_quota_rule": "10000_neurons_per_day_then HTTP 429/account-limited; no automatic paid overage on Workers Free",
+      "free_quota_rule": "10000_neurons_per_day on Workers Free; exhaustion must fail closed with no paid fallback",
       "paid_plan_guard": "Workers Paid and prepaid AI Gateway credits must remain disabled",
-      "model_free_plan_check": "current paid-only model list does not include deepseek-r1-distill-qwen-32b",
-      "status": "next_bakeoff_candidate_credentials_absent"
+      "models_tested": {
+        "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b": "rejected: json_schema returned JSON Model couldn't be met and json_object emitted <think> reasoning outside JSON",
+        "@cf/qwen/qwen3-30b-a3b-fp8": "rejected for structured verifier lane: only 11/85 usable responses; 74 returned no structured response; model is not in the current Workers AI JSON Mode supported-model list",
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "retained role-limited: 85/85 structured responses with 0 provider errors in historical diagnostic; dedicated claim verification 14/14 with 0 errors"
+      },
+      "valid_role_diagnostics": {
+        "claim_verification": "14/14 (1.0), same 14 evidence-hypothesis pairs used by local mDeBERTa baseline",
+        "temporal_state": "13/15 historical valid temporal checks",
+        "same_event": "1/5; insufficient for ownership gate",
+        "generation_concept_preservation": "23/24 historical generation checks"
+      },
+      "invalidated_legacy_metrics": ["material_event aggregate", "event_type exact-match aggregate"],
+      "role_decision": {
+        "keep": ["independent_claim_verifier"],
+        "reject_for": ["event_ownership_gate", "selection_policy_gate", "legacy_event_type_classifier"]
+      },
+      "status": "keep_independent_claim_verifier_only"
     },
     {
       "id": "gemini_api_free",
@@ -47,7 +69,7 @@
         "requests_per_minute": 5,
         "requests_per_day": 20
       },
-      "verified_run": "11/85 responses before Free Tier quota exhaustion; successful temporal_state checks 6/6; transient HTTP 503 high-demand responses also observed",
+      "verified_run": "11/85 historical responses before Free Tier quota exhaustion; successful temporal_state checks 6/6; transient HTTP 503 high-demand responses also observed",
       "role_decision": {
         "keep": ["rare_high_risk_adjudication_candidate"],
         "reject_for": ["core_event_extraction", "core_verification", "core_generation", "full_daily_bakeoff"]
@@ -61,7 +83,7 @@
       "license": "MIT",
       "credential_env": [],
       "billing_required": false,
-      "verified_result": "13/14; failed prospective-departure-to-completed claim",
+      "verified_result": "13/14 on the shared claim-verification set; failed prospective-departure-to-completed claim",
       "hard_gate_allowed": false,
       "status": "keep_secondary_only"
     },
@@ -74,7 +96,7 @@
       "billing_required": false,
       "verified_result": "pairwise_auc=0.70; 12-day-vs-13-day hard negative cosine=0.998932",
       "event_identity_gate_allowed": false,
-      "status": "reject_as_identity_gate"
+      "status": "reject_as_identity_gate_keep_retrieval_only"
     }
   ]
 }
