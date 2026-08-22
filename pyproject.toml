@@ -11,10 +11,10 @@ dependencies = []
 
 [project.optional-dependencies]
 acquisition = [
-  "trafilatura>=2,<3",
+  "trafilatura==2.2.0",
 ]
 browser = [
-  "playwright>=1.50,<2",
+  "playwright==1.62.0",
 ]
 dev = [
   "pytest==8.4.1",
