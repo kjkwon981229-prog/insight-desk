@@ -38,7 +38,36 @@ def _assert_contract_fairness(cases: list[dict[str, Any]]) -> None:
                 )
 
 
+def build_deferred_selection_cases() -> list[dict[str, Any]]:
+    """Preserve historical Run96 true-negatives without pretending they are non-events.
+
+    These titles came from an old selection/recall investigation. They mix several reasons for
+    exclusion (generic context, low materiality, stale information, entity/query mismatch, etc.).
+    Some titles describe real events, so they cannot fairly be gold-labeled
+    ``is_material_event=False`` without the missing selection-policy context.
+    """
+
+    run96 = _load("run96_recall_precision.json")
+    return [
+        {
+            "id": f"run96-selection-negative-{index:02d}",
+            "source_suite": run96["suite_id"],
+            "input": {"title": title},
+            "status": "deferred_selection_evidence",
+            "reason": "historical selection negative lacks enough policy/topic context for neutral material-event gold",
+        }
+        for index, title in enumerate(run96["true_negative_titles"], start=1)
+    ]
+
+
 def build_cases() -> list[dict[str, Any]]:
+    """Build only semantically scoreable cases.
+
+    The clean-room bake-off intentionally excludes the 44 historical Run96 selection negatives
+    from direct LLM scoring. It also excludes the legacy Run96 event_type label from exact-match
+    scoring until a new taxonomy with explicit definitions is designed.
+    """
+
     cases: list[dict[str, Any]] = []
 
     run90 = _load("run90_temporal.json")
@@ -110,7 +139,12 @@ def build_cases() -> list[dict[str, Any]]:
     run96 = _load("run96_recall_precision.json")
     for item in run96["positive_events"]:
         gold = {"is_material_event": True, **item["gold"]}
+        # Run96 event_type values were inherited from the retired engine and the label meanings
+        # were never defined to candidate models. Preserve them as audit evidence only.
+        legacy_event_type = gold.pop("event_type", None)
         expected, evaluator = _split_gold("MATERIAL_EVENT", gold)
+        if legacy_event_type is not None:
+            evaluator["legacy_event_type"] = legacy_event_type
         cases.append(
             {
                 "id": f"run96-positive-{item['id']}",
@@ -124,17 +158,6 @@ def build_cases() -> list[dict[str, Any]]:
                 },
                 "expected": expected,
                 "constraints": {"evaluator_requirements": evaluator},
-            }
-        )
-    for index, title in enumerate(run96["true_negative_titles"], start=1):
-        cases.append(
-            {
-                "id": f"run96-tn-{index:02d}",
-                "source_suite": run96["suite_id"],
-                "task": "MATERIAL_EVENT",
-                "input": {"title": title},
-                "expected": {"is_material_event": False},
-                "constraints": {"evaluator_requirements": {}},
             }
         )
 
@@ -157,8 +180,11 @@ def build_cases() -> list[dict[str, Any]]:
             }
         )
 
-    if len(cases) != 85:
-        raise AssertionError(f"expected 85 hard-scored cases, got {len(cases)}")
+    if len(cases) != 41:
+        raise AssertionError(f"expected 41 semantically hard-scored cases, got {len(cases)}")
+    deferred = build_deferred_selection_cases()
+    if len(deferred) != 44:
+        raise AssertionError(f"expected 44 deferred selection cases, got {len(deferred)}")
     ids = [case["id"] for case in cases]
     if len(ids) != len(set(ids)):
         raise AssertionError("duplicate bake-off case ids")
@@ -173,6 +199,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cases = build_cases()
+    deferred = build_deferred_selection_cases()
     counts: dict[str, int] = {}
     evaluator_requirements = 0
     for case in cases:
@@ -182,7 +209,15 @@ def main() -> None:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
-            json.dumps({"schema_version": 2, "cases": cases}, ensure_ascii=False, indent=2)
+            json.dumps(
+                {
+                    "schema_version": 3,
+                    "cases": cases,
+                    "deferred_selection_cases": deferred,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -191,7 +226,8 @@ def main() -> None:
         print(
             "BAKEOFF_DATASET_VALID "
             + " ".join(f"{key.lower()}={value}" for key, value in sorted(counts.items()))
-            + f" total={len(cases)} evaluator_only={evaluator_requirements} fairness=pass"
+            + f" total={len(cases)} deferred_selection={len(deferred)} "
+            + f"evaluator_only={evaluator_requirements} fairness=pass"
         )
 
 
