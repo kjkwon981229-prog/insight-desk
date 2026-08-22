@@ -88,6 +88,15 @@ class Groq20BFactExtractorTests(unittest.TestCase):
         self.assertIn(evidence_id, client.calls[0]["prompt"])
         self.assertIn(request.evidence[0].text, client.calls[0]["prompt"])
 
+    def test_subject_normalization_is_allowed_only_as_unverified_draft(self):
+        request = make_request()
+        evidence_id = request.evidence[0].evidence_id
+        fact = valid_fact(evidence_id)
+        fact["subject"] = "한화-두산 경기"
+        drafts = Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
+        self.assertEqual(drafts[0].subject, "한화-두산 경기")
+        self.assertEqual(drafts[0].evidence_ids, (evidence_id,))
+
     def test_empty_fact_array_is_valid_fail_closed_result(self):
         request = make_request("원·달러 환율 1417.53원")
         client = FakeGroqClient({"facts": []})
@@ -100,16 +109,6 @@ class Groq20BFactExtractorTests(unittest.TestCase):
             Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
         self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
         self.assertIn("outside extraction request", raised.exception.detail)
-
-    def test_non_literal_subject_is_rejected(self):
-        request = make_request()
-        evidence_id = request.evidence[0].evidence_id
-        fact = valid_fact(evidence_id)
-        fact["subject"] = "기아 경기"
-        with self.assertRaises(ProviderTransportError) as raised:
-            Groq20BFactExtractor(FakeGroqClient({"facts": [fact]})).extract(request)
-        self.assertIs(raised.exception.failure_kind, FailureKind.INVALID_OUTPUT)
-        self.assertIn("subject is not source-literal", raised.exception.detail)
 
     def test_non_literal_object_is_rejected(self):
         request = make_request()
