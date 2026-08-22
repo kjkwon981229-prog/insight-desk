@@ -1,0 +1,44 @@
+name: Phase 3 Claim Verifier Diagnostic
+
+on:
+  pull_request:
+    branches:
+      - phase3-bakeoff
+
+permissions:
+  contents: read
+
+jobs:
+  cloudflare-claim-verifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Verify credentials without exposing values
+        run: |
+          python - <<'PY'
+          import os
+          account = bool(os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip())
+          token = bool(os.environ.get("CLOUDFLARE_API_TOKEN", "").strip())
+          print(f"CLOUDFLARE_CREDENTIALS account_id={str(account).lower()} api_token={str(token).lower()}")
+          if not (account and token):
+              raise SystemExit(2)
+          PY
+      - name: Run 14-pair independent claim verification diagnostic
+        env:
+          PYTHONPATH: benchmarks/bakeoff
+        run: python benchmarks/bakeoff/run_claim_verifier.py cloudflare --output /tmp/cloudflare-claim-verifier.json
+      - name: Upload claim-verifier diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-claim-verifier
+          path: /tmp/cloudflare-claim-verifier.json
+          if-no-files-found: ignore
+          retention-days: 7
