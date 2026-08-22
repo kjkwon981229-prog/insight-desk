@@ -39,7 +39,12 @@ def _post_json(
     timeout: int = 90,
 ) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request_headers = {"Content-Type": "application/json", **headers}
+    request_headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "insight-desk-bakeoff/0.1",
+        **headers,
+    }
     last_error: Exception | None = None
     for attempt in range(attempts):
         request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
