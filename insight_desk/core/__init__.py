@@ -35,6 +35,7 @@ from .selection import (
     SelectionVerdict,
     decide_selection,
 )
+from .verification import VerificationPolicy, aggregate_verdict
 
 __all__ = [
     "CandidateEvent",
@@ -63,8 +64,10 @@ __all__ = [
     "SourceProvenance",
     "TemporalState",
     "VerificationCheck",
+    "VerificationPolicy",
     "VerificationVerdict",
     "VerifiedClaim",
+    "aggregate_verdict",
     "decide_selection",
     "finalize_identity",
     "precheck_identity",
