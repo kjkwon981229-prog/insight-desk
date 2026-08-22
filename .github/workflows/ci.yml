@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12.10"
-      - name: Compile preserved Python infrastructure
+      - name: Compile Python packages
         run: python -m compileall -q insight_desk
       - name: Validate preserved JSON configuration and PWA manifest
         run: |
@@ -29,11 +29,15 @@ jobs:
           PY
       - name: Validate clean-room benchmark integrity
         run: python benchmarks/validate.py
-      - name: Verify API-only import boundary
+      - name: Run clean core contract regressions
+        run: python -m unittest discover -s tests -p 'test_*.py'
+      - name: Verify preserved API and new core import boundaries
         run: |
           python - <<'PY'
           from insight_desk.api import EcosClient, KosisClient, NaverApiClient, OpenDartClient
+          from insight_desk.core import ContractBundle, EventFact, RawArticle, VerifiedClaim
           print(EcosClient, KosisClient, NaverApiClient, OpenDartClient)
+          print(ContractBundle, EventFact, RawArticle, VerifiedClaim)
           PY
       - name: Set up Node
         uses: actions/setup-node@v4

@@ -4,12 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insight-desk"
-version = "0.2.0"
-description = "Insight Desk API connectivity and preserved product infrastructure"
+version = "0.5.0"
+description = "Insight Desk clean-room acquisition, semantic contracts, and zero-cost provider boundaries"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+acquisition = [
+  "trafilatura==2.2.0",
+]
+browser = [
+  "playwright==1.62.0",
+]
 dev = [
   "pytest==8.4.1",
   "ruff==0.12.8",
@@ -17,7 +23,14 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["insight_desk", "insight_desk.api"]
+packages = [
+  "insight_desk",
+  "insight_desk.api",
+  "insight_desk.core",
+  "insight_desk.providers",
+  "insight_desk.acquisition",
+  "insight_desk.semantic",
+]
 
 [tool.ruff]
 line-length = 100
