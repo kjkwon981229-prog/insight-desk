@@ -151,7 +151,7 @@ def call_gemini(case: dict[str, Any]) -> dict[str, Any]:
             "generationConfig": {
                 "responseFormat": {
                     "text": {
-                        "mimeType": "application/json",
+                        "mimeType": "APPLICATION_JSON",
                         "schema": schema_for(case),
                     }
                 }
