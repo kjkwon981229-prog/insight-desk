@@ -30,21 +30,9 @@ def _env(name: str) -> str:
     return value
 
 
-def _post_json(
-    url: str,
-    payload: dict[str, Any],
-    headers: dict[str, str],
-    *,
-    attempts: int = 3,
-    timeout: int = 90,
-) -> dict[str, Any]:
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str], *, attempts: int = 3, timeout: int = 90) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request_headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "insight-desk-bakeoff/0.1",
-        **headers,
-    }
+    request_headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "insight-desk-bakeoff/0.1", **headers}
     last_error: Exception | None = None
     for attempt in range(attempts):
         request = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
@@ -83,26 +71,7 @@ def _decode_json_text(value: Any) -> dict[str, Any]:
 
 def _groq(case: dict[str, Any], model: str) -> dict[str, Any]:
     schema = schema_for(case)
-    response = _post_json(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": "Follow the JSON schema exactly. Do not output commentary."},
-                {"role": "user", "content": prompt_for(case)},
-            ],
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": f"insight_desk_{case['task'].lower()}",
-                    "strict": True,
-                    "schema": schema,
-                },
-            },
-            "reasoning_effort": "low",
-        },
-        {"Authorization": f"Bearer {_env('GROQ_API_KEY')}"},
-    )
+    response = _post_json("https://api.groq.com/openai/v1/chat/completions", {"model": model, "messages": [{"role": "system", "content": "Follow the JSON schema exactly. Do not output commentary."}, {"role": "user", "content": prompt_for(case)}], "response_format": {"type": "json_schema", "json_schema": {"name": f"insight_desk_{case['task'].lower()}", "strict": True, "schema": schema}}, "reasoning_effort": "low"}, {"Authorization": f"Bearer {_env('GROQ_API_KEY')}"})
     try:
         content = response["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -121,20 +90,8 @@ def call_groq120(case: dict[str, Any]) -> dict[str, Any]:
 def call_cloudflare(case: dict[str, Any]) -> dict[str, Any]:
     account_id = _env("CLOUDFLARE_ACCOUNT_ID")
     token = _env("CLOUDFLARE_API_TOKEN")
-    model = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"
-    response = _post_json(
-        f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
-        {
-            "messages": [
-                {"role": "system", "content": "Return only JSON matching the supplied schema."},
-                {"role": "user", "content": prompt_for(case)},
-            ],
-            "response_format": {"type": "json_schema", "json_schema": schema_for(case)},
-            "max_tokens": 256,
-            "temperature": 0,
-        },
-        {"Authorization": f"Bearer {token}"},
-    )
+    model = "@cf/qwen/qwen3-30b-a3b-fp8"
+    response = _post_json(f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}", {"messages": [{"role": "system", "content": "Return only JSON matching the supplied schema. Do not include reasoning or commentary."}, {"role": "user", "content": prompt_for(case)}], "response_format": {"type": "json_schema", "json_schema": schema_for(case)}, "max_tokens": 384, "temperature": 0}, {"Authorization": f"Bearer {token}"})
     if response.get("success") is False:
         raise ProviderError(f"Cloudflare API failure: {str(response)[:1000]}")
     result = response.get("result", response)
@@ -144,22 +101,7 @@ def call_cloudflare(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def call_gemini(case: dict[str, Any]) -> dict[str, Any]:
-    response = _post_json(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent",
-        {
-            "contents": [{"parts": [{"text": prompt_for(case)}]}],
-            "generationConfig": {
-                "thinkingConfig": {"thinkingLevel": "LOW"},
-                "responseFormat": {
-                    "text": {
-                        "mimeType": "APPLICATION_JSON",
-                        "schema": schema_for(case),
-                    }
-                },
-            },
-        },
-        {"x-goog-api-key": _env("GEMINI_API_KEY")},
-    )
+    response = _post_json("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent", {"contents": [{"parts": [{"text": prompt_for(case)}]}], "generationConfig": {"thinkingConfig": {"thinkingLevel": "LOW"}, "responseFormat": {"text": {"mimeType": "APPLICATION_JSON", "schema": schema_for(case)}}}}, {"x-goog-api-key": _env("GEMINI_API_KEY")})
     try:
         content = response["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError) as exc:
@@ -170,12 +112,7 @@ def call_gemini(case: dict[str, Any]) -> dict[str, Any]:
 PROVIDERS: dict[str, ProviderSpec] = {
     "groq20": ProviderSpec("groq20", ("GROQ_API_KEY",), 2.1, call_groq20),
     "groq120": ProviderSpec("groq120", ("GROQ_API_KEY",), 2.1, call_groq120),
-    "cloudflare": ProviderSpec(
-        "cloudflare",
-        ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"),
-        0.25,
-        call_cloudflare,
-    ),
+    "cloudflare": ProviderSpec("cloudflare", ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"), 0.25, call_cloudflare),
     "gemini": ProviderSpec("gemini", ("GEMINI_API_KEY",), 1.0, call_gemini),
 }
 
