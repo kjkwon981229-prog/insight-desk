@@ -23,6 +23,15 @@ OUTPUT = {
     "temporal_state": "COMPLETED",
 }
 
+CLAIM_CASE = {
+    "id": "claim-contract-test",
+    "task": "CLAIM_VERIFY",
+    "input": {
+        "premise": "A사가 AI 사업에 투자하기로 했다.",
+        "hypothesis": "A사는 AI 사업에 투자하기로 했다.",
+    },
+}
+
 
 class ProviderContractTests(unittest.TestCase):
     def test_all_strict_schemas_are_closed_and_fully_required(self) -> None:
@@ -35,6 +44,13 @@ class ProviderContractTests(unittest.TestCase):
         rendered = prompt_for(CASE)
         self.assertIn("A사, AI 사업단 신설", rendered)
         self.assertNotIn("INDUSTRY_CHANGE", rendered)
+
+    def test_claim_prompt_defines_material_entailment_boundary(self) -> None:
+        rendered = prompt_for(CLAIM_CASE)
+        self.assertIn("fully entailed", rendered)
+        self.assertIn("lifecycle/tense", rendered)
+        self.assertIn("A사가 AI 사업에 투자하기로 했다", rendered)
+        self.assertEqual(TASK_SCHEMAS["CLAIM_VERIFY"]["properties"], {"entailed": {"type": "boolean"}})
 
     @patch("providers.urllib.request.urlopen")
     def test_http_transport_sets_explicit_api_client_headers(self, urlopen) -> None:
@@ -77,15 +93,30 @@ class ProviderContractTests(unittest.TestCase):
         clear=False,
     )
     @patch("providers._post_json")
-    def test_cloudflare_uses_json_schema_mode(self, post_json) -> None:
+    def test_cloudflare_uses_llama70b_json_schema_mode(self, post_json) -> None:
         post_json.return_value = {"success": True, "result": {"response": OUTPUT}}
         actual = providers.call_cloudflare(CASE)
         self.assertEqual(actual, OUTPUT)
         url = post_json.call_args.args[0]
         payload = post_json.call_args.args[1]
-        self.assertIn("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", url)
+        self.assertIn("@cf/meta/llama-3.3-70b-instruct-fp8-fast", url)
         self.assertEqual(payload["response_format"]["type"], "json_schema")
         self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
+        self.assertEqual(payload["max_tokens"], 384)
+        self.assertEqual(payload["temperature"], 0)
+
+    @patch.dict(
+        os.environ,
+        {"CLOUDFLARE_ACCOUNT_ID": "account", "CLOUDFLARE_API_TOKEN": "test-token"},
+        clear=False,
+    )
+    @patch("providers._post_json")
+    def test_cloudflare_claim_verifier_uses_same_strict_contract(self, post_json) -> None:
+        post_json.return_value = {"success": True, "result": {"response": {"entailed": True}}}
+        actual = providers.call_cloudflare(CLAIM_CASE)
+        self.assertEqual(actual, {"entailed": True})
+        payload = post_json.call_args.args[1]
+        self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["CLAIM_VERIFY"])
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
     @patch("providers._post_json")
