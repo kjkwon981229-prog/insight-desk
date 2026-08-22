@@ -2,12 +2,11 @@
 
 ## Pink Editorial Intelligence
 
-Status: A2 PROVISIONAL WINNER — DESIGN FREEZE NOT YET DECLARED
+Status: SOFT GEOMETRY V3 BUILT — VISUAL QA PENDING
 Branch: `ui-refoundation-pink-v2`
 Figma working file: `https://www.figma.com/design/hThXgfkZHUgI8BzOcFzqlU`
 
-This document freezes the design DNA for the UI redesign before new renderer implementation.
-It does not change semantic engine logic.
+This document is the design/source ledger for the UI redesign before renderer implementation. It does not change semantic engine logic.
 
 ## 1. Product character
 
@@ -21,16 +20,13 @@ Target character:
 - premium but not ornamental
 - quiet confidence
 - evidence-aware
-- information-dense only where useful
 - clearly non-generic
 
-## 2. Pink is retained as a first-class brand primitive
+## 2. Pink remains a first-class brand primitive
 
-Pink is NOT removed.
-Pink is NOT a decorative afterthought.
-Pink becomes the main semantic accent system.
+Pink is retained and remains structural rather than decorative.
 
-Existing anchor colors are retained as the starting palette:
+Anchor palette:
 - Brand pink: `#C35B78`
 - Strong pink: `#943C59`
 - Soft pink surface: `#F0D9E0`
@@ -38,216 +34,196 @@ Existing anchor colors are retained as the starting palette:
 - Dark-mode pink: `#D27A98`
 - Dark-mode strong pink: `#F0A1B9`
 
-Pink should primarily signal:
+Primary uses:
 1. current selection / active navigation
 2. editorial focus / important change
 3. evidence or verified emphasis
 4. brand recognition
 5. interaction focus
 
-Pink should NOT flood every card, paragraph, or chart. The default interface remains warm-neutral / charcoal so pink keeps information value.
+Pink should not flood every card. Warm neutral and charcoal remain the default field so pink retains information value.
 
-## 3. Design grammar mix
+## 3. Design grammar
 
 Primary blend:
-
-- 40% Editorial Layout
-  - strong information hierarchy
-  - publication-like sequencing
-  - narrative rhythm instead of generic dashboard cards
-
-- 30% International Typographic Style
-  - mathematical grid
-  - asymmetric balance
-  - disciplined alignment
-  - objective typography
-
-- 20% Monochrome UI
-  - information separated mainly by tone, line, weight and spacing
-  - pink remains the deliberate exception
-
-- 10% Layer / Page System
-  - article → evidence → watch-next hierarchy
-  - depth communicated through structure, not glass effects or heavy shadows
+- Editorial Layout: information hierarchy and sequencing
+- International Typographic Style: disciplined grid and asymmetric balance
+- Monochrome UI: hierarchy through tone, line, weight and spacing
+- Layer / Page System: article → evidence → watch-next depth
 
 Secondary borrowing only:
-- Japandi: warmth, calm negative space, restrained surface tone
-- Data-dense enterprise UI: evidence tables and detail views only
+- Japandi: warmth and calm spacing
+- Data-dense enterprise UI: evidence/detail views only
 - Corporate SaaS: state clarity and controls only
 
-Do NOT let these secondary styles dominate the product identity.
+## 4. Architecture direction
 
-## 4. Layout principles
+The original A/A2 direction was judged too close to the preserved UI structure. Radical V2 introduced distinct modes:
 
-### Home briefing
-The page should read like a professionally edited briefing sheet, not a grid of interchangeable cards.
+### D — Daily Edition
+Home reads as a daily edited edition, not a card feed.
 
-Order:
-1. masthead / date / freshness state
-2. one dominant 'what changed today' editorial lead
-3. compact signal rail
-4. story sequence ranked by relevance
-5. trend / watch-next information
-6. archive and evidence access
+### E — Signal Ledger
+Event continuity and state changes are shown across time.
 
-### Story anatomy
-Each important story must be able to expose these layers without visually overwhelming the default view:
+### F — Split Intelligence Desk
+Desktop evidence/detail view uses master-detail structure.
 
-- WHAT CHANGED
-- WHY IT MATTERS
-- STATUS
-- KEY FACTS
-- EVIDENCE
-- WATCH NEXT
+### G — Focus Stack
+Mobile prioritizes one event at a time.
 
-Default view shows only the most decision-useful subset.
-Evidence expands on demand.
+Current product direction is multi-mode rather than forcing one layout everywhere:
+- Home → D
+- Event continuity/history → E
+- Evidence/detail → F
+- Mobile focused consumption → G
 
-## 5. Shape language
+## 5. Soft Geometry V3 — latest user direction
 
-Preferred:
-- squared / lightly rounded editorial blocks
-- thin rules
-- asymmetric columns
-- narrow index rail
-- occasional pink block or cut-out cue
-- overlapping layers only where they communicate evidence depth
+The user explicitly requested a softer, chunkier silhouette while NOT asking to copy the supplied reference screen.
 
-Avoid:
-- pill-heavy UI
-- excessive floating cards
+Only the rounded/blocky feel is borrowed. The reference app's layout, colors, typography, component arrangement, productivity-app character and interaction model are not adopted.
+
+### Core rule
+
+Straight lines organize the page. Rounded surfaces contain the units the user actually judges.
+
+This prevents the product from becoming a generic all-cards mobile app.
+
+### Radius hierarchy
+
+- `14px` — micro elements / small internal states
+- `20px` — rows / compact information blocks
+- `28px` — normal event and evidence cards
+- `36px` — featured event / large evidence panel
+- `44px` — mobile focus / dominant single-event surface
+
+Where supported in Figma, moderate corner smoothing is applied to create a squircle-like, blunt silhouette rather than a simple geometric rounded rectangle.
+
+### What remains straight
+
+- page/canvas edges
+- masthead/grid alignment
+- major editorial rules
+- timeline axes where continuity matters
+- primary column boundaries when they express structure
+
+### What becomes soft
+
+- cover story surfaces
+- secondary event blocks
+- evidence rows/panels
+- selected event blocks
+- mobile focus card
+- state/value blocks
+- watch-next block
+
+### Avoid
+
+- rounding every single container
+- excessive pills
+- floating-card dashboard look
+- generic iOS clone aesthetics
 - glassmorphism
-- generic AI gradients
-- blue SaaS dashboard conventions
-- neon HUD styling
-- excessive icon chrome
+- gradient-heavy AI UI
 - large soft shadows
 
-## 6. Typography
+## 6. Soft Geometry V3 screens created
 
-Typography must carry more of the hierarchy than decoration.
+Figma page: `Soft Geometry System — V3`
+
+Created screens:
+
+### D3 — Daily Edition / Soft Editorial
+- daily-edition architecture retained
+- cover story becomes a large soft feature surface
+- editor note becomes a separate rounded editorial block
+- secondary stories become chunky but still editorially aligned
+- bottom-line and next-edition areas retain strong publication hierarchy
+
+### F3 — Split Desk / Soft Evidence
+- dark master rail retained
+- individual event rows become soft rounded selection units
+- right-side metrics use compact rounded blocks
+- why-it-matters and evidence become larger soft evidence surfaces
+- watch-next becomes a rounded charcoal panel with pink edge cue
+
+### G3 — Mobile Focus / 390
+- pink remains the dominant outer field
+- one large 34px-radius event card contains the current judgment unit
+- state / evidence / watch-next use smaller nested soft blocks
+- the design keeps a single-event mobile reading model instead of reproducing the supplied reference layout
+
+### Shape grammar board
+A separate page section documents the 14/20/28/36/44 hierarchy and the rule that soft surfaces correspond to judgment units.
+
+## 7. Typography
+
+Typography continues to carry more hierarchy than decoration.
 
 Rules:
 - large editorial headline with tight tracking
-- compact uppercase/small-label system for metadata
+- compact metadata labels
 - Korean body text optimized for sustained reading
-- numeric values tabular or visually stable where possible
-- no unnecessary English in content UI
-- English retained only for brand/system labels when genuinely useful
+- stable numeric values
+- unnecessary English avoided in product content
 
-## 7. Icon / brand connection
+## 8. Responsive target
 
-Existing Insight Desk icon exploration established three useful visual grammars:
-
-- Negative-Space Cut → precision / curation
-- Asymmetric Editorial Block → editorial hierarchy
-- Layer / Page System → evidence depth / curated intelligence
-
-The new UI should reuse these principles so the icon and product surface feel like one design language.
-
-## 8. Responsive targets
-
-Must be designed and stress-tested at minimum for:
-- mobile 390px class
-- mobile 430px class
+Required eventual coverage:
+- mobile 390px
+- mobile 430px
 - tablet portrait
 - desktop 1280px+
 
 Mobile is not a shrunken desktop.
-Desktop may introduce a persistent secondary evidence rail, but the editorial reading order must remain stable.
 
 ## 9. Required product states
 
-Design exploration is not complete until these are explicitly represented:
+The final system must support:
 - normal briefing
-- 1 important story only
+- one important story only
 - 8–10 story heavy day
 - no qualifying stories
 - partial source failure
-- evidence available / evidence unavailable
+- evidence available / unavailable
 - verification indeterminate
-- future / ongoing / completed / cancelled event states
+- future / ongoing / completed / cancelled
 - long Korean headline
 - long Korean summary
 - dark mode
 - push permission state
 
-## 10. Direction candidates
+## 10. Current design gate
 
-### A — Pink Editorial Intelligence
-Editorial 40 / Swiss 30 / Monochrome 20 / Layer 10.
-Strongest base identity and information hierarchy.
-
-### B — Warm Personal Briefing
-Editorial 40 / calm warm-negative-space 25 / Monochrome 20 / Swiss 15.
-Strong reading comfort and personal tone, but can drift too close to lifestyle/editorial wellness aesthetics if allowed to dominate.
-
-### C — Analytical Editorial Desk
-Editorial 35 / data-dense evidence grammar 30 / Monochrome 25 / Swiss 10.
-Strong evidence scanning, but too close to enterprise operations/BI when used as the primary home screen.
-
-### A2 — Pink Editorial Intelligence Hybrid — PROVISIONAL WINNER
-A remains the shell.
-Borrow only:
-- B: warmer neutral surface and breathing room
-- C: compact evidence ledger inside expanded story detail
-
-Do NOT borrow:
-- B's softer lifestyle tone as the dominant identity
-- C's dense operational dashboard language for the main briefing page
-
-## 11. A2 visual evaluation
-
-A2 was rendered and inspected in both desktop and 390px mobile layouts.
-
-Observed strengths:
-- pink is still clearly identifiable but does not flood the interface
-- primary signal block creates a strong first focal point without becoming a generic hero card
-- the page reads as an edited briefing rather than a card dashboard
-- evidence density appears only after story expansion
-- warm neutral surfaces reduce sterility without weakening the charcoal/pink identity
-- mobile preserves reading order instead of shrinking the desktop grid
-- dark mode keeps the same hierarchy while shifting pink to a higher-luminance accent
-
-Stress-state screens were created for:
-- long Korean headline
-- verification indeterminate
-- no qualifying stories
-- partial source failure
-- heavy day / multiple-story scanning
-- dark mode
-
-Current result: no P0 visual-architecture failure found in these states.
-This is NOT yet final design approval; interaction and implementation feasibility still need to be tested.
-
-## 12. Design gate
-
-A candidate cannot be frozen unless it passes all of the following:
-- pink remains recognizably part of Insight Desk
+A candidate cannot be frozen unless:
+- pink remains recognizably Insight Desk
+- the softened geometry feels intentional rather than generic
 - information hierarchy is clear within 2 seconds
-- one dominant story can visually lead the page
-- 8–10 stories still remain scannable
-- evidence can expand without redesigning the whole page
-- mobile and desktop both feel intentionally designed
+- one dominant story can lead the page
+- heavy days remain scannable
+- evidence expands without redesigning the screen
+- mobile and desktop both feel purpose-built
 - dark mode remains coherent
-- UI does not look like a generic AI/news/SaaS template
-- current preserved PWA/Push functionality can be reattached without visual conflict
-- implementation remains feasible with ordinary HTML/CSS/JS
+- ordinary HTML/CSS/JS can implement the shape grammar
 
-## 13. Remaining design work before freeze
+## 11. Visual QA status
 
-1. Add 430px mobile and tablet portrait layouts.
-2. Design evidence expand/collapse interaction and article-detail transition.
-3. Add push permission / notification settings state.
-4. Add source-unavailable and evidence-unavailable variants.
-5. Verify minimum touch targets, contrast, long-text behavior and safe-area spacing.
-6. Translate A2 into an isolated HTML/CSS prototype on the UI branch.
-7. Compare the HTML render against the Figma reference.
-8. Only after visual + responsive + implementation parity passes, declare `UI_DESIGN_FREEZE_V2`.
+Soft Geometry V3 screen construction completed successfully in Figma.
 
-## 14. Current implementation policy
+Immediate screenshot inspection could not be completed because the connected Figma Starter account reached its MCP call limit. The project will not use a paid upgrade to bypass this limit.
+
+Therefore:
+- V3 BUILT: YES
+- VISUAL QA: PENDING
+- DESIGN FREEZE: NO
+- PRODUCTION CSS CHANGED: NO
+
+The next Figma-capable session must begin with screenshots of D3, F3 and G3 and correct any spacing, radius, density or pink-balance defects before further design freeze work.
+
+## 12. Current implementation policy
 
 Do not edit production `assets/css/style.css` yet.
-Figma is the current visual source of truth.
-The repository design document is the decision/source ledger.
-Only the final winner is translated into production CSS and renderer changes.
+Figma remains the visual working source.
+This repository document remains the decision/source ledger.
+Only a visually audited winner may be translated into production CSS and renderer changes.
