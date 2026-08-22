@@ -7,8 +7,10 @@ on:
     paths:
       - 'pyproject.toml'
       - 'insight_desk/semantic/tooling.py'
+      - 'insight_desk/semantic/kiwi_extractor.py'
       - 'insight_desk/semantic/__init__.py'
       - 'tests/test_semantic_tooling_contracts.py'
+      - 'tests/test_kiwi_deterministic_extractor.py'
       - 'scripts/phase6_kss_fact_scaffold_canary.py'
       - '.github/workflows/semantic-local-tools.yml'
 
@@ -32,9 +34,11 @@ jobs:
         run: python -m pip install --disable-pip-version-check '.[semantic-local]'
 
       - name: Run semantic helper regressions
-        run: python -m unittest tests.test_semantic_tooling_contracts
+        run: |
+          python -m unittest tests.test_semantic_tooling_contracts
+          python -m unittest tests.test_kiwi_deterministic_extractor
 
-      - name: Run bounded KSS/Kiwi fact-scaffold diagnostic
+      - name: Run bounded Kiwi fact-scaffold diagnostic
         env:
           PYTHONPATH: .
         run: python scripts/phase6_kss_fact_scaffold_canary.py
