@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,9 +24,11 @@ from insight_desk.core import (
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "design" / "prototype-v3" / "view_model.py"
+HTML = (ROOT / "design" / "prototype-v3" / "index.html").read_text(encoding="utf-8")
 SPEC = importlib.util.spec_from_file_location("ui_v3_view_model", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
@@ -144,6 +147,12 @@ class UiV3ViewModelTests(unittest.TestCase):
     def test_empty_briefing_maps_to_empty_ui(self):
         bundle = ContractBundle()
         self.assertEqual(MODULE.build_briefing_views(bundle), ())
+
+    def test_static_prototype_does_not_display_unsupported_numeric_confidence(self):
+        self.assertNotIn("CONF.", HTML)
+        self.assertNotIn("0.98", HTML)
+        self.assertIn("VERDICT", HTML)
+        self.assertIn("검증 완료", HTML)
 
 
 if __name__ == "__main__":
