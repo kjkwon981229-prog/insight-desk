@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "verified_at": "2026-08-22",
   "hard_rule": "No paid fallback. Missing credentials or exhausted free quota means skip/fail closed, never upgrade or charge.",
   "providers": [
     {
