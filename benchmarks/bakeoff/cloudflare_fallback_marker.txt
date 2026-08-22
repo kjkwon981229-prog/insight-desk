@@ -1,0 +1,1 @@
+trigger fresh Cloudflare JSON-object fallback canary
