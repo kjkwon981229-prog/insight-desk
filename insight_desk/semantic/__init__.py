@@ -30,6 +30,7 @@ from .tooling import (
     KiwiMorphologyHelper,
     MorphologyToken,
     RapidFuzzAliasRetriever,
+    SentenceSpan,
 )
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
     "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
     "SemanticPipeline",
+    "SentenceSpan",
     "StateTransition",
     "TemporalAuxiliaryPort",
     "TemporalResolution",
