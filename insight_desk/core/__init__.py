@@ -7,6 +7,7 @@ from .contracts import (
     ContractError,
     EvidenceField,
     EvidenceSpan,
+    EventFact,
     OutcomePolarity,
     RawArticle,
     RenderMode,
@@ -17,9 +18,23 @@ from .contracts import (
     VerificationCheck,
     VerificationVerdict,
     VerifiedClaim,
-    EventFact,
 )
 from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
+from .identity import (
+    IdentityDecision,
+    IdentityKey,
+    IdentityPrecheck,
+    IdentityPrecheckVerdict,
+    finalize_identity,
+    precheck_identity,
+)
+from .selection import (
+    SelectionDecision,
+    SelectionReason,
+    SelectionSignals,
+    SelectionVerdict,
+    decide_selection,
+)
 
 __all__ = [
     "CandidateEvent",
@@ -30,6 +45,10 @@ __all__ = [
     "EvidenceSpan",
     "EventFact",
     "FailureKind",
+    "IdentityDecision",
+    "IdentityKey",
+    "IdentityPrecheck",
+    "IdentityPrecheckVerdict",
     "OutcomePolarity",
     "PipelineStage",
     "RawArticle",
@@ -37,10 +56,17 @@ __all__ = [
     "RenderMode",
     "RenderedBriefing",
     "RenderedEntry",
+    "SelectionDecision",
+    "SelectionReason",
+    "SelectionSignals",
+    "SelectionVerdict",
     "SourceProvenance",
     "TemporalState",
     "VerificationCheck",
     "VerificationVerdict",
     "VerifiedClaim",
+    "decide_selection",
+    "finalize_identity",
+    "precheck_identity",
     "recovery_action",
 ]
