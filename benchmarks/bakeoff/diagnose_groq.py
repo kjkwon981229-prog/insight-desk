@@ -1,44 +1,21 @@
 from __future__ import annotations
 
-import json
-import os
-import urllib.error
-import urllib.request
+from dataset import build_cases
+from providers import PROVIDERS, ProviderError, available
 
 
 def main() -> None:
-    key = os.environ.get("GROQ_API_KEY", "").strip()
-    if not key:
+    spec = PROVIDERS["groq20"]
+    if not available(spec):
         print("GROQ_DIAGNOSTIC_SKIPPED missing_credentials")
         return
-
-    payload = {
-        "model": "openai/gpt-oss-20b",
-        "messages": [{"role": "user", "content": "Reply with OK only."}],
-        "max_completion_tokens": 16,
-        "temperature": 0,
-    }
-    body = json.dumps(payload).encode("utf-8")
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "insight-desk-bakeoff/0.1",
-    }
-    request = urllib.request.Request(
-        "https://api.groq.com/openai/v1/chat/completions",
-        data=body,
-        headers=headers,
-        method="POST",
-    )
+    case = build_cases()[0]
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            text = response.read().decode("utf-8", errors="replace")
-            print(f"GROQ_DIAGNOSTIC_HTTP_OK status={response.status} body={text[:1200]}")
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:4000]
-        print(f"GROQ_DIAGNOSTIC_HTTP_ERROR status={exc.code} detail={detail}")
+        output = spec.call(case)
+    except ProviderError as exc:
+        print(f"GROQ_STRUCTURED_DIAGNOSTIC_ERROR case={case['id']} detail={str(exc)[:4000]}")
         raise SystemExit(2)
+    print(f"GROQ_STRUCTURED_DIAGNOSTIC_OK case={case['id']} output={output!r}")
 
 
 if __name__ == "__main__":
