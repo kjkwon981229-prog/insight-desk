@@ -14,21 +14,35 @@
       "version_target": "6.0.6",
       "license": "BSD-3-Clause",
       "candidate_role": "korean_sentence_segmentation_only",
-      "status": "AUDIT"
+      "status": "RUNTIME_CANARY",
+      "network_api_required": false,
+      "account_required": false,
+      "paid_path": false
+    },
+    {
+      "tool": "esupar + KoichiYasuoka/deberta-base-korean-upos",
+      "version_target": "esupar 1.9.2",
+      "library_license": "MIT",
+      "model_declared_license": "Apache-2.0",
+      "base_model_declared_license": "Apache-2.0",
+      "candidate_role": "dependency_relation_candidate_only",
+      "status": "HOLD_UNTIL_KSS_KIWI_GAP_IS_PROVEN",
+      "note": "Large model/dependency surface; do not download or promote unless lighter scaffold is measurably insufficient. No final fact/event authority."
     },
     {
       "tool": "Snorkel",
       "license": "Apache-2.0",
       "candidate_role": "weak_supervision_signal_aggregation_only",
-      "status": "AUDIT",
-      "note": "must not invent material-event truth; only combine independently defined labeling functions"
+      "status": "REJECT_FOR_CURRENT_PHASE6",
+      "reason": "Does not create material-event truth and adds PyTorch/TensorBoard/pandas/scikit-learn dependency surface for logic the deterministic core can aggregate directly."
     },
     {
       "tool": "scikit-learn",
+      "version_observed": "1.9.0",
       "license": "BSD-3-Clause",
-      "candidate_role": "optional_local_calibration_or_baseline_only",
-      "status": "AUDIT",
-      "note": "do not train material-event truth from repurposed selection negatives"
+      "candidate_role": "optional_local_calibration_or_statistical_baseline_only",
+      "status": "DEFER",
+      "reason": "No valid material-event training labels exist yet; selection negatives must not be repurposed as material-event negatives."
     }
   ]
 }
