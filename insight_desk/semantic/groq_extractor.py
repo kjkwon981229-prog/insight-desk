@@ -71,9 +71,10 @@ class Groq20BFactExtractor:
     """Evidence-bound FactExtractorPort adapter for the frozen zero-cost Groq 20B lane.
 
     Provider output remains untrusted. The adapter validates the closed schema again locally,
-    rejects foreign evidence ids and duplicate semantic drafts, and requires source-literal
-    subjects, material objects, dates, locations, causes, and participants. The action may be a
-    concise semantic normalization, but it cannot create evidence or merge event identity.
+    rejects foreign evidence ids and duplicate semantic drafts, and requires source-literal material
+    objects, dates, locations, causes, and participants. Subject/action may be concise semantic
+    normalizations because FactDraft is still unverified; downstream claim verification remains
+    mandatory before publication. This adapter never merges event identity or makes selection calls.
     """
 
     extractor_id = "groq-gpt-oss-20b-fact-extractor-v1"
@@ -148,7 +149,6 @@ class Groq20BFactExtractor:
 
             cited_text = "\n".join(allowed[evidence_id].text for evidence_id in evidence_ids)
             for field_name, literal in (
-                ("subject", subject),
                 ("object", object_value),
                 ("event_date", event_date),
                 ("location", location),
@@ -217,12 +217,12 @@ class Groq20BFactExtractor:
             "nullable fields are null. Set certainty to asserted for directly stated facts, possible "
             "only for explicitly possible claims, and conditional only for explicitly conditional claims. "
             "Keep future/planned/announced/resuming/resumed/completed/cancelled lifecycle distinctions "
-            "exact. Copy subject, material object, event_date, location, cause, and every participant "
-            "as the shortest explicit wording verbatim from cited evidence. The subject must be only the "
-            "actual actor/entity/event subject: exclude adjacent locations, dates, section labels, and "
-            "other context. Only action may be a concise semantic normalization. Every fact must cite "
-            "only supplied evidence_ids that support the whole fact. Keep separate events as separate "
-            "facts and never merge identity here.\n\n"
+            "exact. Copy material object, event_date, location, cause, and every participant as the "
+            "shortest explicit wording verbatim from cited evidence. Keep subject concise and faithful to "
+            "the actual actor/entity/event subject; exclude adjacent locations, dates, section labels, and "
+            "other context. Subject and action may normalize Korean particles or phrasing but must not add "
+            "unsupported entities or claims. Every fact must cite only supplied evidence_ids that support "
+            "the whole fact. Keep separate events as separate facts and never merge identity here.\n\n"
             "EVIDENCE JSON:\n"
             + json.dumps(payload, ensure_ascii=False, sort_keys=True)
         )
