@@ -4,8 +4,31 @@ import json
 from typing import Any
 
 
+TEMPORAL_STATES = [
+    "PLANNED",
+    "ANNOUNCED_PROSPECTIVE",
+    "RESUMING",
+    "RESUMED",
+    "COMPLETED",
+    "CANCELLED",
+]
+EVENT_TYPES = [
+    "REGULATION",
+    "INDUSTRY_CHANGE",
+    "ANNOUNCEMENT",
+    "MARKET_MOVE",
+    "ROSTER_PERSONNEL",
+    "AWARD_CHART",
+]
+POLARITIES = ["POSITIVE", "NEGATIVE", "NEGATIVE_OUTCOME", "NEUTRAL", "MIXED"]
+
+
 def _nullable(kind: str) -> dict[str, Any]:
     return {"type": [kind, "null"]}
+
+
+def _nullable_enum(values: list[str]) -> dict[str, Any]:
+    return {"type": ["string", "null"], "enum": [*values, None]}
 
 
 def _nullable_array() -> dict[str, Any]:
@@ -24,11 +47,12 @@ def _closed(properties: dict[str, Any]) -> dict[str, Any]:
 TASK_SCHEMAS: dict[str, dict[str, Any]] = {
     "EVENT_EXTRACT": _closed(
         {
-            "temporal_state": _nullable("string"),
+            "temporal_state": _nullable_enum(TEMPORAL_STATES),
             "duration": _nullable("string"),
             "event_date": _nullable("string"),
             "location": _nullable("string"),
             "cause": _nullable("string"),
+            "participants": _nullable_array(),
         }
     ),
     "EVENT_OWNERSHIP": _closed(
@@ -45,21 +69,22 @@ TASK_SCHEMAS: dict[str, dict[str, Any]] = {
             "requires_direction_or_state_change_for_market_move": _nullable("boolean"),
             "participants": _nullable_array(),
             "starters": _nullable_array(),
+            "action": _nullable("string"),
             "summary": _nullable("string"),
         }
     ),
     "MATERIAL_EVENT": _closed(
         {
             "is_material_event": {"type": "boolean"},
-            "event_type": _nullable("string"),
+            "event_type": _nullable_enum(EVENT_TYPES),
             "action": _nullable("string"),
-            "polarity": _nullable("string"),
-            "temporal_state": _nullable("string"),
+            "polarity": _nullable_enum(POLARITIES),
+            "temporal_state": _nullable_enum(TEMPORAL_STATES),
         }
     ),
     "GENERATION": _closed(
         {
-            "temporal_state": _nullable("string"),
+            "temporal_state": _nullable_enum(TEMPORAL_STATES),
             "headline": {"type": "string"},
             "summary": {"type": "string"},
         }
@@ -71,7 +96,9 @@ TASK_INSTRUCTIONS = {
     "EVENT_EXTRACT": (
         "Extract only temporal/lifecycle facts explicitly supported by the Korean news input. "
         "Distinguish duration from calendar event date, future/resuming from completed/resumed, "
-        "and preserve location and cause. Use null when unsupported."
+        "and preserve location, cause, and named participants. For duration, event_date, location, "
+        "and cause, copy the shortest explicit wording from the supplied input rather than resolving "
+        "relative dates or paraphrasing. Use null when unsupported."
     ),
     "EVENT_OWNERSHIP": (
         "Decide which candidate IDs describe the same real-world event as target. Similar wording, "
@@ -80,18 +107,21 @@ TASK_INSTRUCTIONS = {
     ),
     "SEMANTIC_CHECK": (
         "Judge the semantic constraints from the supplied news text. Do not treat a context noun as "
-        "an action. Do not invent missing participants or starters. If a concise Korean summary is "
-        "requested by the schema, keep it grammatical and fact-preserving."
+        "an action. Do not invent missing participants or starters. Extract the explicit action when "
+        "present. If a concise Korean summary is requested by the schema, keep it grammatical and "
+        "fact-preserving."
     ),
     "MATERIAL_EVENT": (
         "Classify whether the input reports a concrete, current material event or outcome rather than "
         "commentary, generic trend/context, preview, biography, education, fan chatter, or stale context. "
-        "For positives extract event_type/action/polarity/temporal_state only when supported; otherwise null."
+        "Use only the event_type, polarity, and temporal_state labels permitted by the schema. For a "
+        "positive event, extract a concise Korean action label supported by the input; otherwise null."
     ),
     "GENERATION": (
         "Write a concise natural Korean headline and one-sentence summary using only the supplied facts. "
         "Preserve subject, material object, event state, and time. Never convert an announcement or future "
-        "plan into a completed event, or a completed event into a plan. Do not add unsupported facts."
+        "plan into a completed event, or a completed event into a plan. Use only the temporal_state labels "
+        "permitted by the schema and do not add unsupported facts."
     ),
 }
 
