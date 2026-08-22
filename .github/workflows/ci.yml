@@ -1,0 +1,44 @@
+name: Insight Desk Infrastructure CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Compile preserved Python infrastructure
+        run: python -m compileall -q insight_desk
+      - name: Validate preserved JSON configuration and PWA manifest
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ("config/topics.json", "config/authoritative_sources.json", "manifest.webmanifest"):
+              json.loads(Path(name).read_text(encoding="utf-8"))
+          PY
+      - name: Verify API-only import boundary
+        run: |
+          python - <<'PY'
+          from insight_desk.api import EcosClient, KosisClient, NaverApiClient, OpenDartClient
+          print(EcosClient, KosisClient, NaverApiClient, OpenDartClient)
+          PY
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+      - name: Run preserved push Worker tests
+        working-directory: push-worker
+        run: npm ci && npm test
