@@ -43,7 +43,7 @@ jobs:
           python-version: "3.12.10"
       - name: Compile bake-off harness
         run: python -m compileall -q benchmarks/bakeoff
-      - name: Verify normalized 85-case dataset
+      - name: Verify corrected semantic and deferred-selection dataset
         run: python benchmarks/bakeoff/dataset.py --check
       - name: Verify provider request contracts offline
         run: PYTHONPATH=benchmarks/bakeoff python -m unittest discover -s benchmarks/bakeoff -p 'test_*.py'
@@ -81,7 +81,7 @@ jobs:
             "sentence-transformers==5.7.0" \
             "transformers==5.14.1" \
             "sentencepiece==0.2.1"
-      - name: Run multilingual NLI diagnostic
+      - name: Run multilingual NLI diagnostic on shared claim set
         run: python benchmarks/bakeoff/local_nli.py --output /tmp/local-nli.json
       - name: Run multilingual same-event retrieval diagnostic
         run: python benchmarks/bakeoff/local_similarity.py --output /tmp/local-similarity.json
@@ -118,7 +118,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && (inputs.target == 'cloudflare' || inputs.target == 'all')
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -127,16 +127,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12.10"
-      - name: Run Workers AI only inside Free allocation
-        run: |
-          set +e
-          out=/tmp/cloudflare.jsonl
-          python benchmarks/bakeoff/run_provider.py cloudflare --output "$out" --errors /tmp/cloudflare-errors.json
-          rc=$?
-          if [ -f "$out" ]; then
-            python benchmarks/bakeoff/score.py "$out" --output /tmp/cloudflare-score.json --summary-only
-          fi
-          exit "$rc"
+      - name: Run independent claim verifier inside Free allocation
+        env:
+          PYTHONPATH: benchmarks/bakeoff
+        run: python benchmarks/bakeoff/run_claim_verifier.py cloudflare --output /tmp/cloudflare-claim-verifier.json
 
   gemini-free-bakeoff:
     if: github.event_name == 'workflow_dispatch' && (inputs.target == 'gemini' || inputs.target == 'all')
