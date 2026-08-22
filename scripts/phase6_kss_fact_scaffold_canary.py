@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-import kss
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
 
@@ -33,7 +31,7 @@ def noun_phrase_before_case(text: str, tokens, case_tag: str) -> list[str]:
     return out
 
 
-def predicate_candidates(text: str, tokens) -> list[str]:
+def predicate_candidates(tokens) -> list[str]:
     candidates: list[str] = []
     for index, token in enumerate(tokens):
         if token.tag == "XSV" and index > 0 and tokens[index - 1].tag.startswith("N"):
@@ -46,22 +44,22 @@ def predicate_candidates(text: str, tokens) -> list[str]:
 def main() -> None:
     kiwi = KiwiMorphologyHelper()
     for case_index, text in enumerate(CASES, start=1):
-        sentences = tuple(kss.split_sentences(text))
+        sentences = kiwi.split_sentences(text)
         if not sentences:
-            raise AssertionError(f"KSS returned no sentence: {text}")
+            raise AssertionError(f"Kiwi returned no sentence: {text}")
         for sentence in sentences:
-            if sentence not in text:
-                raise AssertionError(f"KSS sentence lost source surface: {sentence!r}")
+            if sentence.text != text[sentence.start : sentence.end]:
+                raise AssertionError("Kiwi sentence lost exact source surface")
         tokens = kiwi.analyze(text)
         subjects = noun_phrase_before_case(text, tokens, "JKS") + noun_phrase_before_case(text, tokens, "JX")
         objects = noun_phrase_before_case(text, tokens, "JKO")
-        actions = predicate_candidates(text, tokens)
+        actions = predicate_candidates(tokens)
         print(
             json.dumps(
                 {
                     "case": case_index,
                     "text": text,
-                    "sentences": sentences,
+                    "sentences": [[s.text, s.start, s.end] for s in sentences],
                     "subjects": subjects,
                     "objects": objects,
                     "actions": actions,
@@ -73,7 +71,7 @@ def main() -> None:
                 ensure_ascii=False,
             )
         )
-    print("PHASE6_KSS_FACT_SCAFFOLD_DIAGNOSTIC result=PASS external_api_calls=0 credentials=0 paid_paths=0")
+    print("PHASE6_KIWI_FACT_SCAFFOLD_DIAGNOSTIC result=PASS external_api_calls=0 credentials=0 paid_paths=0")
 
 
 if __name__ == "__main__":
