@@ -9,6 +9,7 @@ from .events import (
     TemporalResolutionSource,
     cited_evidence_text,
     compare_candidate_identity,
+    detect_explicit_temporal_state,
     identity_key_from_fact,
     resolve_temporal_state,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "cited_evidence_text",
     "compare_candidate_identity",
     "derive_state_transitions",
+    "detect_explicit_temporal_state",
     "identity_key_from_fact",
     "resolve_temporal_state",
     "start_event_history",
