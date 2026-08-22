@@ -1,4 +1,4 @@
-name: Phase 3 Cloudflare Canary
+name: Phase 3 Cloudflare Full Diagnostic
 
 on:
   pull_request:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  canary:
+  cloudflare-full:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12.10"
-      - name: Verify credential presence without exposing values
+      - name: Verify Cloudflare credentials without exposing values
         run: |
           python - <<'PY'
           import os
@@ -30,50 +30,38 @@ jobs:
           if not (account and token):
               raise SystemExit(2)
           PY
-      - name: Run one Llama 3.3 70B JSON-schema canary
-        env:
-          PYTHONPATH: benchmarks/bakeoff
+      - name: Run fair 85-case Cloudflare bake-off
         run: |
-          python - <<'PY'
+          set +e
+          out=/tmp/cloudflare.jsonl
+          err=/tmp/cloudflare-errors.json
+          score=/tmp/cloudflare-score.json
+          python benchmarks/bakeoff/run_provider.py cloudflare --output "$out" --errors "$err"
+          rc=$?
+          if [ -f "$out" ]; then
+            python benchmarks/bakeoff/score.py "$out" --output "$score" --summary-only
+          fi
+          echo "CLOUDFLARE_PROVIDER_EXIT=$rc"
+          if [ -f "$err" ]; then
+            python - <<'PY'
           import json
-          import os
-          from providers import _post_json, _decode_json_text
-          from provider_contract import prompt_for, schema_for
-
-          case = {
-              "id": "cloudflare-llama70b-canary-001",
-              "task": "MATERIAL_EVENT",
-              "input": {
-                  "title": "A사, AI 사업단 신설",
-                  "lead": "A사가 AI 사업단을 신설했다."
-              },
-          }
-          schema = schema_for(case)
-          account_id = os.environ["CLOUDFLARE_ACCOUNT_ID"]
-          token = os.environ["CLOUDFLARE_API_TOKEN"]
-          model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-          response = _post_json(
-              f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
-              {
-                  "messages": [
-                      {"role": "system", "content": "Return only JSON matching the supplied schema."},
-                      {"role": "user", "content": prompt_for(case)},
-                  ],
-                  "response_format": {"type": "json_schema", "json_schema": schema},
-                  "max_tokens": 384,
-                  "temperature": 0,
-              },
-              {"Authorization": f"Bearer {token}"},
-          )
-          if response.get("success") is False:
-              raise SystemExit("Cloudflare API failure: " + json.dumps(response, ensure_ascii=False))
-          result = response.get("result", response)
-          if isinstance(result, dict) and "response" in result:
-              result = result["response"]
-          decoded = _decode_json_text(result)
-          expected_keys = set(schema["properties"])
-          actual_keys = set(decoded)
-          if actual_keys != expected_keys:
-              raise SystemExit(f"shape mismatch expected={sorted(expected_keys)} actual={sorted(actual_keys)}")
-          print("CLOUDFLARE_LLAMA70B_CANARY_OK " + json.dumps(decoded, ensure_ascii=False, sort_keys=True))
+          from pathlib import Path
+          path = Path('/tmp/cloudflare-errors.json')
+          data = json.loads(path.read_text()) if path.exists() else []
+          print(f"CLOUDFLARE_ERROR_COUNT={len(data)}")
+          for item in data[:10]:
+              print("CLOUDFLARE_ERROR", json.dumps(item, ensure_ascii=False, sort_keys=True)[:1200])
           PY
+          fi
+          exit "$rc"
+      - name: Upload diagnostic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-llama70b-bakeoff
+          path: |
+            /tmp/cloudflare.jsonl
+            /tmp/cloudflare-errors.json
+            /tmp/cloudflare-score.json
+          if-no-files-found: ignore
+          retention-days: 7
