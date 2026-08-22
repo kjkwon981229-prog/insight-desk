@@ -1,0 +1,107 @@
+name: Phase 1 fresh live manual canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh_live:
+    runs-on: ubuntu-latest
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+    steps:
+      - name: Checkout exact Phase 1 candidate
+        uses: actions/checkout@v6
+        with:
+          ref: 03be40abf44e40678656124409cb28717dea7363
+          fetch-depth: 0
+      - name: Require exact candidate SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "03be40abf44e40678656124409cb28717dea7363"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+      - name: Mask API values in logs
+        shell: bash
+        run: |
+          echo "::add-mask::$NCP_CLIENT_ID"
+          echo "::add-mask::$NCP_CLIENT_SECRET"
+          echo "::add-mask::$OPENDART_API_KEY"
+          echo "::add-mask::$KOSIS_API_KEY"
+          echo "::add-mask::$ECOS_API_KEY"
+      - name: Restore last-good public payload for novelty continuity
+        shell: bash
+        run: |
+          mkdir -p build/site/latest
+          last_good_url="https://kjkwon981229-prog.github.io/insight-desk/latest/data.json"
+          if ! curl --fail --silent --show-error --location --max-time 15 "$last_good_url" -o build/site/latest/data.json; then
+            rm -f build/site/latest/data.json
+            echo "No last-good public payload available; canary will use normal fallback behavior."
+          fi
+      - name: Build fresh live candidate
+        run: >-
+          python -m insight_desk.cli
+          --config config/topics.json
+          --output build/site
+          --state-file build/run-state.json
+          --cache .cache/phase1-fresh-live-manual.json
+      - name: Fail closed on unhealthy editorial state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          state = json.loads(Path('build/run-state.json').read_text(encoding='utf-8'))
+          if state.get('status') in {'TOTAL_FAILURE','FILTER_COLLAPSE','RENDER_FAILURE','VALIDATION_FAILURE'}:
+              raise SystemExit(f"unhealthy run state: {state.get('status')}")
+          if state.get('publish') is not True:
+              raise SystemExit(f"candidate did not produce publishable state: {state}")
+          PY
+      - name: Validate artifact
+        run: python scripts/validate_artifact.py build/site
+      - name: Validate live editorial acceptance
+        run: python scripts/validate_live_acceptance.py build/live-acceptance.json
+      - name: Print bounded content audit
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          live = json.loads(Path('build/live-acceptance.json').read_text(encoding='utf-8'))
+          print(json.dumps({
+              'editorial_health': live.get('editorial_health'),
+              'strong_rejected_candidates': live.get('strong_rejected_candidates'),
+              'funnel': live.get('funnel'),
+              'selected_stories': [
+                  {
+                      'rank': story.get('rank'),
+                      'topic_id': story.get('topic_id'),
+                      'headline': story.get('headline'),
+                      'summary': story.get('summary'),
+                      'event_type': story.get('event_type'),
+                      'source_count': story.get('source_count'),
+                      'final_score': story.get('final_score'),
+                  }
+                  for story in live.get('selected_stories', [])
+              ],
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Upload canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-fresh-live-manual-${{ github.run_id }}
+          path: |
+            build/run-state.json
+            build/selection-audit.json
+            build/live-acceptance.json
+            build/site/latest/data.json
+          if-no-files-found: warn
