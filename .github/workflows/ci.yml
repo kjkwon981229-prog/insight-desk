@@ -27,6 +27,8 @@ jobs:
           for name in ("config/topics.json", "config/authoritative_sources.json", "manifest.webmanifest"):
               json.loads(Path(name).read_text(encoding="utf-8"))
           PY
+      - name: Validate clean-room benchmark integrity
+        run: python benchmarks/validate.py
       - name: Verify API-only import boundary
         run: |
           python - <<'PY'

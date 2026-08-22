@@ -1,0 +1,34 @@
+{
+  "benchmark_id": "insight-desk-cleanroom-v1",
+  "version": "1.0.0",
+  "source_history_commit": "8f4098935010d65bbda77db766ff660ac3399b19",
+  "principle": "Historical evidence is retained as provider-neutral evaluation data only. Legacy engine implementation is not restored.",
+  "counts": {
+    "hard_scored_cases": 85,
+    "evidence_only_cases": 7,
+    "run96_confirmed_positive_events": 15,
+    "run96_confirmed_true_negatives": 44
+  },
+  "suites": [
+    {"file": "run89_semantic_evidence.json", "status": "EVIDENCE_ONLY_NOT_SCORED", "case_count": 7},
+    {"file": "run90_temporal.json", "status": "GOLD", "case_count": 7},
+    {"file": "run92_ownership.json", "status": "GOLD", "case_count": 5},
+    {"file": "run94_95_semantic.json", "status": "GOLD", "case_count": 7},
+    {"file": "run96_recall_precision.json", "status": "GOLD", "positive_count": 15, "true_negative_count": 44},
+    {"file": "run97_generation.json", "status": "GOLD", "case_count": 7}
+  ],
+  "required_bakeoff_metrics": [
+    "event_recall",
+    "false_positive_rate",
+    "subject_accuracy",
+    "action_accuracy",
+    "object_accuracy",
+    "temporal_accuracy",
+    "polarity_accuracy",
+    "ownership_accuracy",
+    "sentence_faithfulness",
+    "unsupported_claim_rate",
+    "korean_defect_rate",
+    "local_failure_isolation"
+  ]
+}
