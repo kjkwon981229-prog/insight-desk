@@ -29,7 +29,15 @@ jobs:
           if not os.environ.get('GEMINI_API_KEY','').strip():
               raise SystemExit(2)
           PY
-      - name: Run one structured-output case
+      - name: Run one structured-output case and expose provider error
         run: |
+          set +e
           python benchmarks/bakeoff/run_provider.py gemini --limit 1 --output /tmp/gemini-canary.jsonl --errors /tmp/gemini-canary-errors.json
-          python benchmarks/bakeoff/score.py /tmp/gemini-canary.jsonl --summary-only
+          rc=$?
+          if [ -s /tmp/gemini-canary-errors.json ]; then
+            cat /tmp/gemini-canary-errors.json
+          fi
+          if [ -s /tmp/gemini-canary.jsonl ]; then
+            python benchmarks/bakeoff/score.py /tmp/gemini-canary.jsonl --summary-only
+          fi
+          exit "$rc"
