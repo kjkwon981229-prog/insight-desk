@@ -1,0 +1,267 @@
+name: Phase 1 semantic contract executor
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  execute:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v6
+        with:
+          ref: fix/content-engine-phase1
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+          cache: pip
+      - name: Apply semantic contract patch and test
+        id: patch
+        shell: bash
+        run: |
+          set +e
+          python - <<'PY' > /tmp/phase1-patch.log 2>&1
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one target, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          semantics = 'insight_desk/pipeline/semantics.py'
+          editorial = 'insight_desk/pipeline/editorial.py'
+
+          replace_once(
+              semantics,
+              '''_MARKET_DIRECTION_ALIASES: tuple[tuple[str, str], ...] = (\n    ("올랐다", "상승"),\n    ("올라", "상승"),\n    ("오른", "상승"),\n    ("내렸다", "하락"),\n    ("내려", "하락"),\n    ("내린", "하락"),\n)\n\nTRUSTED_OFFICIAL_DOMAINS''',
+              '''_MARKET_DIRECTION_ALIASES: tuple[tuple[str, str], ...] = (\n    ("올랐다", "상승"),\n    ("올라", "상승"),\n    ("오른", "상승"),\n    ("내렸다", "하락"),\n    ("내려", "하락"),\n    ("내린", "하락"),\n)\n_MARKET_CHANGE_THEN_LEVEL_RE = re.compile(\n    r"(?P<change>\\d[\\d,.]*\\s?(?:원|포인트|%|퍼센트))\\s*"\n    r"(?P<direction>내린|오른|하락한|상승한|급락한|급등한)\\s*"\n    r"(?P<level>\\d[\\d,.]*\\s?(?:원|포인트|%|퍼센트))"\n)\n_STATISTIC_INSTRUMENTS: tuple[tuple[str, tuple[str, ...]], ...] = (\n    ("생산자물가", ("생산자물가지수", "생산자물가", "PPI")),\n    ("소비자물가", ("소비자물가지수", "소비자물가", "CPI")),\n    ("고용률", ("고용률",)),\n    ("실업률", ("실업률",)),\n)\n\nTRUSTED_OFFICIAL_DOMAINS''',
+          )
+
+          replace_once(
+              semantics,
+              '''_AFFILIATION_BARE_RELATION_RE = re.compile(\n''',
+              '''_CORPORATE_SPLIT_RELATION_RE = re.compile(\n    rf"^(?P<subject>{_RELATION_SUBJECT})(?:(?:은|는|이|가)\\s+|[,，]\\s*)"\n    rf"(?P<object>{_RELATION_OBJECT})\\s+"\n    r"(?P<action>인적분할|물적분할)"\n    r"(?:\\s*(?:결정|실시|단행|추진|승부수))?(?:[,，.…].*)?$",\n    re.IGNORECASE,\n)\n_AFFILIATION_BARE_RELATION_RE = re.compile(\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''    roster = _ROSTER_OUTCOME_RELATION_RE.match(clean) or _ROSTER_CAUSE_OUTCOME_RELATION_RE.match(clean)\n    if roster is not None:\n        return _relation_fact("ROSTER_PERSONNEL", roster, normalize_text(roster.group("action")))\n\n    industry = _INDUSTRY_RELATION_RE.match(clean) or _INDUSTRY_BARE_RELATION_RE.match(clean)\n''',
+              '''    roster = _ROSTER_OUTCOME_RELATION_RE.match(clean) or _ROSTER_CAUSE_OUTCOME_RELATION_RE.match(clean)\n    if roster is not None:\n        return _relation_fact("ROSTER_PERSONNEL", roster, normalize_text(roster.group("action")))\n\n    corporate_split = _CORPORATE_SPLIT_RELATION_RE.match(clean)\n    if corporate_split is not None:\n        return _relation_fact(\n            "INDUSTRY_CHANGE", corporate_split, normalize_text(corporate_split.group("action"))\n        )\n\n    industry = _INDUSTRY_RELATION_RE.match(clean) or _INDUSTRY_BARE_RELATION_RE.match(clean)\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''_GAME_SCORE_RE = re.compile(r"(?<!\\d)(\\d+)\\s*[-:]\\s*(\\d+)(?!\\d)")\n_LOCATION_RE = re.compile(\n''',
+              '''_GAME_SCORE_RE = re.compile(r"(?<!\\d)(\\d+)\\s*[-:]\\s*(\\d+)(?!\\d)")\n_SPORTS_STREAK_END_RE = re.compile(\n    r"(?:(?P<count>\\d+)\\s*)?연패(?:를|를\\s+)?\\s*(?:끊|탈출|마감|종료)"\n)\n_SPORTS_SEASON_STREAK_RE = re.compile(r"(?<!\\d)(\\d+)\\s*시즌\\s*연속")\n_SPORTS_INNINGS_RE = re.compile(r"(?<!\\d)(\\d+)\\s*이닝")\n_SPORTS_RECORD_ORDINAL_RE = re.compile(r"역대\\s*(\\d+)\\s*번째")\n_LOCATION_RE = re.compile(\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''    rbi = _RBI_RE.search(clean)\n    if rbi:\n        facts.append(_fact("RBI_COUNT", rbi.group(1), unit="타점"))\n    period = _PERIOD_RE.search(clean)\n''',
+              '''    rbi = _RBI_RE.search(clean)\n    if rbi:\n        facts.append(_fact("RBI_COUNT", rbi.group(1), unit="타점"))\n    streak_end = _SPORTS_STREAK_END_RE.search(clean)\n    if streak_end:\n        count = normalize_text(streak_end.group("count") or "")\n        facts.append(_fact("STREAK_END", f"{count}연패 종료" if count else "연패 종료"))\n    season_streak = _SPORTS_SEASON_STREAK_RE.search(clean)\n    if season_streak:\n        facts.append(_fact("SEASON_STREAK", season_streak.group(1), unit="시즌"))\n    innings = _SPORTS_INNINGS_RE.search(clean)\n    if innings:\n        facts.append(_fact("INNINGS", innings.group(1), unit="이닝"))\n    ordinal = _SPORTS_RECORD_ORDINAL_RE.search(clean)\n    if ordinal:\n        facts.append(_fact("RECORD_ORDINAL", ordinal.group(1), unit="번째"))\n    period = _PERIOD_RE.search(clean)\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''        segment = re.split(r"[;；。!?]", segment, maxsplit=1)[0]\n        number_match = _NUMBER_RE.search(segment[:80])\n        if not number_match:\n            continue\n        number = re.sub(r"\\s+", "", number_match.group(0))\n        direction_match = _DIRECTION_RE.search(segment[number_match.end() : number_match.end() + 32])\n        if direction_match is None:\n            direction_match = _DIRECTION_RE.search(segment[:80])\n        direction = direction_match.group(0).replace(" ", "") if direction_match else ""\n''',
+              '''        segment = re.split(r"[;；。!?]", segment, maxsplit=1)[0]\n        change_then_level = _MARKET_CHANGE_THEN_LEVEL_RE.search(segment[:100])\n        if change_then_level is not None:\n            number = re.sub(r"\\s+", "", change_then_level.group("level"))\n            raw_direction = change_then_level.group("direction")\n            direction = {\n                "내린": "하락",\n                "하락한": "하락",\n                "급락한": "급락",\n                "오른": "상승",\n                "상승한": "상승",\n                "급등한": "급등",\n            }[raw_direction]\n            number_start = change_then_level.start("level")\n            metric_name = "LEVEL"\n        else:\n            number_match = _NUMBER_RE.search(segment[:80])\n            if not number_match:\n                continue\n            number = re.sub(r"\\s+", "", number_match.group(0))\n            direction_match = _DIRECTION_RE.search(segment[number_match.end() : number_match.end() + 32])\n            if direction_match is None:\n                direction_match = _DIRECTION_RE.search(segment[:80])\n            direction = direction_match.group(0).replace(" ", "") if direction_match else ""\n            number_start = number_match.start()\n            metric_name = "CHANGE" if direction else "LEVEL"\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''        segment_periods = list(_PERIOD_RE.finditer(segment[: number_match.start()]))\n''',
+              '''        segment_periods = list(_PERIOD_RE.finditer(segment[:number_start]))\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''                metric="CHANGE" if direction else "LEVEL",\n''',
+              '''                metric=metric_name,\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''def event_observations(event_type: str, text: str) -> tuple[MetricObservation, ...]:\n    """Return typed observations for the event family being assessed."""\n\n    if event_type == "EARNINGS":\n        return earnings_observations(text)\n    if event_type in {"STATISTIC", "MARKET", "MARKET_MOVE"}:\n        return metric_observations(text)\n    return ()\n''',
+              '''def statistic_observations(text: str) -> tuple[MetricObservation, ...]:\n    """Bind a named public statistic to its own value and direction.\n\n    Durations such as ``11개월 만에`` are context, not the statistic value.\n    Prefer an explicit percentage change when present; otherwise retain the\n    first non-temporal numeric value attached to the named indicator.\n    """\n\n    value = normalize_text(text)\n    for instrument, aliases in _STATISTIC_INSTRUMENTS:\n        hits = [\n            match\n            for alias in aliases\n            for match in re.finditer(re.escape(alias), value, re.IGNORECASE)\n        ]\n        if not hits:\n            continue\n        hit = min(hits, key=lambda match: (match.start(), -(match.end() - match.start())))\n        segment = value[hit.end() : hit.end() + 180]\n        candidates = []\n        for match in _NUMBER_RE.finditer(segment):\n            number = re.sub(r"\\s+", "", match.group(0))\n            if number.endswith(("개월", "주년", "일", "월", "년")):\n                continue\n            candidates.append((match, number))\n        if not candidates:\n            continue\n        direction = market_direction(value)\n        preferred = next(\n            ((match, number) for match, number in candidates if number.endswith(("%", "퍼센트"))),\n            candidates[0],\n        )\n        match, number = preferred\n        period_matches = list(_PERIOD_RE.finditer(value[: hit.start() + match.start()]))\n        period = re.sub(r"\\s+", "", period_matches[-1].group(0)) if period_matches else ""\n        return (\n            MetricObservation(\n                instrument=instrument,\n                metric="CHANGE" if direction else "LEVEL",\n                value=number,\n                direction=direction,\n                period=period,\n                raw=value[hit.start() : hit.end() + min(len(segment), 180)].strip(" ,·-—"),\n            ),\n        )\n    return ()\n\n\ndef event_observations(event_type: str, text: str) -> tuple[MetricObservation, ...]:\n    """Return typed observations for the event family being assessed."""\n\n    if event_type == "EARNINGS":\n        return earnings_observations(text)\n    if event_type == "STATISTIC":\n        return statistic_observations(text)\n    if event_type in {"MARKET", "MARKET_MOVE"}:\n        return metric_observations(text)\n    return ()\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''    if event_type == "STATISTIC":\n        observations = metric_observations(title)\n        directional = next((item.direction for item in observations if item.direction), "")\n        if directional:\n            return directional\n''',
+              '''    if event_type == "STATISTIC":\n        observations = statistic_observations(text)\n        directional = next((item.direction for item in observations if item.direction), "")\n        if directional:\n            return directional\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''    if event_type == "ROSTER_PERSONNEL":\n        if roster_selection_action_supported(text):\n''',
+              '''    if event_type == "SPORTS_RESULT":\n        facts = sports_result_facts(text)\n        roles = {fact.role for fact in facts}\n        if "STREAK_END" in roles:\n            return "연패 종료"\n        if roles.intersection({\n            "AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT",\n            "SEASON_STREAK", "INNINGS", "RECORD_ORDINAL",\n        }):\n            return "기록"\n        return ""\n    if event_type == "ROSTER_PERSONNEL":\n        if roster_selection_action_supported(text):\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''    observations = event_observations(event_type, title_text)\n''',
+              '''    # ``lead_text`` has already been ownership-filtered by the caller.\n    # Build canonical metric facts from all owned evidence, not title alone.\n    observations = event_observations(event_type, evidence)\n''',
+          )
+
+          replace_once(
+              semantics,
+              '''        result_roles = {"AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT"}\n''',
+              '''        result_roles = {\n            "AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT",\n            "STREAK_END", "SEASON_STREAK", "INNINGS", "RECORD_ORDINAL",\n        }\n''',
+          )
+
+          replace_once(
+              editorial,
+              '''    same_canonical_event,\n    sports_interruption_state,\n''',
+              '''    same_canonical_event,\n    sports_interruption_state,\n    sports_result_facts,\n''',
+          )
+
+          replace_once(
+              editorial,
+              '''    if sports_interruption_title_support(title, lead):\n        return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]\n    if industry_trend_fact(title) is not None:\n''',
+              '''    if sports_interruption_title_support(title, lead):\n        return "SPORTS_INTERRUPTION", 70.0, ["SPORTS_INTERRUPTION"]\n    sports_facts = sports_result_facts(f"{title} {lead}")\n    sports_fact_roles = {fact.role for fact in sports_facts}\n    if _sports_context(f"{title} {lead}") and sports_fact_roles.intersection({\n        "AWARD", "GAME_SCORE", "HOME_RUN_COUNT", "RBI_COUNT",\n        "STREAK_END", "SEASON_STREAK", "INNINGS", "RECORD_ORDINAL",\n    }):\n        return "SPORTS_RESULT", 72.0, ["TYPED_SPORTS_RESULT"]\n    if industry_trend_fact(title) is not None:\n''',
+          )
+
+          replace_once(
+              editorial,
+              '''_KBO_MATERIAL_MARKERS = (\n    "트레이드", "영입", "등록", "말소", "부상", "징계", "규정", "계약", "방출", "은퇴",\n    "중단", "취소", "재개", "순위", "홈런", "기록", "승리", "패배", "우승",\n)\n''',
+              '''_KBO_MATERIAL_MARKERS = (\n    "트레이드", "영입", "등록", "말소", "부상", "징계", "규정", "계약", "방출", "은퇴",\n    "중단", "취소", "재개", "순위", "홈런", "기록", "승리", "패배", "우승",\n    "연승", "연패", "이닝", "MVP", "최다", "최초",\n)\n''',
+          )
+
+          Path('tests/test_phase1_semantic_contract_recall.py').write_text(r'''from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from insight_desk.config import load_topics
+from insight_desk.domain.models import EvidenceType, NewsItem
+from insight_desk.pipeline.clustering import StoryCluster
+from insight_desk.pipeline.editorial import assess_cluster, assess_event
+from insight_desk.pipeline.semantics import metric_observations, statistic_observations, typed_event_relation
+
+TOPICS, _ = load_topics(Path("config/topics.json"))
+TOPIC = {topic.id: topic for topic in TOPICS}
+
+
+def item(key: str, topic_id: str, query: str, title: str, summary: str) -> NewsItem:
+    return NewsItem(
+        evidence_id=key, topic_id=topic_id, query=query, title=title, summary=summary,
+        original_url=f"https://fixture.test/{key}", naver_url="",
+        canonical_url=f"https://fixture.test/{key}", published_at="2026-08-22T10:00:00+09:00",
+        source_domain="fixture.test", content_hash=key, score=95.0,
+        metadata_title=title, metadata_description=summary,
+        metadata_canonical_url=f"https://fixture.test/{key}", publisher="Fixture News",
+        metadata_published_at="2026-08-22T10:00:00+09:00",
+        provenance=(EvidenceType.SEARCH_SNIPPET, EvidenceType.ENRICHED_METADATA),
+        matched_topic_ids=(topic_id,), retrieval_channels=("SIM",), retrieval_queries=(query,),
+    )
+
+
+class Phase1SemanticContractRecallTests(unittest.TestCase):
+    def assert_survives(self, story: NewsItem, expected_type: str) -> None:
+        cluster = StoryCluster(story.topic_id, (story,))
+        event = assess_event(cluster, TOPIC[story.topic_id])
+        self.assertEqual(event.event_type, expected_type, event.reasons)
+        self.assertTrue(event.action, event.reasons)
+        self.assertTrue(event.passed, (event.action, event.reasons, event.canonical_event))
+        assessment = assess_cluster(cluster, TOPIC[story.topic_id], novelty="NEW")
+        self.assertTrue(assessment.qualified, assessment.reasons)
+
+    def test_corporate_split_is_typed_industry_event(self) -> None:
+        story = item("kakao-split", "ai_tech", "AI 에이전트",
+            "카카오, 'AI·투자' 인적분할 승부수…주가 '반토막' 늪 탈출할까",
+            "카카오가 AI 사업과 투자 부문을 나누는 인적분할을 추진한다.")
+        relation = typed_event_relation("카카오, 'AI·투자' 인적분할 승부수")
+        self.assertIsNotNone(relation)
+        self.assertEqual(relation[0], "INDUSTRY_CHANGE")
+        self.assertEqual(relation[1].relation, "인적분할")
+        self.assert_survives(story, "INDUSTRY_CHANGE")
+
+    def test_market_change_amount_is_not_mistaken_for_closing_level(self) -> None:
+        title = "원·달러 환율 6.1원 내린 1386.5원 마감…11개월 만에 최저"
+        observations = metric_observations(title)
+        self.assertTrue(observations)
+        self.assertEqual(observations[0].instrument, "원·달러 환율")
+        self.assertEqual(observations[0].value, "1386.5원")
+        self.assertEqual(observations[0].direction, "하락")
+        self.assert_survives(item("fx-close", "economy", "원·달러 환율", title,
+            "원·달러 환율이 전 거래일보다 6.1원 내린 1386.5원에 마감했다."), "MARKET_MOVE")
+
+    def test_owned_lead_supplies_public_statistic_fact(self) -> None:
+        story = item("ppi-fall", "economy", "물가", "생산자물가 11개월 만에 하락",
+            "7월 생산자물가지수는 129.39로 전월보다 0.4% 하락했다.")
+        observations = statistic_observations(f"{story.title} {story.summary}")
+        self.assertTrue(observations)
+        self.assertEqual(observations[0].instrument, "생산자물가")
+        self.assertEqual(observations[0].value, "0.4%")
+        self.assertEqual(observations[0].direction, "하락")
+        self.assert_survives(story, "STATISTIC")
+
+    def test_streak_end_is_a_sports_result(self) -> None:
+        self.assert_survives(item("hanwha-streak-end", "kbo_hanwha", "한화 이글스",
+            "연패 끊은 한화 이글스, 분위기 반전",
+            "프로야구 한화 이글스가 연패를 끊고 승리를 거뒀다."), "SPORTS_RESULT")
+
+    def test_innings_record_is_a_typed_sports_result(self) -> None:
+        self.assert_survives(item("yang-record", "kbo_hanwha", "KBO",
+            "프로야구 KIA 양현종, 역대 2번째 13시즌 연속 100이닝",
+            "프로야구 KIA 양현종이 13시즌 연속 100이닝을 달성했다."), "SPORTS_RESULT")
+
+
+if __name__ == "__main__":
+    unittest.main()
+''', encoding='utf-8')
+          PY
+          patch_status=$?
+          cat /tmp/phase1-patch.log
+          if [ "$patch_status" -eq 0 ]; then
+            python -m compileall -q insight_desk
+            python -m unittest discover -s tests -p 'test*.py' 2>&1 | tee /tmp/phase1-tests.log
+            test_status=${PIPESTATUS[0]}
+          else
+            test_status=99
+          fi
+          if [ "$patch_status" -ne 0 ] || [ "$test_status" -ne 0 ]; then
+            git reset --hard origin/fix/content-engine-phase1
+            mkdir -p verification
+            {
+              echo "PHASE1_SEMANTIC_EXECUTOR_FAIL"
+              echo "patch_status=$patch_status"
+              echo "test_status=$test_status"
+              echo "--- patch ---"
+              tail -80 /tmp/phase1-patch.log 2>/dev/null || true
+              echo "--- tests ---"
+              tail -160 /tmp/phase1-tests.log 2>/dev/null || true
+            } > verification/phase1-semantic-executor-fail.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add verification/phase1-semantic-executor-fail.txt
+            git commit -m "Record phase 1 semantic executor failure"
+            git push origin HEAD:fix/content-engine-phase1
+            exit 1
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add insight_desk/pipeline/semantics.py insight_desk/pipeline/editorial.py tests/test_phase1_semantic_contract_recall.py
+          git commit -m "Unify typed event facts with action qualification"
+          git push origin HEAD:fix/content-engine-phase1
+      - name: Remove one-time executor from main
+        if: always()
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+          git rm .github/workflows/phase1-semantic-contract-executor.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Remove one-time phase 1 semantic executor"
+          git push origin HEAD:main
