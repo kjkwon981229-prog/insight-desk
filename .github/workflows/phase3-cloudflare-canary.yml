@@ -4,8 +4,6 @@ on:
   pull_request:
     branches:
       - phase3-bakeoff
-    paths:
-      - ".github/workflows/phase3-cloudflare-canary.yml"
 
 permissions:
   contents: read
