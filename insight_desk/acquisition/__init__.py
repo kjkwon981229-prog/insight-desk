@@ -1,4 +1,4 @@
-"""Evidence-preserving article acquisition for Insight Desk."""
+"""Evidence-preserving acquisition for web articles and official structured sources."""
 
 from .models import (
     AcquisitionError,
@@ -9,6 +9,11 @@ from .models import (
     ExtractionQualityPolicy,
     FetchedPage,
     normalize_naver_items,
+)
+from .official import (
+    normalize_ecos_statistics,
+    normalize_kosis_statistics,
+    normalize_opendart_filings,
 )
 from .pipeline import AcquisitionPipeline
 from .runtime import PlaywrightHtmlRenderer, TrafilaturaExtractor, UrlLibHtmlFetcher
@@ -25,5 +30,8 @@ __all__ = [
     "PlaywrightHtmlRenderer",
     "TrafilaturaExtractor",
     "UrlLibHtmlFetcher",
+    "normalize_ecos_statistics",
+    "normalize_kosis_statistics",
     "normalize_naver_items",
+    "normalize_opendart_filings",
 ]
