@@ -1,0 +1,123 @@
+{
+  "audit_id": "ZERO_COST_TOOL_AUDIT_V1",
+  "date": "2026-08-23",
+  "operating_cost_requirement_krw": 0,
+  "repo_visibility": "public",
+  "github_actions_policy": {
+    "runner_class": "standard_github_hosted",
+    "larger_runners_allowed": false,
+    "self_hosted_paid_compute_required": false
+  },
+  "adopted_runtime_optional": [
+    {
+      "tool": "kiwipiepy",
+      "version": "0.23.2",
+      "license": "LGPL-3.0",
+      "network_api_required": false,
+      "account_required": false,
+      "secret_required": false,
+      "paid_path": false,
+      "authority": "korean_morphology_and_source_offsets_only",
+      "forbidden_authority": [
+        "named_entity_truth",
+        "fact_truth",
+        "event_identity",
+        "material_event_truth",
+        "selection",
+        "publication_verification"
+      ],
+      "canary": {
+        "workflow_run_id": 32598931598,
+        "job_id": 97094126726,
+        "result": "PASS",
+        "finding": "Named surfaces remained exactly covered by source offsets even when a name was split into multiple tokens."
+      }
+    },
+    {
+      "tool": "RapidFuzz",
+      "version": "3.14.5",
+      "license": "MIT",
+      "network_api_required": false,
+      "account_required": false,
+      "secret_required": false,
+      "paid_path": false,
+      "authority": "alias_string_candidate_retrieval_only",
+      "forbidden_authority": [
+        "same_entity_final_decision",
+        "same_event_final_decision",
+        "fact_truth",
+        "material_event_truth"
+      ],
+      "canary": {
+        "workflow_run_id": 32598931598,
+        "job_id": 97094126726,
+        "result": "PASS",
+        "exact_match_score": 100.0,
+        "spacing_variant_score": 92.308,
+        "unrelated_score": 16.667
+      }
+    }
+  ],
+  "adopted_human_annotation_only": [
+    {
+      "tool": "Label Studio OSS",
+      "license": "Apache-2.0",
+      "deployment": "local_self_hosted_only",
+      "cloud_product_allowed": false,
+      "network_api_required_for_core": false,
+      "paid_path": false,
+      "runtime_dependency": false,
+      "purpose": [
+        "material_event_gold_annotation",
+        "fact_span_gold_annotation"
+      ]
+    }
+  ],
+  "rejected": [
+    {
+      "tool": "dateparser",
+      "version": "1.4.1",
+      "license": "BSD-3-Clause",
+      "reason": "Korean news date reliability failed bounded runtime canary",
+      "canary": {
+        "workflow_run_id": 32598931598,
+        "job_id": 97094126726,
+        "result": "REJECT",
+        "failed_examples": [
+          "2026년 9월 3일",
+          "9월 3일",
+          "오는 27일",
+          "지난 12일"
+        ]
+      }
+    },
+    {
+      "tool": "GLiNER-ko",
+      "reason": "CC-BY-NC-4.0 model license is unsuitable for an unrestricted long-lived production core; model is also large for the current need"
+    }
+  ],
+  "held": [
+    {
+      "tool": "Stanza Korean dependency models",
+      "reason": "Library code is permissive but the official documentation warns that underlying UD language-pack licensing can require separate provenance review"
+    }
+  ],
+  "deferred": [
+    {
+      "tool": "SetFit",
+      "reason": "Evaluate only after human material-event gold exists and a permissively licensed Korean/multilingual base model is separately audited"
+    },
+    {
+      "tool": "Evidently OSS",
+      "reason": "Useful for Phase 9-12 drift and quality monitoring, not a current Phase 6 blocker"
+    }
+  ],
+  "global_prohibitions": [
+    "automatic_paid_fallback",
+    "subscription_required_core_dependency",
+    "larger_paid_github_runner",
+    "cloud_annotation_service_for_required_gold",
+    "tool_score_used_as_event_identity_truth",
+    "tool_score_used_as_material_event_truth_without_gold_validation"
+  ]
+}

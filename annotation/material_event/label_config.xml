@@ -1,0 +1,30 @@
+<View>
+  <Header value="Insight Desk — Material Event Gold V1"/>
+  <Text name="instruction" value="$instruction"/>
+  <Header value="제목"/>
+  <Text name="title" value="$title"/>
+  <Header value="리드 / 근거"/>
+  <Text name="evidence" value="$evidence"/>
+
+  <Header value="외부 지식을 사용하지 말고 위 근거만으로 사건성을 판정하세요."/>
+  <Choices name="material_event" toName="evidence" choice="single-radio" required="true"
+           requiredMessage="MATERIAL / NOT_MATERIAL / UNCERTAIN 중 하나를 선택하세요.">
+    <Choice value="MATERIAL" hint="구체적인 주체의 행동·상태변화·결정·발표·결과가 근거에 명시됨"/>
+    <Choice value="NOT_MATERIAL" hint="의견·전망·맥락·일반 주제·설명뿐이며 구체 사건이 근거에 성립하지 않음"/>
+    <Choice value="UNCERTAIN" hint="표시된 근거만으로는 사건성 여부를 안전하게 확정할 수 없음"/>
+  </Choices>
+
+  <Header value="선택 이유(복수 선택 가능)"/>
+  <Choices name="reason" toName="evidence" choice="multiple" required="false">
+    <Choice value="CONCRETE_ACTION_OR_CHANGE"/>
+    <Choice value="CONCRETE_DECISION_OR_ANNOUNCEMENT"/>
+    <Choice value="CONCRETE_RESULT_OR_OUTCOME"/>
+    <Choice value="ONLY_CONTEXT_OR_TOPIC"/>
+    <Choice value="ONLY_OPINION_OR_FORECAST"/>
+    <Choice value="MISSING_ACTOR_ACTION_OR_CHANGE"/>
+    <Choice value="INSUFFICIENT_EVIDENCE"/>
+  </Choices>
+
+  <Header value="메모(선택)"/>
+  <TextArea name="notes" toName="evidence" required="false" rows="3"/>
+</View>

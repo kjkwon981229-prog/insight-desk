@@ -25,8 +25,15 @@ from .history import (
 )
 from .identity import IdentityResolution, merge_candidate_events, resolve_candidate_pair
 from .pipeline import SemanticArticleResult, SemanticPipeline
+from .tooling import (
+    AliasCandidate,
+    KiwiMorphologyHelper,
+    MorphologyToken,
+    RapidFuzzAliasRetriever,
+)
 
 __all__ = [
+    "AliasCandidate",
     "EventHistory",
     "EventSnapshot",
     "EvidenceSegmenter",
@@ -34,8 +41,11 @@ __all__ = [
     "FactExtractionRequest",
     "FactExtractorPort",
     "IdentityResolution",
+    "KiwiMorphologyHelper",
+    "MorphologyToken",
     "Phase6EventAssessment",
     "Phase6EventEngine",
+    "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
     "SemanticPipeline",
     "StateTransition",

@@ -1,0 +1,28 @@
+<View>
+  <Header value="Insight Desk — Fact Span Gold V1"/>
+  <Text name="instruction" value="$instruction"/>
+  <Header value="표시된 텍스트에서 실제로 존재하는 문자열만 span으로 지정하세요. 추정·보완 금지."/>
+  <Text name="text" value="$text"/>
+
+  <Labels name="fact_spans" toName="text">
+    <Label value="SUBJECT" hotkey="1"/>
+    <Label value="ACTION" hotkey="2"/>
+    <Label value="OBJECT" hotkey="3"/>
+    <Label value="DATE_TIME" hotkey="4"/>
+    <Label value="LOCATION" hotkey="5"/>
+    <Label value="CAUSE" hotkey="6"/>
+    <Label value="PARTICIPANT" hotkey="7"/>
+    <Label value="NUMBER_AMOUNT" hotkey="8"/>
+    <Label value="ATTRIBUTION_SOURCE" hotkey="9"/>
+  </Labels>
+
+  <Header value="근거가 없거나 구조가 애매하면 억지로 span을 만들지 마세요."/>
+  <Choices name="fact_status" toName="text" choice="single-radio" required="true">
+    <Choice value="FACT_STRUCTURE_CLEAR"/>
+    <Choice value="FACT_STRUCTURE_PARTIAL"/>
+    <Choice value="NO_EXTRACTABLE_FACT"/>
+  </Choices>
+
+  <Header value="메모(선택)"/>
+  <TextArea name="notes" toName="text" required="false" rows="3"/>
+</View>

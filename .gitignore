@@ -4,6 +4,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .cache/
+.venv*/
 build/
 dist/
 *.egg-info/
@@ -14,3 +15,6 @@ site/
 *.sqlite3
 *.db
 *.log
+annotation/*/tasks_seed.json
+annotation/*/seed_provenance.json
+annotation/*/exports/
