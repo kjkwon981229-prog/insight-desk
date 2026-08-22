@@ -9,24 +9,7 @@ from typing import Any
 
 from dataset import build_cases
 
-DIRECT_FIELDS = {
-    "is_material_event",
-    "event_type",
-    "action",
-    "polarity",
-    "temporal_state",
-    "duration",
-    "event_date",
-    "location",
-    "cause",
-    "participants",
-    "starters",
-    "speaker_role",
-    "same_event_with",
-    "is_coherent_single_event",
-    "context_noun_only_is_not_sufficient_action",
-    "requires_direction_or_state_change_for_market_move",
-}
+CONCEPT_FIELDS = {"action", "speaker_role"}
 
 
 def _norm(value: Any) -> Any:
@@ -35,6 +18,12 @@ def _norm(value: Any) -> Any:
     if isinstance(value, list):
         return sorted(_norm(item) for item in value)
     return value
+
+
+def _equivalent(field: str, actual: Any, expected: Any) -> bool:
+    if field in CONCEPT_FIELDS and isinstance(actual, str) and isinstance(expected, str):
+        return _norm(expected) in _norm(actual)
+    return _norm(actual) == _norm(expected)
 
 
 def _text(output: dict[str, Any]) -> str:
@@ -77,16 +66,16 @@ def score(predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
         expected = case["expected"]
         for key, expected_value in expected.items():
-            if key not in DIRECT_FIELDS:
-                continue
             actual = output.get(key)
-            passed = _norm(actual) == _norm(expected_value)
+            passed = _equivalent(key, actual, expected_value)
             totals[f"field:{key}"][1] += 1
             totals[f"field:{key}"][0] += int(passed)
-            row["checks"].append({"check": key, "pass": passed, "expected": expected_value, "actual": actual})
+            row["checks"].append(
+                {"check": key, "pass": passed, "expected": expected_value, "actual": actual}
+            )
 
         generated = _text(output)
-        for concept in expected.get("must_preserve_concepts", []):
+        for concept in case["constraints"].get("must_preserve_concepts", []):
             passed = _norm(concept) in _norm(generated)
             totals["generation:concept_preservation"][1] += 1
             totals["generation:concept_preservation"][0] += int(passed)
@@ -104,6 +93,7 @@ def score(predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
             totals["generation:literal_forbidden_claim_absence"][0] += int(passed)
             row["checks"].append({"check": f"literal_forbidden_claim:{forbidden}", "pass": passed})
 
+        row["evaluator_requirements"] = case["constraints"].get("evaluator_requirements", {})
         row["pass"] = all(check["pass"] for check in row["checks"]) if row["checks"] else None
         case_rows.append(row)
 
@@ -117,14 +107,19 @@ def score(predictions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
     benchmark_count = len(case_rows)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "prediction_count": len(predictions),
         "benchmark_case_count": benchmark_count,
         "missing_case_count": missing,
         "coverage": round((benchmark_count - missing) / benchmark_count, 4),
         "metrics": summary,
         "cases": case_rows,
-        "note": "Grammar, semantic paraphrases, and unsupported-claim equivalence require an independent judge/NLI lane and are not inferred from literal matching.",
+        "note": (
+            "Direct metrics score only fields present in the task output contract. Action and speaker-role "
+            "labels accept an expected canonical phrase contained in a more specific provider phrase. "
+            "Evaluator-only grammar, paraphrase, and unsupported-claim requirements remain separate for "
+            "the independent judge/NLI lane."
+        ),
     }
 
 
