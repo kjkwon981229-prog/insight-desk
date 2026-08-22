@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#c35b78">
+  <title>Insight Desk · Soft Geometry V3 Prototype</title>
+  <link rel="stylesheet" href="./prototype.css">
+  <script src="./prototype.js" defer></script>
+</head>
+<body>
+  <main class="prototype-shell" data-ui-v3-prototype>
+    <header class="masthead">
+      <a class="brand" href="#home">INSIGHT DESK</a>
+      <div class="prototype-meta"><span class="live-dot" aria-hidden="true"></span><span>V3 PROTOTYPE</span><span class="date">2026.08.23</span></div>
+    </header>
+
+    <nav class="view-nav" aria-label="V3 프로토타입 화면">
+      <button type="button" data-view-button="home" aria-pressed="true">오늘</button>
+      <button type="button" data-view-button="ledger" aria-pressed="false">사건 흐름</button>
+      <button type="button" data-view-button="detail" aria-pressed="false">근거 상세</button>
+    </nav>
+
+    <section class="view" data-view="home" data-active="true" id="home">
+      <div class="daily-edition desktop-home">
+        <div class="edition-head">
+          <div>
+            <span class="eyebrow">DAILY EDITION / 개인 브리핑</span>
+            <h1>오늘의 변화</h1>
+            <p class="edition-sub">중요한 뉴스의 개수가 아니라, 오늘 실제로 상태가 달라진 사건을 편집합니다.</p>
+          </div>
+          <div class="edition-number" aria-label="오늘의 주요 변화 4개">04</div>
+        </div>
+
+        <div class="cover-layout">
+          <article class="cover-card">
+            <div>
+              <span class="story-kicker">COVER STORY · AI·테크</span>
+              <h2>AI 규제안,<br>‘발표’에서<br>‘시행 일정’으로</h2>
+            </div>
+            <div class="cover-bottom">
+              <div class="cover-date">09.03</div>
+              <p class="cover-evidence">공식 발표 · 보도자료 2곳 검증<br>현재 상태: 발표 → 예정</p>
+            </div>
+          </article>
+
+          <aside class="editor-note">
+            <div>
+              <span class="section-kicker">EDITOR'S NOTE</span>
+              <h3>왜 오늘의 1면인가</h3>
+              <p>새 정보는 “규제가 있다”가 아니라 실제 시행 시점이 생겼다는 점입니다. 후속 고시와 실제 집행을 별도 사건으로 이어서 봅니다.</p>
+            </div>
+            <div class="watch-box">
+              <span class="label">WATCH</span>
+              <strong>시행일 변경 · 적용 대상 · 실제 집행</strong>
+            </div>
+          </aside>
+        </div>
+
+        <div class="secondary-grid" aria-label="보조 사건">
+          <article class="secondary-story"><div><span class="index">02</span><span class="story-kicker"> · 경제·투자</span><h3>한국은행, 기준금리 동결</h3><p>결정과 시장 반응을 같은 사건으로 묶지 않고 분리해 읽습니다.</p></div><span class="state">완료</span></article>
+          <article class="secondary-story"><div><span class="index">03</span><span class="story-kicker"> · K-POP</span><h3>주요 기획사, 월드투어 일정 공개</h3><p>일정 공개와 실제 공연 개최는 별도 상태 변화입니다.</p></div><span class="state">발표</span></article>
+          <article class="secondary-story"><div><span class="index">04</span><span class="story-kicker"> · AI·테크</span><h3>반도체 공급계약 발표</h3><p>계약 발표는 확인됐지만 규모는 독립 근거가 더 필요합니다.</p></div><span class="state">추가 확인</span></article>
+        </div>
+
+        <div class="bottom-line">
+          <div class="bottom-line-copy"><span class="section-kicker">BOTTOM LINE</span><h3>내일 다시 볼 것은 “새 기사”가 아니라 “상태가 바뀐 사건”입니다.</h3></div>
+          <aside class="next-edition"><span class="label">NEXT EDITION</span><strong>08.24<br>06:30</strong></aside>
+        </div>
+      </div>
+
+      <div class="mobile-focus" aria-label="모바일 집중형 홈">
+        <section class="mobile-focus-stage">
+          <a class="brand" href="#home">INSIGHT DESK</a>
+          <div class="focus-intro"><span class="section-kicker" style="color:#ffeaf0">TODAY / FOCUS</span><h1>오늘은<br>네 가지가<br>바뀌었습니다.</h1><p>한 번에 한 사건씩 판단합니다.</p></div>
+          <article class="focus-card">
+            <div><span class="story-kicker">AI·테크 / PRIMARY</span><span class="status-chip" style="float:right">검증 완료</span></div>
+            <h2>AI 규제안,<br>9월 초 시행 일정 발표</h2>
+            <p>발표보다 중요한 것은 실제 시행 시점이 생겼다는 점입니다.</p>
+            <div class="focus-metrics">
+              <div class="focus-metric primary"><span>CURRENT STATE</span><strong>발표 → 예정 · 09.03</strong></div>
+              <div class="focus-metric"><span>EVIDENCE</span><strong>2 sources · 독립 검증 완료</strong></div>
+              <div class="focus-metric dark"><span>WATCH NEXT</span><strong>실제 시행 · 적용 대상 수정</strong></div>
+            </div>
+            <div class="focus-why"><span class="label">WHY IT MATTERS</span><strong>규제 자체가 아니라 실행 가능한 일정이 생겼습니다.</strong></div>
+            <div class="focus-actions"><span>근거 펼치기</span><span>다음 사건 ↓</span></div>
+          </article>
+          <div class="focus-progress" aria-label="4개 사건 중 1번째"><span></span></div>
+          <div class="focus-labels"><span>01 AI 규제</span><span>02 금리</span><span>03 월드투어</span><span>04 공급계약</span></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="view ledger" data-view="ledger" data-active="false" id="ledger">
+      <div class="ledger-layout">
+        <aside class="ledger-rail">
+          <span class="section-kicker" style="color:#f0a1b9">EVENT LEDGER</span>
+          <h2>INSIGHT<br>DESK</h2>
+          <div class="rail-links"><a class="active" href="#ledger">ALL</a><a href="#ledger">AI·TECH</a><a href="#ledger">K-POP</a><a href="#ledger">ECON</a><a href="#ledger">KBO</a><a href="#ledger">PSAT</a></div>
+          <div class="rail-count">04</div><span style="color:#aaa0a5;font-size:.72rem">CHANGES TODAY</span>
+        </aside>
+        <div class="ledger-main">
+          <span class="eyebrow">EVENT LEDGER / 2026.08.23</span>
+          <h1>사건은 기사보다<br>오래 남는다.</h1>
+          <p>같은 사건의 상태 변화가 시간축에 누적됩니다.</p>
+          <div class="timeline">
+            <article class="timeline-item"><div class="timeline-time">09:00</div><div class="timeline-title"><span>AI·테크</span><strong>신규 AI 규제안</strong></div><div class="timeline-state">ANNOUNCED → SCHEDULED<b>09.03</b></div><span class="status-chip">SUPPORTED</span></article>
+            <article class="timeline-item"><div class="timeline-time">10:42</div><div class="timeline-title"><span>경제·투자</span><strong>한국은행 기준금리</strong></div><div class="timeline-state">DECIDED<b>동결</b></div><span class="status-chip">SUPPORTED</span></article>
+            <article class="timeline-item"><div class="timeline-time">12:10</div><div class="timeline-title"><span>K-POP</span><strong>월드투어 일정</strong></div><div class="timeline-state">ANNOUNCED<b>11개 도시</b></div><span class="status-chip">SUPPORTED</span></article>
+            <article class="timeline-item"><div class="timeline-time">14:28</div><div class="timeline-title"><span>AI·테크</span><strong>반도체 공급계약</strong></div><div class="timeline-state">ANNOUNCED<b>규모 비공개</b></div><span class="status-chip pending">PENDING</span></article>
+            <article class="timeline-item"><div class="timeline-time">17:03</div><div class="timeline-title"><span>KBO</span><strong>경기 편성 변경</strong></div><div class="timeline-state">RESCHEDULED<b>08.24</b></div><span class="status-chip">SUPPORTED</span></article>
+          </div>
+          <section class="continuity"><span class="section-kicker">CONTINUITY</span><h3>어제 → 오늘 → 다음 확인</h3><div class="continuity-grid"><div class="continuity-step"><span>08.22</span><strong>규제안 발표</strong></div><div class="continuity-step current"><span>08.23</span><strong>시행 일정 확정</strong></div><div class="continuity-step"><span>09.03</span><strong>시행 예정</strong></div></div></section>
+        </div>
+      </div>
+    </section>
+
+    <section class="view split-desk" data-view="detail" data-active="false" id="detail">
+      <div class="split-shell">
+        <aside class="master">
+          <div class="master-head"><strong>INSIGHT DESK</strong><span class="master-count">4 NEW</span></div>
+          <h2>오늘의 사건</h2>
+          <div class="event-list">
+            <article class="event-card selected"><span class="topic">AI·테크</span><strong>AI 규제안 시행 일정</strong><small>예정 · 근거 2</small></article>
+            <article class="event-card"><span class="topic">경제·투자</span><strong>기준금리 동결</strong><small>완료 · 근거 2</small></article>
+            <article class="event-card"><span class="topic">K-POP</span><strong>월드투어 일정</strong><small>발표 · 근거 2</small></article>
+            <article class="event-card"><span class="topic">AI·테크</span><strong>반도체 공급계약</strong><small>확인 중 · 근거 1</small></article>
+          </div>
+        </aside>
+        <article class="detail">
+          <div class="detail-head"><div><span class="eyebrow">SELECTED EVENT</span><h1>AI 규제안<br>시행 일정 발표</h1></div><span class="status-chip">SUPPORTED</span></div>
+          <p class="detail-lede">기사 제목을 다시 쓰는 화면이 아니라, 사건의 현재 상태와 근거를 읽는 화면입니다.</p>
+          <div class="metrics"><div class="metric"><span>STATE</span><strong>발표 → 예정</strong></div><div class="metric"><span>DATE</span><strong>09.03</strong></div><div class="metric"><span>SOURCES</span><strong>2</strong></div><div class="metric"><span>CONF.</span><strong>0.98</strong></div></div>
+          <section class="why"><span class="section-kicker">WHY IT MATTERS</span><h2>새로운 점은 규제의 존재가 아니라, 실제 시행 시점이 생겼다는 것입니다.</h2></section>
+          <div class="evidence-stack" aria-label="근거 목록">
+            <article class="evidence-card supported"><div class="evidence-index">01</div><div class="evidence-copy"><strong>공식 발표</strong><span>“9월 3일부터 시행한다”</span></div><span class="status-chip">SUPPORTED</span></article>
+            <article class="evidence-card"><div class="evidence-index">02</div><div class="evidence-copy"><strong>보도자료</strong><span>적용 대상과 유예 조건</span></div><span class="status-chip">SUPPORTED</span></article>
+            <article class="evidence-card"><div class="evidence-index">03</div><div class="evidence-copy"><strong>후속 기사</strong><span>시장 반응 해석</span></div><span class="status-chip pending">CONTEXT ONLY</span></article>
+          </div>
+          <section class="watch-next"><span class="section-kicker" style="color:#f0a1b9">WATCH NEXT</span><h2>시행일 변경 · 적용 대상 수정 · 실제 집행</h2><p>조건이 바뀌면 기존 사건을 덮어쓰지 않고 다음 상태 변화로 연결합니다.</p></section>
+          <details class="source-failure"><summary>부분 소스 실패 상태 예시</summary><p>공식 발표는 확보됐지만 두 번째 독립 소스가 일시적으로 조회되지 않았습니다. 이 경우 상태를 SUPPORTED로 자동 승격하지 않습니다.</p></details>
+        </article>
+      </div>
+    </section>
+
+    <footer class="prototype-footer">Insight Desk · UI_DESIGN_FREEZE_V3 isolated implementation prototype · production renderer not modified</footer>
+  </main>
+</body>
+</html>
