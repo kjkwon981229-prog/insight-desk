@@ -17,7 +17,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["insight_desk", "insight_desk.api", "insight_desk.core"]
+packages = ["insight_desk", "insight_desk.api", "insight_desk.core", "insight_desk.providers"]
 
 [tool.ruff]
 line-length = 100
