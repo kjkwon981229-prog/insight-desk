@@ -23,12 +23,28 @@ class MorphologyToken:
             raise ValueError("token offsets must describe a non-empty source span")
 
 
+@dataclass(frozen=True, slots=True)
+class SentenceSpan:
+    text: str
+    start: int
+    end: int
+
+    def __post_init__(self) -> None:
+        if not self.text:
+            raise ValueError("sentence text must be non-empty")
+        if self.start < 0 or self.end <= self.start:
+            raise ValueError("sentence offsets must describe a non-empty source span")
+        if self.end - self.start != len(self.text):
+            raise ValueError("sentence offsets must match sentence text length")
+
+
 class KiwiMorphologyHelper:
     """Local Korean morphology/source-offset helper with deliberately narrow authority.
 
     This helper is not a named-entity recognizer, fact extractor, event-identity authority,
     material-event classifier, or publication verifier. The original EvidenceSpan remains the
-    source of truth; morphology is only a deterministic scaffold around that source text.
+    source of truth; morphology/sentence boundaries are only a deterministic scaffold around that
+    source text.
     """
 
     def __init__(self) -> None:
@@ -59,6 +75,21 @@ class KiwiMorphologyHelper:
                     end=end,
                 )
             )
+        return tuple(output)
+
+    def split_sentences(self, text: str) -> tuple[SentenceSpan, ...]:
+        if not text:
+            return ()
+        output: list[SentenceSpan] = []
+        for sentence in self._kiwi.split_into_sents(text):
+            start = int(sentence.start)
+            end = int(sentence.end)
+            if start < 0 or end > len(text) or end <= start:
+                raise ValueError("Kiwi returned a sentence outside the supplied source text")
+            surface = text[start:end]
+            if surface != str(sentence.text):
+                raise ValueError("Kiwi sentence text no longer matches exact source offsets")
+            output.append(SentenceSpan(text=surface, start=start, end=end))
         return tuple(output)
 
 
