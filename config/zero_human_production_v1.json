@@ -1,0 +1,11 @@
+{
+  "contract": "ZERO_HUMAN_PRODUCTION_V1",
+  "phase": 6,
+  "routine_user_intervention_allowed": false,
+  "human_annotation_runtime_dependency_allowed": false,
+  "human_review_publish_dependency_allowed": false,
+  "ambiguity_policy": "fail_safe_or_keep_separate",
+  "offline_human_gold": "optional_only",
+  "paid_fallback_allowed": false,
+  "phase7_generation_verification_in_scope": false
+}
