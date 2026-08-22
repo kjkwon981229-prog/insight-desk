@@ -89,7 +89,7 @@ class ProviderContractTests(unittest.TestCase):
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
     @patch("providers._post_json")
-    def test_gemini_uses_structured_output_schema(self, post_json) -> None:
+    def test_gemini_uses_verified_structured_output_contract(self, post_json) -> None:
         post_json.return_value = {
             "candidates": [
                 {"content": {"parts": [{"text": json.dumps(OUTPUT, ensure_ascii=False)}]}}
@@ -100,8 +100,10 @@ class ProviderContractTests(unittest.TestCase):
         url = post_json.call_args.args[0]
         payload = post_json.call_args.args[1]
         self.assertIn("gemini-3.7-flash:generateContent", url)
-        text_format = payload["generationConfig"]["responseFormat"]["text"]
-        self.assertEqual(text_format["mimeType"], "application/json")
+        generation_config = payload["generationConfig"]
+        self.assertEqual(generation_config["thinkingConfig"], {"thinkingLevel": "LOW"})
+        text_format = generation_config["responseFormat"]["text"]
+        self.assertEqual(text_format["mimeType"], "APPLICATION_JSON")
         self.assertEqual(text_format["schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
 
 
