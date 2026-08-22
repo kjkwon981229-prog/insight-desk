@@ -1,0 +1,1 @@
+This directory entry accompanies the zero-human Phase 6 FactExtractor/material-event tool audit. The audit is deliberately conservative: no tool is accepted merely because it is free or open source, and existing selection negatives are not re-labeled as material-event negatives.
