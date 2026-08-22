@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "hard_rule": "No paid fallback. Missing credentials or exhausted free quota means skip/fail closed, never upgrade or charge.",
+  "providers": [
+    {
+      "id": "groq_free",
+      "role_candidates": ["event_extract", "generation"],
+      "models": ["openai/gpt-oss-20b", "openai/gpt-oss-120b"],
+      "structured_output": "strict_json_schema",
+      "credential_env": ["GROQ_API_KEY"],
+      "billing_required": false,
+      "status": "credential_required_for_live_bakeoff"
+    },
+    {
+      "id": "cloudflare_workers_ai_free",
+      "role_candidates": ["independent_verifier"],
+      "structured_output": "json_mode_best_effort",
+      "credential_env": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
+      "billing_required": false,
+      "free_quota_rule": "10000_neurons_per_day_then_fail",
+      "status": "credential_required_for_live_bakeoff"
+    },
+    {
+      "id": "gemini_api_free",
+      "role_candidates": ["independent_comparison", "fallback_candidate"],
+      "structured_output": "json_schema_subset",
+      "credential_env": ["GEMINI_API_KEY"],
+      "billing_required": false,
+      "paid_grounding_allowed": false,
+      "status": "credential_required_for_live_bakeoff"
+    },
+    {
+      "id": "local_mdeberta_nli",
+      "role_candidates": ["evidence_claim_verifier"],
+      "model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+      "license": "MIT",
+      "credential_env": [],
+      "billing_required": false,
+      "status": "active_local_bakeoff"
+    },
+    {
+      "id": "local_multilingual_minilm",
+      "role_candidates": ["same_event_candidate_retrieval"],
+      "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "license": "Apache-2.0",
+      "credential_env": [],
+      "billing_required": false,
+      "status": "active_local_bakeoff"
+    }
+  ]
+}
