@@ -1,0 +1,34 @@
+name: Phase 6 Temporal Hybrid Recanary
+
+on:
+  pull_request:
+    branches:
+      - phase4-core-contracts
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-hybrid-recanary:
+    if: github.head_ref == 'phase6-temporal-hybrid-recanary'
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PYTHONPATH: .
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Verify zero-cost canary credential
+        run: |
+          python - <<'PY'
+          import os
+          if not os.environ.get("GROQ_API_KEY", "").strip():
+              raise SystemExit("GROQ_API_KEY is not configured for the bounded re-canary")
+          print("Groq temporal re-canary credential: configured")
+          PY
+      - name: Run locked thirteen-case hybrid temporal re-canary
+        run: python scripts/phase6_temporal_hybrid_recanary.py
