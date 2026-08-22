@@ -77,15 +77,17 @@ class ProviderContractTests(unittest.TestCase):
         clear=False,
     )
     @patch("providers._post_json")
-    def test_cloudflare_uses_json_schema_mode(self, post_json) -> None:
+    def test_cloudflare_uses_llama70b_json_schema_mode(self, post_json) -> None:
         post_json.return_value = {"success": True, "result": {"response": OUTPUT}}
         actual = providers.call_cloudflare(CASE)
         self.assertEqual(actual, OUTPUT)
         url = post_json.call_args.args[0]
         payload = post_json.call_args.args[1]
-        self.assertIn("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", url)
+        self.assertIn("@cf/meta/llama-3.3-70b-instruct-fp8-fast", url)
         self.assertEqual(payload["response_format"]["type"], "json_schema")
         self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
+        self.assertEqual(payload["max_tokens"], 384)
+        self.assertEqual(payload["temperature"], 0)
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
     @patch("providers._post_json")
