@@ -121,7 +121,11 @@ class AcquisitionPipelineTests(unittest.TestCase):
         extractor = FakeExtractor(
             {"<html>raw source</html>": ExtractedArticle(body=body, page_title="SK하이닉스 신규 계획 발표")}
         )
-        pipeline = AcquisitionPipeline(fetcher=fetcher, primary_extractor=extractor)
+        pipeline = AcquisitionPipeline(
+            fetcher=fetcher,
+            primary_extractor=extractor,
+            quality_policy=ExtractionQualityPolicy(min_non_whitespace_chars=100),
+        )
         result = pipeline.acquire(candidate())
 
         self.assertEqual(result.article.body, body)
@@ -188,6 +192,7 @@ class AcquisitionPipelineTests(unittest.TestCase):
         pipeline = AcquisitionPipeline(
             fetcher=FakeFetcher("raw"),
             primary_extractor=FakeExtractor({"raw": ExtractedArticle(body=body)}),
+            quality_policy=ExtractionQualityPolicy(min_non_whitespace_chars=100),
         )
         result = pipeline.acquire(candidate())
         self.assertEqual(result.article.title, "검색 결과 제목")
