@@ -1,2 +1,3 @@
 trigger cloudflare canary after staging workflow is installed
 synchronize after base workflow registration
+synchronize json-object fallback canary
