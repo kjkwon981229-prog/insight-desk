@@ -81,7 +81,6 @@ class SelectionPolicyTests(unittest.TestCase):
             fresh=True,
             source_usable=True,
             identity_resolved=True,
-            verified_claim_count=1,
         )
         decision = decide_selection(signals)
         self.assertEqual(decision.verdict, SelectionVerdict.EXCLUDE)
@@ -96,7 +95,6 @@ class SelectionPolicyTests(unittest.TestCase):
                 fresh=True,
                 source_usable=True,
                 identity_resolved=True,
-                verified_claim_count=1,
             )
         )
         self.assertEqual(decision.verdict, SelectionVerdict.DEFER)
@@ -110,13 +108,12 @@ class SelectionPolicyTests(unittest.TestCase):
                 fresh=True,
                 source_usable=True,
                 identity_resolved=False,
-                verified_claim_count=2,
             )
         )
         self.assertEqual(decision.verdict, SelectionVerdict.DEFER)
         self.assertEqual(decision.reasons, (SelectionReason.IDENTITY_UNRESOLVED,))
 
-    def test_verified_fresh_relevant_event_is_eligible(self) -> None:
+    def test_verified_claims_are_not_a_phase6_selection_input(self) -> None:
         decision = decide_selection(
             SelectionSignals(
                 topic_relevant=True,
@@ -124,7 +121,19 @@ class SelectionPolicyTests(unittest.TestCase):
                 fresh=True,
                 source_usable=True,
                 identity_resolved=True,
-                verified_claim_count=1,
+            )
+        )
+        self.assertEqual(decision.verdict, SelectionVerdict.INCLUDE)
+        self.assertFalse(hasattr(SelectionSignals, "verified_claim_count"))
+
+    def test_fresh_relevant_material_event_is_phase6_eligible(self) -> None:
+        decision = decide_selection(
+            SelectionSignals(
+                topic_relevant=True,
+                material_event=True,
+                fresh=True,
+                source_usable=True,
+                identity_resolved=True,
             )
         )
         self.assertEqual(decision.verdict, SelectionVerdict.INCLUDE)
