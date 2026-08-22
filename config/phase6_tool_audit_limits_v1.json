@@ -1,0 +1,8 @@
+{
+  "max_new_runtime_tool_candidates": 3,
+  "max_canary_rounds_per_candidate": 2,
+  "new_general_llm_candidates_allowed": 0,
+  "paid_candidates_allowed": 0,
+  "routine_human_steps_allowed": 0,
+  "benchmark_specific_exception_rules_allowed": 0
+}
