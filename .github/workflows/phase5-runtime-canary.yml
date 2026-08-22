@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - phase5-acquisition-runtime-canary
+  pull_request:
+    branches:
+      - phase4-core-contracts
   workflow_dispatch:
 
 permissions:
