@@ -7,6 +7,12 @@ on:
     paths:
       - ".github/scripts/diagnose_groq120_failures.py"
       - ".github/workflows/phase3-groq120-failure-probe.yml"
+  pull_request:
+    branches:
+      - phase3-bakeoff
+    paths:
+      - ".github/scripts/diagnose_groq120_failures.py"
+      - ".github/workflows/phase3-groq120-failure-probe.yml"
   workflow_dispatch:
 
 permissions:
