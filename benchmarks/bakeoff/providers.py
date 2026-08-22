@@ -121,7 +121,7 @@ def call_groq120(case: dict[str, Any]) -> dict[str, Any]:
 def call_cloudflare(case: dict[str, Any]) -> dict[str, Any]:
     account_id = _env("CLOUDFLARE_ACCOUNT_ID")
     token = _env("CLOUDFLARE_API_TOKEN")
-    model = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"
+    model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
     response = _post_json(
         f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
         {
@@ -130,7 +130,7 @@ def call_cloudflare(case: dict[str, Any]) -> dict[str, Any]:
                 {"role": "user", "content": prompt_for(case)},
             ],
             "response_format": {"type": "json_schema", "json_schema": schema_for(case)},
-            "max_tokens": 256,
+            "max_tokens": 384,
             "temperature": 0,
         },
         {"Authorization": f"Bearer {token}"},
