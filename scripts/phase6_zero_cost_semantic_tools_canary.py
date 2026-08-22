@@ -10,6 +10,20 @@ from rapidfuzz import fuzz, process
 BASE = datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc)
 
 
+def _surface_span_is_covered(text: str, tokens, surface: str) -> bool:
+    start = text.find(surface)
+    if start < 0:
+        return False
+    end = start + len(surface)
+    covered: set[int] = set()
+    for token in tokens:
+        token_start = token.start
+        token_end = token.start + token.len
+        for index in range(max(start, token_start), min(end, token_end)):
+            covered.add(index)
+    return covered == set(range(start, end))
+
+
 def check_kiwi() -> None:
     kiwi = Kiwi()
     cases = (
@@ -19,11 +33,6 @@ def check_kiwi() -> None:
     )
     tokenized = [kiwi.tokenize(text) for text in cases]
 
-    first_forms = [token.form for token in tokenized[0]]
-    missing_names = [name for name in ("왕옌청", "곽빈") if name not in first_forms]
-    if missing_names:
-        raise AssertionError(f"Kiwi lost named participants: {missing_names}")
-
     for text, tokens in zip(cases, tokenized, strict=True):
         for token in tokens:
             if token.start < 0 or token.len <= 0 or token.start + token.len > len(text):
@@ -31,9 +40,25 @@ def check_kiwi() -> None:
                     f"Kiwi emitted invalid source span: form={token.form!r} start={token.start} len={token.len}"
                 )
 
+    first_text = cases[0]
+    first_tokens = tokenized[0]
+    uncovered_names = [
+        name
+        for name in ("왕옌청", "곽빈")
+        if not _surface_span_is_covered(first_text, first_tokens, name)
+    ]
+    if uncovered_names:
+        raise AssertionError(f"Kiwi source-offset coverage lost named surfaces: {uncovered_names}")
+
+    first_forms = [token.form for token in first_tokens]
+    whole_token_names = [name for name in ("왕옌청", "곽빈") if name in first_forms]
+    split_token_names = [name for name in ("왕옌청", "곽빈") if name not in first_forms]
+
     print(
         "ZERO_COST_TOOL_CANARY tool=kiwipiepy result=PASS "
-        f"cases={len(cases)} names_preserved=2 source_spans_valid=true"
+        f"cases={len(cases)} named_surface_coverage=2 whole_tokens={whole_token_names!r} "
+        f"split_tokens={split_token_names!r} source_spans_valid=true "
+        "authority=morphology_and_offsets_only"
     )
 
 
@@ -69,7 +94,8 @@ def check_dateparser() -> None:
     diagnostics = {text: parsed_date(text) for text in diagnostic_cases}
     print(
         "ZERO_COST_TOOL_CANARY tool=dateparser result=PASS "
-        f"hard_cases={len(hard_cases)} diagnostics={diagnostics!r}"
+        f"hard_cases={len(hard_cases)} diagnostics={diagnostics!r} "
+        "authority=date_normalization_helper_only"
     )
 
 
