@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-22",
+  "source_workflow_run_id": 32566206973,
+  "results": {
+    "local_mdeberta_nli": {
+      "model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+      "cases": 14,
+      "passed": 13,
+      "accuracy": 0.9286,
+      "failed_cases": [
+        {
+          "id": "run97-departure-announcement-completed",
+          "expected": "not_entailment",
+          "predicted": "entailment",
+          "entailment_probability": 0.991699,
+          "meaning": "The model incorrectly accepted a completed-departure claim from a prospective departure announcement."
+        }
+      ],
+      "verdict": "KEEP_AS_SECONDARY_VERIFIER_ONLY",
+      "hard_gate_allowed": false
+    },
+    "local_multilingual_minilm": {
+      "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "positive_pairs": 2,
+      "negative_pairs": 5,
+      "pairwise_auc": 0.7,
+      "positive_min": 0.765297,
+      "negative_max": 0.998931,
+      "separation_margin": -0.233634,
+      "critical_hard_negative": {
+        "id": "run90-day12-vs-day13-hard-negative",
+        "cosine": 0.998931,
+        "meaning": "Different fixture dates were almost indistinguishable by embedding similarity."
+      },
+      "verdict": "REJECT_AS_EVENT_IDENTITY_GATE",
+      "candidate_retrieval_only": true
+    }
+  }
+}
