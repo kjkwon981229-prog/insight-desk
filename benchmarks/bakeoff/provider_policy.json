@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "verified_at": "2026-08-22",
   "hard_rule": "No paid fallback. Missing credentials or exhausted free quota means skip/fail closed, never upgrade or charge.",
   "providers": [
@@ -10,43 +10,53 @@
       "structured_output": "strict_json_schema",
       "credential_env": ["GROQ_API_KEY"],
       "billing_required": false,
-      "status": "credential_required_for_live_bakeoff"
+      "free_plan_guard": "rate_limit_error_only; never switch to Developer tier",
+      "status": "adapter_ready_credential_absent"
     },
     {
       "id": "cloudflare_workers_ai_free",
       "role_candidates": ["independent_verifier"],
+      "model": "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
       "structured_output": "json_mode_best_effort",
       "credential_env": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
       "billing_required": false,
       "free_quota_rule": "10000_neurons_per_day_then_fail",
-      "status": "credential_required_for_live_bakeoff"
+      "paid_plan_guard": "Workers Paid must remain disabled",
+      "status": "adapter_ready_credential_absent"
     },
     {
       "id": "gemini_api_free",
       "role_candidates": ["independent_comparison", "fallback_candidate"],
+      "model": "gemini-3.7-flash",
       "structured_output": "json_schema_subset",
       "credential_env": ["GEMINI_API_KEY"],
       "billing_required": false,
       "paid_grounding_allowed": false,
-      "status": "credential_required_for_live_bakeoff"
+      "free_tier_data_policy": "submitted content may be used to improve Google products",
+      "paid_tier_guard": "billing must not be linked for this project",
+      "status": "adapter_ready_credential_absent"
     },
     {
       "id": "local_mdeberta_nli",
-      "role_candidates": ["evidence_claim_verifier"],
+      "role_candidates": ["secondary_evidence_claim_verifier"],
       "model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
       "license": "MIT",
       "credential_env": [],
       "billing_required": false,
-      "status": "active_local_bakeoff"
+      "verified_result": "13/14; failed prospective-departure-to-completed claim",
+      "hard_gate_allowed": false,
+      "status": "keep_secondary_only"
     },
     {
       "id": "local_multilingual_minilm",
-      "role_candidates": ["same_event_candidate_retrieval"],
+      "role_candidates": ["same_event_candidate_retrieval_only"],
       "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
       "license": "Apache-2.0",
       "credential_env": [],
       "billing_required": false,
-      "status": "active_local_bakeoff"
+      "verified_result": "pairwise_auc=0.70; 12-day-vs-13-day hard negative cosine=0.998932",
+      "event_identity_gate_allowed": false,
+      "status": "reject_as_identity_gate"
     }
   ]
 }
