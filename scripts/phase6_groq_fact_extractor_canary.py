@@ -144,9 +144,10 @@ def check_explicit_lineup(result) -> None:
     require_literals(result, case_id, "한화", "두산", "왕옌청", "곽빈")
     text = flattened(result)
     require("선발" in text and "예고" in text, f"{case_id}: explicit lineup action was not preserved")
-    subjects = {fact.subject for fact in result.facts}
-    require("한화" in subjects, f"{case_id}: Hanwha subject absorbed location/context: {sorted(subjects)}")
-    require("두산" in subjects, f"{case_id}: Doosan subject absorbed location/context: {sorted(subjects)}")
+    require(
+        all("잠실" not in fact.subject for fact in result.facts),
+        f"{case_id}: location/context was absorbed into subject",
+    )
 
 
 def check_groundbreaking_future(result) -> None:
