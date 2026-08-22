@@ -23,6 +23,7 @@ from .history import (
     derive_state_transitions,
     start_event_history,
 )
+from .identity import IdentityResolution, merge_candidate_events, resolve_candidate_pair
 from .pipeline import SemanticArticleResult, SemanticPipeline
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "FactDraft",
     "FactExtractionRequest",
     "FactExtractorPort",
+    "IdentityResolution",
     "Phase6EventAssessment",
     "Phase6EventEngine",
     "SemanticArticleResult",
@@ -47,6 +49,8 @@ __all__ = [
     "derive_state_transitions",
     "detect_explicit_temporal_state",
     "identity_key_from_fact",
+    "merge_candidate_events",
+    "resolve_candidate_pair",
     "resolve_temporal_state",
     "start_event_history",
 ]
