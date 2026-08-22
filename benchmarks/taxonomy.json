@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "categories": [
+    {"id": "EVENT_MISS", "definition": "A material event is present but the system fails to detect or retain it."},
+    {"id": "FALSE_POSITIVE", "definition": "Non-event, commentary, background, promotion, or stale material is incorrectly promoted as a current event."},
+    {"id": "TEMPORAL_ERROR", "definition": "Event date, duration, lifecycle state, or planned/completed status is misread."},
+    {"id": "POLARITY_ERROR", "definition": "Negation, failure, cancellation, rejection, or other polarity is reversed or lost."},
+    {"id": "OWNERSHIP_ERROR", "definition": "A fact is assigned to the wrong event, subject, article focus, or evidence group."},
+    {"id": "SUBJECT_ERROR", "definition": "The event subject or speaker/actor is incorrectly identified."},
+    {"id": "ACTION_ERROR", "definition": "The material action or relation is incorrectly identified or generalized."},
+    {"id": "OBJECT_ERROR", "definition": "The material object, target, counterparty, or scope is lost or altered."},
+    {"id": "DUPLICATE_ERROR", "definition": "Same-event items fail to cluster or distinct events are incorrectly merged."},
+    {"id": "STALE_EVENT", "definition": "Old or background material is treated as a fresh event."},
+    {"id": "SOURCE_MISMATCH", "definition": "A claim is not supported by the cited evidence or official source."},
+    {"id": "UNSUPPORTED_CLAIM", "definition": "Generated or extracted content introduces a claim not supported by evidence."},
+    {"id": "SYNTHESIS_FACT_LOSS", "definition": "Generation drops a material verified fact."},
+    {"id": "SYNTHESIS_TENSE_SHIFT", "definition": "Generation changes planned/completed or other temporal meaning."},
+    {"id": "KOREAN_GRAMMAR_DEFECT", "definition": "Generation introduces a clear Korean grammatical or particle defect."},
+    {"id": "GLOBAL_FAILURE_PROPAGATION", "definition": "A local extraction, generation or QA failure incorrectly suppresses unrelated verified events or the whole publication."}
+  ]
+}
