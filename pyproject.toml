@@ -4,12 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insight-desk"
-version = "0.3.0"
-description = "Insight Desk preserved API infrastructure and clean-room core contracts"
+version = "0.4.0"
+description = "Insight Desk clean-room engine contracts, zero-cost providers, and evidence-preserving acquisition"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+acquisition = [
+  "trafilatura>=2,<3",
+]
+browser = [
+  "playwright>=1.50,<2",
+]
 dev = [
   "pytest==8.4.1",
   "ruff==0.12.8",
@@ -17,7 +23,13 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["insight_desk", "insight_desk.api", "insight_desk.core", "insight_desk.providers"]
+packages = [
+  "insight_desk",
+  "insight_desk.api",
+  "insight_desk.core",
+  "insight_desk.providers",
+  "insight_desk.acquisition",
+]
 
 [tool.ruff]
 line-length = 100
