@@ -41,14 +41,7 @@ class ProviderContractTests(unittest.TestCase):
         response = MagicMock()
         response.read.return_value = b"{}"
         urlopen.return_value.__enter__.return_value = response
-
-        providers._post_json(
-            "https://example.invalid/api",
-            {"hello": "world"},
-            {"Authorization": "Bearer test"},
-            attempts=1,
-        )
-
+        providers._post_json("https://example.invalid/api", {"hello": "world"}, {"Authorization": "Bearer test"}, attempts=1)
         request = urlopen.call_args.args[0]
         self.assertEqual(request.get_header("User-agent"), "insight-desk-bakeoff/0.1")
         self.assertEqual(request.get_header("Accept"), "application/json")
@@ -58,43 +51,32 @@ class ProviderContractTests(unittest.TestCase):
     @patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False)
     @patch("providers._post_json")
     def test_groq_uses_strict_schema(self, post_json) -> None:
-        post_json.return_value = {
-            "choices": [{"message": {"content": json.dumps(OUTPUT, ensure_ascii=False)}}]
-        }
+        post_json.return_value = {"choices": [{"message": {"content": json.dumps(OUTPUT, ensure_ascii=False)}}]}
         actual = providers.call_groq20(CASE)
         self.assertEqual(actual, OUTPUT)
         payload = post_json.call_args.args[1]
         self.assertEqual(payload["model"], "openai/gpt-oss-20b")
         self.assertTrue(payload["response_format"]["json_schema"]["strict"])
-        self.assertEqual(
-            payload["response_format"]["json_schema"]["schema"],
-            TASK_SCHEMAS["MATERIAL_EVENT"],
-        )
+        self.assertEqual(payload["response_format"]["json_schema"]["schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
 
-    @patch.dict(
-        os.environ,
-        {"CLOUDFLARE_ACCOUNT_ID": "account", "CLOUDFLARE_API_TOKEN": "test-token"},
-        clear=False,
-    )
+    @patch.dict(os.environ, {"CLOUDFLARE_ACCOUNT_ID": "account", "CLOUDFLARE_API_TOKEN": "test-token"}, clear=False)
     @patch("providers._post_json")
-    def test_cloudflare_uses_json_schema_mode(self, post_json) -> None:
+    def test_cloudflare_uses_qwen3_json_schema_mode(self, post_json) -> None:
         post_json.return_value = {"success": True, "result": {"response": OUTPUT}}
         actual = providers.call_cloudflare(CASE)
         self.assertEqual(actual, OUTPUT)
         url = post_json.call_args.args[0]
         payload = post_json.call_args.args[1]
-        self.assertIn("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", url)
+        self.assertIn("@cf/qwen/qwen3-30b-a3b-fp8", url)
         self.assertEqual(payload["response_format"]["type"], "json_schema")
         self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
+        self.assertEqual(payload["max_tokens"], 384)
+        self.assertEqual(payload["temperature"], 0)
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
     @patch("providers._post_json")
     def test_gemini_uses_verified_structured_output_contract(self, post_json) -> None:
-        post_json.return_value = {
-            "candidates": [
-                {"content": {"parts": [{"text": json.dumps(OUTPUT, ensure_ascii=False)}]}}
-            ]
-        }
+        post_json.return_value = {"candidates": [{"content": {"parts": [{"text": json.dumps(OUTPUT, ensure_ascii=False)}]}}]}
         actual = providers.call_gemini(CASE)
         self.assertEqual(actual, OUTPUT)
         url = post_json.call_args.args[0]
