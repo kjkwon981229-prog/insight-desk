@@ -1,0 +1,34 @@
+{
+  "phase": "6",
+  "goal": "close_fact_extraction_and_material_event_without_human_runtime_or_paid_paths",
+  "hard_constraints": {
+    "operating_cost_krw": 0,
+    "user_intervention_required": 0,
+    "paid_fallback": false,
+    "cloud_annotation_dependency": false,
+    "phase7_role_drift": false
+  },
+  "candidates": [
+    {
+      "tool": "KSS",
+      "version_target": "6.0.6",
+      "license": "BSD-3-Clause",
+      "candidate_role": "korean_sentence_segmentation_only",
+      "status": "AUDIT"
+    },
+    {
+      "tool": "Snorkel",
+      "license": "Apache-2.0",
+      "candidate_role": "weak_supervision_signal_aggregation_only",
+      "status": "AUDIT",
+      "note": "must not invent material-event truth; only combine independently defined labeling functions"
+    },
+    {
+      "tool": "scikit-learn",
+      "license": "BSD-3-Clause",
+      "candidate_role": "optional_local_calibration_or_baseline_only",
+      "status": "AUDIT",
+      "note": "do not train material-event truth from repurposed selection negatives"
+    }
+  ]
+}
