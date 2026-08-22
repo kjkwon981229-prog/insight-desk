@@ -1,0 +1,134 @@
+{
+  "result_id": "groq120b-temporal-hybrid-canary-2026-08-23",
+  "phase": "Phase 6 Semantic/Event Engine",
+  "scope": "temporal_lifecycle_resolution",
+  "status": "PASS",
+  "decision": "KEEP_GROQ_120B_AS_TEMPORAL_AUXILIARY_ONLY",
+  "target_base_sha": "4db7e07a256f7c9fa29d2e0792e8add135862ddc",
+  "architecture": {
+    "deterministic_first": true,
+    "groq_model": "openai/gpt-oss-120b",
+    "groq_role": "temporal_lifecycle_auxiliary_only",
+    "external_knowledge_allowed": false,
+    "paid_fallback": false,
+    "model_substitution": false,
+    "role_expansion": false
+  },
+  "history": [
+    {
+      "stage": "initial_live_canary",
+      "pull_request": 51,
+      "workflow_run_id": 32597442601,
+      "job_id": 97090530864,
+      "result": "6/7 PASS",
+      "failure": {
+        "case_id": "run90-duration-resuming",
+        "expected": "resuming",
+        "actual": "announced_prospective",
+        "finding": "Explicit Korean resume cue was misclassified by the auxiliary."
+      },
+      "disposition": "TEMPORARY_PR_CLOSED_UNMERGED"
+    },
+    {
+      "stage": "deterministic_first_correction",
+      "pull_request": 52,
+      "result": "MERGED",
+      "change": "High-precision explicit lifecycle cues resolve before auxiliary; extraction/evidence conflict fails closed."
+    },
+    {
+      "stage": "hybrid_recanary_v1",
+      "pull_request": 53,
+      "workflow_run_id": 32597661584,
+      "job_id": 97091053711,
+      "result": "11/13 PASS",
+      "lane_results": {
+        "deterministic_run90": "7/7 PASS",
+        "groq120b_auxiliary_run97": "4/6 PASS"
+      },
+      "failures": [
+        {
+          "case_id": "run97-groundbreaking-future",
+          "expected": "planned",
+          "actual": "ongoing"
+        },
+        {
+          "case_id": "run97-groundbreaking-completed",
+          "expected": "completed",
+          "actual": "ongoing"
+        }
+      ],
+      "finding": "The frozen 120B prompt lacked general enum boundary definitions for Korean future, ongoing, and past-completed aspect.",
+      "disposition": "TEMPORARY_PR_CLOSED_UNMERGED"
+    },
+    {
+      "stage": "general_prompt_contract_correction",
+      "pull_request": 54,
+      "merge_sha": "4db7e07a256f7c9fa29d2e0792e8add135862ddc",
+      "result": "MERGED",
+      "change": "Defined general TemporalState boundaries while preserving the 120B temporal-only role."
+    },
+    {
+      "stage": "hybrid_recanary_v2",
+      "pull_request": 55,
+      "workflow_run_id": 32597857552,
+      "job_id": 97091525918,
+      "checked_at_utc": "2026-08-22T20:51:09.819781+00:00",
+      "result": "13/13 PASS",
+      "lane_results": {
+        "deterministic_run90": "7/7 PASS",
+        "groq120b_auxiliary_run97": "6/6 PASS",
+        "unresolved": 0
+      },
+      "recovered_cases": [
+        {
+          "case_id": "run90-duration-resuming",
+          "state": "resuming",
+          "source": "deterministic"
+        },
+        {
+          "case_id": "run97-groundbreaking-future",
+          "state": "planned",
+          "source": "auxiliary"
+        },
+        {
+          "case_id": "run97-groundbreaking-completed",
+          "state": "completed",
+          "source": "auxiliary"
+        }
+      ],
+      "disposition": "TEMPORARY_PR_CLOSED_UNMERGED"
+    }
+  ],
+  "acceptance": {
+    "locked_case_count": 13,
+    "passed": 13,
+    "failed": 0,
+    "exact_state_match_required": true,
+    "exact_resolution_source_match_required": true,
+    "deterministic_cases": 7,
+    "auxiliary_cases": 6,
+    "provider_errors": 0,
+    "unresolved_cases": 0
+  },
+  "security_and_cost": {
+    "credentials_logged": false,
+    "source_article_text_logged": false,
+    "zero_cost_only": true,
+    "paid_fallback_used": false,
+    "alternate_model_used": false
+  },
+  "production_boundary": {
+    "temporal_slice_closed": true,
+    "phase6_complete": false,
+    "groq120b_may_extract_general_facts": false,
+    "groq120b_may_decide_event_identity": false,
+    "groq120b_may_decide_selection": false,
+    "groq120b_may_verify_publishable_claims": false,
+    "remaining_blockers": [
+      "production FactExtractorPort implementation is unresolved after Groq 20B rejection",
+      "ambiguous same-event semantic authority is not approved; ambiguity must remain separate",
+      "material-event assessment producer is unresolved and cannot be inferred from legacy selection negatives"
+    ]
+  },
+  "temporary_code_disposition": "DO_NOT_MERGE_CANARY_WORKFLOW_OR_SCRIPT"
+}
