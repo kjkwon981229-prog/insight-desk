@@ -1,0 +1,1 @@
+trigger cloudflare canary after staging workflow is installed
