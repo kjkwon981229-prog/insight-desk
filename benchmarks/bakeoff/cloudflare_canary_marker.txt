@@ -1,1 +1,2 @@
 trigger cloudflare canary after staging workflow is installed
+synchronize after base workflow registration
