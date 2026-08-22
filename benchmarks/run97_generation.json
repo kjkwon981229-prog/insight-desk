@@ -1,0 +1,57 @@
+{
+  "suite_id": "run97_generation",
+  "source_run": "Run97",
+  "purpose": "Reproduce fact-preservation and Korean generation failures using semantic invariants rather than legacy synthesis functions.",
+  "cases": [
+    {
+      "id": "run97-groundbreaking-future",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "SYNTHESIS_FACT_LOSS", "OBJECT_ERROR"],
+      "input": {"title": "SK하이닉스, 미국 인디애나 HBM 패키징 공장 착공식", "lead": "SK하이닉스가 27일 착공식을 연다.", "fact": {"subject": "SK하이닉스", "object": "미국 인디애나 HBM 패키징 공장", "relation": "착공"}},
+      "gold": {"temporal_state": "PLANNED", "must_preserve_concepts": ["SK하이닉스", "미국 인디애나", "HBM 패키징 공장", "27일", "착공"]},
+      "forbidden_claims": ["이미 착공했다", "착공에 들어갔다"]
+    },
+    {
+      "id": "run97-groundbreaking-completed",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "SYNTHESIS_FACT_LOSS", "OBJECT_ERROR"],
+      "input": {"title": "SK하이닉스, 미국 인디애나 HBM 패키징 공장 착공식", "lead": "SK하이닉스가 착공식을 열었다.", "fact": {"subject": "SK하이닉스", "object": "미국 인디애나 HBM 패키징 공장", "relation": "착공"}},
+      "gold": {"temporal_state": "COMPLETED", "must_preserve_concepts": ["SK하이닉스", "미국 인디애나", "HBM 패키징 공장", "착공"]},
+      "forbidden_claims": ["착공할 예정이다"]
+    },
+    {
+      "id": "run97-departure-announcement",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "KOREAN_GRAMMAR_DEFECT", "OBJECT_ERROR"],
+      "input": {"title": "트와이스 채영, 14년 만에 JYP 떠난다", "lead": "트와이스 채영이 떠난다고 밝혔다.", "fact": {"subject": "트와이스 채영", "object": "JYP", "relation": "떠남"}},
+      "gold": {"temporal_state": "ANNOUNCED_PROSPECTIVE", "must_preserve_concepts": ["트와이스 채영", "JYP", "떠남"], "must_be_grammatical_korean": true},
+      "forbidden_outputs": ["JYP을 떠났다"],
+      "forbidden_claims": ["이미 JYP를 떠났다"]
+    },
+    {
+      "id": "run97-departure-completed",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "OBJECT_ERROR"],
+      "input": {"title": "트와이스 채영, JYP 떠남", "lead": "트와이스 채영이 떠났다.", "fact": {"subject": "트와이스 채영", "object": "JYP", "relation": "떠남"}},
+      "gold": {"temporal_state": "COMPLETED", "must_preserve_concepts": ["트와이스 채영", "JYP", "떠남"]},
+      "forbidden_claims": ["떠날 예정이다"]
+    },
+    {
+      "id": "run97-investment-planned",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "OBJECT_ERROR"],
+      "input": {"title": "A사, AI 사업 투자", "lead": "A사가 투자하기로 했다.", "fact": {"subject": "A사", "object": "AI 사업", "relation": "투자"}},
+      "gold": {"temporal_state": "PLANNED", "must_preserve_concepts": ["A사", "AI 사업", "투자"]},
+      "forbidden_claims": ["투자했다"]
+    },
+    {
+      "id": "run97-investment-completed",
+      "categories": ["SYNTHESIS_TENSE_SHIFT", "OBJECT_ERROR"],
+      "input": {"title": "A사, AI 사업 투자", "lead": "A사가 투자했다.", "fact": {"subject": "A사", "object": "AI 사업", "relation": "투자"}},
+      "gold": {"temporal_state": "COMPLETED", "must_preserve_concepts": ["A사", "AI 사업", "투자"]},
+      "forbidden_claims": ["투자할 예정이다"]
+    },
+    {
+      "id": "run97-material-object-context",
+      "categories": ["SYNTHESIS_FACT_LOSS", "OBJECT_ERROR"],
+      "input": {"facts": [{"subject": "SK하이닉스", "object": "미국 인디애나 HBM 패키징 공장", "relation": "착공"}, {"subject": "코팅솔루션포유", "object": "NVIDIA 협업 프로그램", "relation": "선정"}]},
+      "gold": {"must_preserve_concepts": ["인디애나", "HBM 패키징 공장", "NVIDIA 협업 프로그램"]},
+      "forbidden_outputs": ["SK하이닉스, 공장 착공", "코팅솔루션포유, 프로그램 선정"]
+    }
+  ]
+}
