@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insight-desk"
-version = "0.2.0"
-description = "Insight Desk API connectivity and preserved product infrastructure"
+version = "0.3.0"
+description = "Insight Desk preserved API infrastructure and clean-room core contracts"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -17,7 +17,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["insight_desk", "insight_desk.api"]
+packages = ["insight_desk", "insight_desk.api", "insight_desk.core"]
 
 [tool.ruff]
 line-length = 100
