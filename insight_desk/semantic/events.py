@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Mapping, Protocol
@@ -21,6 +22,7 @@ from insight_desk.core import (
 
 class TemporalResolutionSource(StrEnum):
     EXTRACTED = "extracted"
+    DETERMINISTIC = "deterministic"
     AUXILIARY = "auxiliary"
     UNRESOLVED = "unresolved"
 
@@ -28,9 +30,9 @@ class TemporalResolutionSource(StrEnum):
 class TemporalAuxiliaryPort(Protocol):
     """Optional Phase 6 temporal/lifecycle helper.
 
-    The frozen production implementation is Groq GPT-OSS 120B. The auxiliary may fill a missing
-    lifecycle state from already-bound evidence, but it is not an ownership, identity, selection,
-    fact-verification, or publication authority.
+    The frozen production implementation is Groq GPT-OSS 120B. The auxiliary may fill a lifecycle
+    state only after explicit deterministic cues and already-extracted semantics fail to resolve it.
+    It is not an ownership, identity, selection, fact-verification, or publication authority.
     """
 
     def classify_temporal(self, text: str) -> TemporalState: ...
@@ -69,6 +71,71 @@ class Phase6EventAssessment:
             raise ValueError("temporal resolution count must match event fact count")
         if tuple(item.fact_id for item in self.temporal) != self.event.fact_ids:
             raise ValueError("temporal resolutions must preserve event fact order")
+
+
+_EXPLICIT_TEMPORAL_PATTERNS: tuple[tuple[TemporalState, tuple[re.Pattern[str], ...]], ...] = (
+    (
+        TemporalState.RESUMING,
+        (
+            re.compile(r"재개\s*(?:할\s*)?(?:예정|계획)"),
+            re.compile(r"재개한다(?:고|는)?"),
+            re.compile(r"재개하기로\s*(?:했|결정)"),
+        ),
+    ),
+    (
+        TemporalState.RESUMED,
+        (
+            re.compile(r"재개됐"),
+            re.compile(r"재개되었"),
+            re.compile(r"재개했다"),
+            re.compile(r"재개하였다"),
+        ),
+    ),
+    (
+        TemporalState.CANCELLED,
+        (
+            re.compile(r"취소됐"),
+            re.compile(r"취소되었"),
+            re.compile(r"취소했다"),
+            re.compile(r"취소하였다"),
+            re.compile(r"취소하기로\s*(?:했|결정)"),
+        ),
+    ),
+    (
+        TemporalState.ONGOING,
+        (
+            re.compile(r"진행\s*중"),
+            re.compile(r"진행되고\s*있"),
+        ),
+    ),
+    (
+        TemporalState.COMPLETED,
+        (
+            re.compile(r"완료됐"),
+            re.compile(r"완료되었"),
+            re.compile(r"완료했다"),
+            re.compile(r"완료하였다"),
+            re.compile(r"마쳤다"),
+        ),
+    ),
+)
+
+
+def detect_explicit_temporal_state(text: str) -> TemporalState | None:
+    """Resolve only high-precision Korean lifecycle cues.
+
+    Multiple different explicit states deliberately return None instead of guessing sequence or
+    recency. Generic future language such as ``예정`` alone is also left unresolved so the frozen
+    auxiliary can handle genuinely semantic cases.
+    """
+
+    matched_states: set[TemporalState] = set()
+    for state, patterns in _EXPLICIT_TEMPORAL_PATTERNS:
+        if any(pattern.search(text) for pattern in patterns):
+            matched_states.add(state)
+    if len(matched_states) == 1:
+        return next(iter(matched_states))
+    return None
 
 
 def _canonical(value: str | None) -> str | None:
@@ -137,16 +204,47 @@ def resolve_temporal_state(
     *,
     auxiliary: TemporalAuxiliaryPort | None = None,
 ) -> TemporalResolution:
-    """Resolve a Phase 6 lifecycle signal without turning the auxiliary into a verifier.
+    """Resolve Phase 6 lifecycle semantics in deterministic-first, fail-closed order.
 
-    An explicitly extracted state is preserved as an extracted semantic signal. The optional frozen
-    120B auxiliary is called only when the extractor left the lifecycle state missing. Auxiliary
-    failure remains item-local and yields an unresolved signal; it never aborts the briefing.
+    Exact cited evidence is validated first. High-precision lifecycle cues are then resolved by the
+    deterministic core. If an extracted state contradicts an explicit cue, the fact becomes
+    unresolved rather than allowing either an extractor or the auxiliary to override the evidence.
+    The frozen 120B auxiliary runs only when neither explicit cues nor extracted semantics resolve the
+    state. Provider failure remains item-local.
     """
 
     if fact.fact_id not in event.fact_ids:
         raise ValueError("fact does not belong to candidate event")
     evidence_text = cited_evidence_text(event, fact, evidence)
+    deterministic_state = detect_explicit_temporal_state(evidence_text)
+
+    if fact.temporal_state is not None and deterministic_state is not None:
+        if fact.temporal_state is not deterministic_state:
+            return TemporalResolution(
+                fact_id=fact.fact_id,
+                state=None,
+                source=TemporalResolutionSource.UNRESOLVED,
+                auxiliary_used=False,
+                error_code=(
+                    "temporal_evidence_conflict:"
+                    f"extracted={fact.temporal_state.value}:explicit={deterministic_state.value}"
+                ),
+            )
+        return TemporalResolution(
+            fact_id=fact.fact_id,
+            state=fact.temporal_state,
+            source=TemporalResolutionSource.EXTRACTED,
+            auxiliary_used=False,
+        )
+
+    if deterministic_state is not None:
+        return TemporalResolution(
+            fact_id=fact.fact_id,
+            state=deterministic_state,
+            source=TemporalResolutionSource.DETERMINISTIC,
+            auxiliary_used=False,
+        )
+
     if fact.temporal_state is not None:
         return TemporalResolution(
             fact_id=fact.fact_id,
@@ -154,6 +252,7 @@ def resolve_temporal_state(
             source=TemporalResolutionSource.EXTRACTED,
             auxiliary_used=False,
         )
+
     if auxiliary is None:
         return TemporalResolution(
             fact_id=fact.fact_id,

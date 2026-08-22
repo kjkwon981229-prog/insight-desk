@@ -15,6 +15,7 @@ from insight_desk.semantic import (
     Phase6EventEngine,
     TemporalResolutionSource,
     compare_candidate_identity,
+    detect_explicit_temporal_state,
     resolve_temporal_state,
 )
 
@@ -54,6 +55,41 @@ class FakeTemporalAuxiliary:
 
 
 class Phase6TemporalTests(unittest.TestCase):
+    def test_explicit_resume_future_is_deterministic_and_skips_auxiliary(self) -> None:
+        evidence = span(
+            "ev1",
+            "a1",
+            "프로야구가 폭염 때문에 5일 동안 중단됐다가 오늘 재개한다.",
+        )
+        fact = EventFact("f1", "프로야구", "경기 재개", ("ev1",))
+        event = CandidateEvent("e1", "sports", ("f1",), ("a1",))
+        auxiliary = FakeTemporalAuxiliary(TemporalState.ANNOUNCED_PROSPECTIVE)
+
+        result = resolve_temporal_state(event, fact, {"ev1": evidence}, auxiliary=auxiliary)
+        self.assertIs(result.state, TemporalState.RESUMING)
+        self.assertIs(result.source, TemporalResolutionSource.DETERMINISTIC)
+        self.assertFalse(result.auxiliary_used)
+        self.assertEqual(auxiliary.calls, [])
+
+    def test_explicit_cancel_and_completed_cues_are_high_precision(self) -> None:
+        self.assertIs(
+            detect_explicit_temporal_state("서울 경기가 폭염 영향으로 취소됐다."),
+            TemporalState.CANCELLED,
+        )
+        self.assertIs(
+            detect_explicit_temporal_state("프로젝트 구축을 완료했다."),
+            TemporalState.COMPLETED,
+        )
+        self.assertIs(
+            detect_explicit_temporal_state("현재 공사가 진행 중이다."),
+            TemporalState.ONGOING,
+        )
+
+    def test_multiple_different_explicit_states_are_not_guessed(self) -> None:
+        self.assertIsNone(
+            detect_explicit_temporal_state("다음 주 재개한다고 밝혔으나 결국 경기를 취소했다.")
+        )
+
     def test_extracted_temporal_state_is_preserved_without_auxiliary_call(self) -> None:
         evidence = span("ev1", "a1", "KBO는 11일 경기를 재개했다.")
         fact = EventFact(
@@ -73,18 +109,37 @@ class Phase6TemporalTests(unittest.TestCase):
         self.assertFalse(result.auxiliary_used)
         self.assertEqual(auxiliary.calls, [])
 
-    def test_missing_temporal_state_uses_only_bound_evidence(self) -> None:
-        first = span("ev1", "a1", "KBO는 폭염으로 중단됐던 경기를 11일 재개한다고 밝혔다.")
-        unrelated = span("ev2", "a1", "다른 회사는 다음 달 투자를 검토한다.")
+    def test_explicit_evidence_conflict_with_extracted_state_fails_closed(self) -> None:
+        evidence = span("ev1", "a1", "KBO는 11일 경기를 재개했다.")
         fact = EventFact(
-            fact_id="f1",
-            subject="KBO",
-            action="경기 재개",
-            evidence_ids=("ev1",),
-            event_date="2026-08-11",
+            "f1",
+            "KBO",
+            "경기 재개",
+            ("ev1",),
+            temporal_state=TemporalState.RESUMING,
         )
         event = CandidateEvent("e1", "sports", ("f1",), ("a1",))
-        auxiliary = FakeTemporalAuxiliary(TemporalState.RESUMING)
+        auxiliary = FakeTemporalAuxiliary(TemporalState.RESUMED)
+
+        result = resolve_temporal_state(event, fact, {"ev1": evidence}, auxiliary=auxiliary)
+        self.assertIsNone(result.state)
+        self.assertIs(result.source, TemporalResolutionSource.UNRESOLVED)
+        self.assertFalse(result.auxiliary_used)
+        self.assertIn("temporal_evidence_conflict", result.error_code or "")
+        self.assertEqual(auxiliary.calls, [])
+
+    def test_genuinely_unresolved_temporal_state_uses_only_bound_evidence(self) -> None:
+        first = span("ev1", "a1", "정부는 다음 달 정책 시행 일정을 공식 발표했다.")
+        unrelated = span("ev2", "a1", "다른 회사는 현재 공사를 진행 중이다.")
+        fact = EventFact(
+            fact_id="f1",
+            subject="정부",
+            action="정책 시행 일정 발표",
+            evidence_ids=("ev1",),
+            event_date="다음 달",
+        )
+        event = CandidateEvent("e1", "economy", ("f1",), ("a1",))
+        auxiliary = FakeTemporalAuxiliary(TemporalState.ANNOUNCED_PROSPECTIVE)
 
         result = resolve_temporal_state(
             event,
@@ -92,7 +147,7 @@ class Phase6TemporalTests(unittest.TestCase):
             {"ev1": first, "ev2": unrelated},
             auxiliary=auxiliary,
         )
-        self.assertIs(result.state, TemporalState.RESUMING)
+        self.assertIs(result.state, TemporalState.ANNOUNCED_PROSPECTIVE)
         self.assertIs(result.source, TemporalResolutionSource.AUXILIARY)
         self.assertTrue(result.auxiliary_used)
         self.assertEqual(auxiliary.calls, [first.text])
@@ -111,8 +166,8 @@ class Phase6TemporalTests(unittest.TestCase):
         self.assertEqual(result.error_code, "temporal_auxiliary_error:RuntimeError")
 
     def test_temporal_auxiliary_contract_violation_fails_closed(self) -> None:
-        evidence = span("ev1", "a1", "다음 주 재개 여부를 논의한다.")
-        fact = EventFact("f1", "KBO", "재개 논의", ("ev1",))
+        evidence = span("ev1", "a1", "다음 주 경기 일정 변경 여부를 논의한다.")
+        fact = EventFact("f1", "KBO", "일정 변경 논의", ("ev1",))
         event = CandidateEvent("e1", "sports", ("f1",), ("a1",))
 
         class BadAuxiliary:
