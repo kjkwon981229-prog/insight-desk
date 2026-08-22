@@ -30,13 +30,15 @@ jobs:
           if not (account and token):
               raise SystemExit(2)
           PY
-      - name: Run one Workers AI structured-output canary
+      - name: Run one Workers AI JSON-object fallback canary
         env:
           PYTHONPATH: benchmarks/bakeoff
         run: |
           python - <<'PY'
           import json
-          from providers import call_cloudflare
+          import os
+          from providers import _post_json, _decode_json_text
+          from provider_contract import prompt_for, schema_for
 
           case = {
               "id": "cloudflare-canary-001",
@@ -46,6 +48,38 @@ jobs:
                   "lead": "A사가 AI 사업단을 신설했다."
               },
           }
-          result = call_cloudflare(case)
-          print("CLOUDFLARE_CANARY_OK " + json.dumps(result, ensure_ascii=False, sort_keys=True))
+          schema = schema_for(case)
+          account_id = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          token = os.environ["CLOUDFLARE_API_TOKEN"]
+          model = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"
+          response = _post_json(
+              f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}",
+              {
+                  "messages": [
+                      {
+                          "role": "system",
+                          "content": "Return only one JSON object. Match the supplied JSON Schema keys and value types exactly. Use null only where the schema allows null."
+                      },
+                      {
+                          "role": "user",
+                          "content": prompt_for(case) + "\n\nOUTPUT JSON SCHEMA:\n" + json.dumps(schema, ensure_ascii=False, sort_keys=True)
+                      },
+                  ],
+                  "response_format": {"type": "json_object"},
+                  "max_tokens": 768,
+                  "temperature": 0,
+              },
+              {"Authorization": f"Bearer {token}"},
+          )
+          if response.get("success") is False:
+              raise SystemExit("Cloudflare API failure: " + json.dumps(response, ensure_ascii=False))
+          result = response.get("result", response)
+          if isinstance(result, dict) and "response" in result:
+              result = result["response"]
+          decoded = _decode_json_text(result)
+          expected_keys = set(schema["properties"])
+          actual_keys = set(decoded)
+          if actual_keys != expected_keys:
+              raise SystemExit(f"shape mismatch expected={sorted(expected_keys)} actual={sorted(actual_keys)}")
+          print("CLOUDFLARE_FALLBACK_CANARY_OK " + json.dumps(decoded, ensure_ascii=False, sort_keys=True))
           PY
