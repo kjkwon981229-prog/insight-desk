@@ -130,8 +130,29 @@ class GroqFreeClient:
         }
         result = self.structured_json(
             prompt=(
-                "Classify only the temporal/lifecycle state expressed by the Korean text. "
-                "Do not infer completion from a future announcement.\n\nTEXT:\n" + text
+                "Classify only the temporal/lifecycle state explicitly expressed by the Korean "
+                "text. Use only the text; do not use external knowledge. Choose exactly one enum "
+                "using these boundaries:\n"
+                "- planned: a non-resumption action/event is a future plan or decision and has not "
+                "started yet. Korean future forms such as '-한다', '-할 예정이다', a future date "
+                "+ action, and '-하기로 했다' are planned unless the text is explicitly reporting "
+                "a prospective announcement.\n"
+                "- announced_prospective: the text explicitly reports that someone announced or "
+                "stated a future status/action, such as '-한다고 밝혔다' or '-한다고 발표했다'. "
+                "The future action itself has not happened yet.\n"
+                "- resuming: a previously stopped/suspended activity is stated to resume but has "
+                "not yet resumed.\n"
+                "- resumed: a previously stopped/suspended activity has already resumed.\n"
+                "- ongoing: the action/event is explicitly happening or continuing now. Require "
+                "current-progress meaning such as '진행 중' or '-하고 있다'. NEVER use ongoing for "
+                "a simple future action or a simple past-completed action.\n"
+                "- completed: the action/event already occurred or finished. Korean past-completed "
+                "forms such as '열었다', '했다', or '떠났다' are completed unless the verb only "
+                "describes making a future plan/decision.\n"
+                "- cancelled: the action/event is explicitly cancelled or withdrawn.\n"
+                "Do not infer completion from a future announcement. Do not infer ongoing merely "
+                "because an event is mentioned. Preserve Korean tense/aspect exactly.\n\nTEXT:\n"
+                + text
             ),
             schema=schema,
             schema_name="insight_desk_temporal_state",
