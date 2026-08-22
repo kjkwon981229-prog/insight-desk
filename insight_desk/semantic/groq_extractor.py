@@ -71,9 +71,9 @@ class Groq20BFactExtractor:
     """Evidence-bound FactExtractorPort adapter for the frozen zero-cost Groq 20B lane.
 
     Provider output remains untrusted. The adapter validates the closed schema again locally,
-    rejects foreign evidence ids, rejects duplicate semantic drafts, and requires source-literal
-    values for fields that should never be normalized or invented (event date, location, cause,
-    participants). It does not merge events, verify claims, or make briefing-selection decisions.
+    rejects foreign evidence ids and duplicate semantic drafts, and requires source-literal
+    subjects, material objects, dates, locations, causes, and participants. The action may be a
+    concise semantic normalization, but it cannot create evidence or merge event identity.
     """
 
     extractor_id = "groq-gpt-oss-20b-fact-extractor-v1"
@@ -148,6 +148,8 @@ class Groq20BFactExtractor:
 
             cited_text = "\n".join(allowed[evidence_id].text for evidence_id in evidence_ids)
             for field_name, literal in (
+                ("subject", subject),
+                ("object", object_value),
                 ("event_date", event_date),
                 ("location", location),
                 ("cause", cause),
@@ -212,9 +214,10 @@ class Groq20BFactExtractor:
             "commentary, biography, preview, or generic trend without an explicit event action or "
             "state change is not an event fact; return no fact rather than inventing an action. "
             "Keep future/planned/announced/resuming/resumed/completed/cancelled lifecycle distinctions "
-            "exact. For event_date, location, cause, and every participant, copy the shortest explicit "
-            "wording verbatim from cited evidence. Every fact must cite only supplied evidence_ids that "
-            "support the whole fact. Keep separate events as separate facts and never merge identity here.\n\n"
+            "exact. Copy subject, material object, event_date, location, cause, and every participant "
+            "as the shortest explicit wording verbatim from cited evidence; only action may be a concise "
+            "semantic normalization. Every fact must cite only supplied evidence_ids that support the "
+            "whole fact. Keep separate events as separate facts and never merge identity here.\n\n"
             "EVIDENCE JSON:\n"
             + json.dumps(payload, ensure_ascii=False, sort_keys=True)
         )
