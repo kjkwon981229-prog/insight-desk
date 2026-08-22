@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+
+from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact, RawArticle
+
+from .evidence import EvidenceSegmenter
+from .facts import FactDraft, FactExtractionRequest, FactExtractorPort
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticArticleResult:
+    article_id: str
+    extractor_id: str
+    evidence: tuple[EvidenceSpan, ...]
+    facts: tuple[EventFact, ...]
+    events: tuple[CandidateEvent, ...]
+
+    def __post_init__(self) -> None:
+        if not self.article_id.strip():
+            raise ValueError("article_id must be non-empty")
+        if not self.extractor_id.strip():
+            raise ValueError("extractor_id must be non-empty")
+        if len({span.evidence_id for span in self.evidence}) != len(self.evidence):
+            raise ValueError("semantic result evidence ids must be unique")
+        if len({fact.fact_id for fact in self.facts}) != len(self.facts):
+            raise ValueError("semantic result fact ids must be unique")
+        if len({event.event_id for event in self.events}) != len(self.events):
+            raise ValueError("semantic result event ids must be unique")
+
+
+class SemanticPipeline:
+    """Turn one immutable RawArticle into evidence-bound facts and conservative event candidates.
+
+    One FactDraft becomes one CandidateEvent at this stage. The semantic extractor is therefore not
+    allowed to silently merge facts into event identity groups. Cross-fact and cross-article merging
+    remains a later explicit identity step governed by the frozen identity policy.
+    """
+
+    def __init__(self, *, segmenter: EvidenceSegmenter | None = None) -> None:
+        self.segmenter = segmenter or EvidenceSegmenter()
+
+    def extract_article(
+        self,
+        article: RawArticle,
+        *,
+        topic_id: str,
+        extractor: FactExtractorPort,
+    ) -> SemanticArticleResult:
+        extractor_id = str(getattr(extractor, "extractor_id", "")).strip()
+        if not extractor_id:
+            raise ValueError("fact extractor must expose non-empty extractor_id")
+
+        evidence = self.segmenter.segment(article)
+        if not evidence:
+            return SemanticArticleResult(
+                article_id=article.article_id,
+                extractor_id=extractor_id,
+                evidence=(),
+                facts=(),
+                events=(),
+            )
+
+        request = FactExtractionRequest(article=article, topic_id=topic_id, evidence=evidence)
+        drafts = extractor.extract(request)
+        if not isinstance(drafts, tuple):
+            raise TypeError("FactExtractorPort must return tuple[FactDraft, ...]")
+        if len({draft.draft_id for draft in drafts}) != len(drafts):
+            raise ValueError("fact extractor returned duplicate draft ids")
+
+        facts: list[EventFact] = []
+        events: list[CandidateEvent] = []
+        for index, draft in enumerate(drafts, start=1):
+            if not isinstance(draft, FactDraft):
+                raise TypeError("fact extractor returned a non-FactDraft value")
+            draft.validate_against(request)
+            fact_id = self._stable_id("fact", article.article_id, extractor_id, draft.draft_id)
+            event_id = self._stable_id("event", article.article_id, extractor_id, draft.draft_id)
+            fact = draft.to_event_fact(fact_id=fact_id)
+            facts.append(fact)
+            events.append(
+                CandidateEvent(
+                    event_id=event_id,
+                    topic_id=topic_id,
+                    fact_ids=(fact_id,),
+                    article_ids=(article.article_id,),
+                )
+            )
+
+        return SemanticArticleResult(
+            article_id=article.article_id,
+            extractor_id=extractor_id,
+            evidence=evidence,
+            facts=tuple(facts),
+            events=tuple(events),
+        )
+
+    @staticmethod
+    def _stable_id(prefix: str, *parts: str) -> str:
+        digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
+        return f"{prefix}-{digest}"
