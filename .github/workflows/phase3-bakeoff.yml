@@ -17,6 +17,18 @@ on:
       - "benchmarks/**"
       - ".github/workflows/phase3-bakeoff.yml"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Zero-cost lane to run"
+        required: true
+        default: "local"
+        type: choice
+        options:
+          - local
+          - groq
+          - cloudflare
+          - gemini
+          - all
 
 permissions:
   contents: read
@@ -52,6 +64,7 @@ jobs:
         run: python benchmarks/bakeoff/credential_probe.py
 
   local-semantic-baselines:
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'local' || inputs.target == 'all')
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -74,7 +87,7 @@ jobs:
         run: python benchmarks/bakeoff/local_similarity.py --output /tmp/local-similarity.json
 
   groq-free-bakeoff:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'groq' || inputs.target == 'all')
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -102,7 +115,7 @@ jobs:
           exit "$final"
 
   cloudflare-free-bakeoff:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'cloudflare' || inputs.target == 'all')
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -126,7 +139,7 @@ jobs:
           exit "$rc"
 
   gemini-free-bakeoff:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' && (inputs.target == 'gemini' || inputs.target == 'all')
     needs: contract
     runs-on: ubuntu-latest
     timeout-minutes: 20
