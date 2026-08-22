@@ -89,6 +89,11 @@ TASK_SCHEMAS: dict[str, dict[str, Any]] = {
             "summary": {"type": "string"},
         }
     ),
+    "CLAIM_VERIFY": _closed(
+        {
+            "entailed": {"type": "boolean"},
+        }
+    ),
 }
 
 
@@ -122,6 +127,12 @@ TASK_INSTRUCTIONS = {
         "Preserve subject, material object, event state, and time. Never convert an announcement or future "
         "plan into a completed event, or a completed event into a plan. Use only the temporal_state labels "
         "permitted by the schema and do not add unsupported facts."
+    ),
+    "CLAIM_VERIFY": (
+        "Decide whether the hypothesis is fully entailed by the premise. Return entailed=true only when "
+        "every material claim in the hypothesis is supported by the premise. Return false if the hypothesis "
+        "changes subject, object, location, cause, event date, lifecycle/tense, certainty, polarity or "
+        "negation, or adds any unsupported material fact. Do not use outside knowledge."
     ),
 }
 
