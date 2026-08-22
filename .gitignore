@@ -14,3 +14,6 @@ site/
 *.sqlite3
 *.db
 *.log
+annotation/*/tasks_seed.json
+annotation/*/seed_provenance.json
+annotation/*/exports/
