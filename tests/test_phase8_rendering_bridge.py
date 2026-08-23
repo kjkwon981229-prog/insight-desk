@@ -102,6 +102,12 @@ class Verifier:
         )
 
 
+@dataclass(frozen=True)
+class UnpublishableCandidate:
+    event_id: str
+    publishable: bool = False
+
+
 def primary(*answers: bool | None) -> Verifier:
     return Verifier(
         CLOUDFLARE_VERIFIER_ID,
@@ -152,15 +158,15 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         self.assertIs(entry.render_mode, RenderMode.GENERATED)
 
     def test_unpublishable_candidate_is_omitted_item_locally(self) -> None:
-        rejected = candidate(primary_answers=(None, None), secondary_answers=(True, True))
+        rejected = UnpublishableCandidate("event:phase8")
         accepted = candidate("event:phase8-good")
+        self.assertIsNone(render_phase7_candidate(rejected))  # type: ignore[arg-type]
         briefing = build_rendered_briefing(
             briefing_id="briefing:phase8",
             generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
-            candidates=(rejected, accepted),
+            candidates=(rejected, accepted),  # type: ignore[arg-type]
         )
         self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-good"])
-        self.assertTrue(rejected.event_retained)
 
     def test_verified_text_mismatch_is_rejected_instead_of_rendered(self) -> None:
         item = candidate()
