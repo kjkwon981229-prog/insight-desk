@@ -86,6 +86,39 @@ def ibm_request() -> GenerationRequest:
     )
 
 
+def ryu_request() -> GenerationRequest:
+    source = (
+        "현존하는 리빙 레전드 류현진(한화 이글스)은 "
+        "투수는 맞는 게 직업이라고 항상 강조한다."
+    )
+    span = EvidenceSpan(
+        evidence_id="ev:ryu-live",
+        article_id="article:ryu-live",
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(source),
+        text=source,
+    )
+    fact = EventFact(
+        fact_id="fact:ryu-live",
+        subject="류현진",
+        action="투수는 맞는 게 직업이라고 항상 강조한다",
+        object=None,
+        evidence_ids=(span.evidence_id,),
+    )
+    event = CandidateEvent(
+        event_id="event:ryu-live",
+        topic_id="kbo_hanwha",
+        fact_ids=(fact.fact_id,),
+        article_ids=(span.article_id,),
+    )
+    return GenerationRequest(
+        event=event,
+        facts={fact.fact_id: fact},
+        evidence={span.evidence_id: span},
+    )
+
+
 @dataclass
 class FakeStructuredClient:
     model_id: str = GROQ_20B
@@ -213,6 +246,72 @@ class Phase7GenerationContractTests(unittest.TestCase):
             event_id=item.event.event_id,
             headline="IBM, 3년도 안 돼 신입 채용 확대",
             summary="IBM이 3년도 안 돼 신입 채용을 다시 늘리는 쪽으로 방향을 틀었다.",
+            evidence_ids=item.evidence_ids,
+        )
+        report = validate_preservation(item, draft)
+        self.assertTrue(report.accepted)
+
+    def test_preservation_rejects_live_definition_topic_to_object_inversion(self) -> None:
+        item = ryu_request()
+        draft = GeneratedDraft(
+            event_id=item.event.event_id,
+            headline="류현진이 강조하는 투수의 정의",
+            summary=(
+                "현존하는 리빙 레전드 류현진(한화 이글스)은 "
+                "투수를 맞는 사람이라고 항상 강조한다."
+            ),
+            evidence_ids=item.evidence_ids,
+        )
+        report = validate_preservation(item, draft)
+        self.assertFalse(report.accepted)
+        self.assertIn(
+            "argument_role_mismatch",
+            {issue.code.value for issue in report.issues},
+        )
+
+    def test_preservation_accepts_definition_role_preserved(self) -> None:
+        item = ryu_request()
+        draft = GeneratedDraft(
+            event_id=item.event.event_id,
+            headline="류현진이 강조하는 투수의 정의",
+            summary="류현진은 투수는 맞는 게 직업이라고 항상 강조한다.",
+            evidence_ids=item.evidence_ids,
+        )
+        report = validate_preservation(item, draft)
+        self.assertTrue(report.accepted)
+
+    def test_preservation_does_not_freeze_particles_for_non_definition_rewrite(self) -> None:
+        source = "한국은행은 기준금리를 결정한다."
+        span = EvidenceSpan(
+            evidence_id="ev:particle-positive",
+            article_id="article:particle-positive",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(source),
+            text=source,
+        )
+        fact = EventFact(
+            fact_id="fact:particle-positive",
+            subject="한국은행",
+            action="기준금리를 결정한다",
+            object="기준금리",
+            evidence_ids=(span.evidence_id,),
+        )
+        event = CandidateEvent(
+            event_id="event:particle-positive",
+            topic_id="economy",
+            fact_ids=(fact.fact_id,),
+            article_ids=(span.article_id,),
+        )
+        item = GenerationRequest(
+            event=event,
+            facts={fact.fact_id: fact},
+            evidence={span.evidence_id: span},
+        )
+        draft = GeneratedDraft(
+            event_id=event.event_id,
+            headline="한국은행 기준금리 결정",
+            summary="기준금리를 한국은행이 결정한다.",
             evidence_ids=item.evidence_ids,
         )
         report = validate_preservation(item, draft)
