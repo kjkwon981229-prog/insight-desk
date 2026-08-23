@@ -163,7 +163,6 @@ class StructuredGenerationClient(Protocol):
     ) -> dict[str, object]: ...
 
 
-# NEWS_REWRITE_POLICY_V1 3-1: every article uses the same machine-parseable output structure.
 GENERATION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -325,9 +324,9 @@ _TEMPORAL_RELATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(_DURATION + r"\s*전(?:에)?"),
     ),
 )
-_DEFINITION_TOPIC_RE = re.compile(
-    r"(?<![가-힣])(?P<topic>[가-힣]{2,20})(?:은|는)\s+[^.!?\n]{0,60}?"
-    r"(?:직업|역할|원칙|목표|의미|핵심)(?:이|가|은|는|이다|이라고|라는|인|$)"
+_DEFINITION_NOUN_RE = re.compile(r"(?:직업|역할|원칙|목표|의미|핵심)")
+_TOPIC_MARKER_RE = re.compile(
+    r"(?<![가-힣])(?P<topic>[가-힣]{2,20}?)(?:은|는)(?=\s)"
 )
 _QUOTE_PATTERNS = (
     re.compile(r'"([^"\n]+)"'),
@@ -370,9 +369,24 @@ def _temporal_relation_atoms(text: str) -> tuple[str, ...]:
 
 
 def _definition_topic_atoms(text: str) -> tuple[str, ...]:
-    """Extract only high-confidence Korean topic atoms from explicit definition/role frames."""
+    """Bind each explicit definition noun to the nearest preceding Korean topic marker."""
 
-    return tuple(sorted({match.group("topic") for match in _DEFINITION_TOPIC_RE.finditer(text)}))
+    values: set[str] = set()
+    for definition in _DEFINITION_NOUN_RE.finditer(text):
+        start = max(0, definition.start() - 60)
+        window = text[start:definition.start()]
+        boundary = max(
+            window.rfind("."),
+            window.rfind("!"),
+            window.rfind("?"),
+            window.rfind("\n"),
+        )
+        if boundary >= 0:
+            window = window[boundary + 1 :]
+        markers = list(_TOPIC_MARKER_RE.finditer(window))
+        if markers:
+            values.add(markers[-1].group("topic"))
+    return tuple(sorted(values))
 
 
 def _argument_role_inversions(source: str, generated: str) -> tuple[str, ...]:
