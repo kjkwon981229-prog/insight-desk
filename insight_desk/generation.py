@@ -11,10 +11,28 @@ from insight_desk.providers.groq import GROQ_20B
 
 MAX_GENERATED_HEADLINE_CHARS = 120
 MAX_GENERATED_SUMMARY_CHARS = 420
+_HEADLINE_KOREAN_TOKEN_RE = re.compile(r"[가-힣]{2,}")
 
 
 class GenerationContractError(ValueError):
     """Raised when Phase 7 generation inputs or outputs violate a structural contract."""
+
+
+def _first_repeated_korean_headline_token(text: str) -> str | None:
+    """Return the first repeated Korean lexical token in a compact feed headline.
+
+    Headlines are intentionally short. Repeating the same two-or-more-syllable Korean token inside
+    one headline is a measured visible-output failure mode, while Latin acronyms/numbers are left
+    untouched so this gate does not pretend to be a general language model.
+    """
+
+    seen: set[str] = set()
+    for match in _HEADLINE_KOREAN_TOKEN_RE.finditer(text):
+        token = match.group(0)
+        if token in seen:
+            return token
+        seen.add(token)
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +127,11 @@ class GeneratedDraft:
             raise GenerationContractError("headline must be non-empty")
         if not summary:
             raise GenerationContractError("summary must be non-empty")
+        repeated_token = _first_repeated_korean_headline_token(headline)
+        if repeated_token is not None:
+            raise GenerationContractError(
+                f"headline repeats Korean lexical token: {repeated_token}"
+            )
         if len(headline) > MAX_GENERATED_HEADLINE_CHARS:
             raise GenerationContractError(
                 f"headline exceeds hard feed ceiling: {len(headline)}>{MAX_GENERATED_HEADLINE_CHARS}"
@@ -165,6 +188,8 @@ NEWS_REWRITE_POLICY_V1 = """# 뉴스 기사 자동 처리용 AI 느낌 제거 �
 "~에 따르면", "~라고 밝혔다", "~라고 전했다"는 완곡 표현이 아니라 출처 표시다. 기존 규칙 9(단정하기)는 글쓴이 자신의 불필요한 헤지에 적용하는 것이지, 취재원 발언 표시에는 적용하지 않는다.
 0-4) 원문 문장을 그대로 옮기지 말고 재구성해라.
 문장 구조를 유지한 채 단어만 바꾸지 마라. 핵심 내용만 뽑아 새 문장으로 써라.
+0-5) 기간의 시간 방향과 기준점을 바꾸지 마라.
+"~만에", "~도 안 돼" 같은 경과시간을 "~안에", "~이내" 같은 미래 기한으로 바꾸지 말고, "~후/뒤/전"의 방향도 원문과 다르게 쓰지 마라.
 
 ## 1. 제목(헤드라인)
 1-1) 명사형으로 끝내라.
@@ -173,6 +198,8 @@ NEWS_REWRITE_POLICY_V1 = """# 뉴스 기사 자동 처리용 AI 느낌 제거 �
 "충격", "경악", "알고 보니", "이 정도일 줄은" 같은 과장된 클릭 유도 표현은 쓰지 마라. (기존 규칙 14의 연장)
 1-3) 길이를 맞춰라.
 피드 카드에서 잘리지 않도록 20~30자 내외로 써라. (앱 UI에 맞춰 조정)
+1-4) 같은 한국어 내용어를 제목 안에서 반복하지 마라.
+짧은 헤드라인에 같은 단어가 두 번 들어가면 문장을 다시 써라.
 
 ## 2. 리드문·요약
 2-1) 첫 문장에 핵심을 담아라.
@@ -246,6 +273,7 @@ class PreservationIssueCode(StrEnum):
     NOVEL_NUMBER = "novel_number"
     NOVEL_QUOTED_TEXT = "novel_quoted_text"
     META_PHRASE = "meta_phrase"
+    TEMPORAL_RELATION_MISMATCH = "temporal_relation_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +298,29 @@ _KOREAN_DATE_RE = re.compile(r"\d{4}년\s*\d{1,2}월(?:\s*\d{1,2}일)?")
 _SEPARATED_DATE_RE = re.compile(r"\d{4}[./-]\d{1,2}(?:[./-]\d{1,2})?")
 _NUMBER_RE = re.compile(
     r"\d[\d,]*(?:\.\d+)?(?:%|％|조원|억원|원|억달러|달러|만명|명|개|건|회|위|점|경기|이닝|시즌|년|월|일|시|분|초)?"
+)
+_DURATION = r"(?P<duration>\d[\d,]*(?:\.\d+)?\s*(?:년|개월|주|일|시간|분|초))"
+_TEMPORAL_RELATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "elapsed_under",
+        re.compile(_DURATION + r"(?:도)?\s*(?:채\s*)?안\s*(?:돼|되어|되|지나|지났)"),
+    ),
+    (
+        "future_within",
+        re.compile(_DURATION + r"\s*(?:안에|이내(?:에)?|내에)"),
+    ),
+    (
+        "elapsed_at",
+        re.compile(_DURATION + r"\s*(?:만에|만인)"),
+    ),
+    (
+        "after",
+        re.compile(_DURATION + r"\s*(?:후(?:에)?|뒤(?:에)?)"),
+    ),
+    (
+        "before",
+        re.compile(_DURATION + r"\s*전(?:에)?"),
+    ),
 )
 _QUOTE_PATTERNS = (
     re.compile(r'"([^"\n]+)"'),
@@ -302,15 +353,25 @@ def _quoted_atoms(text: str) -> tuple[str, ...]:
     return tuple(sorted(values))
 
 
+def _temporal_relation_atoms(text: str) -> tuple[str, ...]:
+    values: set[str] = set()
+    for relation, pattern in _TEMPORAL_RELATION_PATTERNS:
+        for match in pattern.finditer(text):
+            duration = re.sub(r"\s+", "", match.group("duration"))
+            values.add(f"{duration}|{relation}")
+    return tuple(sorted(values))
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
     """Deterministically reject source-literal and automation-policy violations before verification.
 
-    This gate blocks novel event/evidence references, dates, numeric expressions, quoted text, and
-    the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not pretend to prove
-    general semantic support; that remains the frozen Cloudflare + local mDeBERTa verification role.
+    This gate blocks novel event/evidence references, dates, numeric expressions, quoted text,
+    measured temporal-direction changes, and the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases.
+    It intentionally does not pretend to prove general semantic support; that remains the frozen
+    Cloudflare + local mDeBERTa verification role.
     """
 
     issues: list[PreservationIssue] = []
@@ -344,6 +405,13 @@ def validate_preservation(
             continue
         if value not in source_numbers:
             issues.append(PreservationIssue(PreservationIssueCode.NOVEL_NUMBER, value))
+
+    source_temporal_relations = set(_temporal_relation_atoms(source))
+    for value in _temporal_relation_atoms(generated):
+        if value not in source_temporal_relations:
+            issues.append(
+                PreservationIssue(PreservationIssueCode.TEMPORAL_RELATION_MISMATCH, value)
+            )
 
     for value in _quoted_atoms(generated):
         if value not in source:
