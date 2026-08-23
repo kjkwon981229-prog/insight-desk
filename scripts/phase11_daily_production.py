@@ -21,7 +21,7 @@ from insight_desk.acquisition import (
     UrlLibHtmlFetcher,
     default_news_discovery,
 )
-from insight_desk.core import ContractBundle, SelectionVerdict
+from insight_desk.core import CandidateEvent, ContractBundle, EventFact, EvidenceSpan, SelectionVerdict
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
 from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimVerifier
@@ -115,6 +115,38 @@ def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
     ):
         return False
     return True
+
+
+def event_topic_relevant(
+    *,
+    event: CandidateEvent,
+    facts: dict[str, EventFact],
+    evidence: dict[str, EvidenceSpan],
+    topic: TopicConfig,
+) -> bool:
+    """Require each publishable child event to bind to its topic using only cited exact evidence."""
+
+    if event.topic_id != topic.topic_id:
+        return False
+
+    cited_text: list[str] = []
+    seen_evidence: set[str] = set()
+    for fact_id in event.fact_ids:
+        fact = facts.get(fact_id)
+        if fact is None:
+            return False
+        for evidence_id in fact.evidence_ids:
+            span = evidence.get(evidence_id)
+            if span is None or span.article_id not in event.article_ids:
+                return False
+            if evidence_id in seen_evidence:
+                continue
+            seen_evidence.add(evidence_id)
+            cited_text.append(span.text)
+
+    if not cited_text:
+        return False
+    return topic_relevant(title="", body="\n".join(cited_text), topic=topic)
 
 
 def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
@@ -313,12 +345,31 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         continue
                     stats["material_events"] += 1
 
+                    event_relevant = event_topic_relevant(
+                        event=event,
+                        facts=article_facts,
+                        evidence=article_evidence,
+                        topic=topic,
+                    )
+                    if not event_relevant:
+                        attempts.append(
+                            _attempt(
+                                topic=topic.topic_id,
+                                query=query,
+                                domain=domain,
+                                stage="event_topic_relevance",
+                                status="skip",
+                                reason="configured_literal_missing_in_event_evidence",
+                            )
+                        )
+                        continue
+
                     assessment = phase6.assess_with_auto_material(
                         event,
                         facts=article_facts,
                         evidence=article_evidence,
                         selection_context=Phase6SelectionContext(
-                            topic_relevant=True,
+                            topic_relevant=event_relevant,
                             fresh=True,
                             source_usable=True,
                             # Frozen identity policy: absent a semantic same-event authority,
