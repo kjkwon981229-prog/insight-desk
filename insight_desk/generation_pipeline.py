@@ -133,13 +133,13 @@ def generate_with_recovery(
     *,
     primary: DraftGenerator,
     alternate: DraftGenerator | None = None,
-    fallback: DraftGenerator | None = None,
 ) -> GenerationRecoveryResult:
     """Apply the frozen zero-cost generation recovery order without deleting the event.
 
     Order: primary → one free retry of primary → explicitly configured alternate (optional) → exact
-    extractive fallback. No alternate provider is invented here. Provider and preservation failures
-    remain item-local and are recorded as attempts.
+    extractive fallback. No alternate provider is invented here, and the final fallback is not
+    injectable: it is always exact-source ExtractiveFallbackGenerator. Provider and preservation
+    failures remain item-local and are recorded as attempts.
     """
 
     attempts: list[GenerationAttempt] = []
@@ -181,9 +181,8 @@ def generate_with_recovery(
                 attempts=tuple(attempts),
             )
 
-    fallback_generator = fallback or ExtractiveFallbackGenerator()
     sequence += 1
-    draft = fallback_generator.generate(request)
+    draft = ExtractiveFallbackGenerator().generate(request)
     preservation = validate_preservation(request, draft)
     if not preservation.accepted:
         raise ValueError("extractive fallback violated deterministic preservation contract")
