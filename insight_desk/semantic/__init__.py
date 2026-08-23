@@ -31,7 +31,13 @@ from .history import (
     derive_state_transitions,
     start_event_history,
 )
-from .identity import IdentityResolution, merge_candidate_events, resolve_candidate_pair
+from .identity import (
+    IdentityResolution,
+    SemanticIdentityJudgment,
+    judge_same_event_mutual_entailment,
+    merge_candidate_events,
+    resolve_candidate_pair,
+)
 from .kiwi_extractor import KiwiDeterministicFactExtractor
 from .material import (
     MaterialEventAssessment,
@@ -70,6 +76,7 @@ __all__ = [
     "Phase6SelectionContext",
     "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
+    "SemanticIdentityJudgment",
     "SemanticPipeline",
     "SentenceSpan",
     "SequentialFactExtractor",
@@ -87,6 +94,7 @@ __all__ = [
     "derive_state_transitions",
     "detect_explicit_temporal_state",
     "identity_key_from_fact",
+    "judge_same_event_mutual_entailment",
     "merge_candidate_events",
     "resolve_candidate_pair",
     "resolve_temporal_state",
