@@ -126,6 +126,7 @@ class StructuredGenerationClient(Protocol):
     ) -> dict[str, object]: ...
 
 
+# NEWS_REWRITE_POLICY_V1 3-1: every article uses the same machine-parseable output structure.
 GENERATION_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -137,21 +138,45 @@ GENERATION_SCHEMA: dict[str, object] = {
 }
 
 
-NEWS_REWRITE_POLICY_V1_RECOVERED = """NEWS_REWRITE_POLICY_V1 — recovered rules only
-0. fact preservation
-0-1 숫자·날짜·고유명사·인용문은 원문 표현을 유지한다.
-0-2 원문 외 정보를 추가하지 않는다.
-0-3 출처 표현을 유지한다.
-0-4 원문을 그대로 복사하지 않고 재구성한다.
-1. title
-1-1 명사형으로 작성한다.
-1-2 낚시성 표현을 제거한다.
-1-3 20~30자 내외로 작성한다.
-2. lead/summary
-2-1 첫 문장에 핵심을 요약한다.
-2-2 수식어·번역투·나열 구조를 줄이는 기존 원칙을 적용한다.
-2-3 주관적 수식어를 사용하지 않는다.
-2-4 고정 요약 포맷을 사용할 수 있다.
+NEWS_REWRITE_POLICY_V1 = """# 뉴스 기사 자동 처리용 AI 느낌 제거 규칙
+
+뉴스 기사를 자동으로 가져와 요약·재구성하는 파이프라인에 적용하는 버전이다. 사람이 매번 검수하지 않으므로 "사실 보존"을 스타일보다 우선한다.
+
+## 0. 사실 보존 (최우선 원칙)
+0-1) 숫자·날짜·고유명사·인용문은 원문 그대로 유지해라.
+표현을 다듬더라도 수치, 이름, 직접 인용은 바꾸지 마라. 애매하면 재구성하지 말고 원문 표현을 그대로 써라.
+0-2) 원문에 없는 정보는 추가하지 마라.
+문장을 자연스럽게 만들려고 배경 설명이나 추측을 새로 넣지 마라.
+0-3) 출처 표현은 지우지 마라.
+"~에 따르면", "~라고 밝혔다", "~라고 전했다"는 완곡 표현이 아니라 출처 표시다. 기존 규칙 9(단정하기)는 글쓴이 자신의 불필요한 헤지에 적용하는 것이지, 취재원 발언 표시에는 적용하지 않는다.
+0-4) 원문 문장을 그대로 옮기지 말고 재구성해라.
+문장 구조를 유지한 채 단어만 바꾸지 마라. 핵심 내용만 뽑아 새 문장으로 써라.
+
+## 1. 제목(헤드라인)
+1-1) 명사형으로 끝내라.
+"~다/습니다"로 끝나는 완전한 문장 대신 "OOO 발표", "OOO 논란", "OOO 예정"처럼 명사형으로 마무리해라.
+1-2) 낚시성 표현을 빼라.
+"충격", "경악", "알고 보니", "이 정도일 줄은" 같은 과장된 클릭 유도 표현은 쓰지 마라. (기존 규칙 14의 연장)
+1-3) 길이를 맞춰라.
+피드 카드에서 잘리지 않도록 20~30자 내외로 써라. (앱 UI에 맞춰 조정)
+
+## 2. 리드문·요약
+2-1) 첫 문장에 핵심을 담아라.
+누가/무엇을/언제/어디서/왜를 첫 문장에서 요약해라. 배경 설명은 뒤로 미뤄라.
+2-2) 기존 문장 규칙(1~8)을 그대로 적용해라.
+수식어 제거, 주어 생략, 번역투 제거, 나열 구조 깨기, 구체적 사실 쓰기, 접속사 생략은 원본과 동일하게 적용한다.
+2-3) 원문에 없는 주관적 수식어는 특히 금지해라.
+뉴스는 객관 서술이 원칙이다. 원문에 없는 감정적·평가적 형용사("놀라운", "충격적인" 등)는 절대 넣지 마라.
+2-4) 고정 요약 포맷은 규칙 11의 예외로 둔다.
+"3줄 요약"처럼 UX상 필요한 정형 포맷이라면 개수를 억지로 바꾸지 않아도 된다. 규칙 11(3의 법칙 피하기)은 논증적 글쓰기용이지 구조화된 요약 포맷에는 적용하지 않는다.
+
+## 3. 자동화 파이프라인
+3-1) 기사마다 같은 출력 구조를 유지해라.
+헤드라인 + 요약(N줄) 같은 템플릿을 모든 기사에 동일하게 적용해라. 형식이 흔들리면 파싱과 UI 렌더링이 깨진다.
+3-2) 불확실하면 변형을 최소화해라.
+표현을 다듬다가 의미가 달라질 위험이 있으면, 자연스러움보다 원문 보존을 우선해라.
+3-3) 메타 발언 금지는 그대로 유지해라.
+"이 기사에서는", "요약하자면" 같은 표현은 자동 요약에서도 넣지 마라. (기존 규칙 13)
 """
 
 
@@ -159,8 +184,8 @@ def build_generation_prompt(request: GenerationRequest) -> str:
     return (
         "아래 EVENT FACTS와 EVIDENCE만 사용해 한국어 브리핑 headline과 summary를 작성하라.\n"
         "EVIDENCE 밖의 사실, 배경지식, 원인, 평가, 수치, 날짜, 인물/기관명을 추가하지 마라.\n"
-        "아래 recovered policy만 적용하며, 복구되지 않은 규칙을 추정해 추가하지 마라.\n\n"
-        + NEWS_REWRITE_POLICY_V1_RECOVERED
+        "아래 NEWS_REWRITE_POLICY_V1 전체를 적용하라. 불확실하면 자연스러움보다 원문 보존을 우선하라.\n\n"
+        + NEWS_REWRITE_POLICY_V1
         + "\nEVENT ID:\n"
         + request.event.event_id
         + "\n\nEVENT FACTS:\n"
@@ -206,6 +231,7 @@ class PreservationIssueCode(StrEnum):
     NOVEL_DATE = "novel_date"
     NOVEL_NUMBER = "novel_number"
     NOVEL_QUOTED_TEXT = "novel_quoted_text"
+    META_PHRASE = "meta_phrase"
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +264,7 @@ _QUOTE_PATTERNS = (
     re.compile(r"「([^」\n]+)」"),
     re.compile(r"『([^』\n]+)』"),
 )
+_META_PHRASES = ("이 기사에서는", "요약하자면")
 
 
 def _date_atoms(text: str) -> tuple[str, ...]:
@@ -265,12 +292,11 @@ def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
-    """Deterministically reject source-literal mutations before semantic verification.
+    """Deterministically reject source-literal and automation-policy violations before verification.
 
-    This gate intentionally does not pretend to prove general semantic support. It blocks novel
-    event/evidence references plus novel dates, numeric expressions, and quoted text. General factual
-    additions and paraphrase entailment remain the responsibility of the frozen Cloudflare + local
-    mDeBERTa verification policy.
+    This gate blocks novel event/evidence references, dates, numeric expressions, quoted text, and
+    the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not pretend to prove
+    general semantic support; that remains the frozen Cloudflare + local mDeBERTa verification role.
     """
 
     issues: list[PreservationIssue] = []
@@ -310,5 +336,9 @@ def validate_preservation(
             issues.append(
                 PreservationIssue(PreservationIssueCode.NOVEL_QUOTED_TEXT, value)
             )
+
+    for phrase in _META_PHRASES:
+        if phrase in generated:
+            issues.append(PreservationIssue(PreservationIssueCode.META_PHRASE, phrase))
 
     return PreservationReport(accepted=not issues, issues=tuple(issues))
