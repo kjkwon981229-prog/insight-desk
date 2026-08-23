@@ -123,7 +123,15 @@ jobs:
           test -s build/site/assets/js/push.js
           grep -q 'SUPPORTED headline + summary only' build/site/index.html
           grep -q 'manifest.webmanifest' build/site/index.html
-          grep -q 'push-sw.js' build/site/index.html
+          if [[ -n "$PUSH_WORKER_URL" ]]; then
+            grep -q 'push-sw.js' build/site/index.html
+            grep -q 'assets/js/push.js' build/site/index.html
+          else
+            if grep -q 'data-push-settings' build/site/index.html; then
+              echo "::error::Push UI rendered without an explicit Worker URL."
+              exit 1
+            fi
+          fi
           if grep -Eq 'key-fact-panel|next-signal|검색 관심 흐름' build/site/index.html; then
             echo "::error::Renderer manufactured an unsupported UI slot."
             exit 1
