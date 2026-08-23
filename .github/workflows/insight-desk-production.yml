@@ -7,20 +7,11 @@ on:
       - "config/topics.json"
       - "scripts/phase11_daily_production.py"
       - "scripts/validate_feed_artifact.py"
-      - "insight_desk/generation.py"
-      - "insight_desk/generation_pipeline.py"
-      - "insight_desk/phase7.py"
-      - "insight_desk/rendering.py"
-      - "insight_desk/ui.py"
+      - "insight_desk/**"
       - "assets/css/style.css"
       - "assets/js/push.js"
       - ".github/workflows/insight-desk-production.yml"
-      - "tests/test_phase11_production_restore.py"
-      - "tests/test_phase7_generation_recovery.py"
-      - "tests/test_phase8_rendering_bridge.py"
-      - "tests/test_phase8_end_to_end.py"
-      - "tests/test_phase8_ui_view_model.py"
-      - "tests/test_feed_artifact_validator.py"
+      - "tests/**"
   push:
     branches: [main]
   workflow_dispatch:
@@ -150,10 +141,12 @@ jobs:
             echo "::error::Renderer manufactured an unsupported UI slot."
             exit 1
           fi
-          python scripts/validate_feed_artifact.py build/site/index.html --report build/feed-quality.json
+          python scripts/validate_feed_artifact.py build/site/index.html \
+            --audit build/production-audit.json \
+            --report build/feed-quality.json
 
-      - name: Upload production audit
-        if: always() && hashFiles('build/production-audit.json') != ''
+      - name: Upload main production audit
+        if: always() && github.event_name != 'pull_request' && hashFiles('build/production-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: production-audit-${{ github.run_id }}
@@ -163,12 +156,16 @@ jobs:
             build/feed-quality.json
           if-no-files-found: error
 
-      - name: Upload PR site preflight
+      - name: Upload canonical PR production artifact
         if: github.event_name == 'pull_request' && steps.state.outputs.publish == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: production-site-preflight-${{ github.run_id }}
-          path: build/site
+          path: |
+            build/site
+            build/run-state.json
+            build/production-audit.json
+            build/feed-quality.json
           if-no-files-found: error
           retention-days: 7
 
