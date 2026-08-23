@@ -70,7 +70,7 @@ def build_briefing_view_model(
     )
     return BriefingViewModel(
         briefing_id=briefing.briefing_id,
-        generated_label=briefing.generated_at.astimezone().strftime("%Y. %m. %d %H:%M"),
+        generated_label=briefing.generated_at.strftime("%Y. %m. %d %H:%M"),
         stories=stories,
     )
 
