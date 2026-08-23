@@ -123,7 +123,7 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
 
-    def test_indeterminate_verification_does_not_waste_generation_on_fallback(self) -> None:
+    def test_indeterminate_verification_recovers_to_exact_source(self) -> None:
         first = primary(None, None)
         second = secondary(True, True)
         result = produce_phase7_entry_candidate(
@@ -132,9 +132,13 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
-        self.assertFalse(result.publishable)
-        self.assertIs(result.initial_generation, result.final_generation)
-        self.assertIsNone(result.verification_recovery_reason)
+        self.assertTrue(result.publishable)
+        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertIs(
+            result.verification_recovery_reason,
+            VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE,
+        )
         self.assertEqual(first.calls, 2)
         self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
