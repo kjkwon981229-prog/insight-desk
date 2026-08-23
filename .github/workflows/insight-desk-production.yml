@@ -6,6 +6,7 @@ on:
     paths:
       - "config/topics.json"
       - "scripts/phase11_daily_production.py"
+      - "scripts/validate_feed_artifact.py"
       - "insight_desk/generation.py"
       - "insight_desk/generation_pipeline.py"
       - "insight_desk/phase7.py"
@@ -19,6 +20,7 @@ on:
       - "tests/test_phase8_rendering_bridge.py"
       - "tests/test_phase8_end_to_end.py"
       - "tests/test_phase8_ui_view_model.py"
+      - "tests/test_feed_artifact_validator.py"
   push:
     branches: [main]
   workflow_dispatch:
@@ -86,7 +88,7 @@ jobs:
           PY
 
       - name: Compile current production path
-        run: python -m compileall -q insight_desk scripts/phase11_daily_production.py
+        run: python -m compileall -q insight_desk scripts
 
       - name: Run current-engine daily production
         id: production
@@ -124,7 +126,7 @@ jobs:
           )
           PY
 
-      - name: Validate generated site contract
+      - name: Validate generated site contract and product quality
         if: steps.state.outputs.publish == 'true'
         shell: bash
         run: |
@@ -148,6 +150,7 @@ jobs:
             echo "::error::Renderer manufactured an unsupported UI slot."
             exit 1
           fi
+          python scripts/validate_feed_artifact.py build/site/index.html --report build/feed-quality.json
 
       - name: Upload production audit
         if: always() && hashFiles('build/production-audit.json') != ''
@@ -157,6 +160,7 @@ jobs:
           path: |
             build/run-state.json
             build/production-audit.json
+            build/feed-quality.json
           if-no-files-found: error
 
       - name: Upload PR site preflight
