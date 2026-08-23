@@ -32,7 +32,7 @@ class RecoveryAction(StrEnum):
     MARK_CLAIM_INDETERMINATE = "mark_claim_indeterminate"
     REJECT_CLAIM = "reject_claim"
     KEEP_EVENTS_SEPARATE = "keep_events_separate"
-    USE_EXTRACTIVE_FALLBACK = "use_extract ive_fallback"
+    USE_EXTRACTIVE_FALLBACK = "use_extractive_fallback"
     SKIP_ITEM = "skip_item"
 
 
