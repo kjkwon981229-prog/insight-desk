@@ -10,6 +10,7 @@ from .tooling import KiwiMorphologyHelper, MorphologyToken
 _NOUN_TAGS = {"SL", "SN"}
 _TOPIC_SURFACES = {"은", "는"}
 _TRAILING_PUNCTUATION = " \t\r\n.!?…"
+_SENTENCE_TERMINALS = frozenset(".!?…")
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,16 +96,44 @@ def _object_candidate(
     return objects[-1].text
 
 
+def _left_source_boundary_is_safe(source: str, start: int) -> bool:
+    if start <= 0:
+        return True
+    cursor = start - 1
+    while cursor >= 0 and source[cursor].isspace():
+        if source[cursor] in "\r\n":
+            return True
+        cursor -= 1
+    return cursor < 0 or source[cursor] in _SENTENCE_TERMINALS
+
+
+def _right_source_boundary_is_safe(source: str, end: int) -> bool:
+    if end >= len(source):
+        return True
+    if end > 0 and source[end - 1] in _SENTENCE_TERMINALS:
+        return True
+    cursor = end
+    while cursor < len(source) and source[cursor].isspace():
+        if source[cursor] in "\r\n":
+            return True
+        cursor += 1
+    return False
+
+
 class KiwiDeterministicFactExtractor:
     """High-precision, local FactExtractorPort implementation.
 
-    It emits a draft only when one sentence exposes exactly one safe subject/topic candidate and an
-    explicit Korean verbal predicate after that subject. `action` is deliberately the exact source
-    clause after the subject marker, not a generated paraphrase or lemma. This preserves modifiers,
-    amounts, quoted/prospective language and secondary predicates for later evidence validation.
+    It emits a draft only when one complete source sentence exposes exactly one safe subject/topic
+    candidate and an explicit Korean verbal predicate after that subject. ``action`` is deliberately
+    the exact source clause after the subject marker, not a generated paraphrase or lemma. This
+    preserves modifiers, amounts, quoted/prospective language and secondary predicates for later
+    evidence validation.
 
-    Unsupported/ambiguous sentences emit no draft. This is a precision-first extractor, not an NER
-    system, material-event authority, identity authority, or publication verifier.
+    Evidence windows may be cut at a whitespace boundary by ``EvidenceSegmenter``. Leading or
+    trailing sentence fragments that touch such an unsafe cut are skipped rather than interpreted as
+    standalone facts. Unsupported/ambiguous sentences likewise emit no draft. This is a
+    precision-first extractor, not an NER system, material-event authority, identity authority, or
+    publication verifier.
     """
 
     extractor_id = "kiwi-deterministic-v1"
@@ -115,7 +144,15 @@ class KiwiDeterministicFactExtractor:
     def extract(self, request: FactExtractionRequest) -> tuple[FactDraft, ...]:
         drafts: list[FactDraft] = []
         for evidence in request.evidence:
+            source = request.article.field_text(evidence.field)
             for sentence in self._kiwi.split_sentences(evidence.text):
+                absolute_start = evidence.start + sentence.start
+                absolute_end = evidence.start + sentence.end
+                if not _left_source_boundary_is_safe(source, absolute_start):
+                    continue
+                if not _right_source_boundary_is_safe(source, absolute_end):
+                    continue
+
                 text = sentence.text
                 tokens = self._kiwi.analyze(text)
                 subject = _subject_candidate(text, tokens)
