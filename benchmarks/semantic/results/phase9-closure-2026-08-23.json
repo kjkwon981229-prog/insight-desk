@@ -1,0 +1,56 @@
+{
+  "record_id": "phase9-closure-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 9,
+  "status": "COMPLETE",
+  "branch": "phase4-core-contracts",
+  "head_sha": "4ce3f226ef1601701f81eb4c9ffec756f14c9185",
+  "verified_run": {
+    "workflow": "Insight Desk Phase 9 Full Regression",
+    "run_id": 32618240365,
+    "run_number": 2,
+    "conclusion": "success"
+  },
+  "results": {
+    "python_full_suite": {
+      "total": 170,
+      "passed": 170,
+      "failed": 0
+    },
+    "benchmark_integrity": "PASS",
+    "benchmark_snapshot": {
+      "hard_scored": 85,
+      "evidence_only": 7,
+      "taxonomy": 16,
+      "run96_positive": 15,
+      "run96_tn": 44
+    },
+    "semantic_runtime": {
+      "kiwipiepy": "0.23.2",
+      "rapidfuzz": "3.14.5",
+      "hypothesis": "6.165.2",
+      "tooling_contracts": "4/4 PASS",
+      "kiwi_extractor": "8/8 PASS",
+      "material_event": "6/6 PASS",
+      "auto_material_wiring": "3/3 PASS",
+      "property_qa": "2/2 PASS"
+    },
+    "pwa_policy_assets": "PASS",
+    "push_worker": {
+      "tests": 14,
+      "passed": 14,
+      "failed": 0,
+      "npm_audit_vulnerabilities": 0
+    }
+  },
+  "zero_cost": {
+    "standard_runner_only": true,
+    "paid_paths": 0,
+    "required_secrets": 0,
+    "larger_runner": 0,
+    "live_provider_calls": 0
+  },
+  "first_run_note": "Run #1 exposed only a false-positive assertion in the newly added gate self-test: the literal summary string larger_runner=0 was incorrectly matched as forbidden larger-runner usage. Product/runtime tests passed. The self-test was corrected without production-code changes before the successful run #2.",
+  "phase10_entry_condition_satisfied": true,
+  "next_phase": "Phase 10 Fresh Live Canary"
+}
