@@ -26,6 +26,9 @@ _SPORTS_DEPICTIVE_ACTION_CUES = (
     "포즈",
 )
 _SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
+_CONTEXT_DEPENDENT_LEADS = ("여기에 ", "여기에,")
+_NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_SENTENCE_TERMINALS = ".!?。！？"
 
 
 class MaterialEventVerdict(StrEnum):
@@ -42,6 +45,8 @@ class MaterialEventReason(StrEnum):
     FACT_FIELD_NOT_LITERAL = "fact_field_not_literal"
     PUBLISHER_NOTICE_BOILERPLATE = "publisher_notice_boilerplate"
     DEPICTIVE_SPORTS_CAPTION = "depictive_sports_caption"
+    CONTEXT_DEPENDENT_FRAGMENT = "context_dependent_fragment"
+    NON_EVENT_ANALYTICAL_JUDGMENT = "non_event_analytical_judgment"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
 
@@ -104,6 +109,20 @@ def _standalone_sports_photo_caption(text: str) -> bool:
     return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)
 
 
+def _context_dependent_fragment(text: str) -> bool:
+    """Reject measured evidence sentences that require an omitted preceding sentence to stand alone."""
+
+    normalized = " ".join(text.split())
+    return any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS)
+
+
+def _non_event_analytical_judgment(text: str) -> bool:
+    """Reject narrow measured explanatory judgments that state no concrete event."""
+
+    normalized = " ".join(text.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
+
+
 def assess_material_event(
     event: CandidateEvent,
     *,
@@ -148,6 +167,18 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,),
+            )
+        if _context_dependent_fragment(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
+            )
+        if _non_event_analytical_judgment(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT,),
             )
         literal_fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
         if any(value not in text for value in literal_fields):

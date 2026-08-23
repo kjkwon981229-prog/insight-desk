@@ -15,6 +15,9 @@ PSAT_FORBIDDEN = (
     "PSAT 아카데미",
     "NCAA",
 )
+_CONTEXT_DEPENDENT_SUMMARY_LEADS = ("여기에 ", "여기에,")
+_NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_SENTENCE_TERMINALS = ".!?。！？"
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -27,7 +30,17 @@ def _normalize(value: str) -> str:
 
 
 def _sentence_identity(value: str) -> str:
-    return _normalize(value).rstrip(".!?。！？").rstrip()
+    return _normalize(value).rstrip(_SENTENCE_TERMINALS).rstrip()
+
+
+def _context_dependent_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    return any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS)
+
+
+def _non_event_analytical_summary(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
 
 
 class FeedParser(HTMLParser):
@@ -149,6 +162,8 @@ def validate_html(
     duplicate_summaries = 0
     duplicate_content = 0
     headline_summary_collisions = 0
+    context_dependent_summaries = 0
+    non_event_analytical_summaries = 0
     max_headline = 0
     max_summary = 0
     psat_forbidden_hits: list[str] = []
@@ -172,6 +187,10 @@ def validate_html(
         summary_key = _normalize(summary)
         if _sentence_identity(headline) == _sentence_identity(summary):
             headline_summary_collisions += 1
+        if _context_dependent_summary(summary):
+            context_dependent_summaries += 1
+        if _non_event_analytical_summary(summary):
+            non_event_analytical_summaries += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
@@ -199,6 +218,14 @@ def validate_html(
         raise ValueError(
             f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}"
         )
+    if context_dependent_summaries:
+        raise ValueError(
+            f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}"
+        )
+    if non_event_analytical_summaries:
+        raise ValueError(
+            f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
+        )
     if duplicate_headlines:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_summaries:
@@ -222,6 +249,8 @@ def validate_html(
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
         "headline_summary_collisions": headline_summary_collisions,
+        "context_dependent_summaries": context_dependent_summaries,
+        "non_event_analytical_summaries": non_event_analytical_summaries,
         "duplicate_headlines": duplicate_headlines,
         "duplicate_summaries": duplicate_summaries,
         "duplicate_content": duplicate_content,

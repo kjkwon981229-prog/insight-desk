@@ -132,6 +132,52 @@ class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
         self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
         self.assertEqual(assessment.reasons, (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,))
 
+    def test_context_dependent_ytn_fragment_defers_before_generation(self) -> None:
+        text = "여기에 오는 27일 한국은행의 기준금리를 결정에도 관심이 쏠립니다."
+        assessment = _material_assessment(
+            text,
+            subject="한국은행의 기준금리",
+            action="결정에도 관심이 쏠립니다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(
+            assessment.reasons,
+            (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
+        )
+
+    def test_context_dependent_summary_fails_product_gate(self) -> None:
+        summary = "여기에 오는 27일 한국은행의 기준금리를 결정에도 관심이 쏠립니다."
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY"):
+            validate_html(
+                _story_html(
+                    headline="한국은행 기준금리 결정에 관심 집중",
+                    summary=summary,
+                )
+            )
+
+    def test_non_event_hanwha_analysis_judgment_defers(self) -> None:
+        text = "한화 이글스의 올 시즌 부진은 단순히 선수들의 부상이나 경기력 저하만으로 설명하기 어렵다."
+        assessment = _material_assessment(
+            text,
+            subject="한화 이글스의 올 시즌 부진",
+            action="단순히 선수들의 부상이나 경기력 저하만으로 설명하기 어렵다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(
+            assessment.reasons,
+            (MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT,),
+        )
+
+    def test_non_event_hanwha_analysis_fails_product_gate(self) -> None:
+        summary = "한화 이글스의 올 시즌 부진은 단순히 선수들의 부상이나 경기력 저하만으로 설명하기 어렵다."
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY"):
+            validate_html(
+                _story_html(
+                    headline="올 시즌 부진은 단순히 선수들의 부상이나 경기력 저하만으로 설명하기 어렵다",
+                    summary=summary,
+                )
+            )
+
     def test_substantive_sports_result_remains_material(self) -> None:
         text = "김서현이 23일 LG전에서 1이닝 2피안타 무실점을 기록했다."
         assessment = _material_assessment(
