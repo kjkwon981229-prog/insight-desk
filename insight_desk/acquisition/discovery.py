@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -260,10 +261,15 @@ class SequentialNewsDiscovery:
 
 
 def default_news_discovery(*, env: dict[str, str] | None = None) -> SequentialNewsDiscovery:
-    source = env
-    credentials = NaverCredentials.from_environment(source)
+    source = dict(os.environ) if env is None else env
+    client_id = str(source.get("NCP_CLIENT_ID", "")).strip()
+    client_secret = str(source.get("NCP_CLIENT_SECRET", "")).strip()
     routes: list[DiscoveryRoute] = []
-    if credentials is not None:
-        routes.append(NaverNewsDiscovery(NaverApiClient(credentials)))
+    if client_id and client_secret:
+        routes.append(
+            NaverNewsDiscovery(
+                NaverApiClient(NaverCredentials(client_id=client_id, client_secret=client_secret))
+            )
+        )
     routes.extend((BingNewsRssDiscovery(), GdeltDocDiscovery()))
     return SequentialNewsDiscovery(tuple(routes))
