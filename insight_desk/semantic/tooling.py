@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
+class MorphologySourceOffsetError(ValueError):
+    """Kiwi returned source coordinates that cannot be trusted for exact-source extraction."""
+
+
 @dataclass(frozen=True, slots=True)
 class MorphologyToken:
     surface: str
@@ -58,7 +62,9 @@ class KiwiMorphologyHelper:
             start = int(token.start)
             end = start + int(token.len)
             if start < 0 or end > len(text) or end <= start:
-                raise ValueError("Kiwi returned a token outside the supplied source text")
+                raise MorphologySourceOffsetError(
+                    "Kiwi returned a token outside the supplied source text"
+                )
             output.append(
                 MorphologyToken(
                     surface=text[start:end],
@@ -78,10 +84,14 @@ class KiwiMorphologyHelper:
             start = int(sentence.start)
             end = int(sentence.end)
             if start < 0 or end > len(text) or end <= start:
-                raise ValueError("Kiwi returned a sentence outside the supplied source text")
+                raise MorphologySourceOffsetError(
+                    "Kiwi returned a sentence outside the supplied source text"
+                )
             surface = text[start:end]
             if surface != str(sentence.text):
-                raise ValueError("Kiwi sentence text no longer matches exact source offsets")
+                raise MorphologySourceOffsetError(
+                    "Kiwi sentence text no longer matches exact source offsets"
+                )
             output.append(SentenceSpan(text=surface, start=start, end=end))
         return tuple(output)
 
