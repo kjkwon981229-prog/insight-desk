@@ -6,6 +6,7 @@ from insight_desk.core import FailureKind
 from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID, CloudflareClaimVerifier
 from insight_desk.providers.gemini import (
     GEMINI_FLASH_LITE,
+    GEMINI_INTERACTIONS_URL,
     GEMINI_VERIFIER_ID,
     GeminiClaimVerifier,
     GeminiStructuredClient,
@@ -32,25 +33,25 @@ class RecordingTransport:
         return self.response
 
 
+def interaction(text: str) -> dict[str, object]:
+    return {
+        "status": "completed",
+        "steps": [
+            {
+                "type": "model_output",
+                "content": [{"type": "text", "text": text}],
+            }
+        ],
+    }
+
+
 class Phase12BGeminiContractTests(unittest.TestCase):
     def test_gemini_route_is_optional_without_key(self) -> None:
         self.assertFalse(GeminiStructuredClient.configured({}))
         self.assertTrue(GeminiStructuredClient.configured({"GEMINI_API_KEY": "configured"}))
 
-    def test_gemini_structured_json_uses_stable_flash_lite_and_schema(self) -> None:
-        transport = RecordingTransport(
-            {
-                "candidates": [
-                    {
-                        "content": {
-                            "parts": [
-                                {"text": '{"entailed":true}'}
-                            ]
-                        }
-                    }
-                ]
-            }
-        )
+    def test_gemini_structured_json_uses_current_interactions_contract(self) -> None:
+        transport = RecordingTransport(interaction('{"entailed":true}'))
         client = GeminiStructuredClient("key", transport=transport)
         result = client.structured_json(
             prompt="claim",
@@ -64,20 +65,16 @@ class Phase12BGeminiContractTests(unittest.TestCase):
         )
         self.assertEqual(result, {"entailed": True})
         url, payload, headers = transport.calls[0]
-        self.assertIn(GEMINI_FLASH_LITE, url)
+        self.assertEqual(url, GEMINI_INTERACTIONS_URL)
+        self.assertEqual(payload["model"], GEMINI_FLASH_LITE)
         self.assertEqual(headers["x-goog-api-key"], "key")
-        response_format = payload["generationConfig"]["responseFormat"]["text"]
-        self.assertEqual(response_format["mimeType"], "application/json")
+        response_format = payload["response_format"]
+        self.assertEqual(response_format["type"], "text")
+        self.assertEqual(response_format["mime_type"], "application/json")
         self.assertEqual(response_format["schema"]["required"], ["entailed"])
 
     def test_gemini_claim_verifier_preserves_boolean_contract(self) -> None:
-        transport = RecordingTransport(
-            {
-                "candidates": [
-                    {"content": {"parts": [{"text": '{"entailed":false}'}]}}
-                ]
-            }
-        )
+        transport = RecordingTransport(interaction('{"entailed":false}'))
         verifier = GeminiClaimVerifier(GeminiStructuredClient("key", transport=transport))
         check = verifier.verify(
             check_id="gemini:1",
@@ -130,13 +127,7 @@ class Phase12BGeminiContractTests(unittest.TestCase):
                 detail='{"errors":[{"code":3036,"message":"daily free allocation"}]}',
             )
         )
-        gemini_transport = RecordingTransport(
-            {
-                "candidates": [
-                    {"content": {"parts": [{"text": '{"entailed":true}'}]}}
-                ]
-            }
-        )
+        gemini_transport = RecordingTransport(interaction('{"entailed":true}'))
         verifier = CloudflareClaimVerifier.from_env(
             env={
                 "CLOUDFLARE_ACCOUNT_ID": "account",
