@@ -8,6 +8,7 @@ from typing import Protocol
 from insight_desk.core import EvidenceField, RenderMode
 from insight_desk.generation import (
     GeneratedDraft,
+    GenerationContractError,
     GenerationRequest,
     PreservationReport,
     validate_preservation,
@@ -33,6 +34,7 @@ class GenerationAttemptKind(StrEnum):
 class GenerationAttemptStatus(StrEnum):
     ACCEPTED = "accepted"
     PROVIDER_ERROR = "provider_error"
+    OUTPUT_CONTRACT_REJECTED = "output_contract_rejected"
     PRESERVATION_REJECTED = "preservation_rejected"
 
 
@@ -46,10 +48,14 @@ class GenerationAttempt:
     def __post_init__(self) -> None:
         if self.sequence < 1:
             raise ValueError("generation attempt sequence must be >= 1")
-        if self.status is GenerationAttemptStatus.PROVIDER_ERROR and not self.error_code:
-            raise ValueError("provider-error attempt must carry error_code")
-        if self.status is not GenerationAttemptStatus.PROVIDER_ERROR and self.error_code is not None:
-            raise ValueError("only provider-error attempt may carry error_code")
+        error_statuses = {
+            GenerationAttemptStatus.PROVIDER_ERROR,
+            GenerationAttemptStatus.OUTPUT_CONTRACT_REJECTED,
+        }
+        if self.status in error_statuses and not self.error_code:
+            raise ValueError("failed generation attempt must carry error_code")
+        if self.status not in error_statuses and self.error_code is not None:
+            raise ValueError("only failed generation attempt may carry error_code")
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +185,17 @@ def _attempt_generated(
 ) -> tuple[GeneratedDraft | None, PreservationReport | None, GenerationAttempt]:
     try:
         draft = generator.generate(request)
+    except GenerationContractError as exc:
+        return (
+            None,
+            None,
+            GenerationAttempt(
+                kind=kind,
+                sequence=sequence,
+                status=GenerationAttemptStatus.OUTPUT_CONTRACT_REJECTED,
+                error_code=type(exc).__name__,
+            ),
+        )
     except Exception as exc:
         return (
             None,
@@ -222,8 +239,8 @@ def generate_with_recovery(
 
     Order: primary → one free retry of primary → explicitly configured alternate (optional) → exact
     extractive fallback. No alternate provider is invented here, and the final fallback is not
-    injectable: it is always exact-source ExtractiveFallbackGenerator. Provider and preservation
-    failures remain item-local and are recorded as attempts.
+    injectable: it is always exact-source ExtractiveFallbackGenerator. Provider, output-contract,
+    and preservation failures remain item-local and are recorded as attempts.
     """
 
     attempts: list[GenerationAttempt] = []
