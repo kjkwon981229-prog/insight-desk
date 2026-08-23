@@ -2,6 +2,7 @@
 
 from .discovery import (
     BingNewsRssDiscovery,
+    DiscoveryConfigError,
     DiscoveryError,
     GdeltDocDiscovery,
     NaverNewsDiscovery,
@@ -38,6 +39,7 @@ __all__ = [
     "ArticleCandidate",
     "ArticleMainTextExtractor",
     "BingNewsRssDiscovery",
+    "DiscoveryConfigError",
     "DiscoveryError",
     "ExtractedArticle",
     "ExtractionQuality",
