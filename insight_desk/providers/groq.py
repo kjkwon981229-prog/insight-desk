@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from insight_desk.core import FailureKind, TemporalState
 
+from .resilience import ProviderAvailabilityState, ProviderCircuit
 from .transport import JsonHttpTransport, ProviderTransportError, require_secret
 
 
@@ -25,12 +26,21 @@ class GroqFreeClient:
     clock: Callable[[], float] = time.monotonic
     sleeper: Callable[[float], None] = time.sleep
     _last_call_started: float | None = field(default=None, init=False, repr=False)
+    _circuit: ProviderCircuit = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.model_id not in ALLOWED_GROQ_MODELS:
             raise ValueError(f"Groq model is outside frozen zero-cost allowlist: {self.model_id}")
         if self.delay_seconds < 0:
             raise ValueError("delay_seconds must be >= 0")
+        self._circuit = ProviderCircuit(
+            provider_id=f"groq:{self.model_id}",
+            clock=self.clock,
+        )
+
+    @property
+    def circuit(self) -> ProviderCircuit:
+        return self._circuit
 
     @classmethod
     def from_env(
@@ -62,56 +72,61 @@ class GroqFreeClient:
         if not schema_name.strip():
             raise ValueError("schema_name must be non-empty")
         self._validate_strict_schema(schema)
+        self._ensure_circuit_allows_call()
         self._pace()
 
-        response = self.transport.post_json(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-                "model": self.model_id,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "strict": True,
-                        "schema": schema,
-                    },
-                },
-                "reasoning_effort": "low",
-            },
-            {"Authorization": f"Bearer {self.api_key}"},
-        )
         try:
+            response = self.transport.post_json(
+                "https://api.groq.com/openai/v1/chat/completions",
+                {
+                    "model": self.model_id,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": schema_name,
+                            "strict": True,
+                            "schema": schema,
+                        },
+                    },
+                    "reasoning_effort": "low",
+                },
+                {"Authorization": f"Bearer {self.api_key}"},
+            )
             content: Any = response["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ProviderTransportError(
-                failure_kind=FailureKind.INVALID_OUTPUT,
-                detail="unexpected Groq response envelope",
-            ) from exc
-
-        if isinstance(content, dict):
-            decoded = content
-        elif isinstance(content, str):
-            try:
+            if isinstance(content, dict):
+                decoded = content
+            elif isinstance(content, str):
                 decoded = json.loads(content)
-            except json.JSONDecodeError as exc:
+            else:
                 raise ProviderTransportError(
                     failure_kind=FailureKind.INVALID_OUTPUT,
-                    detail="Groq content is not valid JSON",
-                ) from exc
-        else:
-            raise ProviderTransportError(
+                    detail="Groq content is neither object nor JSON text",
+                )
+            if not isinstance(decoded, dict):
+                raise ProviderTransportError(
+                    failure_kind=FailureKind.INVALID_OUTPUT,
+                    detail="Groq JSON root is not an object",
+                )
+        except ProviderTransportError as exc:
+            self._record_transport_failure(exc)
+            raise
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            wrapped = ProviderTransportError(
                 failure_kind=FailureKind.INVALID_OUTPUT,
-                detail="Groq content is neither object nor JSON text",
+                detail=(
+                    "unexpected Groq response envelope"
+                    if not isinstance(exc, json.JSONDecodeError)
+                    else "Groq content is not valid JSON"
+                ),
             )
-        if not isinstance(decoded, dict):
-            raise ProviderTransportError(
-                failure_kind=FailureKind.INVALID_OUTPUT,
-                detail="Groq JSON root is not an object",
-            )
+            self._record_transport_failure(wrapped)
+            raise wrapped from exc
+
+        self._circuit.record_success()
         return decoded
 
     def classify_temporal(self, text: str) -> TemporalState:
@@ -164,6 +179,27 @@ class GroqFreeClient:
                 failure_kind=FailureKind.INVALID_OUTPUT,
                 detail="Groq temporal_state is outside contract enum",
             ) from exc
+
+    def _ensure_circuit_allows_call(self) -> None:
+        if self._circuit.allows_call():
+            return
+        reason = self._circuit.open_reason
+        failure = (
+            FailureKind.FREE_QUOTA_EXHAUSTED
+            if reason is ProviderAvailabilityState.DAILY_QUOTA_EXHAUSTED
+            else FailureKind.RATE_LIMITED
+        )
+        raise ProviderTransportError(
+            failure_kind=failure,
+            detail=f"provider circuit unavailable:{self._circuit.state.value}",
+        )
+
+    def _record_transport_failure(self, exc: ProviderTransportError) -> None:
+        status = str(exc.status_code) if exc.status_code is not None else "none"
+        self._circuit.record_error_code(
+            f"{exc.failure_kind.value}:{status}",
+            retry_after_seconds=exc.retry_after_seconds,
+        )
 
     def _pace(self) -> None:
         now = self.clock()
