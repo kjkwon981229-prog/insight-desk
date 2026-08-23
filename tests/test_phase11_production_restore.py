@@ -87,7 +87,7 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
         self.assertNotIn("validate_artifact.py", source)
         for required in (
             "SemanticPipeline",
-            "KiwiDeterministicFactExtractor",
+            "build_resilient_fact_extractor",
             "Phase6EventEngine",
             "produce_phase7_entry_candidate",
             "build_rendered_briefing",
