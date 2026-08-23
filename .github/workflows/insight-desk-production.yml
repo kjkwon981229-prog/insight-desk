@@ -1,0 +1,227 @@
+name: Insight Desk Daily Production
+
+on:
+  pull_request:
+    branches: [phase4-core-contracts]
+    paths:
+      - "scripts/phase11_daily_production.py"
+      - ".github/workflows/insight-desk-production.yml"
+      - "tests/test_phase11_production_restore.py"
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # 07:30 Asia/Seoul = 22:30 UTC on the previous day.
+    - cron: "30 22 * * *"
+
+concurrency:
+  group: insight-desk-production
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+      NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      TOKENIZERS_PARALLELISM: "false"
+    outputs:
+      publish: ${{ steps.state.outputs.publish }}
+      status: ${{ steps.state.outputs.status }}
+      entries: ${{ steps.state.outputs.entries }}
+    steps:
+      - name: Checkout current production candidate
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+
+      - name: Install current acquisition and deterministic semantic runtime
+        run: |
+          python -m pip install --disable-pip-version-check '.[acquisition,browser,semantic-local]'
+          python -m playwright install --with-deps chromium
+
+      - name: Install current local NLI runtime
+        run: |
+          python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
+
+      - name: Verify required provider credentials without exposing values
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          required = (
+              "NCP_CLIENT_ID",
+              "NCP_CLIENT_SECRET",
+              "GROQ_API_KEY",
+              "CLOUDFLARE_ACCOUNT_ID",
+              "CLOUDFLARE_API_TOKEN",
+          )
+          missing = [name for name in required if not os.environ.get(name, "").strip()]
+          if missing:
+              raise SystemExit("PHASE11_CREDENTIALS_MISSING:" + ",".join(missing))
+          print("PHASE11_CREDENTIALS_PRESENT")
+          PY
+
+      - name: Compile current production path
+        run: python -m compileall -q insight_desk scripts/phase11_daily_production.py
+
+      - name: Run current-engine daily production
+        id: production
+        run: >-
+          python scripts/phase11_daily_production.py
+          --topics config/topics.json
+          --output build/site
+          --state build/run-state.json
+          --audit build/production-audit.json
+
+      - name: Read production state
+        id: state
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path("build/run-state.json")
+          state = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {
+              "status": "TOTAL_FAILURE",
+              "publish": False,
+              "published_entries": 0,
+          }
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"status={state.get('status', 'TOTAL_FAILURE')}\n")
+              output.write(f"publish={'true' if state.get('publish') is True else 'false'}\n")
+              output.write(f"entries={int(state.get('published_entries', 0))}\n")
+          print(
+              "PHASE11_STATE "
+              f"status={state.get('status', 'TOTAL_FAILURE')} "
+              f"publish={str(state.get('publish') is True).lower()} "
+              f"entries={int(state.get('published_entries', 0))}"
+          )
+          PY
+
+      - name: Validate generated site contract
+        if: steps.state.outputs.publish == 'true'
+        shell: bash
+        run: |
+          test -s build/site/index.html
+          test -s build/site/manifest.webmanifest
+          test -s build/site/push-sw.js
+          test -s build/site/assets/css/style.css
+          test -s build/site/assets/js/push.js
+          grep -q 'SUPPORTED headline + summary only' build/site/index.html
+          grep -q 'manifest.webmanifest' build/site/index.html
+          grep -q 'push-sw.js' build/site/index.html
+          if grep -Eq 'key-fact-panel|next-signal|검색 관심 흐름' build/site/index.html; then
+            echo "::error::Renderer manufactured an unsupported UI slot."
+            exit 1
+          fi
+
+      - name: Upload production audit
+        if: always() && hashFiles('build/production-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-audit-${{ github.run_id }}
+          path: |
+            build/run-state.json
+            build/production-audit.json
+          if-no-files-found: error
+
+      - name: Fail closed when no publishable briefing exists
+        if: steps.state.outputs.publish != 'true'
+        run: |
+          echo "::error::No verified briefing was produced; preserving the currently deployed Pages site."
+          exit 1
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && steps.state.outputs.publish == 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && needs.build.result == 'success' && needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy verified briefing to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  push_notify:
+    needs: [build, deploy]
+    if: always() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      BUILD_RESULT: ${{ needs.build.result }}
+      BUILD_PUBLISH: ${{ needs.build.outputs.publish }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+      PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
+    steps:
+      - name: Mask push token
+        shell: bash
+        run: echo "::add-mask::$PUSH_SEND_TOKEN"
+
+      - name: Send production state notification
+        shell: bash
+        run: |
+          set -u
+          if [[ -z "$PUSH_WORKER_URL" || -z "$PUSH_SEND_TOKEN" ]]; then
+            echo "::warning::Push notification skipped because Worker configuration is incomplete."
+            exit 0
+          fi
+          case "$PUSH_WORKER_URL" in
+            https://*) ;;
+            *)
+              echo "::warning::Push notification skipped because PUSH_WORKER_URL is not HTTPS."
+              exit 0
+              ;;
+          esac
+
+          notification_type="FAILURE"
+          if [[ "$BUILD_RESULT" == "success" && "$BUILD_PUBLISH" == "true" && "$DEPLOY_RESULT" == "success" ]]; then
+            notification_type="READY"
+          fi
+          briefing_date="$(TZ=Asia/Seoul date +%F)"
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          payload="$(printf '{"date":"%s","run_id":"%s","type":"%s"}' "$briefing_date" "$run_id" "$notification_type")"
+          response_file="${RUNNER_TEMP}/insight-desk-push-response.json"
+          http_status="$(curl --silent --show-error --max-time 20 \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            -X POST "${PUSH_WORKER_URL%/}/send" \
+            -H "Authorization: Bearer $PUSH_SEND_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "$payload" || true)"
+
+          if [[ ! "$http_status" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::warning::Push endpoint did not accept the notification (type=$notification_type; http=$http_status)."
+            exit 0
+          fi
+          if ! jq -e '.ok == true and (.duplicate | type == "boolean")' "$response_file" >/dev/null 2>&1; then
+            echo "::warning::Push endpoint returned an invalid response (type=$notification_type; http=$http_status)."
+            exit 0
+          fi
+          echo "Push notification accepted (type=$notification_type; http=$http_status)."
