@@ -7,10 +7,9 @@ from pathlib import Path
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 
 
-CANDIDATE_FALLBACK_MODEL = "MoritzLaurer/xlm-v-base-mnli-xnli"
+CANDIDATE_FALLBACK_MODEL = "MoritzLaurer/ernie-m-base-mnli-xnli"
 
 CASES = (
-    # Positive entailments: same fact or conservative paraphrase, no added material content.
     ("p01_exact_fx", True, "원·달러 환율은 1386.5원으로 마감했다.", "원·달러 환율은 1386.5원으로 마감했다."),
     ("p02_fx_paraphrase", True, "원·달러 환율은 전 거래일보다 6.1원 내린 1386.5원으로 마감했다.", "원·달러 환율이 1386.5원에 마감했다."),
     ("p03_split", True, "카카오는 인적분할을 추진한다고 밝혔다.", "카카오가 인적분할을 추진한다."),
@@ -21,7 +20,6 @@ CASES = (
     ("p08_price", True, "생산자물가는 전월보다 0.4% 상승했다.", "생산자물가가 전월 대비 0.4% 올랐다."),
     ("p09_launch", True, "테스트 기업은 2026년 8월 23일 신제품을 출시했다.", "테스트 기업이 2026년 8월 23일 신제품을 내놓았다."),
     ("p10_watch", True, "한국은행 부총재는 물가 흐름을 더 지켜봐야 한다고 밝혔다.", "한국은행 부총재가 물가 흐름을 더 지켜봐야 한다고 말했다."),
-    # High-risk negatives: polarity, chronology, number, event type, entity/action mismatches.
     ("n01_fx_number", False, "원·달러 환율은 1386.5원으로 마감했다.", "원·달러 환율은 1399.9원으로 마감했다."),
     ("n02_fx_direction", False, "원·달러 환율은 전 거래일보다 6.1원 내린 1386.5원으로 마감했다.", "원·달러 환율이 전 거래일보다 6.1원 올랐다."),
     ("n03_split_type", False, "카카오는 인적분할을 추진한다고 밝혔다.", "카카오가 물적분할을 추진한다."),
@@ -42,7 +40,6 @@ def evaluate(model_id: str, *, route_id: str) -> dict[str, object]:
     negative_correct = 0
     positive_total = 0
     negative_total = 0
-
     for case_id, expected, evidence, claim in CASES:
         check = verifier.verify(
             check_id=f"bench:{route_id}:{case_id}",
@@ -58,16 +55,13 @@ def evaluate(model_id: str, *, route_id: str) -> dict[str, object]:
         else:
             negative_total += 1
             negative_correct += int(correct)
-        rows.append(
-            {
-                "case_id": case_id,
-                "expected": expected,
-                "actual": actual,
-                "correct": correct,
-                "error_code": check.error_code,
-            }
-        )
-
+        rows.append({
+            "case_id": case_id,
+            "expected": expected,
+            "actual": actual,
+            "correct": correct,
+            "error_code": check.error_code,
+        })
     accepted = negative_correct == negative_total and positive_correct >= 9
     return {
         "model_id": model_id,
@@ -84,7 +78,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="build/local-nli-benchmark.json")
     args = parser.parse_args()
-
     result = {
         "acceptance_rule": {
             "positive_min_correct": 9,
@@ -93,7 +86,7 @@ def main() -> None:
             "negative_total": 10,
         },
         "primary": evaluate(LOCAL_NLI_MODEL, route_id="bench-mdeberta"),
-        "fallback": evaluate(CANDIDATE_FALLBACK_MODEL, route_id="bench-xlm-v"),
+        "fallback": evaluate(CANDIDATE_FALLBACK_MODEL, route_id="bench-ernie-m-base"),
     }
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,8 +95,7 @@ def main() -> None:
         item = result[key]
         print(
             "LOCAL_NLI_BENCHMARK "
-            f"route={key} "
-            f"model={item['model_id']} "
+            f"route={key} model={item['model_id']} "
             f"positive={item['positive_correct']}/{item['positive_total']} "
             f"negative={item['negative_correct']}/{item['negative_total']} "
             f"accepted={str(item['accepted_for_secondary_failover']).lower()}"
