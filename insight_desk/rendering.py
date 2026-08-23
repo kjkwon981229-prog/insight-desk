@@ -32,6 +32,10 @@ def _headline_key(entry: RenderedEntry) -> str:
     return _normalize_visible_text(entry.headline)
 
 
+def _summary_key(entry: RenderedEntry) -> str:
+    return _normalize_visible_text(entry.summary)
+
+
 def _content_key(entry: RenderedEntry) -> tuple[str, str]:
     return (
         _normalize_visible_text(entry.headline),
@@ -91,6 +95,7 @@ def build_rendered_briefing(
     entries: list[RenderedEntry] = []
     seen_event_ids: set[str] = set()
     seen_headlines: set[str] = set()
+    seen_summaries: set[str] = set()
     seen_content: set[tuple[str, str]] = set()
     for candidate in candidates:
         entry = render_phase7_candidate(candidate)
@@ -104,11 +109,16 @@ def build_rendered_briefing(
         if headline_key in seen_headlines:
             continue
 
+        summary_key = _summary_key(entry)
+        if summary_key in seen_summaries:
+            continue
+
         content_key = _content_key(entry)
         if content_key in seen_content:
             continue
 
         seen_headlines.add(headline_key)
+        seen_summaries.add(summary_key)
         seen_content.add(content_key)
         entries.append(entry)
 
