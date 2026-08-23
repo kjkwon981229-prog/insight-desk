@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 import unittest
 
 from insight_desk.core import RenderMode, RenderedBriefing, RenderedEntry
@@ -42,10 +43,16 @@ class Phase8PwaPushWiringTests(unittest.TestCase):
             html,
         )
         self.assertIn("data-push-settings", html)
-        self.assertIn('data-push-service-worker-url="assets/push-sw.js"', html)
+        self.assertIn('data-push-service-worker-url="push-sw.js"', html)
         self.assertIn("data-push-enable", html)
         self.assertIn("data-push-disable", html)
         self.assertIn('<script src="assets/js/push.js" defer></script>', html)
+
+    def test_root_service_worker_matches_preserved_notification_worker(self) -> None:
+        root_worker = Path("push-sw.js").read_text(encoding="utf-8")
+        preserved_worker = Path("assets/push-sw.js").read_text(encoding="utf-8")
+        self.assertEqual(root_worker, preserved_worker)
+        self.assertNotIn('addEventListener("fetch"', root_worker)
 
     def test_push_ui_describes_only_ready_or_failure_status_not_article_content(self) -> None:
         html = render_briefing_html(
