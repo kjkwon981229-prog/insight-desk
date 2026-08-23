@@ -6,6 +6,8 @@ import unittest
 from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact, RenderMode
 from insight_desk.generation import GeneratedDraft, GenerationRequest
 from insight_desk.generation_pipeline import (
+    FALLBACK_HEADLINE_MAX_CHARS,
+    FALLBACK_SUMMARY_MAX_CHARS,
     GenerationAttemptKind,
     GenerationAttemptStatus,
     generate_with_recovery,
@@ -15,14 +17,14 @@ from insight_desk.generation_pipeline import (
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
 
 
-def request() -> GenerationRequest:
+def request(text: str = TEXT) -> GenerationRequest:
     span = EvidenceSpan(
         evidence_id="ev:recovery",
         article_id="article:recovery",
         field=EvidenceField.BODY,
         start=0,
-        end=len(TEXT),
-        text=TEXT,
+        end=len(text),
+        text=text,
     )
     fact = EventFact(
         fact_id="fact:recovery",
@@ -107,6 +109,25 @@ class Phase7GenerationRecoveryTests(unittest.TestCase):
         self.assertEqual(result.draft.summary, TEXT)
         self.assertEqual(result.draft.event_id, request().event.event_id)
         self.assertEqual(result.attempts[-1].kind, GenerationAttemptKind.EXTRACTIVE_FALLBACK)
+        self.assertTrue(result.preservation.accepted)
+
+    def test_long_article_fallback_is_bounded_and_source_exact(self) -> None:
+        title = "SK하이닉스 임단협 잠정합의안 찬반투표"
+        paragraph = (
+            "SK하이닉스 노사가 성과급인 초과이익분배금의 일부를 자사주로 지급하는 잠정합의안을 마련했다. "
+            "조합원 투표는 24일부터 25일까지 진행된다. "
+            "회사는 세부 지급 기준을 사내에 공지했다고 밝혔다."
+        )
+        long_text = title + "\n" + paragraph * 12
+        primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
+        result = generate_with_recovery(request(long_text), primary=primary)
+        self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
+        self.assertEqual(result.draft.headline, title)
+        self.assertLessEqual(len(result.draft.headline), FALLBACK_HEADLINE_MAX_CHARS)
+        self.assertLessEqual(len(result.draft.summary), FALLBACK_SUMMARY_MAX_CHARS)
+        self.assertIn(result.draft.headline, long_text)
+        self.assertIn(result.draft.summary, long_text)
+        self.assertNotEqual(result.draft.summary, long_text)
         self.assertTrue(result.preservation.accepted)
 
     def test_failed_alternate_still_preserves_event_via_fallback(self) -> None:
