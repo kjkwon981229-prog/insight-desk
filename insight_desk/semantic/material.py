@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import lru_cache
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
@@ -42,6 +43,13 @@ class MaterialEventAssessment:
         return None
 
 
+@lru_cache(maxsize=1)
+def _shared_morphology() -> KiwiMorphologyHelper:
+    """Load the local Kiwi model at most once per process for repeated event assessment."""
+
+    return KiwiMorphologyHelper()
+
+
 def _cited_text(fact: EventFact, evidence: Mapping[str, EvidenceSpan]) -> str | None:
     parts: list[str] = []
     for evidence_id in fact.evidence_ids:
@@ -70,7 +78,7 @@ def assess_material_event(
 
     if morphology is None:
         try:
-            morphology = KiwiMorphologyHelper()
+            morphology = _shared_morphology()
         except RuntimeError:
             return MaterialEventAssessment(
                 event.event_id,
