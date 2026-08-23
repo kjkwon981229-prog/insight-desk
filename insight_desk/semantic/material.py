@@ -25,6 +25,7 @@ class MaterialEventReason(StrEnum):
     EVIDENCE_BOUND_EXPLICIT_NOMINAL_EVENT = "evidence_bound_explicit_nominal_event"
     FACT_MISSING = "fact_missing"
     EVIDENCE_MISSING = "evidence_missing"
+    EVIDENCE_OUTSIDE_EVENT = "evidence_outside_event"
     FACT_FIELD_NOT_LITERAL = "fact_field_not_literal"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
@@ -50,14 +51,21 @@ def _shared_morphology() -> KiwiMorphologyHelper:
     return KiwiMorphologyHelper()
 
 
-def _cited_text(fact: EventFact, evidence: Mapping[str, EvidenceSpan]) -> str | None:
+def _cited_text(
+    event: CandidateEvent,
+    fact: EventFact,
+    evidence: Mapping[str, EvidenceSpan],
+) -> tuple[str | None, MaterialEventReason | None]:
     parts: list[str] = []
+    allowed_articles = set(event.article_ids)
     for evidence_id in fact.evidence_ids:
         span = evidence.get(evidence_id)
         if span is None:
-            return None
+            return None, MaterialEventReason.EVIDENCE_MISSING
+        if span.article_id not in allowed_articles:
+            return None, MaterialEventReason.EVIDENCE_OUTSIDE_EVENT
         parts.append(span.text)
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), None
 
 
 def assess_material_event(
@@ -69,11 +77,11 @@ def assess_material_event(
 ) -> MaterialEventAssessment:
     """Produce a precision-first material-event signal from already-structured facts.
 
-    ``MATERIAL`` requires literal evidence binding plus either an explicit verbal predicate in every
-    fact's action clause or one explicitly frozen nominal event action created to close a measured
-    locked failure. Missing/normalized/ambiguous structure returns ``DEFER``, never an invented
-    negative label. This function is independent from briefing selection and never uses old selection
-    TNs as material-event truth.
+    ``MATERIAL`` requires event-local literal evidence binding plus either an explicit verbal
+    predicate in every fact's action clause or one explicitly frozen nominal event action created to
+    close a measured locked failure. Missing/foreign/normalized/ambiguous structure returns
+    ``DEFER``, never an invented negative label. This function is independent from briefing selection
+    and never uses old selection TNs as material-event truth.
     """
 
     if morphology is None:
@@ -95,12 +103,12 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.FACT_MISSING,),
             )
-        text = _cited_text(fact, evidence)
-        if text is None:
+        text, evidence_error = _cited_text(event, fact, evidence)
+        if evidence_error is not None or text is None:
             return MaterialEventAssessment(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
-                (MaterialEventReason.EVIDENCE_MISSING,),
+                (evidence_error or MaterialEventReason.EVIDENCE_MISSING,),
             )
         literal_fields = (fact.subject, fact.action)
         if fact.object is not None:
