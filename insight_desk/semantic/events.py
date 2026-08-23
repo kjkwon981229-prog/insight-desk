@@ -19,6 +19,8 @@ from insight_desk.core import (
     precheck_identity,
 )
 
+from .material import MaterialEventAssessment, assess_material_event
+
 
 class TemporalResolutionSource(StrEnum):
     EXTRACTED = "extracted"
@@ -71,6 +73,28 @@ class Phase6EventAssessment:
             raise ValueError("temporal resolution count must match event fact count")
         if tuple(item.fact_id for item in self.temporal) != self.event.fact_ids:
             raise ValueError("temporal resolutions must preserve event fact order")
+
+
+@dataclass(frozen=True, slots=True)
+class Phase6SelectionContext:
+    """Selection inputs that remain external after material-event truth is automated."""
+
+    topic_relevant: bool | None
+    fresh: bool | None
+    source_usable: bool | None
+    identity_resolved: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Phase6AutoMaterialAssessment:
+    """Keep material truth visible instead of hiding it inside a selection decision."""
+
+    material: MaterialEventAssessment
+    event_assessment: Phase6EventAssessment
+
+    def __post_init__(self) -> None:
+        if self.material.event_id != self.event_assessment.event.event_id:
+            raise ValueError("material assessment and event assessment must refer to the same event")
 
 
 _EXPLICIT_TEMPORAL_PATTERNS: tuple[tuple[TemporalState, tuple[re.Pattern[str], ...]], ...] = (
@@ -351,4 +375,34 @@ class Phase6EventEngine:
             identity_keys=identity_keys,
             temporal=temporal,
             selection=selection,
+        )
+
+    def assess_with_auto_material(
+        self,
+        event: CandidateEvent,
+        *,
+        facts: Mapping[str, EventFact],
+        evidence: Mapping[str, EvidenceSpan],
+        selection_context: Phase6SelectionContext,
+        temporal_auxiliary: TemporalAuxiliaryPort | None = None,
+    ) -> Phase6AutoMaterialAssessment:
+        """Derive material-event truth locally, then feed it into the unchanged selection contract."""
+
+        material = assess_material_event(event, facts=facts, evidence=evidence)
+        event_assessment = self.assess(
+            event,
+            facts=facts,
+            evidence=evidence,
+            selection_signals=SelectionSignals(
+                topic_relevant=selection_context.topic_relevant,
+                material_event=material.selection_signal,
+                fresh=selection_context.fresh,
+                source_usable=selection_context.source_usable,
+                identity_resolved=selection_context.identity_resolved,
+            ),
+            temporal_auxiliary=temporal_auxiliary,
+        )
+        return Phase6AutoMaterialAssessment(
+            material=material,
+            event_assessment=event_assessment,
         )
