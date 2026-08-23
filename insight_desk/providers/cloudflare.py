@@ -7,7 +7,7 @@ from typing import Any
 
 from insight_desk.core import FailureKind, VerificationCheck
 
-from .transport import JsonHttpTransport, ProviderTransportError, require_secret
+from .transport import JsonHttpTransport, ProviderConfigError, ProviderTransportError
 
 
 CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
@@ -31,25 +31,35 @@ class CloudflareClaimVerifier:
         gemini_transport: JsonHttpTransport | None = None,
         env: dict[str, str] | None = None,
     ):
-        """Build the logical primary-verifier slot with run-local failover state.
+        """Build the logical primary-verifier slot from whichever zero-cost routes exist.
 
-        Cloudflare remains the first route. Gemini is added only when an explicit free-tier API key is
-        configured. The returned logical verifier keeps the frozen `cloudflare` verifier identity so
-        the two-slot verification policy is unchanged; only provider availability routing changes.
+        Cloudflare remains the first route when fully configured. Gemini is the next route when its
+        free-tier key is configured. Missing Cloudflare credentials are an availability state rather
+        than a reason to abort construction; partially configured Cloudflare credentials remain a
+        real configuration error and fail fast. The logical verifier id stays `cloudflare` so the
+        frozen two-slot verification policy is unchanged.
         """
 
-        from .resilience import FailoverClaimVerifier
+        from .gemini import GeminiClaimVerifier, GeminiStructuredClient
+        from .resilience import FailoverClaimVerifier, UnavailableClaimVerifier
 
         source = dict(os.environ) if env is None else env
-        cloudflare = cls(
-            account_id=require_secret(source, "CLOUDFLARE_ACCOUNT_ID"),
-            api_token=require_secret(source, "CLOUDFLARE_API_TOKEN"),
-            transport=transport or JsonHttpTransport(),
-        )
-        routes: list[object] = [cloudflare]
+        account_id = str(source.get("CLOUDFLARE_ACCOUNT_ID", "")).strip()
+        api_token = str(source.get("CLOUDFLARE_API_TOKEN", "")).strip()
+        if bool(account_id) != bool(api_token):
+            raise ProviderConfigError(
+                "Cloudflare verifier requires both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"
+            )
 
-        # Lazy import avoids making Gemini a core import-time dependency of the provider package.
-        from .gemini import GeminiClaimVerifier, GeminiStructuredClient
+        routes: list[object] = []
+        if account_id and api_token:
+            routes.append(
+                cls(
+                    account_id=account_id,
+                    api_token=api_token,
+                    transport=transport or JsonHttpTransport(),
+                )
+            )
 
         if GeminiStructuredClient.configured(source):
             routes.append(
@@ -59,6 +69,13 @@ class CloudflareClaimVerifier:
                         transport=gemini_transport,
                     )
                 )
+            )
+
+        if not routes:
+            return UnavailableClaimVerifier(
+                verifier_id=CLOUDFLARE_VERIFIER_ID,
+                model_id="unavailable:external-primary",
+                error_code="config_missing",
             )
         return FailoverClaimVerifier(
             verifier_id=CLOUDFLARE_VERIFIER_ID,
