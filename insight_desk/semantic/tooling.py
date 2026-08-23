@@ -23,18 +23,28 @@ class MorphologyToken:
             raise ValueError("token offsets must describe a non-empty source span")
 
 
-class KiwiMorphologyHelper:
-    """Local Korean morphology/source-offset helper with deliberately narrow authority.
+@dataclass(frozen=True, slots=True)
+class SentenceSpan:
+    text: str
+    start: int
+    end: int
 
-    This helper is not a named-entity recognizer, fact extractor, event-identity authority,
-    material-event classifier, or publication verifier. The original EvidenceSpan remains the
-    source of truth; morphology is only a deterministic scaffold around that source text.
-    """
+    def __post_init__(self) -> None:
+        if not self.text:
+            raise ValueError("sentence text must be non-empty")
+        if self.start < 0 or self.end <= self.start:
+            raise ValueError("sentence offsets must describe a non-empty source span")
+        if self.end - self.start != len(self.text):
+            raise ValueError("sentence offsets must match sentence text length")
+
+
+class KiwiMorphologyHelper:
+    """Local Korean morphology/source-offset helper with deliberately narrow authority."""
 
     def __init__(self) -> None:
         try:
             from kiwipiepy import Kiwi
-        except ImportError as exc:  # optional dependency stays out of the base runtime
+        except ImportError as exc:
             raise RuntimeError(
                 "kiwipiepy is optional; install insight-desk[semantic-local] to enable morphology"
             ) from exc
@@ -49,16 +59,30 @@ class KiwiMorphologyHelper:
             end = start + int(token.len)
             if start < 0 or end > len(text) or end <= start:
                 raise ValueError("Kiwi returned a token outside the supplied source text")
-            surface = text[start:end]
             output.append(
                 MorphologyToken(
-                    surface=surface,
+                    surface=text[start:end],
                     normalized=str(token.form),
                     tag=str(token.tag),
                     start=start,
                     end=end,
                 )
             )
+        return tuple(output)
+
+    def split_sentences(self, text: str) -> tuple[SentenceSpan, ...]:
+        if not text:
+            return ()
+        output: list[SentenceSpan] = []
+        for sentence in self._kiwi.split_into_sents(text):
+            start = int(sentence.start)
+            end = int(sentence.end)
+            if start < 0 or end > len(text) or end <= start:
+                raise ValueError("Kiwi returned a sentence outside the supplied source text")
+            surface = text[start:end]
+            if surface != str(sentence.text):
+                raise ValueError("Kiwi sentence text no longer matches exact source offsets")
+            output.append(SentenceSpan(text=surface, start=start, end=end))
         return tuple(output)
 
 
@@ -83,7 +107,7 @@ class RapidFuzzAliasRetriever:
     def __init__(self) -> None:
         try:
             from rapidfuzz import fuzz, process
-        except ImportError as exc:  # optional dependency stays out of the base runtime
+        except ImportError as exc:
             raise RuntimeError(
                 "RapidFuzz is optional; install insight-desk[semantic-local] to enable alias retrieval"
             ) from exc
