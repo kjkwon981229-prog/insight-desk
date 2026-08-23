@@ -45,13 +45,7 @@ def _surface_sentences(text: str) -> tuple[SurfaceSentence, ...]:
         sentence_start = start + left_trim
         sentence_end = start + right_trim
         if sentence_end > sentence_start:
-            output.append(
-                SurfaceSentence(
-                    text=text[sentence_start:sentence_end],
-                    start=sentence_start,
-                    end=sentence_end,
-                )
-            )
+            output.append(SurfaceSentence(text=text[sentence_start:sentence_end], start=sentence_start, end=sentence_end))
         index += 1
         while index < len(text) and (text[index].isspace() or text[index] in _SENTENCE_TERMINALS):
             index += 1
@@ -62,13 +56,7 @@ def _surface_sentences(text: str) -> tuple[SurfaceSentence, ...]:
         sentence_start = start + left_trim
         sentence_end = len(text.rstrip())
         if sentence_end > sentence_start:
-            output.append(
-                SurfaceSentence(
-                    text=text[sentence_start:sentence_end],
-                    start=sentence_start,
-                    end=sentence_end,
-                )
-            )
+            output.append(SurfaceSentence(text=text[sentence_start:sentence_end], start=sentence_start, end=sentence_end))
     return tuple(output)
 
 
@@ -107,8 +95,6 @@ def _surface_parts(text: str) -> tuple[str, str] | None:
     action = match.group("action").strip()
     if not subject or len(subject) > 48 or len(action) < 3:
         return None
-    # A second explicit subject/topic marker indicates a complex clause. Surface-only parsing
-    # deliberately refuses it rather than guessing attachment.
     if _NESTED_SUBJECT_RE.search(action):
         return None
     return subject, action
@@ -126,9 +112,7 @@ class SurfaceDeterministicFactExtractor:
             for sentence in _surface_sentences(evidence.text):
                 absolute_start = evidence.start + sentence.start
                 absolute_end = evidence.start + sentence.end
-                if not _left_boundary_safe(source, absolute_start):
-                    continue
-                if not _right_boundary_safe(source, absolute_end):
+                if not _left_boundary_safe(source, absolute_start) or not _right_boundary_safe(source, absolute_end):
                     continue
                 parts = _surface_parts(sentence.text)
                 if parts is None:
@@ -163,7 +147,6 @@ class PecabDeterministicFactExtractor:
     def __init__(self, analyzer: PosAnalyzer | None = None) -> None:
         if analyzer is None:
             from pecab import PeCab  # type: ignore[import-not-found]
-
             analyzer = PeCab()
         self._analyzer = analyzer
         self._surface = SurfaceDeterministicFactExtractor()
@@ -173,10 +156,7 @@ class PecabDeterministicFactExtractor:
         for draft in self._surface.extract(request):
             if draft.source_start is None or draft.source_end is None:
                 continue
-            parent = next(
-                (item for item in request.evidence if item.evidence_id == draft.evidence_ids[0]),
-                None,
-            )
+            parent = next((item for item in request.evidence if item.evidence_id == draft.evidence_ids[0]), None)
             if parent is None:
                 continue
             source = request.article.field_text(parent.field)
@@ -184,15 +164,10 @@ class PecabDeterministicFactExtractor:
             try:
                 tagged = self._analyzer.pos(sentence)
             except (RuntimeError, ValueError, OSError):
-                # A local analyzer may fail on one unusual surface. Treat that sentence as
-                # unavailable, but do not suppress arbitrary programming errors.
                 continue
             tags = [str(tag) for _, tag in tagged]
             has_case = any(tag.startswith("J") for tag in tags)
-            has_predicate = any(
-                tag.startswith("V") or "XSV" in tag or "VCP" in tag
-                for tag in tags
-            )
+            has_predicate = any(tag.startswith("V") or "XSV" in tag or "VCP" in tag for tag in tags)
             if has_case and has_predicate:
                 output.append(
                     FactDraft(
@@ -220,8 +195,6 @@ class LazyFactExtractor:
                 self._delegate = self.factory()
             except (ImportError, RuntimeError, OSError):
                 return ()
-        # Route implementations are responsible for expected data/runtime failures. Let unexpected
-        # programming errors surface instead of silently turning them into an empty fact set.
         return self._delegate.extract(request)
 
 
@@ -231,6 +204,7 @@ class SequentialFactExtractor:
 
     routes: tuple[FactExtractorPort, ...]
     extractor_id: str = "kiwi-deterministic-v1"
+    _route_stats: dict[str, dict[str, int]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if len(self.routes) < 1:
@@ -238,12 +212,25 @@ class SequentialFactExtractor:
         ids = [route.extractor_id for route in self.routes]
         if len(ids) != len(set(ids)):
             raise ValueError("fact extraction route ids must be unique")
+        self._route_stats = {
+            route_id: {"calls": 0, "empty": 0, "selected": 0, "drafts": 0}
+            for route_id in ids
+        }
+
+    @property
+    def route_stats(self) -> dict[str, dict[str, int]]:
+        return {route_id: dict(stats) for route_id, stats in self._route_stats.items()}
 
     def extract(self, request: FactExtractionRequest) -> tuple[FactDraft, ...]:
         for route in self.routes:
+            stats = self._route_stats[route.extractor_id]
+            stats["calls"] += 1
             drafts = route.extract(request)
             if drafts:
+                stats["selected"] += 1
+                stats["drafts"] += len(drafts)
                 return drafts
+            stats["empty"] += 1
         return ()
 
 
@@ -252,14 +239,8 @@ def build_resilient_fact_extractor() -> SequentialFactExtractor:
 
     return SequentialFactExtractor(
         routes=(
-            LazyFactExtractor(
-                extractor_id="kiwi-deterministic-route",
-                factory=KiwiDeterministicFactExtractor,
-            ),
-            LazyFactExtractor(
-                extractor_id="pecab-surface-route",
-                factory=PecabDeterministicFactExtractor,
-            ),
+            LazyFactExtractor(extractor_id="kiwi-deterministic-route", factory=KiwiDeterministicFactExtractor),
+            LazyFactExtractor(extractor_id="pecab-surface-route", factory=PecabDeterministicFactExtractor),
             SurfaceDeterministicFactExtractor(),
         )
     )
