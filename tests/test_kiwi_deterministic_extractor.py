@@ -111,6 +111,18 @@ class KiwiDeterministicFactExtractorTests(unittest.TestCase):
         self.assertNotIn("왕옌청", fact.subject + fact.action + (fact.object or ""))
         self.assertNotIn("곽빈", fact.subject + fact.action + (fact.object or ""))
 
+    def test_locked_explicit_lineup_preserves_both_named_starters(self) -> None:
+        text = "잠실 한화 왕옌청 두산 곽빈 선발투수 예고"
+        result = extract(text, text, topic_id="kbo_hanwha", suffix="explicit-lineup")
+        self.assertEqual(len(result.facts), 1)
+        fact = result.facts[0]
+        self.assertEqual(fact.action, "선발투수 예고")
+        preserved = " ".join((fact.subject, fact.action, fact.object or ""))
+        self.assertIn("왕옌청", preserved)
+        self.assertIn("곽빈", preserved)
+        self.assertIn("한화", preserved)
+        self.assertIn("두산", preserved)
+
     def test_amounts_and_market_direction_survive_inside_exact_fact_fields(self) -> None:
         order = extract(
             "AI 공장 수주",
