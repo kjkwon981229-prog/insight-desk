@@ -1,0 +1,62 @@
+{
+  "record_id": "phase6-closure-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 6,
+  "status": "COMPLETE",
+  "branch": "phase4-core-contracts",
+  "head_sha": "25af8cc63c49d52d13dc1b904870b05d8c80a9ab",
+  "canonical_flow": [
+    "RawArticle",
+    "EvidenceSpan",
+    "EventFact",
+    "CandidateEvent",
+    "Temporal/Lifecycle semantics",
+    "Identity",
+    "Material-event truth",
+    "Selection"
+  ],
+  "closed_components": {
+    "evidence_segmentation": "EvidenceSegmenter with exact source offsets",
+    "fact_extraction": "KiwiDeterministicFactExtractor/kiwi-deterministic-v1",
+    "fact_policy": "precision-first exact-source extraction; unsupported or ambiguous structures emit no draft",
+    "temporal_lifecycle": "deterministic explicit-cue resolution first, Groq GPT-OSS 120B auxiliary only when unresolved",
+    "identity": "deterministic contradiction first; optional semantic judgment; ambiguity defaults to separate events",
+    "event_history": "EventHistory/StateTransition with no synthetic pre-history",
+    "material_event": "evidence-bound MATERIAL-or-DEFER producer",
+    "selection_wiring": "assess_with_auto_material derives material_event locally and feeds only True/None into the existing SelectionSignals contract"
+  },
+  "locked_validation": {
+    "run90_deterministic_temporal": "7/7 PASS",
+    "run97_groq120b_temporal_auxiliary": "6/6 PASS",
+    "temporal_hybrid_total": "13/13 PASS",
+    "run96_korean_positive_fact_extraction": "14/14 PASS",
+    "locked_explicit_lineup": "왕옌청 and 곽빈 preserved from exact source without name hardcoding",
+    "context_only_nominal_negatives": "3/3 emitted no fact",
+    "material_event_regressions": "6/6 PASS",
+    "auto_material_selection_wiring": "3/3 PASS",
+    "property_source_preservation": "2 property tests PASS, 40 generated examples each",
+    "benchmark_integrity": "PASS: hard_scored=85 evidence_only=7 taxonomy=16 run96_positive=15 run96_tn=44",
+    "push_worker": "14/14 PASS"
+  },
+  "provider_boundaries": {
+    "Groq_GPT_OSS_120B": "temporal/lifecycle auxiliary only",
+    "Groq_GPT_OSS_20B": "not a Phase 6 fact extractor; reserved for Phase 7 constrained generation",
+    "Cloudflare_Llama_3_3_70B": "not used in Phase 6; reserved for Phase 7 verification",
+    "mDeBERTa_XNLI": "not used in Phase 6; reserved for Phase 7 secondary verification",
+    "MiniLM": "optional retrieval/prefilter only; never identity authority"
+  },
+  "safety_invariants": {
+    "paid_fallback": false,
+    "human_runtime_annotation_required": false,
+    "item_failure_global_abort": false,
+    "generation_or_verification_logic_added": false,
+    "phase7_boundary_crossed": false,
+    "old_selection_tn_repurposed_as_material_gold": false,
+    "deterministic_identity_conflict_overridable": false,
+    "ambiguous_identity_default": "separate events",
+    "ambiguous_material_default": "DEFER"
+  },
+  "phase7_entry_condition": "SATISFIED",
+  "phase7_scope": "generation + NEWS_REWRITE_POLICY_V1 + deterministic preservation validation + Cloudflare/mDeBERTa verification",
+  "notes": "Top-level application/rendering orchestration remains Phase 8 integration scope and is not a missing Phase 6 semantic-truth component."
+}
