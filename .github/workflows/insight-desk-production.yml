@@ -27,7 +27,7 @@ on:
     - cron: "30 22 * * *"
 
 concurrency:
-  group: insight-desk-production
+  group: insight-desk-production-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
   cancel-in-progress: true
 
 jobs:
