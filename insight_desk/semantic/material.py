@@ -9,6 +9,11 @@ from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
 from .tooling import KiwiMorphologyHelper
 
 
+# Deliberately narrow companion to the extractor's measured nominal fallback. Do not expand this
+# into a generic event-type vocabulary without a locked failure demonstrating the need.
+_EXPLICIT_NOMINAL_MATERIAL_ACTIONS = frozenset({"선발투수 예고"})
+
+
 class MaterialEventVerdict(StrEnum):
     MATERIAL = "material"
     DEFER = "defer"
@@ -16,6 +21,7 @@ class MaterialEventVerdict(StrEnum):
 
 class MaterialEventReason(StrEnum):
     EVIDENCE_BOUND_EXPLICIT_PREDICATE = "evidence_bound_explicit_predicate"
+    EVIDENCE_BOUND_EXPLICIT_NOMINAL_EVENT = "evidence_bound_explicit_nominal_event"
     FACT_MISSING = "fact_missing"
     EVIDENCE_MISSING = "evidence_missing"
     FACT_FIELD_NOT_LITERAL = "fact_field_not_literal"
@@ -55,10 +61,11 @@ def assess_material_event(
 ) -> MaterialEventAssessment:
     """Produce a precision-first material-event signal from already-structured facts.
 
-    `MATERIAL` requires literal evidence binding plus an explicit verbal predicate in every fact's
-    action clause. Missing/normalized/ambiguous structure returns `DEFER`, never an invented negative
-    label. This function is independent from briefing selection and never uses old selection TNs as
-    material-event truth.
+    ``MATERIAL`` requires literal evidence binding plus either an explicit verbal predicate in every
+    fact's action clause or one explicitly frozen nominal event action created to close a measured
+    locked failure. Missing/normalized/ambiguous structure returns ``DEFER``, never an invented
+    negative label. This function is independent from briefing selection and never uses old selection
+    TNs as material-event truth.
     """
 
     if morphology is None:
@@ -71,6 +78,7 @@ def assess_material_event(
                 (MaterialEventReason.LOCAL_HELPER_UNAVAILABLE,),
             )
 
+    used_nominal = False
     for fact_id in event.fact_ids:
         fact = facts.get(fact_id)
         if fact is None:
@@ -95,16 +103,26 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.FACT_FIELD_NOT_LITERAL,),
             )
-        action_tokens = morphology.analyze(fact.action)
-        if not any(token.tag in {"VV", "XSV"} for token in action_tokens):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.PREDICATE_SIGNAL_MISSING,),
-            )
 
+        action_tokens = morphology.analyze(fact.action)
+        if any(token.tag in {"VV", "XSV"} for token in action_tokens):
+            continue
+        if fact.action in _EXPLICIT_NOMINAL_MATERIAL_ACTIONS:
+            used_nominal = True
+            continue
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.PREDICATE_SIGNAL_MISSING,),
+        )
+
+    reason = (
+        MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_NOMINAL_EVENT
+        if used_nominal
+        else MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_PREDICATE
+    )
     return MaterialEventAssessment(
         event.event_id,
         MaterialEventVerdict.MATERIAL,
-        (MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_PREDICATE,),
+        (reason,),
     )
