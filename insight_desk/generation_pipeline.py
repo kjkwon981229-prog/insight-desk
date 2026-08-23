@@ -13,6 +13,7 @@ from insight_desk.generation import (
     PreservationReport,
     validate_preservation,
 )
+from insight_desk.providers.transport import ProviderTransportError
 
 
 FALLBACK_HEADLINE_MAX_CHARS = 96
@@ -78,12 +79,7 @@ class GenerationRecoveryResult:
 
 
 def _bounded_source_excerpt(text: str, *, max_chars: int) -> str:
-    """Return a bounded exact-source excerpt without inventing replacement text.
-
-    Prefer a complete source sentence, then an existing line/clause boundary. Only when the source
-    has no usable boundary inside the feed budget do we take an exact prefix. No ellipsis or other
-    generated marker is added, so every returned character comes from the cited source text.
-    """
+    """Return a bounded exact-source excerpt without inventing replacement text."""
 
     source = text.strip()
     if len(source) <= max_chars:
@@ -119,12 +115,7 @@ def _first_nonempty_line(text: str) -> tuple[str, int] | None:
 
 
 class ExtractiveFallbackGenerator:
-    """Zero-generation fallback using bounded exact-source excerpts.
-
-    The fallback remains source-preserving, but it is no longer allowed to pour an entire article
-    body into a feed card. Headline and summary are deterministic excerpts with hard feed budgets.
-    RenderMode.EXTRACTIVE_FALLBACK keeps the distinction from generated rewrite explicit.
-    """
+    """Zero-generation fallback using bounded exact-source excerpts."""
 
     def generate(self, request: GenerationRequest) -> GeneratedDraft:
         evidence_ids = request.evidence_ids
@@ -176,6 +167,11 @@ class ExtractiveFallbackGenerator:
         )
 
 
+def _provider_error_code(exc: ProviderTransportError) -> str:
+    status = str(exc.status_code) if exc.status_code is not None else "none"
+    return f"{exc.failure_kind.value}:{status}"
+
+
 def _attempt_generated(
     generator: DraftGenerator,
     request: GenerationRequest,
@@ -194,6 +190,17 @@ def _attempt_generated(
                 sequence=sequence,
                 status=GenerationAttemptStatus.OUTPUT_CONTRACT_REJECTED,
                 error_code=type(exc).__name__,
+            ),
+        )
+    except ProviderTransportError as exc:
+        return (
+            None,
+            None,
+            GenerationAttempt(
+                kind=kind,
+                sequence=sequence,
+                status=GenerationAttemptStatus.PROVIDER_ERROR,
+                error_code=_provider_error_code(exc),
             ),
         )
     except Exception as exc:
@@ -229,18 +236,24 @@ def _attempt_generated(
     )
 
 
+def _should_skip_immediate_primary_retry(attempt: GenerationAttempt) -> bool:
+    if attempt.status is not GenerationAttemptStatus.PROVIDER_ERROR:
+        return False
+    code = (attempt.error_code or "").casefold()
+    return code.startswith("rate_limited:") or code.startswith("free_quota_exhausted:")
+
+
 def generate_with_recovery(
     request: GenerationRequest,
     *,
     primary: DraftGenerator,
     alternate: DraftGenerator | None = None,
 ) -> GenerationRecoveryResult:
-    """Apply the frozen zero-cost generation recovery order without deleting the event.
+    """Apply zero-cost recovery: primary → bounded retry → alternate → exact source.
 
-    Order: primary → one free retry of primary → explicitly configured alternate (optional) → exact
-    extractive fallback. No alternate provider is invented here, and the final fallback is not
-    injectable: it is always exact-source ExtractiveFallbackGenerator. Provider, output-contract,
-    and preservation failures remain item-local and are recorded as attempts.
+    Rate-limit or quota evidence suppresses an immediate primary retry. The provider's run-local
+    circuit remains authoritative across later events. No paid path exists, and deterministic exact
+    source remains the final non-provider fallback.
     """
 
     attempts: list[GenerationAttempt] = []
@@ -263,6 +276,8 @@ def generate_with_recovery(
                 preservation=preservation,
                 attempts=tuple(attempts),
             )
+        if _should_skip_immediate_primary_retry(attempt):
+            break
 
     if alternate is not None:
         sequence += 1
