@@ -10,16 +10,24 @@ from insight_desk.generation import (
     GeneratedDraft,
     GenerationContractError,
     GenerationRequest,
+    MAX_GENERATED_HEADLINE_CHARS,
+    MAX_GENERATED_SUMMARY_CHARS,
     PreservationReport,
     validate_preservation,
 )
 from insight_desk.providers.transport import ProviderTransportError
 
 
-FALLBACK_HEADLINE_MAX_CHARS = 96
-FALLBACK_SUMMARY_MAX_CHARS = 360
+# Exact-source fallback is a presentation mode of the same feed contract, not a separate smaller
+# product. Keeping a lower private ceiling caused valid complete source sentences to be clipped.
+FALLBACK_HEADLINE_MAX_CHARS = MAX_GENERATED_HEADLINE_CHARS
+FALLBACK_SUMMARY_MAX_CHARS = MAX_GENERATED_SUMMARY_CHARS
 _SENTENCE_END_RE = re.compile(r"[.!?。！？](?=\s|$)")
 _CLAUSE_MARKS = ("…", "·", ":", ";", ",", "，")
+
+
+class ExtractiveFallbackUnavailable(GenerationContractError):
+    """Raised when no exact, display-safe excerpt exists inside the frozen feed ceiling."""
 
 
 class DraftGenerator(Protocol):
@@ -79,7 +87,7 @@ class GenerationRecoveryResult:
 
 
 def _bounded_source_excerpt(text: str, *, max_chars: int) -> str:
-    """Return a bounded exact-source excerpt without inventing replacement text."""
+    """Return an exact-source excerpt only at a measured safe boundary; never raw-character clip."""
 
     source = text.strip()
     if len(source) <= max_chars:
@@ -98,7 +106,7 @@ def _bounded_source_excerpt(text: str, *, max_chars: int) -> str:
     if clause_end >= max_chars // 2:
         return window[: clause_end + 1].rstrip()
 
-    return window.rstrip()
+    raise ExtractiveFallbackUnavailable("no safe exact-source boundary within feed ceiling")
 
 
 def _first_nonempty_line(text: str) -> tuple[str, int] | None:
@@ -264,8 +272,8 @@ def generate_with_recovery(
     A missing primary provider is a valid availability state and is skipped without manufacturing a
     provider failure. Rate-limit or quota evidence suppresses an immediate configured-primary retry.
     When the caller does not inject an alternate, an independently configured Gemini Free route is
-    discovered lazily. Deterministic exact source remains the final non-provider fallback and no paid
-    route exists.
+    discovered lazily. Deterministic exact source remains the final non-provider fallback only when a
+    display-safe exact excerpt exists; it never manufactures a clipped fragment and no paid route exists.
     """
 
     attempts: list[GenerationAttempt] = []
