@@ -9,6 +9,10 @@ from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
 from insight_desk.providers.groq import GROQ_20B
 
 
+MAX_GENERATED_HEADLINE_CHARS = 120
+MAX_GENERATED_SUMMARY_CHARS = 420
+
+
 class GenerationContractError(ValueError):
     """Raised when Phase 7 generation inputs or outputs violate a structural contract."""
 
@@ -99,10 +103,20 @@ class GeneratedDraft:
     def __post_init__(self) -> None:
         if not self.event_id.strip():
             raise GenerationContractError("event_id must be non-empty")
-        if not self.headline.strip():
+        headline = self.headline.strip()
+        summary = self.summary.strip()
+        if not headline:
             raise GenerationContractError("headline must be non-empty")
-        if not self.summary.strip():
+        if not summary:
             raise GenerationContractError("summary must be non-empty")
+        if len(headline) > MAX_GENERATED_HEADLINE_CHARS:
+            raise GenerationContractError(
+                f"headline exceeds hard feed ceiling: {len(headline)}>{MAX_GENERATED_HEADLINE_CHARS}"
+            )
+        if len(summary) > MAX_GENERATED_SUMMARY_CHARS:
+            raise GenerationContractError(
+                f"summary exceeds hard feed ceiling: {len(summary)}>{MAX_GENERATED_SUMMARY_CHARS}"
+            )
         if not self.evidence_ids:
             raise GenerationContractError("generated draft must cite evidence")
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
