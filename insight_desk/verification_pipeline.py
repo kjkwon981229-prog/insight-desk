@@ -122,14 +122,14 @@ def _safe_verify(
 def _verify_claim(
     *,
     request: GenerationRequest,
+    evidence_ids: tuple[str, ...],
+    evidence_text: str,
     role: ClaimRole,
     text: str,
     primary: ClaimVerifier,
     secondary: ClaimVerifier,
     policy: VerificationPolicy,
 ) -> GeneratedClaimResult:
-    evidence_ids = request.evidence_ids
-    evidence_text = request.evidence_text
     claim_id = _stable_id("claim", request.event.event_id, role.value, text)
     primary_check = _safe_verify(
         primary,
@@ -179,10 +179,9 @@ def verify_generated_draft(
     """Verify generated headline and summary under the frozen Phase 7 policy.
 
     The deterministic preservation gate always runs first. Rejected preservation never reaches an
-    external/local verifier. After preservation passes, Cloudflare-equivalent primary verification
-    is decisive for explicit rejection; secondary verification is required only after primary TRUE
-    because only TRUE+TRUE can publish. Provider exceptions are converted to item-local inconclusive
-    checks and never delete the established event.
+    external/local verifier. After preservation passes, primary verification is decisive for explicit
+    rejection; secondary verification is required only after primary TRUE because only TRUE+TRUE can
+    publish. Provider exceptions become item-local inconclusive checks and never delete the event.
     """
 
     if primary.verifier_id != policy.primary_verifier_id:
@@ -200,9 +199,13 @@ def verify_generated_draft(
             claims=(),
         )
 
+    evidence_ids = draft.evidence_ids
+    evidence_text = request.evidence_text_for(evidence_ids)
     claims = tuple(
         _verify_claim(
             request=request,
+            evidence_ids=evidence_ids,
+            evidence_text=evidence_text,
             role=role,
             text=text,
             primary=primary,
