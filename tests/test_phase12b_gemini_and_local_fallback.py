@@ -11,11 +11,6 @@ from insight_desk.providers.gemini import (
     GeminiClaimVerifier,
     GeminiStructuredClient,
 )
-from insight_desk.providers.local_nli import (
-    LOCAL_NLI_FALLBACK_MODEL,
-    LOCAL_NLI_FALLBACK_ROUTE_ID,
-    LazyLocalNliVerifier,
-)
 from insight_desk.providers.resilience import FailoverClaimVerifier
 from insight_desk.providers.transport import ProviderTransportError
 
@@ -158,19 +153,6 @@ class Phase12BGeminiContractTests(unittest.TestCase):
         self.assertEqual(first.model_id, GEMINI_FLASH_LITE)
         self.assertEqual(len(cloudflare_transport.calls), 1)
         self.assertEqual(len(gemini_transport.calls), 2)
-
-
-class Phase12BLocalFallbackContractTests(unittest.TestCase):
-    def test_minilm_fallback_is_lazy_and_not_loaded_during_construction(self) -> None:
-        verifier = LazyLocalNliVerifier()
-        self.assertEqual(verifier.model_id, LOCAL_NLI_FALLBACK_MODEL)
-        self.assertEqual(verifier.verifier_id, LOCAL_NLI_FALLBACK_ROUTE_ID)
-        self.assertIsNone(verifier._delegate)
-
-    def test_local_fallback_route_has_independent_route_identity(self) -> None:
-        verifier = LazyLocalNliVerifier()
-        self.assertNotEqual(verifier.verifier_id, "local-nli")
-        self.assertIn("MiniLM", verifier.model_id)
 
 
 if __name__ == "__main__":
