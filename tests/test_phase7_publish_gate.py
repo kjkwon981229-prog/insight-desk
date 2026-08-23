@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+import unittest
+
+from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact, VerificationCheck
+from insight_desk.generation import GeneratedDraft, GenerationRequest
+from insight_desk.phase7 import VerificationRecoveryReason, produce_phase7_entry_candidate
+from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
+from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
+
+
+TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+
+
+def request() -> GenerationRequest:
+    span = EvidenceSpan(
+        evidence_id="ev:phase7-final",
+        article_id="article:phase7-final",
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(TEXT),
+        text=TEXT,
+    )
+    fact = EventFact(
+        fact_id="fact:phase7-final",
+        subject="네오팩토리",
+        action="AI 공장 구축 사업을 15억달러에 수주했다",
+        object="AI 공장 구축 사업",
+        evidence_ids=(span.evidence_id,),
+    )
+    event = CandidateEvent(
+        event_id="event:phase7-final",
+        topic_id="ai_tech",
+        fact_ids=(fact.fact_id,),
+        article_ids=(span.article_id,),
+    )
+    return GenerationRequest(event=event, facts={fact.fact_id: fact}, evidence={span.evidence_id: span})
+
+
+@dataclass
+class Generator:
+    draft: GeneratedDraft | None = None
+    error: Exception | None = None
+    calls: int = 0
+
+    def generate(self, item: GenerationRequest) -> GeneratedDraft:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        assert self.draft is not None
+        return self.draft
+
+
+@dataclass
+class Verifier:
+    verifier_id: str
+    model_id: str
+    answers: list[bool | None] = field(default_factory=list)
+    calls: int = 0
+
+    def verify(self, *, check_id: str, claim_text: str, evidence_text: str, evidence_ids: tuple[str, ...]) -> VerificationCheck:
+        self.calls += 1
+        answer = self.answers.pop(0) if self.answers else True
+        return VerificationCheck(
+            check_id=check_id,
+            verifier_id=self.verifier_id,
+            model_id=self.model_id,
+            evidence_ids=evidence_ids,
+            entailed=answer,
+            error_code=None if answer is not None else "synthetic_indeterminate",
+            zero_cost=True,
+        )
+
+
+def generated() -> GeneratedDraft:
+    return GeneratedDraft(
+        event_id="event:phase7-final",
+        headline="AI 공장 15억달러 수주",
+        summary="네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다.",
+        evidence_ids=("ev:phase7-final",),
+    )
+
+
+def primary(*answers: bool | None) -> Verifier:
+    return Verifier(CLOUDFLARE_VERIFIER_ID, "@cf/meta/llama-3.3-70b-instruct-fp8-fast", list(answers))
+
+
+def secondary(*answers: bool | None) -> Verifier:
+    return Verifier(LOCAL_NLI_VERIFIER_ID, "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli", list(answers))
+
+
+class Phase7PublishGateTests(unittest.TestCase):
+    def test_supported_generated_candidate_is_publishable_without_fallback(self) -> None:
+        result = produce_phase7_entry_candidate(
+            request(),
+            primary_generator=Generator(draft=generated()),
+            primary_verifier=primary(True, True),
+            secondary_verifier=secondary(True, True),
+        )
+        self.assertTrue(result.publishable)
+        self.assertIs(result.initial_generation, result.final_generation)
+        self.assertIsNone(result.verification_recovery_reason)
+        self.assertTrue(result.event_retained)
+
+    def test_explicit_generated_claim_rejection_gets_one_exact_fallback(self) -> None:
+        first = primary(False, False, True, True)
+        second = secondary(True, True)
+        result = produce_phase7_entry_candidate(
+            request(),
+            primary_generator=Generator(draft=generated()),
+            primary_verifier=first,
+            secondary_verifier=second,
+        )
+        self.assertTrue(result.publishable)
+        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertIs(
+            result.verification_recovery_reason,
+            VerificationRecoveryReason.GENERATED_CLAIM_REJECTED,
+        )
+        self.assertTrue(result.event_retained)
+
+    def test_indeterminate_verification_does_not_waste_generation_on_fallback(self) -> None:
+        result = produce_phase7_entry_candidate(
+            request(),
+            primary_generator=Generator(draft=generated()),
+            primary_verifier=primary(None, None),
+            secondary_verifier=secondary(True, True),
+        )
+        self.assertFalse(result.publishable)
+        self.assertIs(result.initial_generation, result.final_generation)
+        self.assertIsNone(result.verification_recovery_reason)
+        self.assertTrue(result.event_retained)
+
+    def test_generation_failure_path_can_finish_in_exact_fallback_and_verify(self) -> None:
+        result = produce_phase7_entry_candidate(
+            request(),
+            primary_generator=Generator(error=RuntimeError("down")),
+            primary_verifier=primary(True, True),
+            secondary_verifier=secondary(True, True),
+        )
+        self.assertTrue(result.publishable)
+        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertIsNone(result.verification_recovery_reason)
+        self.assertTrue(result.event_retained)
+
+    def test_rejected_exact_fallback_remains_unpublishable_but_event_is_retained(self) -> None:
+        result = produce_phase7_entry_candidate(
+            request(),
+            primary_generator=Generator(draft=generated()),
+            primary_verifier=primary(False, False, False, False),
+            secondary_verifier=secondary(True, True),
+        )
+        self.assertFalse(result.publishable)
+        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertTrue(result.event_retained)
+
+
+if __name__ == "__main__":
+    unittest.main()
