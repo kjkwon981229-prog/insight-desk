@@ -101,27 +101,24 @@ class Phase7GenerationRecoveryTests(unittest.TestCase):
         self.assertEqual(alternate.calls, 1)
         self.assertEqual(result.attempts[-1].kind, GenerationAttemptKind.ALTERNATE)
 
-    def test_no_configured_alternate_falls_back_to_exact_source(self) -> None:
+    def test_single_exact_excerpt_fails_closed_instead_of_repeating_visible_fields(self) -> None:
         primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
-        result = generate_with_recovery(request(), primary=primary)
-        self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
-        self.assertEqual(result.draft.headline, TEXT)
-        self.assertEqual(result.draft.summary, TEXT)
-        self.assertEqual(result.draft.event_id, request().event.event_id)
-        self.assertEqual(result.attempts[-1].kind, GenerationAttemptKind.EXTRACTIVE_FALLBACK)
-        self.assertTrue(result.preservation.accepted)
+        with self.assertRaises(GenerationContractError):
+            generate_with_recovery(request(), primary=primary)
 
     def test_live_106_char_complete_sentence_is_not_cut_at_legacy_96_limit(self) -> None:
-        text = (
+        headline = (
             "김경문 감독이 이끄는 한화 이글스는 23일 대전 한화생명볼파크에서 열린 2026 신한 SOL Bank KBO리그 "
             "LG 트윈스와 시즌 13차전에서 3-12로 대패하며 연승에 실패했다."
         )
-        self.assertGreater(len(text), 96)
-        self.assertLessEqual(len(text), 120)
+        text = headline + "\n한화는 경기 초반 대량 실점을 만회하지 못했다."
+        self.assertGreater(len(headline), 96)
+        self.assertLessEqual(len(headline), 120)
         primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
         result = generate_with_recovery(request(text), primary=primary)
         self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
-        self.assertEqual(result.draft.headline, text)
+        self.assertEqual(result.draft.headline, headline)
+        self.assertEqual(result.draft.summary, "한화는 경기 초반 대량 실점을 만회하지 못했다.")
         self.assertNotEqual(result.draft.headline[-3:], "연승에")
 
     def test_exact_fallback_never_raw_character_clips_without_safe_boundary(self) -> None:
@@ -153,9 +150,12 @@ class Phase7GenerationRecoveryTests(unittest.TestCase):
     def test_failed_alternate_still_preserves_event_via_fallback(self) -> None:
         primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
         alternate = SequenceGenerator([RuntimeError("c")])
-        result = generate_with_recovery(request(), primary=primary, alternate=alternate)
+        fallback_text = "AI 공장 15억달러 수주\n" + TEXT
+        result = generate_with_recovery(request(fallback_text), primary=primary, alternate=alternate)
         self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
         self.assertEqual(result.event_id, "event:recovery")
+        self.assertEqual(result.draft.headline, "AI 공장 15억달러 수주")
+        self.assertEqual(result.draft.summary, TEXT)
         self.assertEqual([a.kind for a in result.attempts], [
             GenerationAttemptKind.PRIMARY,
             GenerationAttemptKind.PRIMARY,

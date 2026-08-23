@@ -144,6 +144,7 @@ def validate_html(
     duplicate_headlines = 0
     duplicate_summaries = 0
     duplicate_content = 0
+    headline_summary_collisions = 0
     max_headline = 0
     max_summary = 0
     psat_forbidden_hits: list[str] = []
@@ -164,12 +165,15 @@ def validate_html(
             raise ValueError(f"FEED_QUALITY_SUMMARY_TOO_LONG:{index}:{len(summary)}")
 
         headline_key = _normalize(headline)
+        summary_key = _normalize(summary)
+        if headline_key == summary_key:
+            headline_summary_collisions += 1
+
         if headline_key in seen_headlines:
             duplicate_headlines += 1
         else:
             seen_headlines.add(headline_key)
 
-        summary_key = _normalize(summary)
         if summary_key in seen_summaries:
             duplicate_summaries += 1
         else:
@@ -187,6 +191,10 @@ def validate_html(
                 if forbidden.casefold() in combined:
                     psat_forbidden_hits.append(forbidden)
 
+    if headline_summary_collisions:
+        raise ValueError(
+            f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}"
+        )
     if duplicate_headlines:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_summaries:
@@ -209,6 +217,7 @@ def validate_html(
         "story_count": len(stories),
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
+        "headline_summary_collisions": headline_summary_collisions,
         "duplicate_headlines": duplicate_headlines,
         "duplicate_summaries": duplicate_summaries,
         "duplicate_content": duplicate_content,

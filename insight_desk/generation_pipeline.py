@@ -122,6 +122,10 @@ def _first_nonempty_line(text: str) -> tuple[str, int] | None:
     return None
 
 
+def _normalized_visible_text(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
 class ExtractiveFallbackGenerator:
     """Zero-generation fallback using bounded exact-source excerpts."""
 
@@ -165,7 +169,11 @@ class ExtractiveFallbackGenerator:
             max_chars=FALLBACK_SUMMARY_MAX_CHARS,
         )
         if not summary:
-            summary = headline
+            raise ExtractiveFallbackUnavailable("exact-source fallback summary is empty")
+        if _normalized_visible_text(headline) == _normalized_visible_text(summary):
+            raise ExtractiveFallbackUnavailable(
+                "exact-source fallback cannot reuse the same excerpt as headline and summary"
+            )
 
         return GeneratedDraft(
             event_id=request.event.event_id,

@@ -14,6 +14,18 @@ _EXPLICIT_NOMINAL_MATERIAL_ACTIONS = frozenset({"선발투수 예고"})
 _PUBLISHER_NOTICE_PERMISSION_CUES = ("무단", "사전허가없이", "사전 허가 없이")
 _PUBLISHER_NOTICE_RESTRICTION_TERMS = ("복사", "배포", "전재", "재배포", "판매")
 _PUBLISHER_NOTICE_LEGAL_CUES = ("책임", "금지", "저작권")
+_SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
+_SPORTS_DEPICTIVE_ACTION_CUES = (
+    "투구",
+    "타격",
+    "수비",
+    "훈련",
+    "캐치볼",
+    "몸을 풀",
+    "세리머니",
+    "포즈",
+)
+_SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
 
 
 class MaterialEventVerdict(StrEnum):
@@ -29,6 +41,7 @@ class MaterialEventReason(StrEnum):
     EVIDENCE_OUTSIDE_EVENT = "evidence_outside_event"
     FACT_FIELD_NOT_LITERAL = "fact_field_not_literal"
     PUBLISHER_NOTICE_BOILERPLATE = "publisher_notice_boilerplate"
+    DEPICTIVE_SPORTS_CAPTION = "depictive_sports_caption"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
 
@@ -76,6 +89,21 @@ def _publisher_notice_boilerplate(text: str) -> bool:
     )
 
 
+def _standalone_sports_photo_caption(text: str) -> bool:
+    """Reject a narrow class of one-sentence sports image captions, not ongoing news generally."""
+
+    normalized = " ".join(text.split())
+    if not normalized or len(normalized) > 180:
+        return False
+    if sum(normalized.count(mark) for mark in ".!?。！？") > 1:
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_DEPICTIVE_ACTION_CUES):
+        return False
+    return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)
+
+
 def assess_material_event(
     event: CandidateEvent,
     *,
@@ -114,6 +142,12 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.PUBLISHER_NOTICE_BOILERPLATE,),
+            )
+        if _standalone_sports_photo_caption(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,),
             )
         literal_fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
         if any(value not in text for value in literal_fields):
