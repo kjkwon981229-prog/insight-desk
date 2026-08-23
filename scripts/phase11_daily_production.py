@@ -33,6 +33,9 @@ from insight_desk.semantic import (
     Phase6SelectionContext,
     SemanticPipeline,
     build_resilient_fact_extractor,
+    compare_candidate_identity,
+    judge_same_event_mutual_entailment,
+    resolve_candidate_pair,
 )
 from insight_desk.semantic.material import MaterialEventVerdict, assess_material_event
 from insight_desk.ui import PwaRuntimeConfig, build_briefing_view_model, render_briefing_html
@@ -71,6 +74,7 @@ class PublishedCandidate:
     candidate: Phase7EntryCandidate
     source_group_key: str
     content_sha256: str
+    identity_text: str
 
 
 def load_topics(path: Path) -> tuple[TopicConfig, ...]:
@@ -260,6 +264,15 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "verification_recovery_fallback": 0,
         "extractive_fallback_unavailable": 0,
     }
+    identity_stats: dict[str, int] = {
+        "comparisons": 0,
+        "deterministic_blocks": 0,
+        "secondary_checks": 0,
+        "primary_checks": 0,
+        "same_event": 0,
+        "different_event": 0,
+        "unavailable": 0,
+    }
 
     articles: dict[str, object] = {}
     evidence: dict[str, object] = {}
@@ -375,8 +388,6 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             topic_relevant=event_relevant,
                             fresh=True,
                             source_usable=True,
-                            # Frozen identity policy: absent a semantic same-event authority,
-                            # ambiguity resolves safely as separate events rather than blocking.
                             identity_resolved=True,
                         ),
                     )
@@ -424,6 +435,59 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
+                    identity_text = generation_request.evidence_text
+                    duplicate_event = False
+                    identity_facts = {**facts, **article_facts}
+                    for prior in published:
+                        if prior.topic.topic_id != topic.topic_id:
+                            continue
+                        prior_event = events.get(prior.candidate.event_id)
+                        if not isinstance(prior_event, CandidateEvent):
+                            raise AssertionError("published candidate lost event identity provenance")
+                        identity_stats["comparisons"] += 1
+                        precheck = compare_candidate_identity(
+                            event,
+                            prior_event,
+                            identity_facts,
+                        )
+                        if precheck.deterministic_block:
+                            identity_stats["deterministic_blocks"] += 1
+                            continue
+                        judgment = judge_same_event_mutual_entailment(
+                            identity_text,
+                            prior.identity_text,
+                            primary=primary_verifier,
+                            secondary=local_verifier,
+                        )
+                        identity_stats["secondary_checks"] += judgment.secondary_checks
+                        identity_stats["primary_checks"] += judgment.primary_checks
+                        if judgment.same_event is None:
+                            identity_stats["unavailable"] += 1
+                        elif judgment.same_event is False:
+                            identity_stats["different_event"] += 1
+                        resolution = resolve_candidate_pair(
+                            event,
+                            prior_event,
+                            identity_facts,
+                            semantic_same_event=judgment.same_event,
+                        )
+                        if resolution.decision.same_event:
+                            identity_stats["same_event"] += 1
+                            attempts.append(
+                                _attempt(
+                                    topic=topic.topic_id,
+                                    query=query,
+                                    domain=domain,
+                                    stage="event_identity",
+                                    status="skip",
+                                    reason="cross_source_same_event_already_published",
+                                )
+                            )
+                            duplicate_event = True
+                            break
+                    if duplicate_event:
+                        continue
+
                     headline_key = " ".join(entry_candidate.final_generation.draft.headline.split()).casefold()
                     if headline_key in published_headline_keys:
                         attempts.append(
@@ -458,6 +522,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             candidate=entry_candidate,
                             source_group_key=source_group_key,
                             content_sha256=content_sha256,
+                            identity_text=identity_text,
                         )
                     )
                     published_headline_keys.add(headline_key)
@@ -549,6 +614,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "topic_stats": topic_stats,
         "attempts": attempts,
         "generation_stats": generation_stats,
+        "identity_stats": identity_stats,
         "rendered_sources": rendered_sources,
         "provider_roles": {
             "generation": GROQ_20B,
