@@ -109,14 +109,10 @@ def _term_present(text: str, term: str) -> bool:
 
 
 def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
-    """High-precision production relevance guard using only frozen topic literals."""
-
     text = f"{title}\n{body}"
     if not any(_term_present(text, term) for term in topic.intent_anchors):
         return False
-    if topic.required_intent_terms and not any(
-        _term_present(text, term) for term in topic.required_intent_terms
-    ):
+    if topic.required_intent_terms and not any(_term_present(text, term) for term in topic.required_intent_terms):
         return False
     return True
 
@@ -128,11 +124,8 @@ def event_topic_relevant(
     evidence: dict[str, EvidenceSpan],
     topic: TopicConfig,
 ) -> bool:
-    """Require each publishable child event to bind to its topic using only cited exact evidence."""
-
     if event.topic_id != topic.topic_id:
         return False
-
     cited_text: list[str] = []
     seen_evidence: set[str] = set()
     for fact_id in event.fact_ids:
@@ -147,7 +140,6 @@ def event_topic_relevant(
                 continue
             seen_evidence.add(evidence_id)
             cited_text.append(span.text)
-
     if not cited_text:
         return False
     return topic_relevant(title="", body="\n".join(cited_text), topic=topic)
@@ -165,47 +157,64 @@ def _domain(url: str) -> str:
 
 
 def _source_group_key(candidate: ArticleCandidate) -> str:
-    """Return an opaque stable group shared by one source discovery candidate pair."""
-
     candidate_id = candidate.candidate_id[:-4] if candidate.candidate_id.endswith("-alt") else candidate.candidate_id
     return hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()
 
 
 def _content_fingerprint(body: str) -> str:
-    """Return a deterministic fingerprint insensitive only to whitespace layout."""
-
     normalized = " ".join(body.split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None) -> dict[str, object]:
-    item: dict[str, object] = {
-        "topic": topic,
-        "query": query,
-        "domain": domain,
-        "stage": stage,
-        "status": status,
-    }
+    item: dict[str, object] = {"topic": topic, "query": query, "domain": domain, "stage": stage, "status": status}
     if reason is not None:
         item["reason"] = reason
     return item
 
 
+def _counter(stats: dict[str, int], key: str, amount: int = 1) -> None:
+    stats[key] = stats.get(key, 0) + amount
+
+
+def _route_counter(stats: dict[str, dict[str, int]], route: str, key: str) -> None:
+    bucket = stats.setdefault(route, {})
+    bucket[key] = bucket.get(key, 0) + 1
+
+
 def _record_generation_stats(
     candidate: Phase7EntryCandidate,
     generation_stats: dict[str, int],
+    generation_route_stats: dict[str, dict[str, int]],
 ) -> None:
     results = [candidate.initial_generation]
     if candidate.final_generation is not candidate.initial_generation:
         results.append(candidate.final_generation)
     for result in results:
         for attempt in result.attempts:
-            key = attempt.status.value
-            generation_stats[key] = generation_stats.get(key, 0) + 1
+            status_key = attempt.status.value
+            generation_stats[status_key] = generation_stats.get(status_key, 0) + 1
+            _route_counter(generation_route_stats, attempt.kind.value, status_key)
+            if attempt.error_code:
+                error_key = "error_" + attempt.error_code.split(":", 1)[0]
+                _route_counter(generation_route_stats, attempt.kind.value, error_key)
         if result.render_mode.value == "extractive_fallback":
             generation_stats["extractive_fallback"] += 1
     if candidate.verification_recovery_reason is not None:
         generation_stats["verification_recovery_fallback"] += 1
+
+
+def _record_verification_stats(candidate: Phase7EntryCandidate, verification_stats: dict[str, dict[str, int]]) -> None:
+    for verified in candidate.verification.claims:
+        for check in verified.claim.checks:
+            model = check.model_id
+            _route_counter(verification_stats, model, "checks")
+            if check.entailed is True:
+                _route_counter(verification_stats, model, "supported")
+            elif check.entailed is False:
+                _route_counter(verification_stats, model, "rejected")
+            else:
+                _route_counter(verification_stats, model, "unavailable")
 
 
 def stage_site(output_dir: Path, html: str) -> None:
@@ -238,11 +247,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     semantic = SemanticPipeline()
     extractor = build_resilient_fact_extractor()
     phase6 = Phase6EventEngine()
-    generator = (
-        Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B))
-        if GroqFreeClient.configured(model_id=GROQ_20B)
-        else None
-    )
+    generator = Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B)) if GroqFreeClient.configured(model_id=GROQ_20B) else None
     primary_verifier = CloudflareClaimVerifier.from_env()
     local_verifier: LocalNliVerifier | None = None
 
@@ -264,6 +269,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "verification_recovery_fallback": 0,
         "extractive_fallback_unavailable": 0,
     }
+    generation_route_stats: dict[str, dict[str, int]] = {}
+    verification_stats: dict[str, dict[str, int]] = {}
+    acquisition_stats: dict[str, dict[str, int]] = {"selected_methods": {}, "failures": {}}
     identity_stats: dict[str, int] = {
         "comparisons": 0,
         "deterministic_blocks": 0,
@@ -299,16 +307,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             try:
                 queue = list(discovery.search(query, topic_id=topic.topic_id, limit=10))
             except DiscoveryError as exc:
-                attempts.append(
-                    _attempt(
-                        topic=topic.topic_id,
-                        query=query,
-                        domain="discovery",
-                        stage="discovery",
-                        status="skip",
-                        reason=exc.failure_kind.value,
-                    )
-                )
+                attempts.append(_attempt(topic=topic.topic_id, query=query, domain="discovery", stage="discovery", status="skip", reason=exc.failure_kind.value))
                 continue
 
             for candidate in queue:
@@ -327,9 +326,11 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 try:
                     acquired = acquisition.acquire(candidate)
                 except AcquisitionError as exc:
+                    _counter(acquisition_stats["failures"], exc.failure_kind.value)
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="acquisition", status="skip", reason=exc.failure_kind.value))
                     continue
 
+                _counter(acquisition_stats["selected_methods"], acquired.extraction_method)
                 stats["acquired_articles"] += 1
                 article = acquired.article
                 content_sha256 = _content_fingerprint(article.body)
@@ -361,35 +362,16 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         continue
                     stats["material_events"] += 1
 
-                    event_relevant = event_topic_relevant(
-                        event=event,
-                        facts=article_facts,
-                        evidence=article_evidence,
-                        topic=topic,
-                    )
+                    event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
                     if not event_relevant:
-                        attempts.append(
-                            _attempt(
-                                topic=topic.topic_id,
-                                query=query,
-                                domain=domain,
-                                stage="event_topic_relevance",
-                                status="skip",
-                                reason="configured_literal_missing_in_event_evidence",
-                            )
-                        )
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
                         continue
 
                     assessment = phase6.assess_with_auto_material(
                         event,
                         facts=article_facts,
                         evidence=article_evidence,
-                        selection_context=Phase6SelectionContext(
-                            topic_relevant=event_relevant,
-                            fresh=True,
-                            source_usable=True,
-                            identity_resolved=True,
-                        ),
+                        selection_context=Phase6SelectionContext(topic_relevant=event_relevant, fresh=True, source_usable=True, identity_resolved=True),
                     )
                     if assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE:
                         continue
@@ -401,11 +383,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     if local_verifier is None:
                         local_verifier = LocalNliVerifier.transformers_default()
 
-                    generation_request = GenerationRequest(
-                        event=event,
-                        facts=article_facts,
-                        evidence=article_evidence,
-                    )
+                    generation_request = GenerationRequest(event=event, facts=article_facts, evidence=article_evidence)
                     entry_candidate = produce_phase7_entry_candidate(
                         generation_request,
                         primary_generator=generator,
@@ -414,24 +392,13 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     )
                     if entry_candidate is None:
                         generation_stats["extractive_fallback_unavailable"] += 1
-                        attempts.append(
-                            _attempt(
-                                topic=topic.topic_id,
-                                query=query,
-                                domain=domain,
-                                stage="generation",
-                                status="skip",
-                                reason="extractive_fallback_unavailable",
-                            )
-                        )
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="generation", status="skip", reason="extractive_fallback_unavailable"))
                         continue
 
-                    _record_generation_stats(entry_candidate, generation_stats)
+                    _record_generation_stats(entry_candidate, generation_stats, generation_route_stats)
+                    _record_verification_stats(entry_candidate, verification_stats)
                     if not entry_candidate.publishable:
-                        verdicts = {
-                            item.role.value: item.claim.verdict.value
-                            for item in entry_candidate.verification.claims
-                        }
+                        verdicts = {item.role.value: item.claim.verdict.value for item in entry_candidate.verification.claims}
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
@@ -445,11 +412,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         if not isinstance(prior_event, CandidateEvent):
                             raise AssertionError("published candidate lost event identity provenance")
                         identity_stats["comparisons"] += 1
-                        precheck = compare_candidate_identity(
-                            event,
-                            prior_event,
-                            identity_facts,
-                        )
+                        precheck = compare_candidate_identity(event, prior_event, identity_facts)
                         if precheck.deterministic_block:
                             identity_stats["deterministic_blocks"] += 1
                             continue
@@ -465,24 +428,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             identity_stats["unavailable"] += 1
                         elif judgment.same_event is False:
                             identity_stats["different_event"] += 1
-                        resolution = resolve_candidate_pair(
-                            event,
-                            prior_event,
-                            identity_facts,
-                            semantic_same_event=judgment.same_event,
-                        )
+                        resolution = resolve_candidate_pair(event, prior_event, identity_facts, semantic_same_event=judgment.same_event)
                         if resolution.decision.same_event:
                             identity_stats["same_event"] += 1
-                            attempts.append(
-                                _attempt(
-                                    topic=topic.topic_id,
-                                    query=query,
-                                    domain=domain,
-                                    stage="event_identity",
-                                    status="skip",
-                                    reason="cross_source_same_event_already_published",
-                                )
-                            )
+                            attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_identity", status="skip", reason="cross_source_same_event_already_published"))
                             duplicate_event = True
                             break
                     if duplicate_event:
@@ -490,30 +439,12 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
 
                     headline_key = " ".join(entry_candidate.final_generation.draft.headline.split()).casefold()
                     if headline_key in published_headline_keys:
-                        attempts.append(
-                            _attempt(
-                                topic=topic.topic_id,
-                                query=query,
-                                domain=domain,
-                                stage="visible_identity",
-                                status="skip",
-                                reason="normalized_headline_already_published",
-                            )
-                        )
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_identity", status="skip", reason="normalized_headline_already_published"))
                         continue
 
                     summary_key = " ".join(entry_candidate.final_generation.draft.summary.split()).casefold()
                     if summary_key in published_summary_keys:
-                        attempts.append(
-                            _attempt(
-                                topic=topic.topic_id,
-                                query=query,
-                                domain=domain,
-                                stage="visible_identity",
-                                status="skip",
-                                reason="normalized_summary_already_published",
-                            )
-                        )
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_identity", status="skip", reason="normalized_summary_already_published"))
                         continue
 
                     published.append(
@@ -543,16 +474,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     break
 
     briefing_id = f"daily-{now.astimezone(KST).strftime('%Y%m%dT%H%M%S%z')}"
-    rendered = build_rendered_briefing(
-        briefing_id=briefing_id,
-        generated_at=now.astimezone(KST),
-        candidates=tuple(item.candidate for item in published),
-    )
+    rendered = build_rendered_briefing(briefing_id=briefing_id, generated_at=now.astimezone(KST), candidates=tuple(item.candidate for item in published))
 
-    published_by_event = {
-        item.candidate.event_id: item
-        for item in published
-    }
+    published_by_event = {item.candidate.event_id: item for item in published}
     rendered_sources: list[dict[str, str]] = []
     for entry in rendered.entries:
         source = published_by_event.get(entry.event_id)
@@ -564,11 +488,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 "source_group_key": source.source_group_key,
                 "content_sha256": source.content_sha256,
                 "render_mode": source.candidate.final_generation.render_mode.value,
-                "verification_recovery_reason": (
-                    source.candidate.verification_recovery_reason.value
-                    if source.candidate.verification_recovery_reason is not None
-                    else ""
-                ),
+                "verification_recovery_reason": source.candidate.verification_recovery_reason.value if source.candidate.verification_recovery_reason is not None else "",
             }
         )
 
@@ -585,10 +505,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             briefing=rendered,
         )
         bundle.validate()
-        topic_by_event = {
-            item.candidate.event_id: item.topic.name
-            for item in published
-        }
+        topic_by_event = {item.candidate.event_id: item.topic.name for item in published}
         view = build_briefing_view_model(rendered, topic_by_event=topic_by_event)
         push_worker_url = os.environ.get("PUSH_WORKER_URL", "").strip() or None
         html = render_briefing_html(view, runtime=PwaRuntimeConfig(push_worker_url=push_worker_url))
@@ -597,6 +514,24 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         stage_site(output_dir, html)
         html_bytes = len(html.encode("utf-8"))
         html_sha256 = hashlib.sha256(html.encode("utf-8")).hexdigest()
+
+    primary_route_stats = getattr(primary_verifier, "route_stats", {})
+    verification_stats["primary_failover_routes"] = primary_route_stats  # type: ignore[assignment]
+    verification_stats["identity_local"] = {"checks": identity_stats["secondary_checks"]}
+    acquisition_stats["configured_methods"] = {  # type: ignore[assignment]
+        f"{acquisition.fetcher.method_id}+{acquisition.primary_extractor.method_id}": 1,
+        f"{acquisition.fetcher.method_id}+{acquisition.fallback_extractor.method_id}": 1,
+        f"{acquisition.fallback_renderer.method_id}+{acquisition.primary_extractor.method_id}": 1 if acquisition.fallback_renderer is not None else 0,
+        f"{acquisition.fallback_renderer.method_id}+{acquisition.fallback_extractor.method_id}": 1 if acquisition.fallback_renderer is not None else 0,
+    }
+    tool_usage = {
+        "discovery": discovery.route_stats,
+        "acquisition": acquisition_stats,
+        "fact_extraction": extractor.route_stats,
+        "generation": generation_route_stats,
+        "verification": verification_stats,
+        "identity": identity_stats,
+    }
 
     state = {
         "status": "SUCCESS" if publish else "NO_PUBLISHABLE_ITEMS",
@@ -615,6 +550,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "attempts": attempts,
         "generation_stats": generation_stats,
         "identity_stats": identity_stats,
+        "tool_usage": tool_usage,
         "rendered_sources": rendered_sources,
         "provider_roles": {
             "generation": GROQ_20B,
@@ -643,18 +579,9 @@ def main() -> None:
     state_path = Path(args.state)
     audit_path = Path(args.audit)
     try:
-        state = run_production(
-            topics_path=Path(args.topics),
-            output_dir=Path(args.output),
-            state_path=state_path,
-            audit_path=audit_path,
-        )
+        state = run_production(topics_path=Path(args.topics), output_dir=Path(args.output), state_path=state_path, audit_path=audit_path)
     except Exception as exc:
-        failure = {
-            "status": "TOTAL_FAILURE",
-            "publish": False,
-            "error_type": type(exc).__name__,
-        }
+        failure = {"status": "TOTAL_FAILURE", "publish": False, "error_type": type(exc).__name__}
         _write_json(state_path, failure)
         _write_json(
             audit_path,
