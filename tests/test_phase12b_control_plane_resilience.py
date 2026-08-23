@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import unittest
 
+from insight_desk.acquisition import DiscoveryConfigError, default_news_discovery
 from insight_desk.core import (
     CandidateEvent,
     EvidenceField,
@@ -111,6 +112,17 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
         self.assertFalse(GroqFreeClient.configured({}, model_id=GROQ_20B))
         self.assertTrue(GroqFreeClient.configured({"GROQ_API_KEY": "key"}, model_id=GROQ_20B))
 
+    def test_discovery_without_naver_credentials_keeps_independent_free_routes(self) -> None:
+        discovery = default_news_discovery(env={})
+        self.assertEqual(
+            [route.route_id for route in discovery.routes],
+            ["bing_news_rss", "gdelt_doc"],
+        )
+
+    def test_partial_naver_credentials_fail_fast(self) -> None:
+        with self.assertRaises(DiscoveryConfigError):
+            default_news_discovery(env={"NCP_CLIENT_ID": "client"})
+
     def test_primary_verifier_can_start_with_gemini_only(self) -> None:
         verifier = CloudflareClaimVerifier.from_env(
             env={"GEMINI_API_KEY": "gemini"},
@@ -163,15 +175,10 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
 
     def test_workflow_does_not_block_zero_cost_fallback_on_optional_provider_keys(self) -> None:
         workflow = Path(".github/workflows/insight-desk-production.yml").read_text(encoding="utf-8")
-        required_block = workflow.split("required = (", 1)[1].split(")", 1)[0]
-        for optional_name in (
-            "NCP_CLIENT_ID",
-            "NCP_CLIENT_SECRET",
-            "GROQ_API_KEY",
-            "CLOUDFLARE_ACCOUNT_ID",
-            "CLOUDFLARE_API_TOKEN",
-        ):
-            self.assertNotIn(optional_name, required_block)
+        self.assertNotIn("PHASE11_CREDENTIALS_MISSING", workflow)
+        self.assertNotIn("PHASE11_CREDENTIALS_PRESENT", workflow)
+        self.assertIn("PHASE12B_PROVIDER_ROUTES", workflow)
+        self.assertIn("PHASE12B_PARTIAL_PROVIDER_CONFIG", workflow)
 
 
 if __name__ == "__main__":
