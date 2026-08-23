@@ -31,6 +31,7 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         self.assertEqual(report["story_count"], 2)
         self.assertEqual(report["duplicate_content"], 0)
         self.assertEqual(report["duplicate_headlines"], 0)
+        self.assertEqual(report["duplicate_summaries"], 0)
 
     def test_duplicate_visible_content_fails_even_when_event_ids_differ(self) -> None:
         page = html_for(
@@ -58,15 +59,23 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_DUPLICATE_HEADLINE"):
             validate_html(page)
 
-    def test_same_summary_with_distinct_headlines_is_allowed(self) -> None:
-        report = validate_html(
-            html_for(
-                ("event:a", "경제·투자", "한국은행 기준금리 결정", "같은 시장 요약 문구입니다."),
-                ("event:b", "경제·투자", "코스피 장중 상승", "같은 시장 요약 문구입니다."),
-            )
+    def test_duplicate_normalized_summary_fails_when_headlines_differ(self) -> None:
+        page = html_for(
+            (
+                "event:rate-summary-a",
+                "경제·투자",
+                "27일 한국은행 기준금리 결정에 이목 집중",
+                "오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
+            ),
+            (
+                "event:rate-summary-b",
+                "경제·투자",
+                "27일 한국은행 기준금리 결정에 관심",
+                " 오는 27일  예정된 한국은행의 기준금리 결정에 관심이 쏠립니다. ",
+            ),
         )
-        self.assertEqual(report["duplicate_headlines"], 0)
-        self.assertEqual(report["story_count"], 2)
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_DUPLICATE_SUMMARY"):
+            validate_html(page)
 
     def test_oversized_headline_and_summary_fail(self) -> None:
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_HEADLINE_TOO_LONG"):
