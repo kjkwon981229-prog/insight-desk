@@ -26,6 +26,10 @@ class DiscoveryError(RuntimeError):
         super().__init__(detail)
 
 
+class DiscoveryConfigError(ValueError):
+    """Raised when an optional discovery route is only partially configured."""
+
+
 class DiscoveryRoute(Protocol):
     route_id: str
 
@@ -264,6 +268,11 @@ def default_news_discovery(*, env: dict[str, str] | None = None) -> SequentialNe
     source = dict(os.environ) if env is None else env
     client_id = str(source.get("NCP_CLIENT_ID", "")).strip()
     client_secret = str(source.get("NCP_CLIENT_SECRET", "")).strip()
+    if bool(client_id) != bool(client_secret):
+        raise DiscoveryConfigError(
+            "NAVER discovery credentials must provide both NCP_CLIENT_ID and NCP_CLIENT_SECRET"
+        )
+
     routes: list[DiscoveryRoute] = []
     if client_id and client_secret:
         routes.append(
