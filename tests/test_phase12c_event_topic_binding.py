@@ -146,6 +146,15 @@ class Phase12CEventTopicBindingTests(unittest.TestCase):
         self.assertLess(guard, increment)
         self.assertIn("published_headline_keys.add(headline_key)", source)
 
+    def test_visible_summary_duplicate_guard_runs_before_published_slot_consumption(self) -> None:
+        source = Path("scripts/phase11_daily_production.py").read_text(encoding="utf-8")
+        guard = source.index("if summary_key in published_summary_keys:")
+        append = source.index("published.append(")
+        increment = source.index('stats["published_entries"] += 1')
+        self.assertLess(guard, append)
+        self.assertLess(guard, increment)
+        self.assertIn("published_summary_keys.add(summary_key)", source)
+
 
 if __name__ == "__main__":
     unittest.main()
