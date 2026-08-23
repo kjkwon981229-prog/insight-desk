@@ -1,6 +1,6 @@
 # Phase 12B Role Resilience Audit
 
-Status: IMPLEMENTATION COMPLETE FOR STATIC REVALIDATION — NOT A LIVE ACCEPTANCE DECLARATION
+Status: CANONICAL LIVE PREFLIGHT CANDIDATE — NOT AN ACCEPTANCE DECLARATION
 Date: 2026-08-23
 
 ## Governing rule
@@ -20,7 +20,7 @@ Deterministic in-process stages are not required to invent competing semantic au
 | Generated-claim verification | logical primary: Cloudflare → Gemini; independent local secondary: mDeBERTa | CODED + REGRESSION-LOCKED | Canonical live behavior; generated text must still satisfy both logical slots. |
 | Verification outage recovery | generated verification INDETERMINATE → deterministic exact-source downgrade | CODED + REGRESSION-LOCKED | Canonical live audit must show no unverifiable generated prose. |
 | Exact-source verification | deterministic EvidenceSpan substring/provenance/preservation proof | CODED + REGRESSION-LOCKED | Same-artifact source/content audit. |
-| Rendering | deterministic Phase 8 renderer + feed validator + artifact hash | STATIC PASS BEFORE FINAL CLEANUP | Fresh cleanup-head CI, then render QA on canonical artifact. |
+| Rendering | deterministic Phase 8 renderer + feed validator + artifact hash | CLEANUP-HEAD STATIC PASS | Render QA on the canonical artifact. |
 | Deployment | one canonical PR artifact; Pages only after accepted merge/main production | PRESERVED | Merge remains blocked. |
 
 ## Local NLI benchmark verdict
@@ -68,26 +68,31 @@ The route validates Korean case-particle/predicate structure and preserves exact
 12. No paid fallback exists.
 13. Provider-routing diagnostics do not add article bodies, visible generated text, or secrets to logs.
 
-## Last completed static evidence before final cleanup
+## Frozen cleanup-head static evidence
 
-Exact head `db7ee25b0e3cef0b8c0455c73e361c7e58116662` passed Infrastructure CI run `32644797487` (#1444):
+Exact cleanup head:
 
-- benchmark integrity PASS: `hard_scored=85 evidence_only=7 taxonomy=16 run96_positive=15 run96_tn=44`;
-- Python: 250 total tests, 21 skipped, 229 non-skipped passed;
-- Push Worker: 14/14 passed;
-- npm audit: 0 vulnerabilities.
+`66ec775a0afaa0c26d1330d879b09b5e55048514`
 
-This is evidence for that exact head only. Subsequent cleanup removed rejected experiment code/jobs and updated these documents. Therefore a fresh exact-head CI is mandatory and the prior PASS is not promoted to the cleanup head.
+Infrastructure CI:
+
+- run `32645140297` / #1456 — SUCCESS
+- benchmark integrity: `hard_scored=85 evidence_only=7 taxonomy=16 run96_positive=15 run96_tn=44`
+- Python: 248 total tests, 21 skipped, 227 non-skipped passed
+- Push Worker: 14/14 passed
+- npm audit: 0 vulnerabilities
+
+The companion PR Daily Production run `32645140308` / #106 executed only the preflight gate; build, deploy, and push were all skipped because the cleanup head was not marked for live production. Therefore no provider-heavy acceptance production was consumed at this gate.
+
+The present commit changes this audit document only and intentionally carries the exact-head `[production-preflight]` marker. Runtime/semantic code is frozen from the cleanup head. The canonical PR production launched by this marker is the only live acceptance run permitted for this candidate.
 
 ## Gates still open
 
-1. Fresh exact-head Infrastructure CI after final-tree cleanup.
-2. Verify PR remains open/unmerged and capture the exact cleanup head SHA.
-3. Freeze semantic/runtime code if the fresh static gate passes.
-4. Create one minimal `[production-preflight]` exact-head marker commit.
-5. Run exactly one canonical PR production execution.
-6. Inspect the exact canonical artifact: run state, production audit, feed-quality report, and site bytes.
-7. Full visible-card human audit.
-8. Desktop/mobile render QA on those same artifact bytes.
-9. Candidate acceptance only if all preceding gates pass.
-10. Merge remains blocked until acceptance.
+1. Confirm this marker commit differs from the clean static head only by this audit document.
+2. Confirm exact marker-head Infrastructure CI remains green.
+3. Complete exactly one canonical PR production execution for this marker head.
+4. Inspect the exact canonical artifact: run state, production audit, feed-quality report, and site bytes.
+5. Full visible-card human/source/topic/content audit.
+6. Desktop/mobile render QA on those same artifact bytes.
+7. Candidate acceptance only if all preceding gates pass.
+8. Merge remains blocked until acceptance.
