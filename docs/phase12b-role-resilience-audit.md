@@ -1,174 +1,199 @@
-# Phase 12B/12C Role Resilience and Topic-Binding Audit
+# Phase 12B/12C/12D Production Acceptance Audit
 
 Status: CANONICAL LIVE PREFLIGHT CANDIDATE — NOT AN ACCEPTANCE DECLARATION
 Date: 2026-08-23
 
-## Governing rule
+## Governing rules
 
-Availability-sensitive roles must have enough independent zero-cost recovery that one provider, quota bucket, runtime dependency, or optional credential cannot masquerade as content failure and collapse the feed to zero. Redundancy must not weaken semantic correctness.
+1. Provider availability is not content correctness.
+2. Article relevance is not child-event relevance.
+3. One visible briefing must not contain duplicate normalized headlines.
+4. One exact PR head produces one canonical production execution and one canonical artifact.
+5. Automated PASS never replaces full visible-card human audit or render QA.
+6. No paid provider path may activate automatically.
 
-Publication relevance is a separate invariant: article-level topical relevance may admit an article for semantic extraction, but it may not authorize every child event from that article. Every publishable child event must independently bind to its configured topic using only the exact evidence cited by that event's facts.
+## Provider-resilience state
 
-Generated prose remains more restrictive than exact-source fallback because generated paraphrases require semantic verification.
+Phase 12B remains regression-locked:
 
-## Current role matrix
+- discovery: NAVER when configured → Bing News RSS → GDELT DOC;
+- acquisition: HTTP+Trafilatura → HTTP+Article/Main → Playwright+Trafilatura → Playwright+Article/Main;
+- fact extraction: Kiwi → PeCab-backed exact-surface → conservative exact-surface parser;
+- generation: Groq GPT-OSS 20B → Gemini Flash-Lite when configured → deterministic exact source;
+- generated-claim primary slot: Cloudflare → Gemini when configured;
+- local secondary: measured mDeBERTa only;
+- exact-source fallback: deterministic EvidenceSpan proof, not external LLM availability.
 
-| Role | Executable paths | Current status | Remaining acceptance gate |
-|---|---|---|---|
-| Discovery | NAVER Search when configured → Bing News RSS → GDELT DOC | CODED + REGRESSION-LOCKED | Canonical live production must demonstrate usable discovery under real inputs. |
-| Article acquisition | HTTP+Trafilatura → HTTP+Article/Main → Playwright+Trafilatura → Playwright+Article/Main | CODED + REGRESSION-LOCKED | Canonical live artifact/source audit. |
-| Fact extraction | Kiwi → PeCab-backed exact-surface → conservative exact-surface parser | CODED + REGRESSION-LOCKED; PeCab runtime canary PASS | Canonical live semantic/event audit. |
-| Event-topic binding | event.fact_ids → fact.evidence_ids → exact EvidenceSpan text → configured topic literals | CODED + REGRESSION-LOCKED | Canonical live human/topic audit must show no article-level relevance inheritance. |
-| Generation | Groq GPT-OSS 20B → Gemini Flash-Lite → deterministic exact source | CODED + REGRESSION-LOCKED | Canonical live generation/audit behavior. |
-| Generated-claim verification | logical primary: Cloudflare → Gemini; independent local secondary: mDeBERTa | CODED + REGRESSION-LOCKED | Canonical live behavior; generated text must still satisfy both logical slots. |
-| Verification outage recovery | generated verification INDETERMINATE → deterministic exact-source downgrade | CODED + REGRESSION-LOCKED | Canonical live audit must show no unverifiable generated prose. |
-| Exact-source verification | deterministic EvidenceSpan substring/provenance/preservation proof | CODED + REGRESSION-LOCKED | Same-artifact source/content audit. |
-| Rendering | deterministic Phase 8 renderer + feed validator + artifact hash | STATIC PASS | Render QA on the canonical artifact. |
-| Deployment | one canonical PR artifact; Pages only after accepted merge/main production | PRESERVED | Merge remains blocked. |
+Provider unavailability/rate limiting/quota exhaustion/config absence never becomes semantic rejection. Explicit semantic `False` is never converted to support. Generated prose is not authorized without the required generated-prose verification contract.
 
-## RC-7 provider-availability closure
+Local NLI threshold was not weakened. Measured alternatives were rejected:
 
-Provider availability and semantic content verdict remain separate dimensions.
+- multilingual MiniLM: 9/10 positive, 5/10 high-risk negative;
+- XLM-V: 10/10 positive, 9/10 negative;
+- XLM-R: 10/10 positive, 8/10 negative;
+- mDeBERTa: 10/10 positive, 10/10 negative — retained.
 
-1. Provider unavailable/rate-limited/quota-exhausted/config-missing is not content rejection.
-2. Explicit semantic `False` remains a semantic decision; failover does not reinterpret it as `True`.
-3. Generated prose is never published on an unavailable verifier result.
-4. Verification infrastructure failure may only trigger exact-source deterministic downgrade.
-5. Exact-source fallback is literal cited evidence, not a paraphrase, and uses deterministic source proof.
-6. Cloudflare proven daily-quota exhaustion opens its run-local circuit; later claims skip that route.
-7. Generic 429 remains rate-limited unless the adapter proves a stronger quota state.
-8. NAVER and Cloudflare multi-secret configurations are valid when both values are present or both absent; partial pairs fail fast.
-9. Groq, NAVER, Cloudflare, and Gemini are not global workflow prerequisites when independent zero-cost fallback remains possible.
-10. No paid fallback exists.
-
-## Local NLI benchmark verdict
-
-Additional local semantic models were admitted only if they met the unchanged locked threshold: positive >= 9/10 and high-risk negative = 10/10.
-
-Measured candidates:
-
-- `MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli`: 9/10 positive, 5/10 negative — REJECTED.
-- `MoritzLaurer/xlm-v-base-mnli-xnli`: 10/10 positive, 9/10 negative — REJECTED.
-- `joeddav/xlm-roberta-large-xnli`: 10/10 positive, 8/10 negative — REJECTED.
-- `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`: 10/10 positive, 10/10 negative — RETAINED.
-
-No threshold was relaxed. The local-secondary slot remains the measured mDeBERTa authority. Runtime/model loading is fail-soft; infrastructure failure cannot authorize generated prose and may only lead to deterministic exact-source downgrade.
-
-## PeCab fact-extraction canary
-
-PeCab was tested before production dependency activation on the same Python 3.12 family used by CI:
+PeCab runtime canary evidence remains:
 
 - run `32643504979`
 - job `97204112956`
 - artifact `9494239918`
-- result `PECAB_SEMANTIC_FALLBACK_CANARY_ACCEPTED`
+- `PECAB_SEMANTIC_FALLBACK_CANARY_ACCEPTED`
 
-The route validates Korean case-particle/predicate structure and preserves exact source ranges. The final surface-only fallback remains stricter and rejects ambiguous/complex clauses rather than guessing.
+## Canonical #107 — automated PASS, human topic audit FAIL
 
-## Canonical production #107 — automated PASS, human audit FAIL
-
-Previous marker head:
-
+Head:
 `d2f256592f9635ce520d4cb194366749700eb79a`
 
-Canonical Daily Production:
-
-- run `32645280407` / #107
+- Daily Production #107 / run `32645280407`
 - artifact `9494738555`
-- artifact digest `sha256:b61f8965aabbfbe90552cdaf23a538f9382b3e7eb39a38d8875f740a0d201743`
-- generated entries: 13
-- automated feed-quality validation: PASS
+- digest `sha256:b61f8965aabbfbe90552cdaf23a538f9382b3e7eb39a38d8875f740a0d201743`
+- 13 visible cards
+- automated feed validation PASS
+
+Human audit found article-level topic relevance inherited by unrelated child events, including K-POP family-center/400-booth content, Doosan/Lotte Kwak Bin content under KBO·Hanwha, LEET under PSAT, and a non-AI tourism contest under AI·Tech.
+
+Verdict: canonical failure evidence; not acceptable.
+
+## RC-12 — event-local topic binding
+
+Root cause:
+`Phase6SelectionContext(topic_relevant=True)` allowed every child event from an article that had passed coarse article relevance to inherit topic authority.
+
+Repair:
+
+- article-level relevance remains only a coarse admission filter;
+- each material child event traverses `event.fact_ids → fact.evidence_ids → exact EvidenceSpan.text`;
+- missing/out-of-event evidence fails closed;
+- configured topic literals must occur in that event-local cited evidence;
+- computed `event_relevant` is passed into Phase 6;
+- irrelevant children are skipped before provider verification cost;
+- Korean BTS alias `방탄소년단` was added alongside `BTS` only.
+
+Static RC-12 head `9278289d01a29783dc5e48516af6ef04107a6dcf` passed CI #1464 / run `32646069518`: 259 total Python tests, 21 skipped, 238 non-skipped passed; benchmark integrity PASS; Push Worker 14/14; npm audit 0 vulnerabilities.
+
+## Canonical #111 — RC-12 PASS, human duplicate audit FAIL
+
+Head:
+`e6ac7013f0af01aaa2ccc43a14a760c71074c223`
+
+- Daily Production #111 / run `32646176678`
+- artifact `9494978109`
+- artifact digest `sha256:0ed00d31d5c5c1ea3930b2e5561c561d8899f0da015997bd75de1c9d46c62d80`
+- 12 visible cards
+- `site/index.html` SHA-256 `364f638d91a7ebf716fbdb71f75085f57c9cb79f57ad4a8128c05623cf827c4b`
+- automated validator PASS
 - duplicate content/source/source-content: 0
-- provider errors: 0
+- generation accepted: 12
+- provider errors: 10
+- exact-source/verification recovery fallback: 0
 
-That artifact was rejected during full visible-card human audit. Confirmed/strong false-topic publications included:
+RC-12 outcome:
 
-- K-POP child event about family centers / 400 booths with no K-POP event binding;
-- KBO·Hanwha child events about Doosan/Lotte starter Kwak Bin with no Hanwha event binding;
-- PSAT·civil-service child event about a law-school/LEET mock exam rather than PSAT recruitment;
-- AI·Tech child event about a general tourism open-innovation contest with no AI event binding.
+- all four #107 canonical false-topic patterns were absent;
+- `event_topic_relevance` was exercised 15 times to reject unrelated child events;
+- PSAT produced zero cards rather than publishing the prior LEET false positive.
 
-Therefore #107 is canonical failure evidence, not an acceptance artifact.
+Human audit nevertheless found one P1 product defect:
 
-## RC-12 — article relevance inherited by unrelated child events
+- economy card `event-cccf98a85350551a9274`
+- economy card `event-f15279288a716eba4417`
+- both visible headlines normalized to exactly `27일 한국은행 기준금리 결정 주목`;
+- summaries differed only in the surface ending `쏠리고 있습니다` versus `쏠립니다`;
+- source-group and body hashes were distinct, so source-level dedup correctly considered them separate articles.
+
+This is not proof that Phase 6 should semantically merge arbitrary cross-source events. Existing identity policy deliberately refuses deterministic same-event merges without an explicit semantic judgment. The narrower product defect is that the visible duplicate contract required the full `(headline, summary)` tuple to match, allowing an identical headline to appear twice when the summary varied trivially.
+
+Two weaker centrality observations were retained as P2 watch items, not P1 false-topic findings:
+
+- AI·Tech book-festival card included AI experience/exhibition programs in its exact event evidence but AI was not the entire festival's central subject;
+- KBO·Hanwha Lotte-standings card explicitly depended on Hanwha's same-day loss but foregrounded Lotte.
+
+Neither was treated as RC-12 failure because the visible event evidence itself contained the configured topic binding.
+
+Verdict: #111 automated PASS / RC-12 live behavior PASS / HUMAN DUPLICATE AUDIT FAIL. Not acceptable.
+
+## RC-13 — visible headline uniqueness
 
 Root cause:
 
-The production runner correctly applied `topic_relevant(title=article.title, body=article.body, topic=topic)` as an article-level admission filter, but every semantic child event then entered Phase 6 with `Phase6SelectionContext(topic_relevant=True)`. Once an article contained one configured topic literal, unrelated material events from the same article could inherit that relevance and reach publication.
+Phase 8 renderer deduplicated only the normalized `(headline, summary)` pair. Artifact validation enforced the same effective surface condition. Therefore two verified cards with an identical normalized headline could both survive if their summaries differed.
 
-RC-12 definition:
+Frozen product invariant:
 
-> Article-level topical relevance was incorrectly inherited by child events without event-local topic binding.
+> ONE NORMALIZED VISIBLE HEADLINE MAX ONE CARD PER BRIEFING.
 
-The repair is narrow:
+This is a publication-surface invariant, not a claim that deterministic Phase 6 has solved general semantic event identity.
 
-1. Keep article-level `topic_relevant` only as a coarse discovery/acquisition guard.
-2. For each material child event, traverse `event.fact_ids`.
-3. Resolve each fact and only its `evidence_ids`.
-4. Build event-local relevance text solely from those exact cited `EvidenceSpan.text` values.
-5. Fail closed on missing facts, missing spans, or spans outside the event's article IDs.
-6. Require configured topic literals on that event-local text.
-7. Pass the computed `event_relevant` into `Phase6SelectionContext` instead of a hardcoded `True`.
-8. Record rejected children as `event_topic_relevance` skips before verification/provider spending.
+Closure uses three defenses:
 
-The only topic-literal addition is the Korean BTS alias `방탄소년단`, paired with existing `BTS`, to preserve a confirmed K-POP positive binding without broadening unrelated categories.
+1. Production publish boundary
+   - normalize the final verified headline using whitespace collapse + casefold;
+   - if already published, record `visible_identity / normalized_headline_already_published` and skip;
+   - perform the guard before `published.append` and before `published_entries += 1`, so a duplicate does not consume a topic slot;
+   - source/content identities are not consumed by a skipped duplicate, allowing search to continue for a distinct candidate.
+2. Renderer
+   - keep only the first normalized visible headline even if summaries differ.
+3. Artifact validator
+   - independently count/reject duplicate normalized headlines as `FEED_QUALITY_DUPLICATE_HEADLINE`;
+   - emit `duplicate_headlines` in the feed-quality report.
 
-## RC-12 regression lock
+General Phase 6 semantic identity remains unchanged. No fuzzy headline threshold, embedding similarity, LLM merge authority, or new provider was added.
 
-The locked event-local corpus includes canonical negatives:
+## RC-13 regression evidence
 
-- family-center / 400-booth child event must not bind to K-POP;
-- Doosan/Lotte Kwak Bin event must not bind to KBO·Hanwha;
-- law-school LEET mock exam must not bind to PSAT·civil-service;
-- general tourism open-innovation contest must not bind to AI·Tech.
+Regression RED was demonstrated before implementation:
 
-Positive controls remain required:
+- CI #1472 / run `32646825173`
+- 263 tests total, 21 skipped
+- renderer showed both `event:rate-a` and `event:rate-b` for the same normalized Bank of Korea headline;
+- validator did not raise `FEED_QUALITY_DUPLICATE_HEADLINE`;
+- validator lacked the `duplicate_headlines` report field.
 
-- Gyeongbuk AI ecosystem forum → AI·Tech;
-- group EP release → K-POP;
-- `방탄소년단` tour event → K-POP;
-- LG vs Hanwha game → KBO·Hanwha;
-- Ministry of Personnel 5th-grade PSAT schedule → PSAT·civil-service;
-- Bank of Korea base-rate event → Economy.
+Implementation is limited to:
 
-The production-source regression also forbids `topic_relevant=True,` and requires `topic_relevant=event_relevant,`.
+- `scripts/phase11_daily_production.py`
+- `insight_desk/rendering.py`
+- `scripts/validate_feed_artifact.py`
+- corresponding regression tests.
 
-## Frozen Phase 12C static evidence
+## Frozen Phase 12D static evidence
 
 Exact static head:
 
-`9278289d01a29783dc5e48516af6ef04107a6dcf`
+`004d0f997f263eaab552a807829f60b524ca2a24`
 
-Changes after the RC-12 RED regression head `6656802c3e54075372bfa43a6ccc29718afc3311` are limited to:
-
-- `scripts/phase11_daily_production.py`: event-local binding/wiring;
-- `config/topics.json`: `방탄소년단` alias only.
+Compared with #111 marker head `e6ac7013f0af01aaa2ccc43a14a760c71074c223`, changed runtime files are limited to the three RC-13 files above; remaining changes are the associated tests.
 
 Infrastructure CI:
 
-- run `32646069518` / #1464 — SUCCESS
+- #1480 / run `32647067413` — SUCCESS
 - benchmark integrity: `hard_scored=85 evidence_only=7 taxonomy=16 run96_positive=15 run96_tn=44`
-- Python: 259 total tests, 21 skipped, 238 non-skipped passed
+- Python: 264 total, 21 skipped, 243 non-skipped passed
 - Push Worker: 14/14 passed
 - npm audit: 0 vulnerabilities
 
-Companion Daily Production run `32646069480` / #110 executed only the PR preflight gate; build, deploy, and push were all skipped because the static head was not marked for live production. No provider-heavy production was consumed at that gate.
+Companion Daily Production #118 / run `32647067415` was gate-only: build, deploy, and push all skipped. No provider-heavy live production was consumed on the static head.
 
 ## Canonical-run invariants
 
-1. PR heavy production requires exact-head `[production-preflight]`.
-2. One exact head → one canonical production execution → one canonical artifact.
-3. The marker commit may change this audit document only; runtime/semantic code remains identical to static head `9278289...`.
-4. Same-artifact automated validation, human topic/content audit, and desktop/mobile render QA are all required.
-5. Merge remains blocked until all gates pass.
+1. This marker commit may modify this audit document only.
+2. Runtime/semantic tree must remain identical to static head `004d0f9...`.
+3. Exact marker-head Infrastructure CI must remain green.
+4. Exactly one marker-head canonical PR production run may execute.
+5. Same artifact bytes must pass run-state/audit/feed-quality/hash consistency checks.
+6. `duplicate_headlines` must be zero.
+7. Full visible-card human audit must verify both #107 false-topic patterns and #111 duplicate pattern are absent.
+8. Desktop/mobile render QA must inspect those same artifact bytes.
+9. Merge remains blocked until every acceptance gate passes.
 
 ## Gates still open
 
-1. Confirm this marker head differs from `9278289...` only by this audit document.
-2. Confirm exact marker-head Infrastructure CI remains green.
-3. Complete exactly one canonical PR production execution for this marker head.
-4. Inspect exact run state, production audit, feed-quality report, and site bytes from the canonical artifact.
-5. Repeat full visible-card source/topic/content human audit; specifically verify all #107 false-topic patterns are absent.
-6. Desktop/mobile render QA on those same artifact bytes.
-7. Candidate acceptance only if every preceding gate passes.
+1. Prove marker head differs from `004d0f9...` only by this audit document.
+2. Confirm marker-head static CI.
+3. Complete one canonical PR production execution.
+4. Inspect the exact canonical artifact and hashes.
+5. Full visible-card source/topic/content/duplicate human audit.
+6. Desktop/mobile render QA on the exact same artifact.
+7. Candidate acceptance only if all above pass.
 8. Merge remains blocked until acceptance.
