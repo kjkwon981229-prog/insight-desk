@@ -26,6 +26,10 @@ def _normalize(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
+def _sentence_identity(value: str) -> str:
+    return _normalize(value).rstrip(".!?。！？").rstrip()
+
+
 class FeedParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -166,7 +170,7 @@ def validate_html(
 
         headline_key = _normalize(headline)
         summary_key = _normalize(summary)
-        if headline_key == summary_key:
+        if _sentence_identity(headline) == _sentence_identity(summary):
             headline_summary_collisions += 1
 
         if headline_key in seen_headlines:

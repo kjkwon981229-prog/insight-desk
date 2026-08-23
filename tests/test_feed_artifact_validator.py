@@ -32,6 +32,7 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         self.assertEqual(report["duplicate_content"], 0)
         self.assertEqual(report["duplicate_headlines"], 0)
         self.assertEqual(report["duplicate_summaries"], 0)
+        self.assertEqual(report["headline_summary_collisions"], 0)
 
     def test_duplicate_visible_content_fails_even_when_event_ids_differ(self) -> None:
         page = html_for(
@@ -39,6 +40,18 @@ class FeedArtifactValidatorTests(unittest.TestCase):
             ("event:b", "AI·테크", " 같은   제목 ", "같은  요약"),
         )
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_DUPLICATE_HEADLINE|FEED_QUALITY_DUPLICATE_CONTENT"):
+            validate_html(page)
+
+    def test_same_card_punctuation_only_difference_still_collides(self) -> None:
+        page = html_for(
+            (
+                "event:punctuation",
+                "KBO·한화 이글스",
+                "문정빈이 좌월 3점 홈런을 터뜨렸다",
+                "문정빈이 좌월 3점 홈런을 터뜨렸다.",
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_HEADLINE_SUMMARY_COLLISION"):
             validate_html(page)
 
     def test_duplicate_normalized_headline_fails_when_summaries_differ(self) -> None:

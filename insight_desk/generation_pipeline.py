@@ -126,10 +126,14 @@ def _normalized_visible_text(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def _normalized_visible_identity(text: str) -> str:
+    return _normalized_visible_text(text).rstrip(".!?。！？").rstrip()
+
+
 def _fact_grounded_exact_headline(request: GenerationRequest, summary: str) -> str | None:
     """Find a distinct headline that is still a literal substring of the cited fact sentence."""
 
-    summary_key = _normalized_visible_text(summary)
+    summary_key = _normalized_visible_identity(summary)
     for fact_id in request.event.fact_ids:
         fact = request.facts[fact_id]
         action = fact.action.strip()
@@ -148,13 +152,13 @@ def _fact_grounded_exact_headline(request: GenerationRequest, summary: str) -> s
                 if (
                     candidate
                     and len(candidate) <= FALLBACK_HEADLINE_MAX_CHARS
-                    and _normalized_visible_text(candidate) != summary_key
+                    and _normalized_visible_identity(candidate) != summary_key
                 ):
                     return candidate
 
         if (
             len(action) <= FALLBACK_HEADLINE_MAX_CHARS
-            and _normalized_visible_text(action) != summary_key
+            and _normalized_visible_identity(action) != summary_key
         ):
             return action
     return None
@@ -204,7 +208,7 @@ class ExtractiveFallbackGenerator:
         )
         if not summary:
             raise ExtractiveFallbackUnavailable("exact-source fallback summary is empty")
-        if _normalized_visible_text(headline) == _normalized_visible_text(summary):
+        if _normalized_visible_identity(headline) == _normalized_visible_identity(summary):
             grounded_headline = _fact_grounded_exact_headline(request, summary)
             if grounded_headline is None:
                 raise ExtractiveFallbackUnavailable(
