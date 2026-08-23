@@ -9,20 +9,18 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import urlparse
 
 from insight_desk.acquisition import (
     AcquisitionError,
     AcquisitionPipeline,
     ArticleCandidate,
+    DiscoveryError,
     PlaywrightHtmlRenderer,
     TrafilaturaExtractor,
     UrlLibHtmlFetcher,
-    normalize_naver_items,
+    default_news_discovery,
 )
-from insight_desk.api import NaverApiClient
-from insight_desk.api.naver import NaverCredentials
 from insight_desk.core import ContractBundle, SelectionVerdict
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
@@ -126,7 +124,7 @@ def _domain(url: str) -> str:
 
 
 def _source_group_key(candidate: ArticleCandidate) -> str:
-    """Return an opaque stable group shared by one NAVER original/alternate candidate pair."""
+    """Return an opaque stable group shared by one source discovery candidate pair."""
 
     candidate_id = candidate.candidate_id[:-4] if candidate.candidate_id.endswith("-alt") else candidate.candidate_id
     return hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()
@@ -137,46 +135,6 @@ def _content_fingerprint(body: str) -> str:
 
     normalized = " ".join(body.split())
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
-def _alternate_candidate(raw: dict[str, object], original: ArticleCandidate) -> ArticleCandidate | None:
-    link = str(raw.get("link") or "").strip()
-    if not link or link == original.url:
-        return None
-    parsed = urlparse(link)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
-    return ArticleCandidate(
-        candidate_id=original.candidate_id + "-alt",
-        url=link,
-        search_title=original.search_title,
-        source_name=(parsed.hostname or parsed.netloc).lower(),
-        published_at=original.published_at,
-        topic_ids=original.topic_ids,
-        query=original.query,
-        retrieved_via="naver_search_alternate_link",
-    )
-
-
-def _candidate_queue(payload: dict[str, object], candidates: Iterable[ArticleCandidate]) -> list[ArticleCandidate]:
-    raw_items = payload.get("items", [])
-    raw_by_original: dict[str, dict[str, object]] = {}
-    if isinstance(raw_items, list):
-        for raw in raw_items:
-            if isinstance(raw, dict):
-                original = str(raw.get("originallink") or raw.get("link") or "").strip()
-                if original:
-                    raw_by_original[original] = raw
-
-    queue: list[ArticleCandidate] = []
-    for candidate in candidates:
-        queue.append(candidate)
-        raw = raw_by_original.get(candidate.url)
-        if raw is not None:
-            alternate = _alternate_candidate(raw, candidate)
-            if alternate is not None:
-                queue.append(alternate)
-    return queue
 
 
 def _attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None) -> dict[str, object]:
@@ -230,11 +188,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     if not topics:
         raise RuntimeError("no enabled production topics")
 
-    naver_credentials = NaverCredentials.from_environment()
-    if naver_credentials is None:
-        raise RuntimeError("NAVER credentials unavailable")
-
-    naver = NaverApiClient(naver_credentials)
+    discovery = default_news_discovery()
     acquisition = AcquisitionPipeline(
         fetcher=UrlLibHtmlFetcher(timeout=15),
         primary_extractor=TrafilaturaExtractor(),
@@ -285,11 +239,20 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         for query in topic.news_queries:
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
                 break
-            payload = naver.search_news(query, display=10, start=1, sort="date")
-            queue = _candidate_queue(
-                payload,
-                normalize_naver_items(payload, topic_id=topic.topic_id, query=query),
-            )
+            try:
+                queue = list(discovery.search(query, topic_id=topic.topic_id, limit=10))
+            except DiscoveryError as exc:
+                attempts.append(
+                    _attempt(
+                        topic=topic.topic_id,
+                        query=query,
+                        domain="discovery",
+                        stage="discovery",
+                        status="skip",
+                        reason=exc.failure_kind.value,
+                    )
+                )
+                continue
 
             for candidate in queue:
                 if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
