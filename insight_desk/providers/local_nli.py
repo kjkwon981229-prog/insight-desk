@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 from insight_desk.core import VerificationCheck
 
 
 LOCAL_NLI_MODEL = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
-LOCAL_NLI_FALLBACK_MODEL = "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli"
 LOCAL_NLI_VERIFIER_ID = "local-nli"
-LOCAL_NLI_FALLBACK_ROUTE_ID = "local-nli-minilm"
 
 
 EntailmentPredictor = Callable[[str, str], bool]
@@ -88,14 +86,6 @@ class LocalNliVerifier:
             model_id=LOCAL_NLI_MODEL,
         )
 
-    @classmethod
-    def transformers_fallback(cls) -> "LocalNliVerifier":
-        """Create the independent smaller multilingual NLI fallback route."""
-        return cls.transformers_model(
-            LOCAL_NLI_FALLBACK_MODEL,
-            verifier_id=LOCAL_NLI_FALLBACK_ROUTE_ID,
-        )
-
     def verify(
         self,
         *,
@@ -125,44 +115,3 @@ class LocalNliVerifier:
                 error_code=f"local_model_error:{error_name}",
                 zero_cost=True,
             )
-
-
-@dataclass(slots=True)
-class LazyLocalNliVerifier:
-    """Load a transformers NLI route only if failover actually reaches it."""
-
-    model_id: str = LOCAL_NLI_FALLBACK_MODEL
-    verifier_id: str = LOCAL_NLI_FALLBACK_ROUTE_ID
-    _delegate: LocalNliVerifier | None = field(default=None, init=False, repr=False)
-
-    def verify(
-        self,
-        *,
-        check_id: str,
-        claim_text: str,
-        evidence_text: str,
-        evidence_ids: tuple[str, ...],
-    ) -> VerificationCheck:
-        if self._delegate is None:
-            try:
-                self._delegate = LocalNliVerifier.transformers_model(
-                    self.model_id,
-                    verifier_id=self.verifier_id,
-                )
-            except Exception as exc:
-                error_name = type(exc).__name__.lower()[:80] or "unknown"
-                return VerificationCheck(
-                    check_id=check_id,
-                    verifier_id=self.verifier_id,
-                    model_id=self.model_id,
-                    evidence_ids=evidence_ids,
-                    entailed=None,
-                    error_code=f"local_model_error:{error_name}",
-                    zero_cost=True,
-                )
-        return self._delegate.verify(
-            check_id=check_id,
-            claim_text=claim_text,
-            evidence_text=evidence_text,
-            evidence_ids=evidence_ids,
-        )
