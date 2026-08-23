@@ -16,6 +16,14 @@ from insight_desk.semantic.pipeline import SemanticPipeline
 
 HAS_KIWI = importlib.util.find_spec("kiwipiepy") is not None
 NOW = datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc)
+_EXTRACTOR = None
+
+
+def extractor() -> KiwiDeterministicFactExtractor:
+    global _EXTRACTOR
+    if _EXTRACTOR is None:
+        _EXTRACTOR = KiwiDeterministicFactExtractor()
+    return _EXTRACTOR
 
 
 def article(body: str) -> RawArticle:
@@ -41,7 +49,7 @@ class MaterialEventAssessmentTests(unittest.TestCase):
         result = SemanticPipeline().extract_article(
             article("네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."),
             topic_id="ai_tech",
-            extractor=KiwiDeterministicFactExtractor(),
+            extractor=extractor(),
         )
         self.assertEqual(len(result.events), 1)
         assessment = assess_material_event(
@@ -56,11 +64,31 @@ class MaterialEventAssessmentTests(unittest.TestCase):
             (MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_PREDICATE,),
         )
 
+    def test_locked_nominal_lineup_is_material_only_by_explicit_frozen_structure(self) -> None:
+        text = "잠실 한화 왕옌청 두산 곽빈 선발투수 예고"
+        result = SemanticPipeline().extract_article(
+            article(text),
+            topic_id="ai_tech",
+            extractor=extractor(),
+        )
+        self.assertEqual(len(result.events), 1)
+        assessment = assess_material_event(
+            result.events[0],
+            facts={fact.fact_id: fact for fact in result.facts},
+            evidence={span.evidence_id: span for span in result.evidence},
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.MATERIAL)
+        self.assertIs(assessment.selection_signal, True)
+        self.assertEqual(
+            assessment.reasons,
+            (MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_NOMINAL_EVENT,),
+        )
+
     def test_normalized_noun_action_defers_instead_of_inventing_material_truth(self) -> None:
         result = SemanticPipeline().extract_article(
             article("네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."),
             topic_id="ai_tech",
-            extractor=KiwiDeterministicFactExtractor(),
+            extractor=extractor(),
         )
         original = result.facts[0]
         normalized = EventFact(
@@ -83,7 +111,7 @@ class MaterialEventAssessmentTests(unittest.TestCase):
         result = SemanticPipeline().extract_article(
             article("네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."),
             topic_id="ai_tech",
-            extractor=KiwiDeterministicFactExtractor(),
+            extractor=extractor(),
         )
         original = result.facts[0]
         unsupported = EventFact(
