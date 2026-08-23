@@ -16,6 +16,12 @@ from .events import (
     resolve_temporal_state,
 )
 from .facts import FactDraft, FactExtractionRequest, FactExtractorPort
+from .fallback_extractors import (
+    PecabDeterministicFactExtractor,
+    SequentialFactExtractor,
+    SurfaceDeterministicFactExtractor,
+    build_resilient_fact_extractor,
+)
 from .history import (
     EventHistory,
     EventSnapshot,
@@ -57,6 +63,7 @@ __all__ = [
     "MaterialEventReason",
     "MaterialEventVerdict",
     "MorphologyToken",
+    "PecabDeterministicFactExtractor",
     "Phase6AutoMaterialAssessment",
     "Phase6EventAssessment",
     "Phase6EventEngine",
@@ -65,13 +72,16 @@ __all__ = [
     "SemanticArticleResult",
     "SemanticPipeline",
     "SentenceSpan",
+    "SequentialFactExtractor",
     "StateTransition",
+    "SurfaceDeterministicFactExtractor",
     "TemporalAuxiliaryPort",
     "TemporalResolution",
     "TemporalResolutionSource",
     "append_event_snapshot",
     "assess_material_event",
     "build_event_snapshot",
+    "build_resilient_fact_extractor",
     "cited_evidence_text",
     "compare_candidate_identity",
     "derive_state_transitions",
