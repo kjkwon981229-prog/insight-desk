@@ -50,6 +50,15 @@ if HAS_PROPERTY_QA:
             topic_ids=("ai_tech",),
         )
 
+    def _has_final_consonant(text: str) -> bool:
+        last = next((char for char in reversed(text) if not char.isspace()), "")
+        if "가" <= last <= "힣":
+            return (ord(last) - 0xAC00) % 28 != 0
+        return False
+
+    def _particle(text: str, consonant: str, vowel: str) -> str:
+        return consonant if _has_final_consonant(text) else vowel
+
 
     class SemanticPropertyTests(unittest.TestCase):
         @settings(max_examples=40, deadline=None)
@@ -80,9 +89,9 @@ if HAS_PROPERTY_QA:
             object_text: str,
             action: str,
         ) -> None:
-            body = f"{subject}가 {object_text}을 {action}"
-            if not body.endswith("."):
-                body += "."
+            subject_marker = _particle(subject, "이", "가")
+            object_marker = _particle(object_text, "을", "를")
+            body = f"{subject}{subject_marker} {object_text}{object_marker} {action}."
             result = _PIPELINE.extract_article(
                 _article(body),
                 topic_id="ai_tech",
