@@ -37,15 +37,17 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          from datetime import datetime, timezone
           from pathlib import Path
 
-          from insight_desk.core import FailureKind
+          from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
+          from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
           from insight_desk.providers.cloudflare import CloudflareClaimVerifier
           from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
           from insight_desk.providers.local_nli import LocalNliVerifier
           from insight_desk.providers.transport import ProviderTransportError
 
-          evidence = "테스트 기업은 2026년 8월 23일 신제품을 출시했다."
+          evidence = "테스트 기업은 2026년 8월 23일 인공지능 기반 신제품을 국내 시장에 정식 출시했다고 밝혔다."
           positive = evidence
           negative = "테스트 기업은 신제품 출시를 취소했다."
           evidence_ids = ("probe:evidence",)
@@ -68,31 +70,58 @@ jobs:
                   }
               return out
 
-          groq_result = {"ok": False, "failure_kind": None, "status_code": None, "error_type": None}
-          try:
-              groq = GroqFreeClient.from_env(GROQ_20B, delay_seconds=0)
-              payload = groq.structured_json(
-                  prompt="Return the literal string ok in the field value.",
-                  schema={
-                      "type": "object",
-                      "properties": {"value": {"type": "string"}},
-                      "required": ["value"],
-                      "additionalProperties": False,
-                  },
-                  schema_name="phase12_provider_probe",
-              )
-              groq_result["ok"] = isinstance(payload.get("value"), str)
-          except ProviderTransportError as exc:
-              groq_result["failure_kind"] = exc.failure_kind.value
-              groq_result["status_code"] = exc.status_code
-              groq_result["error_type"] = type(exc).__name__
-          except Exception as exc:
-              groq_result["error_type"] = type(exc).__name__
+          span = EvidenceSpan(
+              evidence_id=evidence_ids[0],
+              article_id="probe:article",
+              field=EvidenceField.BODY,
+              start=0,
+              end=len(evidence),
+              text=evidence,
+          )
+          fact = EventFact(
+              fact_id="probe:fact",
+              subject="테스트 기업",
+              action="인공지능 기반 신제품을 국내 시장에 정식 출시했다고 밝혔다",
+              object="인공지능 기반 신제품",
+              event_date="2026년 8월 23일",
+              evidence_ids=evidence_ids,
+          )
+          event = CandidateEvent(
+              event_id="probe:event",
+              topic_id="ai_tech",
+              fact_ids=(fact.fact_id,),
+              article_ids=(span.article_id,),
+          )
+          request = GenerationRequest(
+              event=event,
+              facts={fact.fact_id: fact},
+              evidence={span.evidence_id: span},
+          )
+          generator = Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B))
+          burst = []
+          for sequence in range(1, 7):
+              item = {
+                  "sequence": sequence,
+                  "ok": False,
+                  "failure_kind": None,
+                  "status_code": None,
+                  "error_type": None,
+              }
+              try:
+                  draft = generator.generate(request)
+                  item["ok"] = bool(draft.headline and draft.summary)
+              except ProviderTransportError as exc:
+                  item["failure_kind"] = exc.failure_kind.value
+                  item["status_code"] = exc.status_code
+                  item["error_type"] = type(exc).__name__
+              except Exception as exc:
+                  item["error_type"] = type(exc).__name__
+              burst.append(item)
 
           result = {
               "cloudflare": run_verifier(cloudflare, "cloudflare"),
               "local_nli": run_verifier(local, "local"),
-              "groq_20b": groq_result,
+              "groq_20b_production_burst": burst,
           }
           Path("build").mkdir(exist_ok=True)
           Path("build/verifier-probe.json").write_text(
