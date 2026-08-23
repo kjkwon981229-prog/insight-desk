@@ -8,14 +8,13 @@ import re
 import unittest
 
 from insight_desk.core import RawArticle, SourceProvenance
+from insight_desk.semantic.evidence import EvidenceSegmenter
 from insight_desk.semantic.kiwi_extractor import KiwiDeterministicFactExtractor
 from insight_desk.semantic.pipeline import SemanticPipeline
 
 
 HAS_KIWI = importlib.util.find_spec("kiwipiepy") is not None
 NOW = datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc)
-_EXTRACTOR: KiwiDeterministicFactExtractor | None = None
-_PIPELINE = SemanticPipeline()
 
 
 def raw_article(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str = "x") -> RawArticle:
@@ -35,6 +34,9 @@ def raw_article(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str
     )
 
 
+_EXTRACTOR = None
+
+
 def extractor() -> KiwiDeterministicFactExtractor:
     global _EXTRACTOR
     if _EXTRACTOR is None:
@@ -43,7 +45,7 @@ def extractor() -> KiwiDeterministicFactExtractor:
 
 
 def extract(title: str, body: str, *, topic_id: str = "ai_tech", suffix: str = "x"):
-    return _PIPELINE.extract_article(
+    return SemanticPipeline().extract_article(
         raw_article(title, body, topic_id=topic_id, suffix=suffix),
         topic_id=topic_id,
         extractor=extractor(),
@@ -126,6 +128,22 @@ class KiwiDeterministicFactExtractorTests(unittest.TestCase):
         ).facts[0]
         self.assertIn("3.4%", market.action)
         self.assertIn("급등", market.action)
+
+    def test_partial_sentence_created_only_by_evidence_window_cut_is_not_interpreted(self) -> None:
+        body = (
+            "정부가 반도체 산업 투자 지원 계획을 관계 기관과 장기간 논의하면서 "
+            "세부 일정과 대상 지역과 예산 범위를 차례로 검토하고 조정하는 가운데 "
+            "삼성전자가 신규 사업을 확대했다."
+        )
+        raw = raw_article("장기 정책 협의", body, suffix="window-cut")
+        pipeline = SemanticPipeline(segmenter=EvidenceSegmenter(max_chars=80))
+        result = pipeline.extract_article(
+            raw,
+            topic_id="ai_tech",
+            extractor=extractor(),
+        )
+        self.assertGreater(len(result.evidence), 1)
+        self.assertEqual(result.facts, ())
 
     def test_unsupported_english_sentence_fails_closed_without_global_error(self) -> None:
         text = "BTS' Arirang remained No. 14 on the Billboard 200 for a 20th week."
