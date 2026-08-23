@@ -247,6 +247,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     published_source_groups: set[str] = set()
     published_content_fingerprints: set[str] = set()
     published_headline_keys: set[str] = set()
+    published_summary_keys: set[str] = set()
     published: list[PublishedCandidate] = []
     attempts: list[dict[str, object]] = []
     topic_stats: dict[str, dict[str, int]] = {}
@@ -422,6 +423,20 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         )
                         continue
 
+                    summary_key = " ".join(entry_candidate.final_generation.draft.summary.split()).casefold()
+                    if summary_key in published_summary_keys:
+                        attempts.append(
+                            _attempt(
+                                topic=topic.topic_id,
+                                query=query,
+                                domain=domain,
+                                stage="visible_identity",
+                                status="skip",
+                                reason="normalized_summary_already_published",
+                            )
+                        )
+                        continue
+
                     published.append(
                         PublishedCandidate(
                             topic=topic,
@@ -431,6 +446,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         )
                     )
                     published_headline_keys.add(headline_key)
+                    published_summary_keys.add(summary_key)
                     published_source_groups.add(source_group_key)
                     published_content_fingerprints.add(content_sha256)
                     stats["published_entries"] += 1
