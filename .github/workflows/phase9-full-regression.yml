@@ -1,0 +1,98 @@
+name: Insight Desk Phase 9 Full Regression
+
+on:
+  pull_request:
+    branches:
+      - phase4-core-contracts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+
+      - name: Install audited semantic runtime and QA helpers
+        run: python -m pip install --disable-pip-version-check '.[semantic-local,qa]'
+
+      - name: Verify audited local helpers are active
+        run: |
+          python - <<'PY'
+          import kiwipiepy
+          import rapidfuzz
+          import hypothesis
+          print('PHASE9_LOCAL_HELPERS_ACTIVE')
+          print('kiwipiepy', kiwipiepy.__version__)
+          print('rapidfuzz', rapidfuzz.__version__)
+          print('hypothesis', hypothesis.__version__)
+          PY
+
+      - name: Compile Python packages
+        run: python -m compileall -q insight_desk
+
+      - name: Validate configuration policy and PWA assets
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in (
+              'config/topics.json',
+              'config/authoritative_sources.json',
+              'config/zero_cost_tool_audit_v1.json',
+              'manifest.webmanifest',
+          ):
+              json.loads(Path(name).read_text(encoding='utf-8'))
+          policy = Path('docs/NEWS_REWRITE_POLICY_V1.md').read_text(encoding='utf-8')
+          for rule in ('0-1)', '0-2', '0-3', '0-4', '1-1', '1-2', '1-3', '2-1', '2-2', '2-3', '2-4', '3-1', '3-2', '3-3'):
+              if rule not in policy:
+                  raise SystemExit(f'MISSING_POLICY_RULE:{rule}')
+          root_sw = Path('push-sw.js').read_text(encoding='utf-8')
+          asset_sw = Path('assets/push-sw.js').read_text(encoding='utf-8')
+          if root_sw != asset_sw:
+              raise SystemExit('PUSH_SW_PARITY_FAIL')
+          if 'addEventListener("fetch"' in root_sw:
+              raise SystemExit('PUSH_SW_FETCH_HANDLER_FORBIDDEN')
+          print('PHASE9_STATIC_ASSETS_VALID')
+          PY
+
+      - name: Validate clean-room benchmark integrity
+        run: python benchmarks/validate.py
+
+      - name: Run complete Python regression with local semantic helpers active
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+      - name: Re-run semantic runtime and property gates explicitly
+        run: |
+          python -m unittest tests.test_semantic_tooling_contracts -v
+          python -m unittest tests.test_kiwi_deterministic_extractor -v
+          python -m unittest tests.test_material_event_assessment -v
+          python -m unittest tests.test_phase6_auto_material_wiring -v
+          python -m unittest tests.test_semantic_properties -v
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: push-worker/package-lock.json
+
+      - name: Run complete Push Worker regression
+        working-directory: push-worker
+        run: npm ci && npm test
+
+      - name: Phase 9 gate summary
+        run: |
+          echo 'PHASE9_FULL_REGRESSION_PASS'
+          echo 'paid_paths=0'
+          echo 'secrets_required=0'
+          echo 'larger_runner=0'
