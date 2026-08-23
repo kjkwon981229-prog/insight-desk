@@ -4,12 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from insight_desk.providers.local_nli import (
-    LOCAL_NLI_FALLBACK_MODEL,
-    LOCAL_NLI_MODEL,
-    LocalNliVerifier,
-)
+from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 
+
+CANDIDATE_FALLBACK_MODEL = "MoritzLaurer/xlm-v-base-mnli-xnli"
 
 CASES = (
     # Positive entailments: same fact or conservative paraphrase, no added material content.
@@ -95,7 +93,7 @@ def main() -> None:
             "negative_total": 10,
         },
         "primary": evaluate(LOCAL_NLI_MODEL, route_id="bench-mdeberta"),
-        "fallback": evaluate(LOCAL_NLI_FALLBACK_MODEL, route_id="bench-minilm"),
+        "fallback": evaluate(CANDIDATE_FALLBACK_MODEL, route_id="bench-xlm-v"),
     }
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +103,7 @@ def main() -> None:
         print(
             "LOCAL_NLI_BENCHMARK "
             f"route={key} "
+            f"model={item['model_id']} "
             f"positive={item['positive_correct']}/{item['positive_total']} "
             f"negative={item['negative_correct']}/{item['negative_total']} "
             f"accepted={str(item['accepted_for_secondary_failover']).lower()}"
