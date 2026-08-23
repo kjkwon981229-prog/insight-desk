@@ -24,6 +24,7 @@ from insight_desk.verification_pipeline import (
 
 class VerificationRecoveryReason(StrEnum):
     GENERATED_CLAIM_REJECTED = "generated_claim_rejected"
+    GENERATED_VERIFICATION_UNAVAILABLE = "generated_verification_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +47,7 @@ class Phase7EntryCandidate:
                 raise ValueError("generation changed without a verification recovery reason")
         else:
             if self.final_generation.render_mode is not RenderMode.EXTRACTIVE_FALLBACK:
-                raise ValueError("verification rejection recovery must end in extractive fallback")
+                raise ValueError("verification recovery must end in extractive fallback")
 
     @property
     def publishable(self) -> bool:
@@ -60,6 +61,13 @@ class Phase7EntryCandidate:
 def _has_explicit_rejection(result: GeneratedVerificationResult) -> bool:
     return any(
         item.claim.verdict is VerificationVerdict.REJECTED
+        for item in result.claims
+    )
+
+
+def _has_indeterminate_verification(result: GeneratedVerificationResult) -> bool:
+    return any(
+        item.claim.verdict is VerificationVerdict.INDETERMINATE
         for item in result.claims
     )
 
@@ -104,7 +112,7 @@ def _verify_generation_result(
 def produce_phase7_entry_candidate(
     request: GenerationRequest,
     *,
-    primary_generator: DraftGenerator,
+    primary_generator: DraftGenerator | None,
     primary_verifier: ClaimVerifier,
     secondary_verifier: ClaimVerifier,
     alternate_generator: DraftGenerator | None = None,
@@ -114,7 +122,8 @@ def produce_phase7_entry_candidate(
     Generated prose keeps the frozen two-verifier semantic gate. Exact-source fallback is different:
     it contains no generated paraphrase, so it is proved deterministically against the cited immutable
     EvidenceSpan text rather than made dependent on an external LLM's availability. A generated draft
-    with an explicit semantic rejection still receives exactly one exact-source fallback attempt.
+    with an explicit semantic rejection or unavailable verification capacity receives exactly one
+    exact-source fallback attempt. This never authorizes unverified generated prose.
     """
 
     initial_generation = generate_with_recovery(
@@ -129,10 +138,14 @@ def produce_phase7_entry_candidate(
         secondary_verifier=secondary_verifier,
     )
 
-    if (
-        initial_generation.render_mode is RenderMode.GENERATED
-        and _has_explicit_rejection(initial_verification)
-    ):
+    recovery_reason: VerificationRecoveryReason | None = None
+    if initial_generation.render_mode is RenderMode.GENERATED:
+        if _has_explicit_rejection(initial_verification):
+            recovery_reason = VerificationRecoveryReason.GENERATED_CLAIM_REJECTED
+        elif _has_indeterminate_verification(initial_verification):
+            recovery_reason = VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE
+
+    if recovery_reason is not None:
         fallback_generation = _exact_fallback_result(request)
         fallback_verification = verify_exact_source_draft(
             request,
@@ -143,7 +156,7 @@ def produce_phase7_entry_candidate(
             initial_generation=initial_generation,
             final_generation=fallback_generation,
             verification=fallback_verification,
-            verification_recovery_reason=VerificationRecoveryReason.GENERATED_CLAIM_REJECTED,
+            verification_recovery_reason=recovery_reason,
         )
 
     return Phase7EntryCandidate(
