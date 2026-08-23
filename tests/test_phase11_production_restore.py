@@ -48,6 +48,24 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
             )
         )
 
+    def test_kpop_mention_requires_substantive_music_context(self) -> None:
+        topic = next(topic for topic in load_topics(Path("config/topics.json")) if topic.topic_id == "kpop")
+        self.assertTrue(topic.required_intent_terms)
+        self.assertFalse(
+            topic_relevant(
+                title="안동 소비축제 개막도시 선정",
+                body="개막식에서 K-POP 공연과 우수제품 판매전을 열고 관광과 숙박을 연계한다.",
+                topic=topic,
+            )
+        )
+        self.assertTrue(
+            topic_relevant(
+                title="아이브 새 앨범 공개",
+                body="그룹 아이브가 새 앨범과 음원을 공개하고 음악방송 활동을 시작한다.",
+                topic=topic,
+            )
+        )
+
     def test_staged_site_contains_locked_pwa_assets_and_root_worker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "site"
