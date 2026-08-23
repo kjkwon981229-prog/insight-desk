@@ -24,12 +24,20 @@ from .history import (
     start_event_history,
 )
 from .identity import IdentityResolution, merge_candidate_events, resolve_candidate_pair
+from .kiwi_extractor import KiwiDeterministicFactExtractor
+from .material import (
+    MaterialEventAssessment,
+    MaterialEventReason,
+    MaterialEventVerdict,
+    assess_material_event,
+)
 from .pipeline import SemanticArticleResult, SemanticPipeline
 from .tooling import (
     AliasCandidate,
     KiwiMorphologyHelper,
     MorphologyToken,
     RapidFuzzAliasRetriever,
+    SentenceSpan,
 )
 
 __all__ = [
@@ -41,18 +49,24 @@ __all__ = [
     "FactExtractionRequest",
     "FactExtractorPort",
     "IdentityResolution",
+    "KiwiDeterministicFactExtractor",
     "KiwiMorphologyHelper",
+    "MaterialEventAssessment",
+    "MaterialEventReason",
+    "MaterialEventVerdict",
     "MorphologyToken",
     "Phase6EventAssessment",
     "Phase6EventEngine",
     "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
     "SemanticPipeline",
+    "SentenceSpan",
     "StateTransition",
     "TemporalAuxiliaryPort",
     "TemporalResolution",
     "TemporalResolutionSource",
     "append_event_snapshot",
+    "assess_material_event",
     "build_event_snapshot",
     "cited_evidence_text",
     "compare_candidate_identity",
