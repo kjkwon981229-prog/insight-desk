@@ -138,7 +138,9 @@ def validate_html(
     if not stories:
         raise ValueError("FEED_QUALITY_NO_STORIES")
 
+    seen_headlines: set[str] = set()
     seen_content: set[tuple[str, str]] = set()
+    duplicate_headlines = 0
     duplicate_content = 0
     max_headline = 0
     max_summary = 0
@@ -159,7 +161,13 @@ def validate_html(
         if len(summary) > MAX_SUMMARY_CHARS:
             raise ValueError(f"FEED_QUALITY_SUMMARY_TOO_LONG:{index}:{len(summary)}")
 
-        content_key = (_normalize(headline), _normalize(summary))
+        headline_key = _normalize(headline)
+        if headline_key in seen_headlines:
+            duplicate_headlines += 1
+        else:
+            seen_headlines.add(headline_key)
+
+        content_key = (headline_key, _normalize(summary))
         if content_key in seen_content:
             duplicate_content += 1
         else:
@@ -171,6 +179,8 @@ def validate_html(
                 if forbidden.casefold() in combined:
                     psat_forbidden_hits.append(forbidden)
 
+    if duplicate_headlines:
+        raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_content:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_CONTENT:{duplicate_content}")
     if psat_forbidden_hits:
@@ -189,6 +199,7 @@ def validate_html(
         "story_count": len(stories),
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
+        "duplicate_headlines": duplicate_headlines,
         "duplicate_content": duplicate_content,
         "duplicate_sources": duplicate_sources,
         "duplicate_source_content": duplicate_source_content,
