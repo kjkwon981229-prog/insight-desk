@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import unittest
 
 from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact, RenderMode
-from insight_desk.generation import GeneratedDraft, GenerationRequest
+from insight_desk.generation import GeneratedDraft, GenerationContractError, GenerationRequest
 from insight_desk.generation_pipeline import (
     FALLBACK_HEADLINE_MAX_CHARS,
     FALLBACK_SUMMARY_MAX_CHARS,
@@ -110,6 +110,26 @@ class Phase7GenerationRecoveryTests(unittest.TestCase):
         self.assertEqual(result.draft.event_id, request().event.event_id)
         self.assertEqual(result.attempts[-1].kind, GenerationAttemptKind.EXTRACTIVE_FALLBACK)
         self.assertTrue(result.preservation.accepted)
+
+    def test_live_106_char_complete_sentence_is_not_cut_at_legacy_96_limit(self) -> None:
+        text = (
+            "김경문 감독이 이끄는 한화 이글스는 23일 대전 한화생명볼파크에서 열린 2026 신한 SOL Bank KBO리그 "
+            "LG 트윈스와 시즌 13차전에서 3-12로 대패하며 연승에 실패했다."
+        )
+        self.assertGreater(len(text), 96)
+        self.assertLessEqual(len(text), 120)
+        primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
+        result = generate_with_recovery(request(text), primary=primary)
+        self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
+        self.assertEqual(result.draft.headline, text)
+        self.assertNotEqual(result.draft.headline[-3:], "연승에")
+
+    def test_exact_fallback_never_raw_character_clips_without_safe_boundary(self) -> None:
+        text = "네오팩토리가 " + ("초장문근거문장" * 24) + " 사업을 수주했다."
+        self.assertGreater(len(text), 120)
+        primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
+        with self.assertRaises(GenerationContractError):
+            generate_with_recovery(request(text), primary=primary)
 
     def test_long_article_fallback_is_bounded_and_source_exact(self) -> None:
         title = "SK하이닉스 임단협 잠정합의안 찬반투표"
