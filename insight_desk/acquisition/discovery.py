@@ -6,7 +6,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Protocol
@@ -122,11 +122,7 @@ class BingNewsRssDiscovery:
 
     def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]:
         params = urllib.parse.urlencode(
-            {
-                "q": f"{query} loc:KR",
-                "qft": 'sortbydate="1"',
-                "format": "RSS",
-            }
+            {"q": f"{query} loc:KR", "qft": 'sortbydate="1"', "format": "RSS"}
         )
         url = "https://www.bing.com/news/search?" + params
         request = urllib.request.Request(url, headers={"User-Agent": "InsightDesk/1.0"})
@@ -241,6 +237,7 @@ class GdeltDocDiscovery:
 @dataclass(slots=True)
 class SequentialNewsDiscovery:
     routes: tuple[DiscoveryRoute, ...]
+    _route_stats: dict[str, dict[str, int]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if len(self.routes) < 1:
@@ -248,17 +245,31 @@ class SequentialNewsDiscovery:
         ids = [route.route_id for route in self.routes]
         if len(ids) != len(set(ids)):
             raise ValueError("discovery route ids must be unique")
+        self._route_stats = {
+            route_id: {"calls": 0, "errors": 0, "empty": 0, "selected": 0, "candidates": 0}
+            for route_id in ids
+        }
+
+    @property
+    def route_stats(self) -> dict[str, dict[str, int]]:
+        return {route_id: dict(stats) for route_id, stats in self._route_stats.items()}
 
     def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]:
         last_error: DiscoveryError | None = None
         for route in self.routes:
+            stats = self._route_stats[route.route_id]
+            stats["calls"] += 1
             try:
                 candidates = route.search(query, topic_id=topic_id, limit=limit)
             except DiscoveryError as exc:
+                stats["errors"] += 1
                 last_error = exc
                 continue
             if candidates:
+                stats["selected"] += 1
+                stats["candidates"] += len(candidates)
                 return candidates
+            stats["empty"] += 1
         if last_error is not None:
             raise last_error
         return ()
