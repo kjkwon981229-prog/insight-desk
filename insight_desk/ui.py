@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import escape
 from typing import Mapping
+from urllib.parse import urlsplit
 
 from insight_desk.core import RenderMode, RenderedBriefing
 
@@ -43,6 +44,28 @@ class BriefingViewModel:
         event_ids = tuple(story.event_id for story in self.stories)
         if len(event_ids) != len(set(event_ids)):
             raise ValueError("view model must not contain duplicate event ids")
+
+
+@dataclass(frozen=True, slots=True)
+class PwaRuntimeConfig:
+    push_worker_url: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.push_worker_url is None:
+            return
+        value = self.push_worker_url.strip().rstrip("/")
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("push_worker_url must be an HTTPS origin/path without credentials, query, or fragment")
+        object.__setattr__(self, "push_worker_url", value)
+
 
 
 def build_briefing_view_model(
@@ -105,9 +128,40 @@ def _story_html(story: StoryViewModel) -> str:
     )
 
 
-def render_briefing_html(view: BriefingViewModel) -> str:
-    """Render a production briefing using the locked CSS without manufacturing missing UI facts."""
+def _push_html(config: PwaRuntimeConfig) -> tuple[str, str, str]:
+    if config.push_worker_url is None:
+        return "", "", ""
+    worker_url = escape(config.push_worker_url, quote=True)
+    head_meta = f'<meta name="insight-desk-push-worker-url" content="{worker_url}">'
+    section = '''<section class="push-settings" data-push-settings data-push-service-worker-url="assets/push-sw.js">
+    <div>
+      <span class="eyebrow">웹 알림</span>
+      <h2>브리핑 상태 알림</h2>
+      <p>홈 화면에 추가한 앱에서 브리핑 준비 완료 또는 업데이트 실패 상태만 알립니다.</p>
+    </div>
+    <div class="push-actions">
+      <button type="button" data-push-enable>알림 켜기</button>
+      <button type="button" data-push-disable>알림 끄기</button>
+    </div>
+    <p class="push-status" data-push-status aria-live="polite">알림 상태를 확인 중입니다.</p>
+  </section>'''
+    script = '<script src="assets/js/push.js" defer></script>'
+    return head_meta, section, script
 
+
+def render_briefing_html(
+    view: BriefingViewModel,
+    *,
+    runtime: PwaRuntimeConfig | None = None,
+) -> str:
+    """Render a production briefing using locked assets without manufacturing missing UI facts.
+
+    The PWA manifest is always linked. Push controls are emitted only when an explicit HTTPS Worker
+    URL is configured; otherwise no broken or misleading notification UI is shown.
+    """
+
+    runtime_config = runtime or PwaRuntimeConfig()
+    push_meta, push_section, push_script = _push_html(runtime_config)
     story_count = len(view.stories)
     if view.stories:
         lead_items = "".join(
@@ -138,6 +192,7 @@ def render_briefing_html(view: BriefingViewModel) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#c35b78">
+  {push_meta}
   <title>Insight Desk</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/style.css">
@@ -162,6 +217,7 @@ def render_briefing_html(view: BriefingViewModel) -> str:
     {lead_block}
     {empty}
   </section>
+  {push_section}
   <section class="signal-strip" aria-label="브리핑 범위">
     <div class="signal-cell">
       <span class="label">게시 항목</span>
@@ -179,6 +235,7 @@ def render_briefing_html(view: BriefingViewModel) -> str:
   </section>
   <footer>Insight Desk</footer>
 </main>
+{push_script}
 </body>
 </html>
 '''
