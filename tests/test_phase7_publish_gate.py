@@ -146,7 +146,10 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertTrue(result.event_retained)
 
     def test_unsafe_indeterminate_exact_fallback_fails_closed_item_locally(self) -> None:
-        long_text = "네오팩토리가 " + ("초장문근거문장" * 24) + " 사업을 수주했다."
+        long_text = (
+            "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다 "
+            + ("초장문근거문장" * 24)
+        )
         self.assertGreater(len(long_text), 120)
         first = primary(None, None)
         second = secondary(True, True)
