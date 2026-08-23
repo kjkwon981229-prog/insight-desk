@@ -11,6 +11,7 @@ from insight_desk.core import RawArticle, SourceProvenance
 from insight_desk.semantic.evidence import EvidenceSegmenter
 from insight_desk.semantic.kiwi_extractor import KiwiDeterministicFactExtractor
 from insight_desk.semantic.pipeline import SemanticPipeline
+from insight_desk.semantic.tooling import KiwiMorphologyHelper, MorphologySourceOffsetError
 
 HAS_KIWI = importlib.util.find_spec("kiwipiepy") is not None
 NOW = datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc)
@@ -121,6 +122,33 @@ class KiwiDeterministicFactExtractorTests(unittest.TestCase):
         )
         self.assertGreater(len(result.evidence), 1)
         self.assertEqual(result.facts, ())
+
+    def test_live_style_invalid_kiwi_offset_skips_only_bad_sentence(self) -> None:
+        class OneBadSentenceHelper:
+            def __init__(self) -> None:
+                self._delegate = KiwiMorphologyHelper()
+                self._failed = False
+
+            def split_sentences(self, text: str):
+                return self._delegate.split_sentences(text)
+
+            def analyze(self, text: str):
+                if not self._failed:
+                    self._failed = True
+                    raise MorphologySourceOffsetError("synthetic live offset anomaly")
+                return self._delegate.analyze(text)
+
+        body = "형태소 좌표가 깨지는 문장이다.\n네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+        local_extractor = KiwiDeterministicFactExtractor()
+        local_extractor._kiwi = OneBadSentenceHelper()
+        result = SemanticPipeline().extract_article(
+            raw_article("AI 공장 수주", body, suffix="offset-local-containment"),
+            topic_id="ai_tech",
+            extractor=local_extractor,
+        )
+        self.assertEqual(len(result.facts), 1)
+        self.assertEqual(result.facts[0].subject, "네오팩토리")
+        self.assertIn("15억달러", result.facts[0].action)
 
     def test_unsupported_english_sentence_fails_closed(self) -> None:
         text = "BTS' Arirang remained No. 14 on the Billboard 200 for a 20th week."
