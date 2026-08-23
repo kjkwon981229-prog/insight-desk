@@ -256,39 +256,41 @@ def _configured_zero_cost_alternate() -> DraftGenerator | None:
 def generate_with_recovery(
     request: GenerationRequest,
     *,
-    primary: DraftGenerator,
+    primary: DraftGenerator | None,
     alternate: DraftGenerator | None = None,
 ) -> GenerationRecoveryResult:
-    """Apply zero-cost recovery: primary → bounded retry → alternate → exact source.
+    """Apply zero-cost recovery: configured primary → alternate → exact source.
 
-    Rate-limit or quota evidence suppresses an immediate primary retry. When the caller does not
-    inject an alternate, an independently configured Gemini Free route is discovered lazily. No
-    Gemini request is made when primary generation succeeds. Deterministic exact source remains the
-    final non-provider fallback and no paid route exists.
+    A missing primary provider is a valid availability state and is skipped without manufacturing a
+    provider failure. Rate-limit or quota evidence suppresses an immediate configured-primary retry.
+    When the caller does not inject an alternate, an independently configured Gemini Free route is
+    discovered lazily. Deterministic exact source remains the final non-provider fallback and no paid
+    route exists.
     """
 
     attempts: list[GenerationAttempt] = []
     sequence = 0
 
-    for _ in range(2):
-        sequence += 1
-        draft, preservation, attempt = _attempt_generated(
-            primary,
-            request,
-            kind=GenerationAttemptKind.PRIMARY,
-            sequence=sequence,
-        )
-        attempts.append(attempt)
-        if draft is not None and preservation is not None:
-            return GenerationRecoveryResult(
-                event_id=request.event.event_id,
-                draft=draft,
-                render_mode=RenderMode.GENERATED,
-                preservation=preservation,
-                attempts=tuple(attempts),
+    if primary is not None:
+        for _ in range(2):
+            sequence += 1
+            draft, preservation, attempt = _attempt_generated(
+                primary,
+                request,
+                kind=GenerationAttemptKind.PRIMARY,
+                sequence=sequence,
             )
-        if _should_skip_immediate_primary_retry(attempt):
-            break
+            attempts.append(attempt)
+            if draft is not None and preservation is not None:
+                return GenerationRecoveryResult(
+                    event_id=request.event.event_id,
+                    draft=draft,
+                    render_mode=RenderMode.GENERATED,
+                    preservation=preservation,
+                    attempts=tuple(attempts),
+                )
+            if _should_skip_immediate_primary_retry(attempt):
+                break
 
     resolved_alternate = alternate if alternate is not None else _configured_zero_cost_alternate()
     if resolved_alternate is not None:
