@@ -1,5 +1,13 @@
 """Evidence-preserving acquisition for web articles and official structured sources."""
 
+from .discovery import (
+    BingNewsRssDiscovery,
+    DiscoveryError,
+    GdeltDocDiscovery,
+    NaverNewsDiscovery,
+    SequentialNewsDiscovery,
+    default_news_discovery,
+)
 from .models import (
     AcquisitionError,
     AcquisitionResult,
@@ -23,13 +31,19 @@ __all__ = [
     "AcquisitionPipeline",
     "AcquisitionResult",
     "ArticleCandidate",
+    "BingNewsRssDiscovery",
+    "DiscoveryError",
     "ExtractedArticle",
     "ExtractionQuality",
     "ExtractionQualityPolicy",
     "FetchedPage",
+    "GdeltDocDiscovery",
+    "NaverNewsDiscovery",
     "PlaywrightHtmlRenderer",
+    "SequentialNewsDiscovery",
     "TrafilaturaExtractor",
     "UrlLibHtmlFetcher",
+    "default_news_discovery",
     "normalize_ecos_statistics",
     "normalize_kosis_statistics",
     "normalize_naver_items",
