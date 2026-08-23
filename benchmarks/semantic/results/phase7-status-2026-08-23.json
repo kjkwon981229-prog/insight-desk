@@ -1,0 +1,47 @@
+{
+  "record_id": "phase7-status-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 7,
+  "status": "CODE_COMPLETE_POLICY_TEXT_BLOCKED",
+  "branch": "phase4-core-contracts",
+  "head_sha": "a6a4268be1c96981819e46d41a0479b1bba1bb14",
+  "implemented": {
+    "generation_contract": "source-bound GenerationRequest/GeneratedDraft",
+    "primary_generator": "Groq GPT-OSS 20B structured JSON only",
+    "rewrite_policy_recovered_rules": "NEWS_REWRITE_POLICY_V1 sections 0-2 only",
+    "deterministic_preservation": [
+      "event identity",
+      "cited evidence provenance",
+      "novel date rejection",
+      "novel numeric-expression rejection",
+      "novel quoted-text rejection"
+    ],
+    "claim_verification": "headline and summary verified separately",
+    "verification_policy": "Cloudflare primary + local mDeBERTa secondary",
+    "publish_gate": "both headline and summary must be SUPPORTED",
+    "generation_recovery": "primary, one free retry, explicitly configured alternate only, exact-source extractive fallback",
+    "verification_recovery": "explicit generated-claim REJECTED gets one exact-source fallback verification pass; INDETERMINATE does not trigger regeneration",
+    "event_retention": true
+  },
+  "provider_boundaries": {
+    "Groq_GPT_OSS_20B": "generation only",
+    "Groq_GPT_OSS_120B": "not used in Phase 7 generation; remains temporal/lifecycle auxiliary",
+    "Cloudflare_Llama_3_3_70B": "primary claim verifier only",
+    "mDeBERTa_XNLI": "required secondary claim verifier",
+    "new_provider_roles_added": 0,
+    "paid_fallback": false
+  },
+  "phase_boundary": {
+    "renderer_or_pwa_integration_added": false,
+    "live_canary_run": false,
+    "next_integration_phase": 8,
+    "fresh_live_canary_phase": 10
+  },
+  "blocking_item": {
+    "id": "NEWS_REWRITE_POLICY_V1_SECTION_3_UNRECOVERED",
+    "title": "자동화 출력",
+    "detail": "The exact section 3 subrules and wording could not be recovered from the repository, commit search, or prior-conversation retrieval. They were not invented or approximated.",
+    "prevents_phase7_complete_declaration": true
+  },
+  "completion_rule": "Phase 7 may be declared COMPLETE only after the exact NEWS_REWRITE_POLICY_V1 section 3 text is recovered or an authoritative project decision explicitly removes section 3 from the required policy contract."
+}
