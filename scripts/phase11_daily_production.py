@@ -27,7 +27,7 @@ from insight_desk.core import ContractBundle, SelectionVerdict
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
 from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimVerifier
-from insight_desk.providers.groq import GROQ_20B, GROQ_120B, GroqFreeClient
+from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 from insight_desk.rendering import build_rendered_briefing
 from insight_desk.semantic import KiwiDeterministicFactExtractor, Phase6EventEngine, Phase6SelectionContext, SemanticPipeline
@@ -66,6 +66,8 @@ class TopicConfig:
 class PublishedCandidate:
     topic: TopicConfig
     candidate: Phase7EntryCandidate
+    source_group_key: str
+    content_sha256: str
 
 
 def load_topics(path: Path) -> tuple[TopicConfig, ...]:
@@ -100,12 +102,7 @@ def _term_present(text: str, term: str) -> bool:
 
 
 def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
-    """High-precision production relevance guard using only frozen topic literals.
-
-    This does not infer synonyms or semantic similarity. Every accepted article must contain at least
-    one configured intent anchor; conditional topics additionally require one configured intent term.
-    Search-query assignment alone is therefore insufficient to mark an article relevant.
-    """
+    """High-precision production relevance guard using only frozen topic literals."""
 
     text = f"{title}\n{body}"
     if not any(_term_present(text, term) for term in topic.intent_anchors):
@@ -126,6 +123,20 @@ def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
 
 def _domain(url: str) -> str:
     return (urlparse(url).hostname or "unknown").lower()
+
+
+def _source_group_key(candidate: ArticleCandidate) -> str:
+    """Return an opaque stable group shared by one NAVER original/alternate candidate pair."""
+
+    candidate_id = candidate.candidate_id[:-4] if candidate.candidate_id.endswith("-alt") else candidate.candidate_id
+    return hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()
+
+
+def _content_fingerprint(body: str) -> str:
+    """Return a deterministic fingerprint insensitive only to whitespace layout."""
+
+    normalized = " ".join(body.split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _alternate_candidate(raw: dict[str, object], original: ArticleCandidate) -> ArticleCandidate | None:
@@ -181,6 +192,23 @@ def _attempt(*, topic: str, query: str, domain: str, stage: str, status: str, re
     return item
 
 
+def _record_generation_stats(
+    candidate: Phase7EntryCandidate,
+    generation_stats: dict[str, int],
+) -> None:
+    results = [candidate.initial_generation]
+    if candidate.final_generation is not candidate.initial_generation:
+        results.append(candidate.final_generation)
+    for result in results:
+        for attempt in result.attempts:
+            key = attempt.status.value
+            generation_stats[key] = generation_stats.get(key, 0) + 1
+        if result.render_mode.value == "extractive_fallback":
+            generation_stats["extractive_fallback"] += 1
+    if candidate.verification_recovery_reason is not None:
+        generation_stats["verification_recovery_fallback"] += 1
+
+
 def stage_site(output_dir: Path, html: str) -> None:
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -215,16 +243,25 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     semantic = SemanticPipeline()
     extractor = KiwiDeterministicFactExtractor()
     phase6 = Phase6EventEngine()
-    temporal_auxiliary = GroqFreeClient.from_env(GROQ_120B)
     generator = Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B))
     primary_verifier = CloudflareClaimVerifier.from_env()
     local_verifier: LocalNliVerifier | None = None
 
     now = datetime.now(timezone.utc)
     seen_urls: set[str] = set()
+    published_source_groups: set[str] = set()
+    published_content_fingerprints: set[str] = set()
     published: list[PublishedCandidate] = []
     attempts: list[dict[str, object]] = []
     topic_stats: dict[str, dict[str, int]] = {}
+    generation_stats: dict[str, int] = {
+        "accepted": 0,
+        "provider_error": 0,
+        "output_contract_rejected": 0,
+        "preservation_rejected": 0,
+        "extractive_fallback": 0,
+        "verification_recovery_fallback": 0,
+    }
 
     articles: dict[str, object] = {}
     evidence: dict[str, object] = {}
@@ -260,6 +297,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if candidate.url in seen_urls:
                     continue
                 seen_urls.add(candidate.url)
+                source_group_key = _source_group_key(candidate)
+                if source_group_key in published_source_groups:
+                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=_domain(candidate.url), stage="source_identity", status="skip", reason="source_group_already_published"))
+                    continue
                 stats["acquisition_attempts"] += 1
                 domain = _domain(candidate.url)
 
@@ -271,6 +312,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
 
                 stats["acquired_articles"] += 1
                 article = acquired.article
+                content_sha256 = _content_fingerprint(article.body)
+                if content_sha256 in published_content_fingerprints:
+                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="source_identity", status="skip", reason="content_fingerprint_already_published"))
+                    continue
                 fresh = _is_fresh(article.provenance.published_at, now)
                 if fresh is not True:
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="freshness", status="skip", reason="published_at_missing" if fresh is None else "outside_72h_window"))
@@ -308,7 +353,6 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             # ambiguity resolves safely as separate events rather than blocking.
                             identity_resolved=True,
                         ),
-                        temporal_auxiliary=temporal_auxiliary,
                     )
                     if assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE:
                         continue
@@ -331,6 +375,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         primary_verifier=primary_verifier,
                         secondary_verifier=local_verifier,
                     )
+                    _record_generation_stats(entry_candidate, generation_stats)
                     if not entry_candidate.publishable:
                         verdicts = {
                             item.role.value: item.claim.verdict.value
@@ -339,7 +384,16 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
-                    published.append(PublishedCandidate(topic=topic, candidate=entry_candidate))
+                    published.append(
+                        PublishedCandidate(
+                            topic=topic,
+                            candidate=entry_candidate,
+                            source_group_key=source_group_key,
+                            content_sha256=content_sha256,
+                        )
+                    )
+                    published_source_groups.add(source_group_key)
+                    published_content_fingerprints.add(content_sha256)
                     stats["published_entries"] += 1
                     articles[article.article_id] = article
                     for item in semantic_result.evidence:
@@ -351,6 +405,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     for item in entry_candidate.verification.claims:
                         claims[item.claim.claim_id] = item.claim
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="publish_gate", status="pass"))
+                    break
 
     briefing_id = f"daily-{now.astimezone(KST).strftime('%Y%m%dT%H%M%S%z')}"
     rendered = build_rendered_briefing(
@@ -358,6 +413,23 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         generated_at=now.astimezone(KST),
         candidates=tuple(item.candidate for item in published),
     )
+
+    published_by_event = {
+        item.candidate.event_id: item
+        for item in published
+    }
+    rendered_sources: list[dict[str, str]] = []
+    for entry in rendered.entries:
+        source = published_by_event.get(entry.event_id)
+        if source is None:
+            raise AssertionError("rendered event lost production source provenance")
+        rendered_sources.append(
+            {
+                "event_id": entry.event_id,
+                "source_group_key": source.source_group_key,
+                "content_sha256": source.content_sha256,
+            }
+        )
 
     publish = bool(rendered.entries)
     html_sha256: str | None = None
@@ -400,9 +472,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "publish": publish,
         "topic_stats": topic_stats,
         "attempts": attempts,
+        "generation_stats": generation_stats,
+        "rendered_sources": rendered_sources,
         "provider_roles": {
             "generation": GROQ_20B,
-            "temporal_auxiliary": GROQ_120B,
             "primary_verifier": CLOUDFLARE_MODEL,
             "secondary_verifier": LOCAL_NLI_MODEL,
         },
