@@ -28,13 +28,41 @@ class CloudflareClaimVerifier:
         cls,
         *,
         transport: JsonHttpTransport | None = None,
+        gemini_transport: JsonHttpTransport | None = None,
         env: dict[str, str] | None = None,
-    ) -> "CloudflareClaimVerifier":
+    ):
+        """Build the logical primary-verifier slot with run-local failover state.
+
+        Cloudflare remains the first route. Gemini is added only when an explicit free-tier API key is
+        configured. The returned logical verifier keeps the frozen `cloudflare` verifier identity so
+        the two-slot verification policy is unchanged; only provider availability routing changes.
+        """
+
+        from .resilience import FailoverClaimVerifier
+
         source = dict(os.environ) if env is None else env
-        return cls(
+        cloudflare = cls(
             account_id=require_secret(source, "CLOUDFLARE_ACCOUNT_ID"),
             api_token=require_secret(source, "CLOUDFLARE_API_TOKEN"),
             transport=transport or JsonHttpTransport(),
+        )
+        routes: list[object] = [cloudflare]
+
+        # Lazy import avoids making Gemini a core import-time dependency of the provider package.
+        from .gemini import GeminiClaimVerifier, GeminiStructuredClient
+
+        if GeminiStructuredClient.configured(source):
+            routes.append(
+                GeminiClaimVerifier(
+                    GeminiStructuredClient.from_env(
+                        env=source,
+                        transport=gemini_transport,
+                    )
+                )
+            )
+        return FailoverClaimVerifier(
+            verifier_id=CLOUDFLARE_VERIFIER_ID,
+            routes=tuple(routes),
         )
 
     def verify(
