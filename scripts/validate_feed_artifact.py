@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from html.parser import HTMLParser
 from pathlib import Path
@@ -82,7 +83,55 @@ class FeedParser(HTMLParser):
             self._story[self._field] += data
 
 
-def validate_html(html: str) -> dict[str, object]:
+def _validate_source_audit(
+    stories: list[dict[str, str]],
+    source_audit: dict[str, object],
+) -> tuple[int, int]:
+    rendered_sources = source_audit.get("rendered_sources")
+    if not isinstance(rendered_sources, list):
+        raise ValueError("FEED_QUALITY_SOURCE_AUDIT_MISSING")
+
+    html_event_ids = [story["event_id"].strip() for story in stories]
+    audit_event_ids: list[str] = []
+    seen_source_groups: set[str] = set()
+    seen_content: set[str] = set()
+    duplicate_sources = 0
+    duplicate_source_content = 0
+
+    for index, item in enumerate(rendered_sources, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
+        event_id = str(item.get("event_id") or "").strip()
+        source_group_key = str(item.get("source_group_key") or "").strip()
+        content_sha256 = str(item.get("content_sha256") or "").strip()
+        if not event_id or not source_group_key or not content_sha256:
+            raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
+        audit_event_ids.append(event_id)
+        if source_group_key in seen_source_groups:
+            duplicate_sources += 1
+        else:
+            seen_source_groups.add(source_group_key)
+        if content_sha256 in seen_content:
+            duplicate_source_content += 1
+        else:
+            seen_content.add(content_sha256)
+
+    if html_event_ids != audit_event_ids:
+        raise ValueError("FEED_QUALITY_SOURCE_AUDIT_EVENT_MISMATCH")
+    if duplicate_sources:
+        raise ValueError(f"FEED_QUALITY_DUPLICATE_SOURCE:{duplicate_sources}")
+    if duplicate_source_content:
+        raise ValueError(
+            f"FEED_QUALITY_DUPLICATE_SOURCE_CONTENT:{duplicate_source_content}"
+        )
+    return duplicate_sources, duplicate_source_content
+
+
+def validate_html(
+    html: str,
+    *,
+    source_audit: dict[str, object] | None = None,
+) -> dict[str, object]:
     parser = FeedParser()
     parser.feed(html)
     stories = parser.stories
@@ -127,24 +176,41 @@ def validate_html(html: str) -> dict[str, object]:
     if psat_forbidden_hits:
         raise ValueError("FEED_QUALITY_PSAT_FALSE_POSITIVE:" + ",".join(sorted(set(psat_forbidden_hits))))
 
+    duplicate_sources = 0
+    duplicate_source_content = 0
+    if source_audit is not None:
+        duplicate_sources, duplicate_source_content = _validate_source_audit(
+            stories,
+            source_audit,
+        )
+
     return {
         "status": "PASS",
         "story_count": len(stories),
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
         "duplicate_content": duplicate_content,
+        "duplicate_sources": duplicate_sources,
+        "duplicate_source_content": duplicate_source_content,
         "psat_forbidden_hits": 0,
+        "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("html", type=Path)
+    parser.add_argument("--audit", type=Path)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
     html = args.html.read_text(encoding="utf-8")
-    report = validate_html(html)
+    source_audit = None
+    if args.audit is not None:
+        source_audit = json.loads(args.audit.read_text(encoding="utf-8"))
+        if not isinstance(source_audit, dict):
+            raise ValueError("FEED_QUALITY_SOURCE_AUDIT_INVALID_ROOT")
+    report = validate_html(html, source_audit=source_audit)
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
