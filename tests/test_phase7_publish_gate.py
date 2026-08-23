@@ -104,7 +104,7 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertTrue(result.event_retained)
 
     def test_explicit_generated_claim_rejection_gets_one_exact_fallback(self) -> None:
-        first = primary(False, False, True, True)
+        first = primary(False, False)
         second = secondary(True, True)
         result = produce_phase7_entry_candidate(
             request(),
@@ -119,41 +119,56 @@ class Phase7PublishGateTests(unittest.TestCase):
             result.verification_recovery_reason,
             VerificationRecoveryReason.GENERATED_CLAIM_REJECTED,
         )
+        self.assertEqual(first.calls, 2)
+        self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
 
     def test_indeterminate_verification_does_not_waste_generation_on_fallback(self) -> None:
+        first = primary(None, None)
+        second = secondary(True, True)
         result = produce_phase7_entry_candidate(
             request(),
             primary_generator=Generator(draft=generated()),
-            primary_verifier=primary(None, None),
-            secondary_verifier=secondary(True, True),
+            primary_verifier=first,
+            secondary_verifier=second,
         )
         self.assertFalse(result.publishable)
         self.assertIs(result.initial_generation, result.final_generation)
         self.assertIsNone(result.verification_recovery_reason)
+        self.assertEqual(first.calls, 2)
+        self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
 
-    def test_generation_failure_path_can_finish_in_exact_fallback_and_verify(self) -> None:
+    def test_generation_failure_path_finishes_in_exact_fallback_without_external_verifiers(self) -> None:
+        first = primary(False, False)
+        second = secondary(False, False)
         result = produce_phase7_entry_candidate(
             request(),
             primary_generator=Generator(error=RuntimeError("down")),
-            primary_verifier=primary(True, True),
-            secondary_verifier=secondary(True, True),
+            primary_verifier=first,
+            secondary_verifier=second,
         )
         self.assertTrue(result.publishable)
         self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertEqual(first.calls, 0)
+        self.assertEqual(second.calls, 0)
         self.assertIsNone(result.verification_recovery_reason)
         self.assertTrue(result.event_retained)
 
-    def test_rejected_exact_fallback_remains_unpublishable_but_event_is_retained(self) -> None:
+    def test_exact_fallback_after_generated_rejection_cannot_be_vetoed_by_provider_outage(self) -> None:
+        first = primary(False, False)
+        second = secondary(None, None)
         result = produce_phase7_entry_candidate(
             request(),
             primary_generator=Generator(draft=generated()),
-            primary_verifier=primary(False, False, False, False),
-            secondary_verifier=secondary(True, True),
+            primary_verifier=first,
+            secondary_verifier=second,
         )
-        self.assertFalse(result.publishable)
+        self.assertTrue(result.publishable)
         self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(first.calls, 2)
+        self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
 
 
