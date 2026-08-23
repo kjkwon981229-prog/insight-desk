@@ -105,6 +105,39 @@ class ProviderCircuit:
             self.retry_at = None
 
 
+@dataclass(frozen=True, slots=True)
+class UnavailableClaimVerifier:
+    """Explicit logical verifier slot with no configured external route.
+
+    This is infrastructure state, never a semantic rejection. It exists so callers can retain the
+    frozen logical verifier identity and deterministically downgrade generated prose when external
+    verification capacity is unavailable.
+    """
+
+    verifier_id: str
+    model_id: str = "unavailable"
+    error_code: str = "config_missing"
+
+    def verify(
+        self,
+        *,
+        check_id: str,
+        claim_text: str,
+        evidence_text: str,
+        evidence_ids: tuple[str, ...],
+    ) -> VerificationCheck:
+        del claim_text, evidence_text
+        return VerificationCheck(
+            check_id=check_id,
+            verifier_id=self.verifier_id,
+            model_id=self.model_id,
+            evidence_ids=evidence_ids,
+            entailed=None,
+            error_code=self.error_code,
+            zero_cost=True,
+        )
+
+
 @dataclass(slots=True)
 class FailoverClaimVerifier:
     """Present one logical verifier slot backed by ordered zero-cost routes.
