@@ -126,6 +126,40 @@ def _normalized_visible_text(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+def _fact_grounded_exact_headline(request: GenerationRequest, summary: str) -> str | None:
+    """Find a distinct headline that is still a literal substring of the cited fact sentence."""
+
+    summary_key = _normalized_visible_text(summary)
+    for fact_id in request.event.fact_ids:
+        fact = request.facts[fact_id]
+        action = fact.action.strip()
+        if not action:
+            continue
+        action_start = summary.find(action)
+        if action_start < 0:
+            continue
+        action_end = action_start + len(action)
+
+        subject = fact.subject.strip()
+        if subject:
+            subject_start = summary.rfind(subject, 0, action_start + 1)
+            if subject_start >= 0:
+                candidate = summary[subject_start:action_end].strip()
+                if (
+                    candidate
+                    and len(candidate) <= FALLBACK_HEADLINE_MAX_CHARS
+                    and _normalized_visible_text(candidate) != summary_key
+                ):
+                    return candidate
+
+        if (
+            len(action) <= FALLBACK_HEADLINE_MAX_CHARS
+            and _normalized_visible_text(action) != summary_key
+        ):
+            return action
+    return None
+
+
 class ExtractiveFallbackGenerator:
     """Zero-generation fallback using bounded exact-source excerpts."""
 
@@ -171,9 +205,12 @@ class ExtractiveFallbackGenerator:
         if not summary:
             raise ExtractiveFallbackUnavailable("exact-source fallback summary is empty")
         if _normalized_visible_text(headline) == _normalized_visible_text(summary):
-            raise ExtractiveFallbackUnavailable(
-                "exact-source fallback cannot reuse the same excerpt as headline and summary"
-            )
+            grounded_headline = _fact_grounded_exact_headline(request, summary)
+            if grounded_headline is None:
+                raise ExtractiveFallbackUnavailable(
+                    "exact-source fallback cannot form distinct headline and summary excerpts"
+                )
+            headline = grounded_headline
 
         return GeneratedDraft(
             event_id=request.event.event_id,

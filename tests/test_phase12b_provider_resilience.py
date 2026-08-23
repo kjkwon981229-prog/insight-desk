@@ -23,6 +23,7 @@ from insight_desk.providers.transport import JsonHttpTransport, ProviderTranspor
 
 
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+FALLBACK_HEADLINE = "AI 공장 구축 사업을 15억달러에 수주했다"
 
 
 def request() -> GenerationRequest:
@@ -37,7 +38,7 @@ def request() -> GenerationRequest:
     fact = EventFact(
         fact_id="fact:phase12b",
         subject="네오팩토리",
-        action="AI 공장 구축 사업을 15억달러에 수주했다",
+        action=FALLBACK_HEADLINE,
         object="AI 공장 구축 사업",
         evidence_ids=(span.evidence_id,),
     )
@@ -250,8 +251,9 @@ class Phase12BExactSourceFallbackTests(unittest.TestCase):
             secondary_verifier=secondary,
         )
         self.assertTrue(result.publishable)
-        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.headline, FALLBACK_HEADLINE)
         self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertIn(result.final_generation.draft.headline, TEXT)
         self.assertEqual(primary.calls, 0)
         self.assertEqual(secondary.calls, 0)
         self.assertTrue(

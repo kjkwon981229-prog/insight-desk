@@ -101,10 +101,15 @@ class Phase7GenerationRecoveryTests(unittest.TestCase):
         self.assertEqual(alternate.calls, 1)
         self.assertEqual(result.attempts[-1].kind, GenerationAttemptKind.ALTERNATE)
 
-    def test_single_exact_excerpt_fails_closed_instead_of_repeating_visible_fields(self) -> None:
+    def test_single_exact_excerpt_uses_distinct_fact_grounded_headline(self) -> None:
         primary = SequenceGenerator([RuntimeError("a"), RuntimeError("b")])
-        with self.assertRaises(GenerationContractError):
-            generate_with_recovery(request(), primary=primary)
+        result = generate_with_recovery(request(), primary=primary)
+        self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
+        self.assertEqual(result.draft.headline, "AI 공장 구축 사업을 15억달러에 수주했다")
+        self.assertEqual(result.draft.summary, TEXT)
+        self.assertNotEqual(result.draft.headline, result.draft.summary)
+        self.assertIn(result.draft.headline, TEXT)
+        self.assertTrue(result.preservation.accepted)
 
     def test_live_106_char_complete_sentence_is_not_cut_at_legacy_96_limit(self) -> None:
         headline = (

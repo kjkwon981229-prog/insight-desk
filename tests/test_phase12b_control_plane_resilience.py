@@ -23,6 +23,7 @@ from insight_desk.providers.transport import ProviderConfigError
 
 
 TEXT = "정부는 9월 3일부터 새 제도를 시행한다고 밝혔다."
+FALLBACK_HEADLINE = "9월 3일부터 새 제도를 시행한다고 밝혔다"
 
 
 def request() -> GenerationRequest:
@@ -37,7 +38,7 @@ def request() -> GenerationRequest:
     fact = EventFact(
         fact_id="fact:control-plane",
         subject="정부",
-        action="9월 3일부터 새 제도를 시행한다고 밝혔다",
+        action=FALLBACK_HEADLINE,
         evidence_ids=(span.evidence_id,),
     )
     event = CandidateEvent(
@@ -105,8 +106,9 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
     def test_generation_without_any_provider_uses_exact_source(self) -> None:
         result = generate_with_recovery(request(), primary=None, alternate=None)
         self.assertEqual(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
-        self.assertEqual(result.draft.headline, TEXT)
+        self.assertEqual(result.draft.headline, FALLBACK_HEADLINE)
         self.assertEqual(result.draft.summary, TEXT)
+        self.assertIn(result.draft.headline, TEXT)
 
     def test_groq_configuration_is_optional_and_detectable(self) -> None:
         self.assertFalse(GroqFreeClient.configured({}, model_id=GROQ_20B))
@@ -168,6 +170,8 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
 
         self.assertTrue(result.publishable)
         self.assertEqual(result.final_generation.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
+        self.assertEqual(result.final_generation.draft.headline, FALLBACK_HEADLINE)
+        self.assertEqual(result.final_generation.draft.summary, TEXT)
         self.assertEqual(
             result.verification_recovery_reason,
             VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE,

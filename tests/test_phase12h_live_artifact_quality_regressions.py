@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import unittest
 
 from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
+from insight_desk.generation import GenerationRequest
+from insight_desk.generation_pipeline import ExtractiveFallbackGenerator
 from insight_desk.semantic.material import MaterialEventReason, MaterialEventVerdict, assess_material_event
 from scripts.validate_feed_artifact import validate_html
 
@@ -60,7 +62,55 @@ def _material_assessment(text: str, *, subject: str, action: str):
     )
 
 
+def _fallback_request(text: str, *, subject: str, action: str) -> GenerationRequest:
+    span = EvidenceSpan(
+        evidence_id="ev:live-fallback",
+        article_id="article:live-fallback",
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(text),
+        text=text,
+    )
+    fact = EventFact(
+        fact_id="fact:live-fallback",
+        subject=subject,
+        action=action,
+        evidence_ids=(span.evidence_id,),
+    )
+    event = CandidateEvent(
+        event_id="event:live-fallback",
+        topic_id="kbo_hanwha",
+        fact_ids=(fact.fact_id,),
+        article_ids=(span.article_id,),
+    )
+    return GenerationRequest(
+        event=event,
+        facts={fact.fact_id: fact},
+        evidence={span.evidence_id: span},
+    )
+
+
 class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
+    def test_live_single_sentence_fallback_forms_distinct_exact_headline(self) -> None:
+        sentence = (
+            "이어 2사 2,3루에서 문정빈이 한화 선발 박준영의 초구 포크볼(135km)을 때려 "
+            "좌월 3점 홈런(시즌 15호)을 터뜨렸다."
+        )
+        action = (
+            "한화 선발 박준영의 초구 포크볼(135km)을 때려 "
+            "좌월 3점 홈런(시즌 15호)을 터뜨렸다"
+        )
+        draft = ExtractiveFallbackGenerator().generate(
+            _fallback_request(sentence, subject="문정빈", action=action)
+        )
+        self.assertEqual(
+            draft.headline,
+            "문정빈이 한화 선발 박준영의 초구 포크볼(135km)을 때려 좌월 3점 홈런(시즌 15호)을 터뜨렸다",
+        )
+        self.assertEqual(draft.summary, sentence)
+        self.assertNotEqual(draft.headline, draft.summary)
+        self.assertIn(draft.headline, sentence)
+
     def test_same_card_headline_summary_collision_fails_product_gate(self) -> None:
         sentence = (
             "이어 2사 2,3루에서 문정빈이 한화 선발 박준영의 초구 포크볼(135km)을 때려 "

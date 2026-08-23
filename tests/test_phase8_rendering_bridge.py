@@ -27,6 +27,7 @@ from insight_desk.rendering import (
 
 
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+FALLBACK_HEADLINE = "AI 공장 구축 사업을 15억달러에 수주했다"
 
 
 def request(event_id: str = "event:phase8") -> GenerationRequest:
@@ -41,7 +42,7 @@ def request(event_id: str = "event:phase8") -> GenerationRequest:
     fact = EventFact(
         fact_id=f"fact:{event_id}",
         subject="네오팩토리",
-        action="AI 공장 구축 사업을 15억달러에 수주했다",
+        action=FALLBACK_HEADLINE,
         object="AI 공장 구축 사업",
         evidence_ids=(span.evidence_id,),
     )
@@ -205,8 +206,9 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         entry = render_phase7_candidate(item)
         assert entry is not None
         self.assertIs(entry.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
-        self.assertEqual(entry.headline, TEXT)
+        self.assertEqual(entry.headline, FALLBACK_HEADLINE)
         self.assertEqual(entry.summary, TEXT)
+        self.assertIn(entry.headline, TEXT)
 
     def test_feed_size_gate_omits_oversized_verified_text_item_locally(self) -> None:
         self.assertFalse(

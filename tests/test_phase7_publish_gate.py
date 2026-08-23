@@ -11,6 +11,7 @@ from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
 
 
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+FALLBACK_HEADLINE = "AI 공장 구축 사업을 15억달러에 수주했다"
 
 
 def request(text: str = TEXT) -> GenerationRequest:
@@ -25,7 +26,7 @@ def request(text: str = TEXT) -> GenerationRequest:
     fact = EventFact(
         fact_id="fact:phase7-final",
         subject="네오팩토리",
-        action="AI 공장 구축 사업을 15억달러에 수주했다",
+        action=FALLBACK_HEADLINE,
         object="AI 공장 구축 사업",
         evidence_ids=(span.evidence_id,),
     )
@@ -135,8 +136,9 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertTrue(result.publishable)
-        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.headline, FALLBACK_HEADLINE)
         self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertIn(result.final_generation.draft.headline, TEXT)
         self.assertIs(
             result.verification_recovery_reason,
             VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE,
@@ -192,8 +194,9 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertTrue(result.publishable)
-        self.assertEqual(result.final_generation.draft.headline, TEXT)
+        self.assertEqual(result.final_generation.draft.headline, FALLBACK_HEADLINE)
         self.assertEqual(result.final_generation.draft.summary, TEXT)
+        self.assertIn(result.final_generation.draft.headline, TEXT)
         self.assertEqual(first.calls, 0)
         self.assertEqual(second.calls, 0)
         self.assertIsNone(result.verification_recovery_reason)
