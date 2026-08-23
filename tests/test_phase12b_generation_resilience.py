@@ -100,13 +100,12 @@ class Phase12BGenerationCircuitTests(unittest.TestCase):
         self.assertEqual(result.draft.headline, TEXT)
         self.assertEqual(result.attempts[0].error_code, "rate_limited:429")
 
-    def test_production_wires_optional_gemini_alternate_without_removing_exact_fallback(self) -> None:
-        source = Path("scripts/phase11_daily_production.py").read_text(encoding="utf-8")
+    def test_recovery_layer_wires_optional_gemini_without_removing_exact_fallback(self) -> None:
+        source = Path("insight_desk/generation_pipeline.py").read_text(encoding="utf-8")
         self.assertIn("GeminiStructuredClient.configured()", source)
         self.assertIn("GeminiBriefingGenerator", source)
-        self.assertIn("alternate_generator=alternate_generator", source)
-        fallback_source = Path("insight_desk/generation_pipeline.py").read_text(encoding="utf-8")
-        self.assertIn("ExtractiveFallbackGenerator().generate(request)", fallback_source)
+        self.assertIn("_configured_zero_cost_alternate", source)
+        self.assertIn("ExtractiveFallbackGenerator().generate(request)", source)
 
 
 if __name__ == "__main__":
