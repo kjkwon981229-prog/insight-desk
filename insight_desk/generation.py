@@ -56,7 +56,18 @@ class GenerationRequest:
 
     @property
     def evidence_text(self) -> str:
-        return "\n\n".join(self.evidence[evidence_id].text for evidence_id in self.evidence_ids)
+        return self.evidence_text_for(self.evidence_ids)
+
+    def evidence_text_for(self, evidence_ids: tuple[str, ...]) -> str:
+        allowed = set(self.evidence_ids)
+        parts: list[str] = []
+        for evidence_id in evidence_ids:
+            if evidence_id not in allowed:
+                raise GenerationContractError(
+                    f"requested generation evidence is outside event facts: {evidence_id}"
+                )
+            parts.append(self.evidence[evidence_id].text)
+        return "\n\n".join(parts)
 
     @property
     def fact_text(self) -> str:
@@ -242,7 +253,11 @@ def _number_atoms(text: str) -> tuple[str, ...]:
 def _quoted_atoms(text: str) -> tuple[str, ...]:
     values: set[str] = set()
     for pattern in _QUOTE_PATTERNS:
-        values.update(match.group(1).strip() for match in pattern.finditer(text) if match.group(1).strip())
+        values.update(
+            match.group(1).strip()
+            for match in pattern.finditer(text)
+            if match.group(1).strip()
+        )
     return tuple(sorted(values))
 
 
@@ -265,13 +280,16 @@ def validate_preservation(
         )
 
     allowed_evidence = set(request.evidence_ids)
+    known_citations: list[str] = []
     for evidence_id in draft.evidence_ids:
         if evidence_id not in allowed_evidence:
             issues.append(
                 PreservationIssue(PreservationIssueCode.UNKNOWN_EVIDENCE, evidence_id)
             )
+        else:
+            known_citations.append(evidence_id)
 
-    source = request.evidence_text
+    source = request.evidence_text_for(tuple(known_citations)) if known_citations else ""
     generated = draft.combined_text
 
     source_dates = set(_date_atoms(source))
