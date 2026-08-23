@@ -11,6 +11,9 @@ _NOUN_TAGS = {"SL", "SN"}
 _TOPIC_SURFACES = {"은", "는"}
 _TRAILING_PUNCTUATION = " \t\r\n.!?…"
 _SENTENCE_TERMINALS = frozenset(".!?…")
+# This is deliberately tiny: each nominal structure must come from a measured locked failure.
+# It is not a general headline/event-type vocabulary.
+_EXPLICIT_NOMINAL_ACTIONS = ("선발투수 예고",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +21,13 @@ class _CasePhrase:
     text: str
     start: int
     marker_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class _LiteralFactParts:
+    subject: str
+    action: str
+    object: str | None
 
 
 def _is_noun_like(token: MorphologyToken) -> bool:
@@ -96,6 +106,34 @@ def _object_candidate(
     return objects[-1].text
 
 
+def _predicate_fact_parts(
+    text: str,
+    tokens: tuple[MorphologyToken, ...],
+) -> _LiteralFactParts | None:
+    subject = _subject_candidate(text, tokens)
+    if subject is None or not _has_predicate_after(tokens, subject.marker_end):
+        return None
+    action = text[subject.marker_end:].strip().rstrip(_TRAILING_PUNCTUATION).strip()
+    if not action:
+        return None
+    object_text = _object_candidate(text, tokens, after=subject.marker_end)
+    return _LiteralFactParts(subject.text, action, object_text)
+
+
+def _nominal_fact_parts(text: str) -> _LiteralFactParts | None:
+    clean = text.strip().rstrip(_TRAILING_PUNCTUATION).strip()
+    for action in _EXPLICIT_NOMINAL_ACTIONS:
+        if not clean.endswith(action):
+            continue
+        subject = clean[: -len(action)].strip()
+        if not subject:
+            return None
+        # Preserve the full pre-action source surface. This intentionally keeps venue/team/player
+        # names instead of trying to guess entity roles without an NER authority.
+        return _LiteralFactParts(subject=subject, action=action, object=None)
+    return None
+
+
 def _left_source_boundary_is_safe(source: str, start: int) -> bool:
     if start <= 0:
         return True
@@ -123,17 +161,19 @@ def _right_source_boundary_is_safe(source: str, end: int) -> bool:
 class KiwiDeterministicFactExtractor:
     """High-precision, local FactExtractorPort implementation.
 
-    It emits a draft only when one complete source sentence exposes exactly one safe subject/topic
-    candidate and an explicit Korean verbal predicate after that subject. ``action`` is deliberately
-    the exact source clause after the subject marker, not a generated paraphrase or lemma. This
-    preserves modifiers, amounts, quoted/prospective language and secondary predicates for later
-    evidence validation.
+    Normal prose requires one complete source sentence with exactly one safe subject/topic candidate
+    and an explicit Korean verbal predicate. ``action`` remains the exact source clause rather than a
+    paraphrase or lemma, preserving modifiers, amounts, quoted/prospective language and secondary
+    predicates.
+
+    A deliberately tiny nominal fallback exists only for measured locked failures whose structure is
+    itself explicit (currently ``선발투수 예고``). It preserves the full source prefix instead of
+    inventing team/player roles. It must not grow into a generic event-type dictionary.
 
     Evidence windows may be cut at a whitespace boundary by ``EvidenceSegmenter``. Leading or
-    trailing sentence fragments that touch such an unsafe cut are skipped rather than interpreted as
-    standalone facts. Unsupported/ambiguous sentences likewise emit no draft. This is a
-    precision-first extractor, not an NER system, material-event authority, identity authority, or
-    publication verifier.
+    trailing sentence fragments that touch such an unsafe cut are skipped. Unsupported/ambiguous
+    sentences likewise emit no draft. This extractor is not an NER system, material-event authority,
+    identity authority, or publication verifier.
     """
 
     extractor_id = "kiwi-deterministic-v1"
@@ -155,25 +195,16 @@ class KiwiDeterministicFactExtractor:
 
                 text = sentence.text
                 tokens = self._kiwi.analyze(text)
-                subject = _subject_candidate(text, tokens)
-                if subject is None:
-                    continue
-                if not _has_predicate_after(tokens, subject.marker_end):
+                parts = _predicate_fact_parts(text, tokens)
+                if parts is None:
+                    parts = _nominal_fact_parts(text)
+                if parts is None:
                     continue
 
-                action = text[subject.marker_end:].strip().rstrip(_TRAILING_PUNCTUATION).strip()
-                if not action:
-                    continue
                 # Exact-source containment is a hard contract for this extractor.
-                if subject.text not in text or action not in text:
+                if parts.subject not in text or parts.action not in text:
                     raise ValueError("Kiwi deterministic extractor lost exact source surface")
-
-                object_text = _object_candidate(
-                    text,
-                    tokens,
-                    after=subject.marker_end,
-                )
-                if object_text is not None and object_text not in text:
+                if parts.object is not None and parts.object not in text:
                     raise ValueError("Kiwi deterministic extractor object lost source surface")
 
                 digest = hashlib.sha256(
@@ -182,9 +213,9 @@ class KiwiDeterministicFactExtractor:
                 drafts.append(
                     FactDraft(
                         draft_id=f"kiwi:{digest}",
-                        subject=subject.text,
-                        action=action,
-                        object=object_text,
+                        subject=parts.subject,
+                        action=parts.action,
+                        object=parts.object,
                         evidence_ids=(evidence.evidence_id,),
                     )
                 )
