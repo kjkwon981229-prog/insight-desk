@@ -13,6 +13,7 @@ on:
       - 'tests/test_semantic_tooling_contracts.py'
       - 'tests/test_kiwi_deterministic_extractor.py'
       - 'tests/test_material_event_assessment.py'
+      - 'tests/test_semantic_properties.py'
       - 'scripts/phase6_kss_fact_scaffold_canary.py'
       - '.github/workflows/semantic-local-tools.yml'
 
@@ -32,14 +33,17 @@ jobs:
         with:
           python-version: '3.12.10'
 
-      - name: Install audited local semantic helpers
-        run: python -m pip install --disable-pip-version-check '.[semantic-local]'
+      - name: Install audited local semantic helpers and QA only
+        run: python -m pip install --disable-pip-version-check '.[semantic-local,qa]'
 
       - name: Run semantic helper regressions
         run: |
           python -m unittest tests.test_semantic_tooling_contracts
           python -m unittest tests.test_kiwi_deterministic_extractor
           python -m unittest tests.test_material_event_assessment
+
+      - name: Run property-based source-preservation QA
+        run: python -m unittest tests.test_semantic_properties
 
       - name: Run bounded Kiwi fact-scaffold diagnostic
         env:
