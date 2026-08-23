@@ -98,6 +98,8 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=primary(True, True),
             secondary_verifier=secondary(True, True),
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertTrue(result.publishable)
         self.assertIs(result.initial_generation, result.final_generation)
         self.assertIsNone(result.verification_recovery_reason)
@@ -112,6 +114,8 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertFalse(result.publishable)
         self.assertIs(result.initial_generation, result.final_generation)
         self.assertIsNone(result.verification_recovery_reason)
@@ -128,6 +132,8 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertTrue(result.publishable)
         self.assertEqual(result.final_generation.draft.headline, TEXT)
         self.assertEqual(result.final_generation.draft.summary, TEXT)
@@ -150,10 +156,26 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertFalse(result.publishable)
         self.assertIs(result.initial_generation, result.final_generation)
         self.assertIsNone(result.verification_recovery_reason)
         self.assertTrue(result.event_retained)
+
+    def test_generation_failure_with_unsafe_exact_source_returns_no_item_candidate(self) -> None:
+        long_text = "네오팩토리가 " + ("초장문근거문장" * 24) + " 사업을 수주했다."
+        first = primary(False, False)
+        second = secondary(False, False)
+        result = produce_phase7_entry_candidate(
+            request(long_text),
+            primary_generator=Generator(error=RuntimeError("down")),
+            primary_verifier=first,
+            secondary_verifier=second,
+        )
+        self.assertIsNone(result)
+        self.assertEqual(first.calls, 0)
+        self.assertEqual(second.calls, 0)
 
     def test_generation_failure_path_finishes_in_exact_fallback_without_external_verifiers(self) -> None:
         first = primary(False, False)
@@ -164,6 +186,8 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertTrue(result.publishable)
         self.assertEqual(result.final_generation.draft.headline, TEXT)
         self.assertEqual(result.final_generation.draft.summary, TEXT)
@@ -181,6 +205,8 @@ class Phase7PublishGateTests(unittest.TestCase):
             primary_verifier=first,
             secondary_verifier=second,
         )
+        self.assertIsNotNone(result)
+        assert result is not None
         self.assertFalse(result.publishable)
         self.assertIs(result.initial_generation, result.final_generation)
         self.assertEqual(first.calls, 2)
