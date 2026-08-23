@@ -67,7 +67,6 @@ class PwaRuntimeConfig:
         object.__setattr__(self, "push_worker_url", value)
 
 
-
 def build_briefing_view_model(
     briefing: RenderedBriefing,
     *,
@@ -133,7 +132,7 @@ def _push_html(config: PwaRuntimeConfig) -> tuple[str, str, str]:
         return "", "", ""
     worker_url = escape(config.push_worker_url, quote=True)
     head_meta = f'<meta name="insight-desk-push-worker-url" content="{worker_url}">'
-    section = '''<section class="push-settings" data-push-settings data-push-service-worker-url="assets/push-sw.js">
+    section = '''<section class="push-settings" data-push-settings data-push-service-worker-url="push-sw.js">
     <div>
       <span class="eyebrow">웹 알림</span>
       <h2>브리핑 상태 알림</h2>
@@ -157,7 +156,8 @@ def render_briefing_html(
     """Render a production briefing using locked assets without manufacturing missing UI facts.
 
     The PWA manifest is always linked. Push controls are emitted only when an explicit HTTPS Worker
-    URL is configured; otherwise no broken or misleading notification UI is shown.
+    URL is configured; otherwise no broken or misleading notification UI is shown. The notification
+    service worker is served from the Pages root so its `./` scope is valid without special headers.
     """
 
     runtime_config = runtime or PwaRuntimeConfig()
