@@ -20,6 +20,9 @@ semantic-local = [
   "kiwipiepy==0.23.2",
   "RapidFuzz==3.14.5",
 ]
+qa = [
+  "hypothesis==6.165.2",
+]
 dev = [
   "pytest==8.4.1",
   "ruff==0.12.8",
