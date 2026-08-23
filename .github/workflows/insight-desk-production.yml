@@ -24,7 +24,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pr_live_gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run_live: ${{ steps.gate.outputs.run_live }}
+    steps:
+      - name: Checkout exact PR head for preflight gate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Require explicit production-preflight marker
+        id: gate
+        shell: bash
+        run: |
+          message="$(git log -1 --format=%B)"
+          if grep -Fq '[production-preflight]' <<<"$message"; then
+            echo "run_live=true" >> "$GITHUB_OUTPUT"
+            echo "PR live production explicitly requested for this exact head."
+          else
+            echo "run_live=false" >> "$GITHUB_OUTPUT"
+            echo "PR live production skipped: current head is not an explicit production-preflight candidate."
+          fi
+
   build:
+    needs: [pr_live_gate]
+    if: always() && (github.event_name != 'pull_request' || needs.pr_live_gate.outputs.run_live == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -44,6 +73,8 @@ jobs:
     steps:
       - name: Checkout current production candidate
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
