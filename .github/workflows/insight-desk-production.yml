@@ -159,6 +159,15 @@ jobs:
             build/production-audit.json
           if-no-files-found: error
 
+      - name: Upload PR site preflight
+        if: github.event_name == 'pull_request' && steps.state.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-site-preflight-${{ github.run_id }}
+          path: build/site
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Fail closed when no publishable briefing exists
         if: steps.state.outputs.publish != 'true'
         run: |
