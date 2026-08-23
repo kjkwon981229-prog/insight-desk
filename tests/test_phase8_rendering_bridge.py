@@ -146,6 +146,25 @@ def candidate(
     )
 
 
+def verified_variant(event_id: str, *, headline: str, summary: str) -> Phase7EntryCandidate:
+    """Build a renderer fixture that is already verified upstream, without rerunning preservation."""
+
+    base = candidate(event_id)
+    draft = replace(base.final_generation.draft, headline=headline, summary=summary)
+    generation = replace(base.final_generation, draft=draft)
+    claim_results = []
+    for item in base.verification.claims:
+        text = headline if item.role.value == "headline" else summary
+        claim_results.append(replace(item, claim=replace(item.claim, text=text)))
+    verification = replace(base.verification, claims=tuple(claim_results))
+    return replace(
+        base,
+        initial_generation=generation,
+        final_generation=generation,
+        verification=verification,
+    )
+
+
 class Phase8RenderingBridgeTests(unittest.TestCase):
     def test_supported_candidate_renders_only_verified_contract_fields(self) -> None:
         item = candidate()
@@ -214,12 +233,12 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-a"])
 
     def test_same_normalized_headline_with_variant_summaries_renders_once(self) -> None:
-        first = candidate(
+        first = verified_variant(
             "event:rate-a",
             headline="27일 한국은행 기준금리 결정 주목",
             summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠리고 있습니다.",
         )
-        second = candidate(
+        second = verified_variant(
             "event:rate-b",
             headline=" 27일   한국은행 기준금리 결정 주목 ",
             summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
@@ -232,12 +251,12 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         self.assertEqual([entry.event_id for entry in briefing.entries], ["event:rate-a"])
 
     def test_same_summary_with_distinct_headlines_remains_separate(self) -> None:
-        first = candidate(
+        first = verified_variant(
             "event:distinct-a",
             headline="한국은행 기준금리 결정",
             summary="같은 시장 요약 문구입니다.",
         )
-        second = candidate(
+        second = verified_variant(
             "event:distinct-b",
             headline="코스피 장중 상승",
             summary="같은 시장 요약 문구입니다.",
