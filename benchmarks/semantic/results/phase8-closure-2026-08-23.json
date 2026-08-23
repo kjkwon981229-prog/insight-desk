@@ -1,0 +1,44 @@
+{
+  "record_id": "phase8-closure-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 8,
+  "status": "COMPLETE",
+  "branch": "phase4-core-contracts",
+  "head_sha": "352a900ecc13ba748ab85db880609bab9f70b30e",
+  "implemented": {
+    "verified_rendering_bridge": "Phase7EntryCandidate -> RenderedEntry/RenderedBriefing; unpublishable items omitted item-locally",
+    "verified_text_lock": "rendered headline and summary must exactly match SUPPORTED verified claims",
+    "view_model": "RenderedBriefing -> StoryViewModel/BriefingViewModel with optional explicit topic only",
+    "locked_shell_html": "verified headline/summary rendered through the preserved CSS structure without manufacturing unsupported slots",
+    "unsupported_ui_slots_omitted": [
+      "confidence",
+      "key facts",
+      "history",
+      "watch-next",
+      "trend",
+      "source labels not present in the renderer contract"
+    ],
+    "html_safety": "all rendered content and ids escaped",
+    "pwa_manifest": "manifest.webmanifest linked from production briefing HTML",
+    "push_client": "existing assets/js/push.js wired only when an explicit HTTPS Worker URL is configured",
+    "push_service_worker": "notification-only worker available at root push-sw.js for valid Pages root scope; preserved assets/push-sw.js retained and parity-tested",
+    "push_message_scope": "READY/FAILURE status only; article text is not a push payload",
+    "end_to_end_regression": "Phase7 candidate -> strict renderer -> view model -> HTML -> optional PWA/push wiring"
+  },
+  "preserved_boundaries": {
+    "renderer_may_manufacture_missing_fact": false,
+    "unpublishable_item_global_abort": false,
+    "provider_or_model_role_changed": false,
+    "phase6_changed": false,
+    "locked_css_changed": false,
+    "paid_path_added": false
+  },
+  "deferred_by_phase_contract": {
+    "worker_deployment_and_secrets": "Phase 11 production restore",
+    "pages_production_workflow_activation": "Phase 11 production restore",
+    "push_send_workflow_trigger": "Phase 11 production restore after Worker URL/token configuration",
+    "full_regression_campaign": "Phase 9",
+    "fresh_live_canary": "Phase 10"
+  },
+  "phase9_entry_condition_satisfied": true
+}
