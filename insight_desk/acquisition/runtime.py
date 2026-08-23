@@ -56,6 +56,54 @@ def extract_page_title(html: str) -> str | None:
     return parser.best_title()
 
 
+class _ArticleMainParser(HTMLParser):
+    """Conservative stdlib fallback that reads text only from article/main containers."""
+
+    _TARGET_TAGS = {"article", "main"}
+    _SKIP_TAGS = {"script", "style", "nav", "aside", "form", "noscript", "svg"}
+    _BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "li", "blockquote", "section", "div", "br"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._target_depth = 0
+        self._skip_depth = 0
+        self._chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        lowered = tag.lower()
+        if lowered in self._TARGET_TAGS:
+            self._target_depth += 1
+        if self._target_depth > 0 and lowered in self._SKIP_TAGS:
+            self._skip_depth += 1
+        if self._target_depth > 0 and self._skip_depth == 0 and lowered in self._BLOCK_TAGS:
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        lowered = tag.lower()
+        if self._target_depth > 0 and self._skip_depth == 0 and lowered in self._BLOCK_TAGS:
+            self._chunks.append("\n")
+        if self._target_depth > 0 and lowered in self._SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+        if lowered in self._TARGET_TAGS and self._target_depth > 0:
+            self._target_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._target_depth > 0 and self._skip_depth == 0:
+            text = data.strip()
+            if text:
+                self._chunks.append(text)
+                self._chunks.append(" ")
+
+    def text(self) -> str:
+        lines: list[str] = []
+        for line in "".join(self._chunks).splitlines():
+            normalized = " ".join(line.split())
+            if normalized:
+                lines.append(normalized)
+        return "\n".join(lines)
+
+
 class UrlLibHtmlFetcher:
     method_id = "http"
 
@@ -131,6 +179,28 @@ class TrafilaturaExtractor:
             raise AcquisitionError(FailureKind.EXTRACTION_EMPTY, f"trafilatura failed: {type(exc).__name__}") from exc
         return ExtractedArticle(
             body=body if isinstance(body, str) else "",
+            page_title=extract_page_title(html),
+        )
+
+
+class ArticleMainTextExtractor:
+    """Independent deterministic fallback for explicit HTML article/main content."""
+
+    method_id = "html-article-main"
+
+    def extract(self, html: str, *, url: str) -> ExtractedArticle:
+        del url
+        parser = _ArticleMainParser()
+        try:
+            parser.feed(html)
+            parser.close()
+        except Exception as exc:
+            raise AcquisitionError(
+                FailureKind.EXTRACTION_EMPTY,
+                f"article/main HTML parse failed: {type(exc).__name__}",
+            ) from exc
+        return ExtractedArticle(
+            body=parser.text(),
             page_title=extract_page_title(html),
         )
 
