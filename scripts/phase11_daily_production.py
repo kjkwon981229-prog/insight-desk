@@ -258,6 +258,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "preservation_rejected": 0,
         "extractive_fallback": 0,
         "verification_recovery_fallback": 0,
+        "extractive_fallback_unavailable": 0,
     }
 
     articles: dict[str, object] = {}
@@ -400,6 +401,20 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         primary_verifier=primary_verifier,
                         secondary_verifier=local_verifier,
                     )
+                    if entry_candidate is None:
+                        generation_stats["extractive_fallback_unavailable"] += 1
+                        attempts.append(
+                            _attempt(
+                                topic=topic.topic_id,
+                                query=query,
+                                domain=domain,
+                                stage="generation",
+                                status="skip",
+                                reason="extractive_fallback_unavailable",
+                            )
+                        )
+                        continue
+
                     _record_generation_stats(entry_candidate, generation_stats)
                     if not entry_candidate.publishable:
                         verdicts = {
@@ -483,6 +498,12 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 "event_id": entry.event_id,
                 "source_group_key": source.source_group_key,
                 "content_sha256": source.content_sha256,
+                "render_mode": source.candidate.final_generation.render_mode.value,
+                "verification_recovery_reason": (
+                    source.candidate.verification_recovery_reason.value
+                    if source.candidate.verification_recovery_reason is not None
+                    else ""
+                ),
             }
         )
 
