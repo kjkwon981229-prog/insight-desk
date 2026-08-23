@@ -28,7 +28,12 @@ from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimV
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 from insight_desk.rendering import build_rendered_briefing
-from insight_desk.semantic import KiwiDeterministicFactExtractor, Phase6EventEngine, Phase6SelectionContext, SemanticPipeline
+from insight_desk.semantic import (
+    Phase6EventEngine,
+    Phase6SelectionContext,
+    SemanticPipeline,
+    build_resilient_fact_extractor,
+)
 from insight_desk.semantic.material import MaterialEventVerdict, assess_material_event
 from insight_desk.ui import PwaRuntimeConfig, build_briefing_view_model, render_briefing_html
 
@@ -195,9 +200,13 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         fallback_renderer=PlaywrightHtmlRenderer(timeout_ms=20_000),
     )
     semantic = SemanticPipeline()
-    extractor = KiwiDeterministicFactExtractor()
+    extractor = build_resilient_fact_extractor()
     phase6 = Phase6EventEngine()
-    generator = Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B))
+    generator = (
+        Groq20BBriefingGenerator(GroqFreeClient.from_env(GROQ_20B))
+        if GroqFreeClient.configured(model_id=GROQ_20B)
+        else None
+    )
     primary_verifier = CloudflareClaimVerifier.from_env()
     local_verifier: LocalNliVerifier | None = None
 
@@ -441,6 +450,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             "generation": GROQ_20B,
             "primary_verifier": CLOUDFLARE_MODEL,
             "secondary_verifier": LOCAL_NLI_MODEL,
+            "groq_configured": generator is not None,
         },
         "paid_paths": 0,
         "article_body_logged": False,
