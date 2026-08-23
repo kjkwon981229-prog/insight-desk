@@ -243,6 +243,16 @@ def _should_skip_immediate_primary_retry(attempt: GenerationAttempt) -> bool:
     return code.startswith("rate_limited:") or code.startswith("free_quota_exhausted:")
 
 
+def _configured_zero_cost_alternate() -> DraftGenerator | None:
+    """Return the configured independent Gemini route without making a provider call."""
+
+    from insight_desk.providers.gemini import GeminiBriefingGenerator, GeminiStructuredClient
+
+    if not GeminiStructuredClient.configured():
+        return None
+    return GeminiBriefingGenerator(GeminiStructuredClient.from_env())
+
+
 def generate_with_recovery(
     request: GenerationRequest,
     *,
@@ -251,9 +261,10 @@ def generate_with_recovery(
 ) -> GenerationRecoveryResult:
     """Apply zero-cost recovery: primary → bounded retry → alternate → exact source.
 
-    Rate-limit or quota evidence suppresses an immediate primary retry. The provider's run-local
-    circuit remains authoritative across later events. No paid path exists, and deterministic exact
-    source remains the final non-provider fallback.
+    Rate-limit or quota evidence suppresses an immediate primary retry. When the caller does not
+    inject an alternate, an independently configured Gemini Free route is discovered lazily. No
+    Gemini request is made when primary generation succeeds. Deterministic exact source remains the
+    final non-provider fallback and no paid route exists.
     """
 
     attempts: list[GenerationAttempt] = []
@@ -279,10 +290,11 @@ def generate_with_recovery(
         if _should_skip_immediate_primary_retry(attempt):
             break
 
-    if alternate is not None:
+    resolved_alternate = alternate if alternate is not None else _configured_zero_cost_alternate()
+    if resolved_alternate is not None:
         sequence += 1
         draft, preservation, attempt = _attempt_generated(
-            alternate,
+            resolved_alternate,
             request,
             kind=GenerationAttemptKind.ALTERNATE,
             sequence=sequence,
