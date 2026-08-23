@@ -1,0 +1,84 @@
+name: Phase 12 Verifier Probe
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/phase12-verifier-probe.yml"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - name: Checkout verifier candidate
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+
+      - name: Install verifier runtime
+        run: |
+          python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
+
+      - name: Probe independent verifiers without logging source text
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from insight_desk.providers.cloudflare import CloudflareClaimVerifier
+          from insight_desk.providers.local_nli import LocalNliVerifier
+
+          evidence = "테스트 기업은 2026년 8월 23일 신제품을 출시했다."
+          positive = evidence
+          negative = "테스트 기업은 신제품 출시를 취소했다."
+          evidence_ids = ("probe:evidence",)
+
+          cloudflare = CloudflareClaimVerifier.from_env()
+          local = LocalNliVerifier.transformers_default()
+
+          def run(verifier, prefix):
+              out = {}
+              for label, claim in (("positive", positive), ("negative", negative)):
+                  check = verifier.verify(
+                      check_id=f"probe:{prefix}:{label}",
+                      claim_text=claim,
+                      evidence_text=evidence,
+                      evidence_ids=evidence_ids,
+                  )
+                  out[label] = {
+                      "entailed": check.entailed,
+                      "error_code": check.error_code,
+                  }
+              return out
+
+          result = {
+              "cloudflare": run(cloudflare, "cloudflare"),
+              "local_nli": run(local, "local"),
+          }
+          Path("build").mkdir(exist_ok=True)
+          Path("build/verifier-probe.json").write_text(
+              json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(result, ensure_ascii=False))
+          PY
+
+      - name: Upload verifier probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12-verifier-probe-${{ github.run_id }}
+          path: build/verifier-probe.json
+          if-no-files-found: error
+          retention-days: 1
