@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 from typing import Protocol
 
 from insight_desk.core import EvidenceField, RenderMode
@@ -11,6 +12,12 @@ from insight_desk.generation import (
     PreservationReport,
     validate_preservation,
 )
+
+
+FALLBACK_HEADLINE_MAX_CHARS = 96
+FALLBACK_SUMMARY_MAX_CHARS = 360
+_SENTENCE_END_RE = re.compile(r"[.!?。！？](?=\s|$)")
+_CLAUSE_MARKS = ("…", "·", ":", ";", ",", "，")
 
 
 class DraftGenerator(Protocol):
@@ -64,11 +71,53 @@ class GenerationRecoveryResult:
             raise ValueError("final generation attempt must be accepted")
 
 
-class ExtractiveFallbackGenerator:
-    """Zero-generation fallback that copies exact cited source spans.
+def _bounded_source_excerpt(text: str, *, max_chars: int) -> str:
+    """Return a bounded exact-source excerpt without inventing replacement text.
 
-    It deliberately ignores NEWS_REWRITE_POLICY_V1 rule 0-4 because this is not generated rewrite
-    output. RenderMode.EXTRACTIVE_FALLBACK keeps that distinction explicit for downstream rendering.
+    Prefer a complete source sentence, then an existing line/clause boundary. Only when the source
+    has no usable boundary inside the feed budget do we take an exact prefix. No ellipsis or other
+    generated marker is added, so every returned character comes from the cited source text.
+    """
+
+    source = text.strip()
+    if len(source) <= max_chars:
+        return source
+
+    window = source[:max_chars]
+    sentence_ends = [match.end() for match in _SENTENCE_END_RE.finditer(window)]
+    if sentence_ends:
+        return window[: sentence_ends[-1]].rstrip()
+
+    line_end = window.rfind("\n")
+    if line_end >= max_chars // 3:
+        return window[:line_end].rstrip()
+
+    clause_end = max(window.rfind(mark) for mark in _CLAUSE_MARKS)
+    if clause_end >= max_chars // 2:
+        return window[: clause_end + 1].rstrip()
+
+    return window.rstrip()
+
+
+def _first_nonempty_line(text: str) -> tuple[str, int] | None:
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped:
+            return stripped, offset + len(line)
+        offset += len(line)
+    stripped = text.strip()
+    if stripped:
+        return stripped, len(text)
+    return None
+
+
+class ExtractiveFallbackGenerator:
+    """Zero-generation fallback using bounded exact-source excerpts.
+
+    The fallback remains source-preserving, but it is no longer allowed to pour an entire article
+    body into a feed card. Headline and summary are deterministic excerpts with hard feed budgets.
+    RenderMode.EXTRACTIVE_FALLBACK keeps the distinction from generated rewrite explicit.
     """
 
     def generate(self, request: GenerationRequest) -> GeneratedDraft:
@@ -76,12 +125,47 @@ class ExtractiveFallbackGenerator:
         spans = [request.evidence[evidence_id] for evidence_id in evidence_ids]
         title_spans = [span for span in spans if span.field is EvidenceField.TITLE]
         body_spans = [span for span in spans if span.field is EvidenceField.BODY]
-        headline_source = title_spans[0] if title_spans else spans[0]
+
         summary_source = body_spans[0] if body_spans else spans[0]
+        summary_text = summary_source.text.strip()
+
+        if title_spans:
+            headline = _bounded_source_excerpt(
+                title_spans[0].text,
+                max_chars=FALLBACK_HEADLINE_MAX_CHARS,
+            )
+        else:
+            first_line = _first_nonempty_line(summary_text)
+            if first_line is None:
+                headline = _bounded_source_excerpt(
+                    spans[0].text,
+                    max_chars=FALLBACK_HEADLINE_MAX_CHARS,
+                )
+            else:
+                first_line_text, first_line_end = first_line
+                headline = _bounded_source_excerpt(
+                    first_line_text,
+                    max_chars=FALLBACK_HEADLINE_MAX_CHARS,
+                )
+                if (
+                    len(first_line_text) <= FALLBACK_HEADLINE_MAX_CHARS
+                    and first_line_end < len(summary_text)
+                ):
+                    remainder = summary_text[first_line_end:].strip()
+                    if remainder:
+                        summary_text = remainder
+
+        summary = _bounded_source_excerpt(
+            summary_text,
+            max_chars=FALLBACK_SUMMARY_MAX_CHARS,
+        )
+        if not summary:
+            summary = headline
+
         return GeneratedDraft(
             event_id=request.event.event_id,
-            headline=headline_source.text,
-            summary=summary_source.text,
+            headline=headline,
+            summary=summary,
             evidence_ids=evidence_ids,
         )
 
