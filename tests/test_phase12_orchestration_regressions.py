@@ -228,7 +228,7 @@ class SourceIdentityRegressions(unittest.TestCase):
         briefing_at = event_loop.index("briefing_id =", publish_at)
         try:
             break_at = event_loop.index("\n                    break", publish_at, briefing_at)
-        except ValueError as exc:
+        except ValueError:
             self.fail("published article must break out of its remaining semantic-event loop")
         self.assertLess(publish_at, break_at)
 
