@@ -17,6 +17,7 @@ from insight_desk.generation_pipeline import (
 from insight_desk.verification_pipeline import (
     ClaimVerifier,
     GeneratedVerificationResult,
+    verify_exact_source_draft,
     verify_generated_draft,
 )
 
@@ -83,6 +84,23 @@ def _exact_fallback_result(request: GenerationRequest) -> GenerationRecoveryResu
     )
 
 
+def _verify_generation_result(
+    request: GenerationRequest,
+    generation: GenerationRecoveryResult,
+    *,
+    primary_verifier: ClaimVerifier,
+    secondary_verifier: ClaimVerifier,
+) -> GeneratedVerificationResult:
+    if generation.render_mode is RenderMode.EXTRACTIVE_FALLBACK:
+        return verify_exact_source_draft(request, generation.draft)
+    return verify_generated_draft(
+        request,
+        generation.draft,
+        primary=primary_verifier,
+        secondary=secondary_verifier,
+    )
+
+
 def produce_phase7_entry_candidate(
     request: GenerationRequest,
     *,
@@ -93,11 +111,10 @@ def produce_phase7_entry_candidate(
 ) -> Phase7EntryCandidate:
     """Run the complete Phase 7 generation/verification gate without rendering.
 
-    Generation recovery first produces a preservation-safe draft. That draft is then verified under
-    the frozen two-verifier policy. A generated draft with an explicit REJECTED claim gets exactly one
-    exact-source fallback attempt followed by one more verification pass. INDETERMINATE verification
-    does not trigger regeneration because a provider failure/disagreement cannot be repaired by
-    rewriting text. The established event is always retained regardless of publishability.
+    Generated prose keeps the frozen two-verifier semantic gate. Exact-source fallback is different:
+    it contains no generated paraphrase, so it is proved deterministically against the cited immutable
+    EvidenceSpan text rather than made dependent on an external LLM's availability. A generated draft
+    with an explicit semantic rejection still receives exactly one exact-source fallback attempt.
     """
 
     initial_generation = generate_with_recovery(
@@ -105,11 +122,11 @@ def produce_phase7_entry_candidate(
         primary=primary_generator,
         alternate=alternate_generator,
     )
-    initial_verification = verify_generated_draft(
+    initial_verification = _verify_generation_result(
         request,
-        initial_generation.draft,
-        primary=primary_verifier,
-        secondary=secondary_verifier,
+        initial_generation,
+        primary_verifier=primary_verifier,
+        secondary_verifier=secondary_verifier,
     )
 
     if (
@@ -117,11 +134,9 @@ def produce_phase7_entry_candidate(
         and _has_explicit_rejection(initial_verification)
     ):
         fallback_generation = _exact_fallback_result(request)
-        fallback_verification = verify_generated_draft(
+        fallback_verification = verify_exact_source_draft(
             request,
             fallback_generation.draft,
-            primary=primary_verifier,
-            secondary=secondary_verifier,
         )
         return Phase7EntryCandidate(
             event_id=request.event.event_id,
