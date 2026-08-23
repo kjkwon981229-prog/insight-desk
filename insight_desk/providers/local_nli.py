@@ -46,6 +46,20 @@ def _transformers_predictor(model_id: str) -> EntailmentPredictor:
     return predict
 
 
+def _lazy_transformers_predictor(model_id: str) -> EntailmentPredictor:
+    """Defer model/runtime loading until the local verifier is actually needed."""
+
+    delegate: EntailmentPredictor | None = None
+
+    def predict(premise: str, hypothesis: str) -> bool:
+        nonlocal delegate
+        if delegate is None:
+            delegate = _transformers_predictor(model_id)
+        return delegate(premise, hypothesis)
+
+    return predict
+
+
 @dataclass(slots=True)
 class LocalNliVerifier:
     predictor: EntailmentPredictor
@@ -67,10 +81,11 @@ class LocalNliVerifier:
 
     @classmethod
     def transformers_default(cls) -> "LocalNliVerifier":
-        """Create the measured mDeBERTa verifier with optional runtime imports."""
-        return cls.transformers_model(
-            LOCAL_NLI_MODEL,
+        """Create the measured mDeBERTa verifier without eager runtime/model loading."""
+        return cls(
+            predictor=_lazy_transformers_predictor(LOCAL_NLI_MODEL),
             verifier_id=LOCAL_NLI_VERIFIER_ID,
+            model_id=LOCAL_NLI_MODEL,
         )
 
     @classmethod
