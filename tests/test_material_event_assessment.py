@@ -4,7 +4,14 @@ import importlib.util
 from datetime import datetime, timezone
 import unittest
 
-from insight_desk.core import CandidateEvent, EventFact, RawArticle, SourceProvenance
+from insight_desk.core import (
+    CandidateEvent,
+    EvidenceField,
+    EvidenceSpan,
+    EventFact,
+    RawArticle,
+    SourceProvenance,
+)
 from insight_desk.semantic.kiwi_extractor import KiwiDeterministicFactExtractor
 from insight_desk.semantic.material import (
     MaterialEventReason,
@@ -128,6 +135,37 @@ class MaterialEventAssessmentTests(unittest.TestCase):
         )
         self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
         self.assertEqual(assessment.reasons, (MaterialEventReason.FACT_FIELD_NOT_LITERAL,))
+
+    def test_evidence_from_article_outside_event_defers(self) -> None:
+        text = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+        result = SemanticPipeline().extract_article(
+            article(text),
+            topic_id="ai_tech",
+            extractor=extractor(),
+        )
+        original = result.facts[0]
+        foreign = EvidenceSpan(
+            evidence_id="foreign-evidence",
+            article_id="foreign-article",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(text),
+            text=text,
+        )
+        foreign_fact = EventFact(
+            fact_id=original.fact_id,
+            subject=original.subject,
+            action=original.action,
+            object=original.object,
+            evidence_ids=(foreign.evidence_id,),
+        )
+        assessment = assess_material_event(
+            result.events[0],
+            facts={foreign_fact.fact_id: foreign_fact},
+            evidence={foreign.evidence_id: foreign},
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.EVIDENCE_OUTSIDE_EVENT,))
 
     def test_missing_fact_defers_item_locally(self) -> None:
         event = CandidateEvent(
