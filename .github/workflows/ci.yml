@@ -87,7 +87,7 @@ jobs:
 
       - name: Run locked mDeBERTa and MiniLM benchmark
         if: steps.gate.outputs.run == 'true'
-        run: python scripts/phase12b_local_nli_benchmark.py --output build/local-nli-benchmark.json
+        run: PYTHONPATH=. python scripts/phase12b_local_nli_benchmark.py --output build/local-nli-benchmark.json
 
       - name: Enforce MiniLM secondary-failover acceptance rule
         if: steps.gate.outputs.run == 'true'
