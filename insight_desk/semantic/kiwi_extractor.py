@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 
 from .facts import FactDraft, FactExtractionRequest
-from .tooling import KiwiMorphologyHelper, MorphologyToken
+from .tooling import KiwiMorphologyHelper, MorphologySourceOffsetError, MorphologyToken
 
 
 _NOUN_TAGS = {"SL", "SN"}
@@ -146,7 +146,13 @@ class KiwiDeterministicFactExtractor:
         drafts: list[FactDraft] = []
         for evidence in request.evidence:
             source = request.article.field_text(evidence.field)
-            for sentence in self._kiwi.split_sentences(evidence.text):
+            try:
+                sentences = self._kiwi.split_sentences(evidence.text)
+            except MorphologySourceOffsetError:
+                # Exact source provenance cannot be established for this evidence window.
+                # Fail closed locally instead of aborting the article or the full pipeline.
+                continue
+            for sentence in sentences:
                 absolute_start = evidence.start + sentence.start
                 absolute_end = evidence.start + sentence.end
                 if not _left_source_boundary_is_safe(source, absolute_start):
@@ -154,7 +160,12 @@ class KiwiDeterministicFactExtractor:
                 if not _right_source_boundary_is_safe(source, absolute_end):
                     continue
                 text = sentence.text
-                tokens = self._kiwi.analyze(text)
+                try:
+                    tokens = self._kiwi.analyze(text)
+                except MorphologySourceOffsetError:
+                    # Kiwi can occasionally return unusable coordinates for unusual live text.
+                    # Never clip or repair them: skip only this sentence and preserve exactness.
+                    continue
                 parts = _predicate_fact_parts(text, tokens) or _nominal_fact_parts(text)
                 if parts is None:
                     continue
