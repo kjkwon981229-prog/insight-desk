@@ -9,11 +9,13 @@ on:
       - 'insight_desk/semantic/tooling.py'
       - 'insight_desk/semantic/kiwi_extractor.py'
       - 'insight_desk/semantic/material.py'
+      - 'insight_desk/semantic/events.py'
       - 'insight_desk/semantic/__init__.py'
       - 'tests/test_semantic_tooling_contracts.py'
       - 'tests/test_kiwi_deterministic_extractor.py'
       - 'tests/test_material_event_assessment.py'
       - 'tests/test_semantic_properties.py'
+      - 'tests/test_phase6_auto_material_wiring.py'
       - '.github/workflows/semantic-local-tools.yml'
 
 permissions:
@@ -40,6 +42,7 @@ jobs:
           python -m unittest tests.test_semantic_tooling_contracts
           python -m unittest tests.test_kiwi_deterministic_extractor
           python -m unittest tests.test_material_event_assessment
+          python -m unittest tests.test_phase6_auto_material_wiring
 
       - name: Run property-based source-preservation QA
         run: python -m unittest tests.test_semantic_properties
