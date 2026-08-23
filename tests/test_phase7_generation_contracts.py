@@ -53,6 +53,39 @@ def request() -> GenerationRequest:
     )
 
 
+def ibm_request() -> GenerationRequest:
+    source = (
+        "2023년 인공지능(AI)으로 7800개 직무를 대체하겠다고 했던 IBM이 "
+        "3년도 안 돼 신입 채용을 다시 늘리는 쪽으로 방향을 틀었다."
+    )
+    span = EvidenceSpan(
+        evidence_id="ev:ibm-live",
+        article_id="article:ibm-live",
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(source),
+        text=source,
+    )
+    fact = EventFact(
+        fact_id="fact:ibm-live",
+        subject="IBM",
+        action="3년도 안 돼 신입 채용을 다시 늘리는 쪽으로 방향을 틀었다",
+        object="신입 채용",
+        evidence_ids=(span.evidence_id,),
+    )
+    event = CandidateEvent(
+        event_id="event:ibm-live",
+        topic_id="ai_tech",
+        fact_ids=(fact.fact_id,),
+        article_ids=(span.article_id,),
+    )
+    return GenerationRequest(
+        event=event,
+        facts={fact.fact_id: fact},
+        evidence={span.evidence_id: span},
+    )
+
+
 @dataclass
 class FakeStructuredClient:
     model_id: str = GROQ_20B
@@ -126,6 +159,15 @@ class Phase7GenerationContractTests(unittest.TestCase):
         with self.assertRaises(GenerationContractError):
             Groq20BBriefingGenerator(FakeStructuredClient(model_id=GROQ_120B))
 
+    def test_generated_draft_rejects_live_repeated_korean_headline_token(self) -> None:
+        with self.assertRaises(GenerationContractError):
+            GeneratedDraft(
+                event_id="event:live-headline",
+                headline="AI 기업 투자 규모 적정성에 신중론 고개 이슈 고개",
+                summary="AI 기업 투자 규모와 자금 조달 지속 가능성에 신중론이 제기됐다.",
+                evidence_ids=("ev:live-headline",),
+            )
+
     def test_preservation_accepts_exact_source_number_date_and_quote(self) -> None:
         draft = GeneratedDraft(
             event_id="event:phase7",
@@ -149,6 +191,32 @@ class Phase7GenerationContractTests(unittest.TestCase):
         codes = {issue.code for issue in report.issues}
         self.assertIn(PreservationIssueCode.NOVEL_NUMBER, codes)
         self.assertIn(PreservationIssueCode.NOVEL_DATE, codes)
+
+    def test_preservation_rejects_live_temporal_relation_inversion(self) -> None:
+        item = ibm_request()
+        draft = GeneratedDraft(
+            event_id=item.event.event_id,
+            headline="IBM, 3년 안에 신입 채용 재개",
+            summary="IBM이 3년 안에 신입 채용을 다시 늘리기로 방향을 틀었다.",
+            evidence_ids=item.evidence_ids,
+        )
+        report = validate_preservation(item, draft)
+        self.assertFalse(report.accepted)
+        self.assertIn(
+            PreservationIssueCode.TEMPORAL_RELATION_MISMATCH,
+            {issue.code for issue in report.issues},
+        )
+
+    def test_preservation_accepts_same_live_temporal_relation(self) -> None:
+        item = ibm_request()
+        draft = GeneratedDraft(
+            event_id=item.event.event_id,
+            headline="IBM, 3년도 안 돼 신입 채용 확대",
+            summary="IBM이 3년도 안 돼 신입 채용을 다시 늘리는 쪽으로 방향을 틀었다.",
+            evidence_ids=item.evidence_ids,
+        )
+        report = validate_preservation(item, draft)
+        self.assertTrue(report.accepted)
 
     def test_preservation_rejects_invented_quotation(self) -> None:
         draft = GeneratedDraft(
