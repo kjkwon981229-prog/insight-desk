@@ -24,10 +24,18 @@ def feed_text_fits(*, headline: str, summary: str) -> bool:
     )
 
 
+def _normalize_visible_text(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
+def _headline_key(entry: RenderedEntry) -> str:
+    return _normalize_visible_text(entry.headline)
+
+
 def _content_key(entry: RenderedEntry) -> tuple[str, str]:
     return (
-        " ".join(entry.headline.split()).casefold(),
-        " ".join(entry.summary.split()).casefold(),
+        _normalize_visible_text(entry.headline),
+        _normalize_visible_text(entry.summary),
     )
 
 
@@ -78,10 +86,11 @@ def build_rendered_briefing(
     generated_at: datetime,
     candidates: tuple[Phase7EntryCandidate, ...],
 ) -> RenderedBriefing:
-    """Build a briefing without global-aborting on rejected, oversized, or duplicate-content items."""
+    """Build a briefing without global-aborting on rejected, oversized, or duplicate-visible items."""
 
     entries: list[RenderedEntry] = []
     seen_event_ids: set[str] = set()
+    seen_headlines: set[str] = set()
     seen_content: set[tuple[str, str]] = set()
     for candidate in candidates:
         entry = render_phase7_candidate(candidate)
@@ -91,9 +100,15 @@ def build_rendered_briefing(
             raise RenderingContractError(f"duplicate rendered event: {entry.event_id}")
         seen_event_ids.add(entry.event_id)
 
+        headline_key = _headline_key(entry)
+        if headline_key in seen_headlines:
+            continue
+
         content_key = _content_key(entry)
         if content_key in seen_content:
             continue
+
+        seen_headlines.add(headline_key)
         seen_content.add(content_key)
         entries.append(entry)
 
