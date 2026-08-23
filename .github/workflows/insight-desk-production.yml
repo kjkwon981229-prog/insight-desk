@@ -169,6 +169,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload PR failure diagnostics
+        if: always() && github.event_name == 'pull_request' && steps.state.outputs.publish != 'true' && hashFiles('build/production-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-diagnostic-${{ github.run_id }}
+          path: |
+            build/run-state.json
+            build/production-audit.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Fail closed when no publishable briefing exists
         if: steps.state.outputs.publish != 'true'
         run: |
