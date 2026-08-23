@@ -58,12 +58,20 @@ class ArchitectureFreezeTests(unittest.TestCase):
         self.assertTrue(boundaries["selection"]["material_event_separate_from_selection"])
         self.assertFalse(boundaries["selection"]["llm_final_authority"])
 
-    def test_non_core_models_cannot_silently_become_core_roles(self):
+    def test_non_core_models_cannot_silently_become_semantic_authorities(self):
         self.assertFalse(FREEZE["provider_roles"]["rare_optional_adjudication"]["core_dependency"])
         self.assertFalse(
             FREEZE["provider_roles"]["same_event_candidate_retrieval"]["identity_authority"]
         )
-        self.assertFalse((ROOT / "insight_desk" / "providers" / "gemini.py").exists())
+        # The historical architecture freeze remains immutable. Phase 12B may add an optional
+        # availability/failover adapter, but that must not silently promote Gemini into semantic
+        # identity/selection authority or a required paid/core dependency.
+        gemini_path = ROOT / "insight_desk" / "providers" / "gemini.py"
+        self.assertTrue(gemini_path.exists())
+        gemini_source = gemini_path.read_text(encoding="utf-8")
+        self.assertIn('GEMINI_API_KEY', gemini_source)
+        self.assertIn('def configured(', gemini_source)
+        self.assertNotIn('paid', gemini_source.casefold())
         rejected = FREEZE["explicit_non_roles"]
         self.assertFalse(rejected["cloudflare_llama_generic_selection_gate"])
         self.assertFalse(rejected["cloudflare_llama_event_identity_gate"])
