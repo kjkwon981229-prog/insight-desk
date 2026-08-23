@@ -177,7 +177,7 @@ jobs:
 
   push_notify:
     needs: [build, deploy]
-    if: always() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
+    if: always() && github.event_name != 'pull_request' && needs.build.result != 'skipped' && needs.build.result != 'cancelled' && needs.deploy.result != 'cancelled'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
