@@ -190,6 +190,8 @@ NEWS_REWRITE_POLICY_V1 = """# 뉴스 기사 자동 처리용 AI 느낌 제거 �
 문장 구조를 유지한 채 단어만 바꾸지 마라. 핵심 내용만 뽑아 새 문장으로 써라.
 0-5) 기간의 시간 방향과 기준점을 바꾸지 마라.
 "~만에", "~도 안 돼" 같은 경과시간을 "~안에", "~이내" 같은 미래 기한으로 바꾸지 말고, "~후/뒤/전"의 방향도 원문과 다르게 쓰지 마라.
+0-6) 정의·역할 문장의 논항 관계를 바꾸지 마라.
+"X는 ... 직업/역할/원칙"처럼 X의 정의나 역할을 설명하는 문장에서 X를 목적어("X를")로 뒤집어 의미를 바꾸지 마라.
 
 ## 1. 제목(헤드라인)
 1-1) 명사형으로 끝내라.
@@ -274,6 +276,7 @@ class PreservationIssueCode(StrEnum):
     NOVEL_QUOTED_TEXT = "novel_quoted_text"
     META_PHRASE = "meta_phrase"
     TEMPORAL_RELATION_MISMATCH = "temporal_relation_mismatch"
+    ARGUMENT_ROLE_MISMATCH = "argument_role_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,6 +325,10 @@ _TEMPORAL_RELATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(_DURATION + r"\s*전(?:에)?"),
     ),
 )
+_DEFINITION_TOPIC_RE = re.compile(
+    r"(?<![가-힣])(?P<topic>[가-힣]{2,20})(?:은|는)\s+[^.!?\n]{0,60}?"
+    r"(?:직업|역할|원칙|목표|의미|핵심)(?:이|가|은|는|이다|이라고|라는|인|$)"
+)
 _QUOTE_PATTERNS = (
     re.compile(r'"([^"\n]+)"'),
     re.compile(r"“([^”\n]+)”"),
@@ -362,16 +369,40 @@ def _temporal_relation_atoms(text: str) -> tuple[str, ...]:
     return tuple(sorted(values))
 
 
+def _definition_topic_atoms(text: str) -> tuple[str, ...]:
+    """Extract only high-confidence Korean topic atoms from explicit definition/role frames."""
+
+    return tuple(sorted({match.group("topic") for match in _DEFINITION_TOPIC_RE.finditer(text)}))
+
+
+def _argument_role_inversions(source: str, generated: str) -> tuple[str, ...]:
+    """Detect measured definition-topic -> direct-object inversions without freezing particles generally."""
+
+    inversions: list[str] = []
+    for topic in _definition_topic_atoms(source):
+        direct_object = re.search(
+            rf"(?<![가-힣]){re.escape(topic)}(?:을|를)(?![가-힣])",
+            generated,
+        )
+        preserved_topic = re.search(
+            rf"(?<![가-힣]){re.escape(topic)}(?:은|는)(?![가-힣])",
+            generated,
+        )
+        if direct_object is not None and preserved_topic is None:
+            inversions.append(topic)
+    return tuple(inversions)
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
-    """Deterministically reject source-literal and automation-policy violations before verification.
+    """Deterministically reject source-literal and measured relation violations before verification.
 
     This gate blocks novel event/evidence references, dates, numeric expressions, quoted text,
-    measured temporal-direction changes, and the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases.
-    It intentionally does not pretend to prove general semantic support; that remains the frozen
-    Cloudflare + local mDeBERTa verification role.
+    measured temporal-direction changes, measured definition-role inversions, and the explicit
+    NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not pretend to prove general
+    semantic support; that remains the frozen Cloudflare + local mDeBERTa verification role.
     """
 
     issues: list[PreservationIssue] = []
@@ -412,6 +443,11 @@ def validate_preservation(
             issues.append(
                 PreservationIssue(PreservationIssueCode.TEMPORAL_RELATION_MISMATCH, value)
             )
+
+    for value in _argument_role_inversions(source, generated):
+        issues.append(
+            PreservationIssue(PreservationIssueCode.ARGUMENT_ROLE_MISMATCH, value)
+        )
 
     for value in _quoted_atoms(generated):
         if value not in source:
