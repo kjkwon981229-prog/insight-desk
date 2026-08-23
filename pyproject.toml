@@ -18,6 +18,7 @@ browser = [
 ]
 semantic-local = [
   "kiwipiepy==0.23.2",
+  "pecab==1.0.8",
   "RapidFuzz==3.14.5",
 ]
 qa = [
