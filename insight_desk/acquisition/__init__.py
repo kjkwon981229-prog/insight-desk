@@ -24,13 +24,19 @@ from .official import (
     normalize_opendart_filings,
 )
 from .pipeline import AcquisitionPipeline
-from .runtime import PlaywrightHtmlRenderer, TrafilaturaExtractor, UrlLibHtmlFetcher
+from .runtime import (
+    ArticleMainTextExtractor,
+    PlaywrightHtmlRenderer,
+    TrafilaturaExtractor,
+    UrlLibHtmlFetcher,
+)
 
 __all__ = [
     "AcquisitionError",
     "AcquisitionPipeline",
     "AcquisitionResult",
     "ArticleCandidate",
+    "ArticleMainTextExtractor",
     "BingNewsRssDiscovery",
     "DiscoveryError",
     "ExtractedArticle",
