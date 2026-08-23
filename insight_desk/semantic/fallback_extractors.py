@@ -183,7 +183,9 @@ class PecabDeterministicFactExtractor:
             sentence = source[draft.source_start : draft.source_end]
             try:
                 tagged = self._analyzer.pos(sentence)
-            except Exception:
+            except (RuntimeError, ValueError, OSError):
+                # A local analyzer may fail on one unusual surface. Treat that sentence as
+                # unavailable, but do not suppress arbitrary programming errors.
                 continue
             tags = [str(tag) for _, tag in tagged]
             has_case = any(tag.startswith("J") for tag in tags)
@@ -216,12 +218,11 @@ class LazyFactExtractor:
         if self._delegate is None:
             try:
                 self._delegate = self.factory()
-            except Exception:
+            except (ImportError, RuntimeError, OSError):
                 return ()
-        try:
-            return self._delegate.extract(request)
-        except Exception:
-            return ()
+        # Route implementations are responsible for expected data/runtime failures. Let unexpected
+        # programming errors surface instead of silently turning them into an empty fact set.
+        return self._delegate.extract(request)
 
 
 @dataclass(slots=True)
