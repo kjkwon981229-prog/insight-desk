@@ -27,6 +27,27 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
         self.assertFalse(topic_relevant(title="채용 일정 발표", body="기업 채용 일정이 공개됐다.", topic=topic))
         self.assertTrue(topic_relevant(title="국가공무원 채용 일정", body="인사혁신처가 5급 공채 일정을 발표했다.", topic=topic))
 
+    def test_psat_acronym_alone_cannot_match_non_civil_service_academy(self) -> None:
+        topic = next(topic for topic in load_topics(Path("config/topics.json")) if topic.topic_id == "psat_recruitment")
+        self.assertNotIn("PSAT", topic.required_intent_terms)
+        self.assertFalse(
+            topic_relevant(
+                title="농구 유망주 미국 진출",
+                body=(
+                    "텍사스 PSAT(Preparatory Student Academic) 아카데미에서 뛰며 "
+                    "NCAA 진학을 준비하는 농구 유망주가 미국으로 향했다."
+                ),
+                topic=topic,
+            )
+        )
+        self.assertTrue(
+            topic_relevant(
+                title="2027년도 PSAT 일정 발표",
+                body="인사혁신처가 국가공무원 5급 공채 공직적격성평가 일정을 발표했다.",
+                topic=topic,
+            )
+        )
+
     def test_staged_site_contains_locked_pwa_assets_and_root_worker(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "site"
@@ -69,6 +90,8 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
         self.assertIn('notification_type="READY"', workflow)
         self.assertIn('notification_type="FAILURE"', workflow)
         self.assertIn("github.event_name != 'pull_request'", workflow)
+        self.assertIn("needs.build.result != 'cancelled'", workflow)
+        self.assertIn("needs.deploy.result != 'cancelled'", workflow)
         self.assertNotIn("python -m insight_desk.cli", workflow)
         self.assertNotIn("validate_live_acceptance.py", workflow)
         self.assertNotIn("validate_artifact.py", workflow)
