@@ -43,6 +43,18 @@ class GroqFreeClient:
         return self._circuit
 
     @classmethod
+    def configured(
+        cls,
+        env: dict[str, str] | None = None,
+        *,
+        model_id: str,
+    ) -> bool:
+        if model_id not in ALLOWED_GROQ_MODELS:
+            raise ValueError(f"Groq model is outside frozen zero-cost allowlist: {model_id}")
+        source = os.environ if env is None else env
+        return bool(str(source.get("GROQ_API_KEY", "")).strip())
+
+    @classmethod
     def from_env(
         cls,
         model_id: str,
