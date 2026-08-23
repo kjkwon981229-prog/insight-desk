@@ -213,6 +213,45 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         )
         self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-a"])
 
+    def test_same_normalized_headline_with_variant_summaries_renders_once(self) -> None:
+        first = candidate(
+            "event:rate-a",
+            headline="27일 한국은행 기준금리 결정 주목",
+            summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠리고 있습니다.",
+        )
+        second = candidate(
+            "event:rate-b",
+            headline=" 27일   한국은행 기준금리 결정 주목 ",
+            summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
+        )
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:headline-dedup",
+            generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual([entry.event_id for entry in briefing.entries], ["event:rate-a"])
+
+    def test_same_summary_with_distinct_headlines_remains_separate(self) -> None:
+        first = candidate(
+            "event:distinct-a",
+            headline="한국은행 기준금리 결정",
+            summary="같은 시장 요약 문구입니다.",
+        )
+        second = candidate(
+            "event:distinct-b",
+            headline="코스피 장중 상승",
+            summary="같은 시장 요약 문구입니다.",
+        )
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:headline-distinct",
+            generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual(
+            [entry.event_id for entry in briefing.entries],
+            ["event:distinct-a", "event:distinct-b"],
+        )
+
     def test_duplicate_rendered_event_ids_fail_closed(self) -> None:
         item = candidate()
         with self.assertRaises(RenderingContractError):
