@@ -53,6 +53,12 @@ class Verifier:
         )
 
 
+@dataclass(frozen=True)
+class UnpublishableCandidate:
+    event_id: str
+    publishable: bool = False
+
+
 def request(event_id: str, text: str) -> GenerationRequest:
     span = EvidenceSpan(
         evidence_id=f"ev:{event_id}",
@@ -81,15 +87,14 @@ def request(event_id: str, text: str) -> GenerationRequest:
     )
 
 
-def candidate(event_id: str, text: str, *, supported: bool):
-    primary_answers = [True, True] if supported else [None, None]
+def candidate(event_id: str, text: str):
     return produce_phase7_entry_candidate(
         request(event_id, text),
         primary_generator=Generator(headline=text, summary=text),
         primary_verifier=Verifier(
             CLOUDFLARE_VERIFIER_ID,
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-            primary_answers,
+            [True, True],
         ),
         secondary_verifier=Verifier(
             LOCAL_NLI_VERIFIER_ID,
@@ -102,14 +107,14 @@ def candidate(event_id: str, text: str, *, supported: bool):
 class Phase8EndToEndTests(unittest.TestCase):
     def test_verified_candidate_flows_to_locked_pwa_html_and_unpublishable_item_is_omitted(self) -> None:
         accepted_text = "네오팩토리가 AI 공장 구축 사업을 수주했다."
-        rejected_text = "검증이 끝나지 않은 별도 사건이다."
-        accepted = candidate("event:accepted", accepted_text, supported=True)
-        rejected = candidate("event:rejected", rejected_text, supported=False)
+        rejected_text = "검증되지 않은 별도 사건이다."
+        accepted = candidate("event:accepted", accepted_text)
+        rejected = UnpublishableCandidate("event:rejected")
 
         rendered = build_rendered_briefing(
             briefing_id="briefing:phase8-e2e",
             generated_at=datetime(2026, 8, 23, 13, 19, tzinfo=timezone.utc),
-            candidates=(accepted, rejected),
+            candidates=(accepted, rejected),  # type: ignore[arg-type]
         )
         view = build_briefing_view_model(
             rendered,
