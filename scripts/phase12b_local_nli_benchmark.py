@@ -7,7 +7,7 @@ from pathlib import Path
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 
 
-CANDIDATE_FALLBACK_MODEL = "MoritzLaurer/ernie-m-base-mnli-xnli"
+CANDIDATE_FALLBACK_MODEL = "MoritzLaurer/multilingual-MiniLMv2-L12-mnli-xnli"
 
 CASES = (
     ("p01_exact_fx", True, "원·달러 환율은 1386.5원으로 마감했다.", "원·달러 환율은 1386.5원으로 마감했다."),
@@ -86,7 +86,7 @@ def main() -> None:
             "negative_total": 10,
         },
         "primary": evaluate(LOCAL_NLI_MODEL, route_id="bench-mdeberta"),
-        "fallback": evaluate(CANDIDATE_FALLBACK_MODEL, route_id="bench-ernie-m-base"),
+        "fallback": evaluate(CANDIDATE_FALLBACK_MODEL, route_id="bench-minilm-l12"),
     }
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
