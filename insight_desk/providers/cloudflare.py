@@ -5,13 +5,14 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from insight_desk.core import VerificationCheck
+from insight_desk.core import FailureKind, VerificationCheck
 
 from .transport import JsonHttpTransport, ProviderTransportError, require_secret
 
 
 CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 CLOUDFLARE_VERIFIER_ID = "cloudflare"
+_CLOUDFLARE_DAILY_FREE_ALLOCATION_CODE = 3036
 
 
 @dataclass(slots=True)
@@ -121,6 +122,30 @@ class CloudflareClaimVerifier:
         return value
 
     @staticmethod
-    def _error_code(exc: ProviderTransportError) -> str:
+    def _is_daily_free_allocation_exhausted(exc: ProviderTransportError) -> bool:
+        if exc.status_code != 429:
+            return False
+        try:
+            payload = json.loads(exc.detail)
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+        if isinstance(payload, dict):
+            errors = payload.get("errors")
+            if isinstance(errors, list):
+                for item in errors:
+                    if isinstance(item, dict) and item.get("code") == _CLOUDFLARE_DAILY_FREE_ALLOCATION_CODE:
+                        return True
+        lowered = exc.detail.casefold()
+        return "daily free allocation" in lowered or (
+            "3036" in lowered and "allocation" in lowered
+        )
+
+    @classmethod
+    def _error_code(cls, exc: ProviderTransportError) -> str:
         status = str(exc.status_code) if exc.status_code is not None else "none"
+        if (
+            exc.failure_kind is FailureKind.RATE_LIMITED
+            and cls._is_daily_free_allocation_exhausted(exc)
+        ):
+            return f"{FailureKind.FREE_QUOTA_EXHAUSTED.value}:{status}"
         return f"{exc.failure_kind.value}:{status}"
