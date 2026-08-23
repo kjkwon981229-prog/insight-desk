@@ -7,6 +7,12 @@ on:
     paths:
       - "scripts/phase10_fresh_live_canary.py"
       - ".github/workflows/phase10-fresh-live-canary.yml"
+  pull_request:
+    branches:
+      - phase4-core-contracts
+    paths:
+      - "scripts/phase10_fresh_live_canary.py"
+      - ".github/workflows/phase10-fresh-live-canary.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - name: Checkout canary branch
+      - name: Checkout canary ref
         uses: actions/checkout@v6
 
       - name: Set up Python
