@@ -9,6 +9,7 @@ from insight_desk.generation import (
     GenerationContractError,
     GenerationRequest,
     Groq20BBriefingGenerator,
+    NEWS_REWRITE_POLICY_V1,
     PreservationIssueCode,
     build_generation_prompt,
     validate_preservation,
@@ -101,13 +102,18 @@ class Phase7GenerationContractTests(unittest.TestCase):
                 evidence={foreign.evidence_id: foreign},
             )
 
-    def test_prompt_contains_only_recovered_policy_and_exact_source_context(self) -> None:
+    def test_prompt_contains_authoritative_complete_policy_and_exact_source_context(self) -> None:
         prompt = build_generation_prompt(request())
-        self.assertIn("0-1 숫자·날짜·고유명사·인용문은 원문 표현을 유지한다.", prompt)
-        self.assertIn("1-3 20~30자 내외로 작성한다.", prompt)
-        self.assertIn("2-3 주관적 수식어를 사용하지 않는다.", prompt)
+        self.assertIn("0-1) 숫자·날짜·고유명사·인용문은 원문 그대로 유지해라.", prompt)
+        self.assertIn("1-3) 길이를 맞춰라.", prompt)
+        self.assertIn("2-3) 원문에 없는 주관적 수식어는 특히 금지해라.", prompt)
+        self.assertIn("3-1) 기사마다 같은 출력 구조를 유지해라.", prompt)
+        self.assertIn("3-2) 불확실하면 변형을 최소화해라.", prompt)
+        self.assertIn("3-3) 메타 발언 금지는 그대로 유지해라.", prompt)
+        self.assertIn('"이 기사에서는", "요약하자면"', prompt)
         self.assertIn(SOURCE, prompt)
-        self.assertNotIn("3-1", prompt)
+        self.assertNotIn("recovered rules only", prompt)
+        self.assertIn("사실 보존", NEWS_REWRITE_POLICY_V1)
 
     def test_generator_is_frozen_to_groq20b_and_cites_request_evidence(self) -> None:
         client = FakeStructuredClient()
@@ -157,6 +163,21 @@ class Phase7GenerationContractTests(unittest.TestCase):
             PreservationIssueCode.NOVEL_QUOTED_TEXT,
             {issue.code for issue in report.issues},
         )
+
+    def test_preservation_rejects_section3_meta_phrases(self) -> None:
+        for phrase in ("이 기사에서는", "요약하자면"):
+            draft = GeneratedDraft(
+                event_id="event:phase7",
+                headline="한국은행 물가 판단",
+                summary=f"{phrase} 한국은행 부총재가 물가 흐름을 더 관찰하겠다고 밝혔다.",
+                evidence_ids=("ev:phase7",),
+            )
+            report = validate_preservation(request(), draft)
+            self.assertFalse(report.accepted)
+            self.assertIn(
+                PreservationIssueCode.META_PHRASE,
+                {issue.code for issue in report.issues},
+            )
 
     def test_preservation_rejects_cross_event_or_unknown_evidence(self) -> None:
         draft = GeneratedDraft(
