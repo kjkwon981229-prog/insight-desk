@@ -8,6 +8,7 @@ from insight_desk.generation import GenerationRequest, validate_preservation
 from insight_desk.generation_pipeline import (
     DraftGenerator,
     ExtractiveFallbackGenerator,
+    ExtractiveFallbackUnavailable,
     GenerationAttempt,
     GenerationAttemptKind,
     GenerationAttemptStatus,
@@ -23,6 +24,8 @@ from insight_desk.verification_pipeline import (
 
 
 class VerificationRecoveryReason(StrEnum):
+    # Retained for historical audit compatibility; explicit semantic rejection no longer recovers
+    # into different visible text.
     GENERATED_CLAIM_REJECTED = "generated_claim_rejected"
     GENERATED_VERIFICATION_UNAVAILABLE = "generated_verification_unavailable"
 
@@ -56,13 +59,6 @@ class Phase7EntryCandidate:
     @property
     def event_retained(self) -> bool:
         return True
-
-
-def _has_explicit_rejection(result: GeneratedVerificationResult) -> bool:
-    return any(
-        item.claim.verdict is VerificationVerdict.REJECTED
-        for item in result.claims
-    )
 
 
 def _has_indeterminate_verification(result: GeneratedVerificationResult) -> bool:
@@ -116,21 +112,25 @@ def produce_phase7_entry_candidate(
     primary_verifier: ClaimVerifier,
     secondary_verifier: ClaimVerifier,
     alternate_generator: DraftGenerator | None = None,
-) -> Phase7EntryCandidate:
+) -> Phase7EntryCandidate | None:
     """Run the complete Phase 7 generation/verification gate without rendering.
 
-    Generated prose keeps the frozen two-verifier semantic gate. Exact-source fallback is different:
-    it contains no generated paraphrase, so it is proved deterministically against the cited immutable
-    EvidenceSpan text rather than made dependent on an external LLM's availability. A generated draft
-    with an explicit semantic rejection or unavailable verification capacity receives exactly one
-    exact-source fallback attempt. This never authorizes unverified generated prose.
+    Generated prose keeps the frozen two-verifier semantic gate. Explicit semantic rejection is a
+    content verdict and remains rejected; it is not converted into support by replacing the visible
+    text. Verification infrastructure unavailability is different: generated prose stays unauthorized,
+    but one display-safe exact-source fallback may be proved deterministically against immutable cited
+    EvidenceSpan text. If no safe exact excerpt exists, the item fails closed without aborting the run.
     """
 
-    initial_generation = generate_with_recovery(
-        request,
-        primary=primary_generator,
-        alternate=alternate_generator,
-    )
+    try:
+        initial_generation = generate_with_recovery(
+            request,
+            primary=primary_generator,
+            alternate=alternate_generator,
+        )
+    except ExtractiveFallbackUnavailable:
+        return None
+
     initial_verification = _verify_generation_result(
         request,
         initial_generation,
@@ -139,14 +139,22 @@ def produce_phase7_entry_candidate(
     )
 
     recovery_reason: VerificationRecoveryReason | None = None
-    if initial_generation.render_mode is RenderMode.GENERATED:
-        if _has_explicit_rejection(initial_verification):
-            recovery_reason = VerificationRecoveryReason.GENERATED_CLAIM_REJECTED
-        elif _has_indeterminate_verification(initial_verification):
-            recovery_reason = VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE
+    if (
+        initial_generation.render_mode is RenderMode.GENERATED
+        and _has_indeterminate_verification(initial_verification)
+    ):
+        recovery_reason = VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE
 
     if recovery_reason is not None:
-        fallback_generation = _exact_fallback_result(request)
+        try:
+            fallback_generation = _exact_fallback_result(request)
+        except ExtractiveFallbackUnavailable:
+            return Phase7EntryCandidate(
+                event_id=request.event.event_id,
+                initial_generation=initial_generation,
+                final_generation=initial_generation,
+                verification=initial_verification,
+            )
         fallback_verification = verify_exact_source_draft(
             request,
             fallback_generation.draft,
