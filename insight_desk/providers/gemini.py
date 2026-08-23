@@ -19,6 +19,7 @@ from .transport import JsonHttpTransport, ProviderTransportError, require_secret
 
 GEMINI_FLASH_LITE = "gemini-3.1-flash-lite"
 GEMINI_VERIFIER_ID = "gemini"
+GEMINI_INTERACTIONS_URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 
 
 @dataclass(slots=True)
@@ -62,25 +63,14 @@ class GeminiStructuredClient:
         del schema_name
         assert self.transport is not None
         response = self.transport.post_json(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_id}:generateContent",
+            GEMINI_INTERACTIONS_URL,
             {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": system_prompt + "\n\n" + prompt,
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "responseFormat": {
-                        "text": {
-                            "mimeType": "application/json",
-                            "schema": schema,
-                        }
-                    },
-                    "temperature": 0,
+                "model": self.model_id,
+                "input": system_prompt + "\n\n" + prompt,
+                "response_format": {
+                    "type": "text",
+                    "mime_type": "application/json",
+                    "schema": schema,
                 },
             },
             {"x-goog-api-key": self.api_key},
@@ -89,22 +79,25 @@ class GeminiStructuredClient:
 
     @staticmethod
     def _extract_json(response: dict[str, Any]) -> dict[str, object]:
-        candidates = response.get("candidates")
-        if not isinstance(candidates, list) or not candidates:
-            raise ValueError("Gemini response has no candidates")
-        first = candidates[0]
-        if not isinstance(first, dict):
-            raise TypeError("Gemini candidate is not an object")
-        content = first.get("content")
-        if not isinstance(content, dict):
-            raise TypeError("Gemini candidate content is not an object")
-        parts = content.get("parts")
-        if not isinstance(parts, list) or not parts:
-            raise ValueError("Gemini candidate has no parts")
-        text_parts = [part.get("text") for part in parts if isinstance(part, dict)]
-        text = "".join(value for value in text_parts if isinstance(value, str)).strip()
+        steps = response.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("Gemini interaction has no steps")
+        text_parts: list[str] = []
+        for step in steps:
+            if not isinstance(step, dict) or step.get("type") != "model_output":
+                continue
+            content = step.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "text":
+                    continue
+                text = part.get("text")
+                if isinstance(text, str):
+                    text_parts.append(text)
+        text = "".join(text_parts).strip()
         if not text:
-            raise ValueError("Gemini candidate has no text")
+            raise ValueError("Gemini interaction has no model text")
         decoded = json.loads(text)
         if not isinstance(decoded, dict):
             raise TypeError("Gemini structured output root is not an object")
