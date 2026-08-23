@@ -1,0 +1,63 @@
+name: Phase 11 Verified Artifact Deploy
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: phase11-verified-artifact-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download audited Pages artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: github-pages
+          path: source-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 32625538998
+
+      - name: Expand and validate exact audited site
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s source-artifact/artifact.tar
+          mkdir -p build/site
+          tar -xf source-artifact/artifact.tar -C build/site
+          test -s build/site/index.html
+          test -s build/site/manifest.webmanifest
+          test -s build/site/push-sw.js
+          test -s build/site/assets/css/style.css
+          test -s build/site/assets/js/push.js
+          actual_sha="$(sha256sum build/site/index.html | awk '{print $1}')"
+          actual_bytes="$(wc -c < build/site/index.html | tr -d ' ')"
+          test "$actual_sha" = "88e06084f8c79a59d7558c07803e66ca01cff312859d5bd51216ee9d60f5caeb"
+          test "$actual_bytes" = "87266"
+          grep -q 'SUPPORTED headline + summary only' build/site/index.html
+          if grep -Eq 'key-fact-panel|next-signal|검색 관심 흐름' build/site/index.html; then
+            echo "::error::Audited artifact contains unsupported UI slots."
+            exit 1
+          fi
+          echo "PHASE11_AUDITED_ARTIFACT_VALID sha256=$actual_sha bytes=$actual_bytes"
+
+      - name: Re-upload audited site for this deployment run
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/site
+
+      - name: Deploy audited verified briefing to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
