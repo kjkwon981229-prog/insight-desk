@@ -2,11 +2,23 @@ name: Insight Desk Daily Production
 
 on:
   pull_request:
-    branches: [phase4-core-contracts]
+    branches: [main]
     paths:
+      - "config/topics.json"
       - "scripts/phase11_daily_production.py"
+      - "insight_desk/generation.py"
+      - "insight_desk/generation_pipeline.py"
+      - "insight_desk/phase7.py"
+      - "insight_desk/rendering.py"
+      - "insight_desk/ui.py"
+      - "assets/css/style.css"
+      - "assets/js/push.js"
       - ".github/workflows/insight-desk-production.yml"
       - "tests/test_phase11_production_restore.py"
+      - "tests/test_phase7_generation_recovery.py"
+      - "tests/test_phase8_rendering_bridge.py"
+      - "tests/test_phase8_end_to_end.py"
+      - "tests/test_phase8_ui_view_model.py"
   push:
     branches: [main]
   workflow_dispatch:
