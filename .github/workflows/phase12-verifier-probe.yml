@@ -14,6 +14,7 @@ jobs:
     permissions:
       contents: read
     env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       TOKENIZERS_PARALLELISM: "false"
@@ -31,15 +32,18 @@ jobs:
           python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
 
-      - name: Probe independent verifiers without logging source text
+      - name: Probe zero-cost providers without logging source text
         shell: bash
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
 
+          from insight_desk.core import FailureKind
           from insight_desk.providers.cloudflare import CloudflareClaimVerifier
+          from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
           from insight_desk.providers.local_nli import LocalNliVerifier
+          from insight_desk.providers.transport import ProviderTransportError
 
           evidence = "테스트 기업은 2026년 8월 23일 신제품을 출시했다."
           positive = evidence
@@ -49,7 +53,7 @@ jobs:
           cloudflare = CloudflareClaimVerifier.from_env()
           local = LocalNliVerifier.transformers_default()
 
-          def run(verifier, prefix):
+          def run_verifier(verifier, prefix):
               out = {}
               for label, claim in (("positive", positive), ("negative", negative)):
                   check = verifier.verify(
@@ -64,9 +68,31 @@ jobs:
                   }
               return out
 
+          groq_result = {"ok": False, "failure_kind": None, "status_code": None, "error_type": None}
+          try:
+              groq = GroqFreeClient.from_env(GROQ_20B, delay_seconds=0)
+              payload = groq.structured_json(
+                  prompt="Return the literal string ok in the field value.",
+                  schema={
+                      "type": "object",
+                      "properties": {"value": {"type": "string"}},
+                      "required": ["value"],
+                      "additionalProperties": False,
+                  },
+                  schema_name="phase12_provider_probe",
+              )
+              groq_result["ok"] = isinstance(payload.get("value"), str)
+          except ProviderTransportError as exc:
+              groq_result["failure_kind"] = exc.failure_kind.value
+              groq_result["status_code"] = exc.status_code
+              groq_result["error_type"] = type(exc).__name__
+          except Exception as exc:
+              groq_result["error_type"] = type(exc).__name__
+
           result = {
-              "cloudflare": run(cloudflare, "cloudflare"),
-              "local_nli": run(local, "local"),
+              "cloudflare": run_verifier(cloudflare, "cloudflare"),
+              "local_nli": run_verifier(local, "local"),
+              "groq_20b": groq_result,
           }
           Path("build").mkdir(exist_ok=True)
           Path("build/verifier-probe.json").write_text(
