@@ -47,6 +47,28 @@ class MaterialEventAssessmentTests(unittest.TestCase):
         self.assertIs(assessment.selection_signal, True)
         self.assertEqual(assessment.reasons, (MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_PREDICATE,))
 
+    def test_publisher_usage_notice_is_not_a_material_news_event(self) -> None:
+        text = (
+            "뉴스1 콘텐츠를 인공지능(AI) 학습용 데이터로 사용하는 것을 포함하여, "
+            "사전허가없이 무단 복사, 배포, 전재, 판매하면 민·형사상의 책임이 따를 수 있습니다."
+        )
+        result = self._extract(text)
+        self.assertTrue(result.events)
+        assessment = assess_material_event(
+            result.events[0], facts={f.fact_id: f for f in result.facts},
+            evidence={e.evidence_id: e for e in result.evidence},
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.PUBLISHER_NOTICE_BOILERPLATE,))
+
+    def test_real_copyright_enforcement_event_is_not_mistaken_for_publisher_boilerplate(self) -> None:
+        result = self._extract("법원이 AI 기업의 무단 데이터 복제에 대해 손해배상 책임을 인정했다.")
+        assessment = assess_material_event(
+            result.events[0], facts={f.fact_id: f for f in result.facts},
+            evidence={e.evidence_id: e for e in result.evidence},
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.MATERIAL)
+
     def test_locked_nominal_lineup_is_material_only_by_frozen_structure(self) -> None:
         result = self._extract("잠실 한화 왕옌청 두산 곽빈 선발투수 예고")
         assessment = assess_material_event(
