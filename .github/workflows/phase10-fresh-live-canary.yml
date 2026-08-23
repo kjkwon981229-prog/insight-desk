@@ -1,0 +1,67 @@
+name: Insight Desk Phase 10 Fresh Live Canary
+
+on:
+  push:
+    branches:
+      - phase10-fresh-live-canary
+    paths:
+      - "scripts/phase10_fresh_live_canary.py"
+      - ".github/workflows/phase10-fresh-live-canary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NCP_CLIENT_ID: ${{ secrets.NCP_CLIENT_ID }}
+  NCP_CLIENT_SECRET: ${{ secrets.NCP_CLIENT_SECRET }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  TOKENIZERS_PARALLELISM: "false"
+
+jobs:
+  fresh-live-canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout canary branch
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+
+      - name: Install current acquisition and deterministic semantic runtime
+        run: |
+          python -m pip install --disable-pip-version-check '.[acquisition,browser,semantic-local]'
+          python -m playwright install --with-deps chromium
+
+      - name: Install current local NLI runtime
+        run: |
+          python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
+
+      - name: Verify required credentials are present without exposing values
+        run: |
+          python - <<'PY'
+          import os
+          required = (
+              'NCP_CLIENT_ID',
+              'NCP_CLIENT_SECRET',
+              'GROQ_API_KEY',
+              'CLOUDFLARE_ACCOUNT_ID',
+              'CLOUDFLARE_API_TOKEN',
+          )
+          missing = [name for name in required if not os.environ.get(name, '').strip()]
+          if missing:
+              raise SystemExit('PHASE10_CREDENTIALS_MISSING:' + ','.join(missing))
+          print('PHASE10_CREDENTIALS_PRESENT')
+          PY
+
+      - name: Compile current Phase 5-8 code and canary
+        run: python -m compileall -q insight_desk scripts/phase10_fresh_live_canary.py
+
+      - name: Run one bounded fresh-live end-to-end canary
+        run: python scripts/phase10_fresh_live_canary.py
