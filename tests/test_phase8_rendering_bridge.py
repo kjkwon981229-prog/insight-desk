@@ -17,8 +17,11 @@ from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candi
 from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
 from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
 from insight_desk.rendering import (
+    MAX_FEED_HEADLINE_CHARS,
+    MAX_FEED_SUMMARY_CHARS,
     RenderingContractError,
     build_rendered_briefing,
+    feed_text_fits,
     render_phase7_candidate,
 )
 
@@ -59,14 +62,16 @@ def request(event_id: str = "event:phase8") -> GenerationRequest:
 class Generator:
     event_id: str = "event:phase8"
     fail: bool = False
+    headline: str = "AI 공장 15억달러 수주"
+    summary: str = TEXT
 
     def generate(self, item: GenerationRequest) -> GeneratedDraft:
         if self.fail:
             raise RuntimeError("synthetic generation failure")
         return GeneratedDraft(
             event_id=item.event.event_id,
-            headline="AI 공장 15억달러 수주",
-            summary=TEXT,
+            headline=self.headline,
+            summary=self.summary,
             evidence_ids=item.evidence_ids,
         )
 
@@ -117,12 +122,19 @@ def candidate(
     event_id: str = "event:phase8",
     *,
     generated_fail: bool = False,
+    headline: str = "AI 공장 15억달러 수주",
+    summary: str = TEXT,
     primary_answers: tuple[bool | None, ...] = (True, True),
     secondary_answers: tuple[bool | None, ...] = (True, True),
 ) -> Phase7EntryCandidate:
     return produce_phase7_entry_candidate(
         request(event_id),
-        primary_generator=Generator(event_id=event_id, fail=generated_fail),
+        primary_generator=Generator(
+            event_id=event_id,
+            fail=generated_fail,
+            headline=headline,
+            summary=summary,
+        ),
         primary_verifier=primary(*primary_answers),
         secondary_verifier=secondary(*secondary_answers),
     )
@@ -170,6 +182,30 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         self.assertIs(entry.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
         self.assertEqual(entry.headline, TEXT)
         self.assertEqual(entry.summary, TEXT)
+
+    def test_feed_size_gate_omits_oversized_verified_text_item_locally(self) -> None:
+        self.assertFalse(
+            feed_text_fits(
+                headline="가" * (MAX_FEED_HEADLINE_CHARS + 1),
+                summary="나" * 10,
+            )
+        )
+        self.assertFalse(
+            feed_text_fits(
+                headline="가" * 10,
+                summary="나" * (MAX_FEED_SUMMARY_CHARS + 1),
+            )
+        )
+
+    def test_duplicate_content_from_distinct_events_renders_once(self) -> None:
+        first = candidate("event:phase8-a")
+        second = candidate("event:phase8-b")
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:content-dedup",
+            generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-a"])
 
     def test_duplicate_rendered_event_ids_fail_closed(self) -> None:
         item = candidate()
