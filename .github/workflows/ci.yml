@@ -150,7 +150,6 @@ jobs:
         run: |
           PYTHONPATH=. python - <<'PY'
           import json
-          import os
           from pathlib import Path
           from insight_desk.providers.gemini import GeminiClaimVerifier, GeminiStructuredClient
 
@@ -197,5 +196,73 @@ jobs:
         with:
           name: phase12b-gemini-canary-${{ github.run_id }}
           path: build/gemini-canary.json
+          if-no-files-found: error
+          retention-days: 14
+
+  pecab_canary:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Require explicit semantic-canary marker
+        id: gate
+        shell: bash
+        run: |
+          message="$(git log -1 --format=%B)"
+          if grep -Fq '[semantic-canary]' <<<"$message"; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+            echo 'PHASE12B_PECAB_CANARY_REQUESTED'
+          else
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'PHASE12B_PECAB_CANARY_SKIPPED'
+          fi
+      - name: Set up Python for PeCab canary
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Install PeCab candidate runtime
+        if: steps.gate.outputs.run == 'true'
+        run: python -m pip install --disable-pip-version-check pecab==1.0.8
+      - name: Verify Korean POS contract
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from pecab import PeCab
+
+          analyzer = PeCab()
+          cases = (
+              '정부는 9월 3일부터 새 제도를 시행한다고 밝혔다.',
+              '한화는 이날 승리로 연패를 끊었다.',
+              '생산자물가는 전월보다 0.4% 상승했다.',
+          )
+          rows = []
+          for text in cases:
+              tagged = analyzer.pos(text)
+              tags = [str(tag) for _, tag in tagged]
+              if not tagged or not any(tag.startswith('J') for tag in tags):
+                  raise SystemExit('PECAB_CANARY_MISSING_CASE_PARTICLE')
+              if not any(tag.startswith('V') or 'XSV' in tag for tag in tags):
+                  raise SystemExit('PECAB_CANARY_MISSING_PREDICATE')
+              rows.append({'text': text, 'tags': tags})
+          path = Path('build/pecab-canary.json')
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps({'accepted': True, 'cases': rows}, ensure_ascii=False, indent=2), encoding='utf-8')
+          print('PECAB_SEMANTIC_FALLBACK_CANARY_ACCEPTED')
+          PY
+      - name: Upload PeCab canary evidence
+        if: always() && steps.gate.outputs.run == 'true' && hashFiles('build/pecab-canary.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12b-pecab-canary-${{ github.run_id }}
+          path: build/pecab-canary.json
           if-no-files-found: error
           retention-days: 14
