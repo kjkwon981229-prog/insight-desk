@@ -2,8 +2,10 @@
 
 from .evidence import EvidenceSegmenter
 from .events import (
+    Phase6AutoMaterialAssessment,
     Phase6EventAssessment,
     Phase6EventEngine,
+    Phase6SelectionContext,
     TemporalAuxiliaryPort,
     TemporalResolution,
     TemporalResolutionSource,
@@ -55,8 +57,10 @@ __all__ = [
     "MaterialEventReason",
     "MaterialEventVerdict",
     "MorphologyToken",
+    "Phase6AutoMaterialAssessment",
     "Phase6EventAssessment",
     "Phase6EventEngine",
+    "Phase6SelectionContext",
     "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
     "SemanticPipeline",
