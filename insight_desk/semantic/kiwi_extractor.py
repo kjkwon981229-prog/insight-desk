@@ -183,6 +183,8 @@ class KiwiDeterministicFactExtractor:
                         action=parts.action,
                         object=parts.object,
                         evidence_ids=(evidence.evidence_id,),
+                        source_start=absolute_start,
+                        source_end=absolute_end,
                     )
                 )
         return tuple(drafts)
