@@ -12,6 +12,7 @@ from insight_desk.feed_quality import (
     conditional_analytical_text,
     non_event_analytical_text,
     orphaned_parent_content_role_text,
+    referential_remainder_text,
     stale_day_only_context,
     stale_relative_past_event_text,
 )
@@ -164,6 +165,8 @@ def _bare_ranking_fragment(normalized: str) -> bool:
 def _context_dependent_fragment(text: str, *, subject: str) -> bool:
     normalized = " ".join(text.split())
     if orphaned_parent_content_role_text(normalized):
+        return True
+    if referential_remainder_text(normalized):
         return True
     if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS:
         return True

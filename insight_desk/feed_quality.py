@@ -60,6 +60,11 @@ _ORPHANED_CHILD_CONTENT_ROLE_RE = re.compile(
     r"(?:은|는|이|가)\s+(?:개장\s+|개관\s+)?(?:첫|후속)\s+콘텐츠로\s+"
     r"(?:마련|선정|공개)"
 )
+_REFERENTIAL_REMAINDER_RE = re.compile(
+    r"(?:^|[\s,·])(?:나머지|그\s*외|이외의?)\s*\d+\s*"
+    r"(?:종목|명|개|곳|팀|기관|기업|업체|회사|제품|콘텐츠|작품|곡|경기)"
+    r"(?:은|는|이|가|을|를)?(?:\s|$)"
+)
 _CREATED_CATEGORY_PARENT_CUES = (
     "공모전",
     "공모",
@@ -143,6 +148,10 @@ _HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
 )
 _DISCOURSE_LEADS = ("하지만 ", "그러나 ", "다만 ", "반면 ")
 _DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)")
+_BARE_DAY_SPORTS_EVENT_RE = re.compile(
+    r"(?<!\d)([0-3]?\d)일(?!\s*(?:동안|간|뒤|후|째))\s+"
+    r"[^.!?。！？]{0,80}?(?:경기|전)에서(?:\s|$)"
+)
 _STALE_DAY_ONLY_EVENT_CUES = (
     "경기",
     "전에서",
@@ -317,6 +326,10 @@ _EXPLANATORY_RELATION_ENDINGS = (
     "관련이 있다",
     "귀결된다",
 )
+_ANALYTICAL_DEPENDENCY_RE = re.compile(
+    r"(?:에\s+달려\s+있(?:다고|다는)|(?:이|가)\s+관건(?:이라고|이라는))\s*"
+    r"(?:분석|평가|진단)(?:했|됐|된|한|이다)"
+)
 _CONCRETE_EVENT_PREDICATE_CUES = (
     "발매했다",
     "공개했다",
@@ -450,6 +463,8 @@ def _context_dependent_text(value: str) -> bool:
         return True
     if orphaned_parent_content_role_text(normalized):
         return True
+    if referential_remainder_text(normalized):
+        return True
     if _subjectless_funding_result(normalized):
         return True
     return _bare_ranking_fragment(normalized)
@@ -461,6 +476,10 @@ def orphaned_parent_content_role_text(value: str) -> bool:
         _ORPHANED_OPENING_CONTENT_LEAD_RE.search(normalized) is not None
         or _ORPHANED_CHILD_CONTENT_ROLE_RE.search(normalized) is not None
     )
+
+
+def referential_remainder_text(value: str) -> bool:
+    return _REFERENTIAL_REMAINDER_RE.search(" ".join(value.split())) is not None
 
 
 def _subjectless_funding_result(normalized: str) -> bool:
@@ -579,8 +598,19 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
     if any(cue in normalized for cue in ("오늘", "현재", "최근")):
         return False
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    for match in _DAY_ONLY_PAST_RE.finditer(normalized):
+    matches = (
+        (match, False) for match in _DAY_ONLY_PAST_RE.finditer(normalized)
+    )
+    sports_matches = (
+        (match, True) for match in _BARE_DAY_SPORTS_EVENT_RE.finditer(normalized)
+    )
+    seen_days: set[tuple[int, int]] = set()
+    for match, sports_event in (*matches, *sports_matches):
         day = int(match.group(1))
+        day_key = (match.start(1), day)
+        if day_key in seen_days:
+            continue
+        seen_days.add(day_key)
         candidates: list[datetime] = []
         for month_offset in (0, -1):
             month_index = reference.year * 12 + reference.month - 1 + month_offset
@@ -593,8 +623,8 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
                 candidates.append(candidate)
         if not candidates or reference - max(candidates) <= timedelta(hours=72):
             continue
-        tail = normalized[match.end() : match.end() + 100]
-        if any(cue in tail for cue in _STALE_DAY_ONLY_EVENT_CUES):
+        event_surface = normalized[match.start() : match.end() + 100]
+        if sports_event or any(cue in event_surface for cue in _STALE_DAY_ONLY_EVENT_CUES):
             return True
     return False
 
@@ -672,6 +702,11 @@ def non_event_analytical_text(value: str) -> bool:
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     ):
         return True
+    if (
+        _ANALYTICAL_DEPENDENCY_RE.search(normalized) is not None
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
     return (
         any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
         and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
@@ -715,6 +750,8 @@ def visible_story_issues(
     if stale_explicit_past_event_text(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     elif stale_relative_past_event_text(summary):
+        issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
+    elif stale_day_only_context(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     if kbo_hanwha_comparison_only(topic=topic, headline=headline, summary=summary):
         issues.append(VisibleStoryIssue.TOPIC_BINDING)
