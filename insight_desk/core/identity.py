@@ -48,6 +48,23 @@ def _normalized(value: str | None) -> str | None:
     return normalized or None
 
 
+def _subject_surface_compatible(left: str, right: str) -> bool:
+    """Treat descriptor-only subject expansion as ambiguous, not as an explicit entity conflict.
+
+    Phase 6 currently receives evidence-bound surface subjects rather than a stable entity ID.
+    If every token from one subject also appears in the other, the difference is compatible with
+    an added descriptor (for example ``공간 ax 기업 hdc랩스`` versus
+    ``공간 ax 솔루션 기업 hdc랩스``). Such pairs still require downstream semantic same-event
+    verification; this helper never declares a merge by itself.
+    """
+
+    left_tokens = frozenset(left.split())
+    right_tokens = frozenset(right.split())
+    if not left_tokens or not right_tokens:
+        return False
+    return left_tokens <= right_tokens or right_tokens <= left_tokens
+
+
 def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck:
     """Block only explicit canonical conflicts; otherwise require an LLM identity judgment.
 
@@ -73,6 +90,11 @@ def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck
             continue
         if left_normalized == right_normalized:
             matching.append(name)
+        elif name == "subject" and _subject_surface_compatible(
+            left_normalized,
+            right_normalized,
+        ):
+            continue
         elif name in {"subject", "event_date", "location", "cause"}:
             conflicts.append(name)
 
