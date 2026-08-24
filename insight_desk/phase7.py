@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from insight_desk.core import RenderMode, VerificationVerdict
-from insight_desk.generation import GenerationRequest, validate_preservation
+from insight_desk.generation import GenerationContractError, GenerationRequest, validate_preservation
 from insight_desk.generation_pipeline import (
     DraftGenerator,
     ExtractiveFallbackGenerator,
@@ -128,7 +128,10 @@ def produce_phase7_entry_candidate(
             primary=primary_generator,
             alternate=alternate_generator,
         )
-    except ExtractiveFallbackUnavailable:
+    except GenerationContractError:
+        # Exact-source fallback is still bound by the same visible-output contract as generated
+        # prose. A fallback that violates that contract is unavailable for this item; it must never
+        # promote one article-local presentation defect into a total daily-production failure.
         return None
 
     initial_verification = _verify_generation_result(
@@ -148,7 +151,7 @@ def produce_phase7_entry_candidate(
     if recovery_reason is not None:
         try:
             fallback_generation = _exact_fallback_result(request)
-        except ExtractiveFallbackUnavailable:
+        except GenerationContractError:
             return Phase7EntryCandidate(
                 event_id=request.event.event_id,
                 initial_generation=initial_generation,
