@@ -60,13 +60,13 @@ class FeedArtifactValidatorTests(unittest.TestCase):
                 "event:rate-a",
                 "경제·투자",
                 "27일 한국은행 기준금리 결정 주목",
-                "오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠리고 있습니다.",
+                "한국은행은 오는 27일 금융통화위원회를 개최한다고 공지했다.",
             ),
             (
                 "event:rate-b",
                 "경제·투자",
                 " 27일   한국은행 기준금리 결정 주목 ",
-                "오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
+                "기획재정부는 같은 날 국내 채권시장 동향을 발표했다.",
             ),
         )
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_DUPLICATE_HEADLINE"):
@@ -78,13 +78,13 @@ class FeedArtifactValidatorTests(unittest.TestCase):
                 "event:rate-summary-a",
                 "경제·투자",
                 "27일 한국은행 기준금리 결정에 이목 집중",
-                "오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
+                "한국은행은 오는 27일 금융통화위원회를 개최한다고 공지했다.",
             ),
             (
                 "event:rate-summary-b",
                 "경제·투자",
                 "27일 한국은행 기준금리 결정에 관심",
-                " 오는 27일  예정된 한국은행의 기준금리 결정에 관심이 쏠립니다. ",
+                " 한국은행은  오는 27일 금융통화위원회를 개최한다고 공지했다. ",
             ),
         )
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_DUPLICATE_SUMMARY"):
