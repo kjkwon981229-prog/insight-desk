@@ -28,6 +28,10 @@ _GENERIC_CONTEXT_SUBJECT_RE = re.compile(
     r"(?:는|은|이|가)(?:\s|$)"
     r"|^(?:(?:두|세|네)\s+)?(?:투수|선수|타자|팀)(?:는|은|이|가)?(?:\s|$)"
 )
+_GENERIC_CIVIC_ACTOR_RE = re.compile(
+    r"^(?:관할\s+)?(?:지자체|지방자치단체|자치단체|당국|관계\s+당국|관할\s+기관)"
+    r"(?:는|은|이|가|,)(?:\s|$)"
+)
 _REFERENTIAL_EVENT_RE = re.compile(
     r"(?:^|\s)이번\s+(?:승리|패배|경기|장면|계약|발표|결정|조치|상황)"
 )
@@ -98,6 +102,10 @@ _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
     r"결정된|출시한|발매한|공개한|상승한|하락한|오른|내린|앞둔|나선|보인|만든|"
     r"올린|늘린|줄인|마련한|추진한|허용한)$"
+)
+_PREDICATE_LED_CONDITIONAL_HEADLINE_RE = re.compile(
+    r"^(?:높아지|낮아지|오르|내리|늘어나|줄어들|증가하|감소하|상승하|하락하|"
+    r"커지|작아지|강해지|약해지)면(?:\s|,|$)"
 )
 _VISIBLE_BYLINE_RE = re.compile(
     r"(?:"
@@ -341,6 +349,20 @@ _ANALYTICAL_DEPENDENCY_RE = re.compile(
     r"(?:에\s+달려\s+있(?:다고|다는)|(?:이|가)\s+관건(?:이라고|이라는))\s*"
     r"(?:분석|평가|진단)(?:했|됐|된|한|이다)"
 )
+_STRATEGIC_DESIGNATION_RE = re.compile(
+    r"(?:사업\s+포트폴리오|성장\s+전략|중장기\s+전략|미래\s+전략|사업\s+비전)"
+    r"[^.!?。！？]{0,180}?(?:핵심|주력|중점)\s*(?:사업|분야|축|과제|동력)"
+    r"(?:으)?로\s+[^.!?。！？]{1,140}?(?:지목했다|꼽았다)$"
+)
+_EXPLICIT_DAY_CUE_RE = re.compile(
+    r"(?<!\d)(?:(?:20\d{2})년\s*)?(?:(?:1[0-2]|0?[1-9])월\s*)?(?:[0-2]?\d|3[01])일"
+)
+_ABSTRACT_TRANSFORMATION_ASSERTION_RE = re.compile(
+    r"(?:가능성|미래|패러다임|지형|환경|방향성|잠재력)"
+    r"[^.!?。！？]{0,120}?"
+    r"(?:재정의하|다시\s+정의하|바꾸|변화시키|열어가|확장하)"
+    r"고\s+있다고\s+(?:밝혔다|말했다|설명했다|강조했다)$"
+)
 _CONCRETE_EVENT_PREDICATE_CUES = (
     "발매했다",
     "공개했다",
@@ -425,6 +447,10 @@ _CONDITIONAL_EVENT_CUES = (
     "확정",
 )
 _CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
+_CONDITIONAL_CAUSAL_EXPLAINER_RE = re.compile(
+    r"(?:으)?면(?:\s|,)\s*[^.!?。！？]{1,240}?"
+    r"(?:때문(?:이다|입니다)|이유(?:다|입니다))$"
+)
 _SENTENCE_TERMINALS = ".!?。！？"
 
 
@@ -461,6 +487,8 @@ def _context_dependent_text(value: str) -> bool:
         return True
     if _GENERIC_CONTEXT_SUBJECT_RE.search(normalized) is not None:
         return True
+    if generic_civic_actor_text(normalized):
+        return True
     if _REFERENTIAL_EVENT_RE.search(normalized) is not None:
         return True
     if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
@@ -493,6 +521,10 @@ def referential_remainder_text(value: str) -> bool:
     return _REFERENTIAL_REMAINDER_RE.search(" ".join(value.split())) is not None
 
 
+def generic_civic_actor_text(value: str) -> bool:
+    return _GENERIC_CIVIC_ACTOR_RE.search(" ".join(value.split())) is not None
+
+
 def _subjectless_funding_result(normalized: str) -> bool:
     if _SUBJECTLESS_FUNDING_MAIN_CLAUSE_RE.search(normalized) is not None:
         return True
@@ -518,6 +550,7 @@ def context_dependent_headline(value: str) -> bool:
     return (
         _context_dependent_text(normalized)
         or _INCOMPLETE_ADNOMINAL_HEADLINE_RE.search(normalized) is not None
+        or _PREDICATE_LED_CONDITIONAL_HEADLINE_RE.search(normalized) is not None
     )
 
 
@@ -724,6 +757,18 @@ def non_event_analytical_text(value: str) -> bool:
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     ):
         return True
+    if (
+        _STRATEGIC_DESIGNATION_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_CUE_RE.search(normalized) is None
+        and not any(cue in normalized for cue in _CURRENT_EVENT_CUES)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
+    if (
+        _ABSTRACT_TRANSFORMATION_ASSERTION_RE.search(normalized) is not None
+        and _QUANTIFIED_TREND_RE.search(normalized) is None
+    ):
+        return True
     return (
         any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
         and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
@@ -735,6 +780,9 @@ def conditional_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split())
     has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
     if "더라도" in normalized and "이어야" in normalized:
+        return not has_reporting_event
+    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
+    if _CONDITIONAL_CAUSAL_EXPLAINER_RE.search(terminal_stripped) is not None:
         return not has_reporting_event
     if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
         return False

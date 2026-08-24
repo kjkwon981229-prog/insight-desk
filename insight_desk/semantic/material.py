@@ -10,6 +10,7 @@ from typing import Mapping
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
 from insight_desk.feed_quality import (
     conditional_analytical_text,
+    generic_civic_actor_text,
     non_event_analytical_text,
     orphaned_parent_content_role_text,
     referential_remainder_text,
@@ -167,6 +168,8 @@ def _context_dependent_fragment(text: str, *, subject: str) -> bool:
     if orphaned_parent_content_role_text(normalized):
         return True
     if referential_remainder_text(normalized):
+        return True
+    if generic_civic_actor_text(normalized):
         return True
     if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS:
         return True
