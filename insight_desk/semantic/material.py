@@ -18,6 +18,7 @@ from insight_desk.feed_quality import (
     stale_day_only_context,
     stale_quarter_context,
     stale_relative_past_event_text,
+    stale_relative_period_event_text,
 )
 
 from .tooling import KiwiMorphologyHelper
@@ -338,7 +339,7 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
             )
-        if stale_relative_past_event_text(text):
+        if stale_relative_past_event_text(text) or stale_relative_period_event_text(text):
             return MaterialEventAssessment(
                 event.event_id,
                 MaterialEventVerdict.DEFER,

@@ -123,6 +123,7 @@ _MISSING_BLOCK_BOUNDARY_RE = re.compile(
     r"(?=(?!(?:자들?|여부|일정|내용|자료|행사)(?:은|는|이|가))"
     r"[가-힣A-Za-z0-9·&-]{2,28}(?:은|는|이|가)\s)"
 )
+_TRAILING_LIST_FRAGMENT_RE = re.compile(r"[,，;；、]\s*$")
 _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
     r"결정된|출시한|발매한|공개한|상승한|하락한|오른|내린|앞둔|나선|보인|만든|"
@@ -343,6 +344,68 @@ _DESCRIPTIVE_PREDICATE_CUES = (
     "결합한",
     "특징이다",
 )
+_MEDIA_DESCRIPTION_CONTAINER_CUES = (
+    "앨범",
+    "음반",
+    "수록곡",
+    "곡들",
+    "트랙",
+    "EP",
+    "싱글",
+)
+_MEDIA_DESCRIPTION_ATTRIBUTE_CUES = (
+    "보컬",
+    "랩",
+    "사운드",
+    "장르",
+    "분위기",
+    "스타일",
+    "색채",
+    "가사",
+    "멜로디",
+    "탑라인",
+)
+_MEDIA_DESCRIPTION_PREDICATE_CUES = (
+    "선보였다",
+    "선보이고 있다",
+    "담겼다",
+    "담겨 있다",
+    "들려준다",
+    "보여준다",
+    "표현한다",
+    "구성됐다",
+    "특징이다",
+)
+_LIVE_PERFORMANCE_EVENT_CUES = ("콘서트", "공연", "무대", "쇼케이스", "페스티벌")
+_BIOGRAPHICAL_IDENTITY_CUES = (
+    "출신",
+    "가수이자",
+    "배우인",
+    "멤버인",
+    "소속된",
+    "소속돼",
+)
+_BIOGRAPHICAL_ROLE_CUES = (
+    "메인댄서",
+    "리드래퍼",
+    "서브보컬",
+    "리더",
+    "보컬",
+    "래퍼",
+    "역할",
+)
+_BIOGRAPHICAL_STATE_ENDINGS = (
+    "담당하고 있다",
+    "담당하고 있습니다",
+    "맡고 있다",
+    "맡고 있습니다",
+    "활동하고 있다",
+    "활동하고 있습니다",
+    "소속돼 있다",
+    "소속돼 있습니다",
+    "소속되어 있다",
+    "소속되어 있습니다",
+)
 _EXPLANATORY_STATE_NOUN_CUES = ("원인", "배경", "힘", "요인", "영향", "신호")
 _EXPLANATORY_STATE_ENDINGS = (
     "두드러지고 있다",
@@ -470,6 +533,9 @@ _PUBLICATION_PRIOR_REPORT_ENDINGS = (
 )
 _RELATIVE_PAST_PERIOD_RE = re.compile(
     r"(?:지난해|작년|전년도|지난\s+시즌|직전\s+시즌)"
+)
+_RELATIVE_PAST_EVENT_PERIOD_RE = re.compile(
+    r"(?:지난달|지난\s+달|지난주|지난\s+주|지난\s+분기|지난\s+연도)"
 )
 _RELATIVE_PAST_COMPARISON_RE = re.compile(
     r"^(?:(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?\s*)?"
@@ -602,6 +668,7 @@ def malformed_visible_text(value: str) -> bool:
         _MISSING_FINANCIAL_TENOR_RE.search(normalized) is not None
         or _MISSING_FINANCIAL_VALUE_RE.search(normalized) is not None
         or _MISSING_BLOCK_BOUNDARY_RE.search(normalized) is not None
+        or _TRAILING_LIST_FRAGMENT_RE.search(normalized) is not None
     )
 
 
@@ -611,6 +678,7 @@ def context_dependent_headline(value: str) -> bool:
         _context_dependent_text(normalized)
         or _INCOMPLETE_ADNOMINAL_HEADLINE_RE.search(normalized) is not None
         or _PREDICATE_LED_CONDITIONAL_HEADLINE_RE.search(normalized) is not None
+        or _TRAILING_LIST_FRAGMENT_RE.search(normalized) is not None
     )
 
 
@@ -665,6 +733,19 @@ def stale_relative_past_event_text(value: str) -> bool:
     if _SPORTS_RECORD_RE.search(normalized) is None:
         return False
     for match in _RELATIVE_PAST_PERIOD_RE.finditer(normalized):
+        following = normalized[match.end() :].lstrip()
+        if _RELATIVE_PAST_COMPARISON_RE.match(following) is not None:
+            continue
+        if any(cue in following for cue in _CONCRETE_EVENT_PREDICATE_CUES):
+            return True
+    return False
+
+
+def stale_relative_period_event_text(value: str) -> bool:
+    normalized = " ".join(value.split())
+    if any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    for match in _RELATIVE_PAST_EVENT_PERIOD_RE.finditer(normalized):
         following = normalized[match.end() :].lstrip()
         if _RELATIVE_PAST_COMPARISON_RE.match(following) is not None:
             continue
@@ -777,6 +858,25 @@ def _publication_retrospective_text(normalized: str) -> bool:
     return False
 
 
+def _descriptive_media_profile_text(normalized: str) -> bool:
+    if any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    if any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES):
+        return False
+    if (
+        any(cue in normalized for cue in _MEDIA_DESCRIPTION_CONTAINER_CUES)
+        and any(cue in normalized for cue in _MEDIA_DESCRIPTION_ATTRIBUTE_CUES)
+        and any(cue in normalized for cue in _MEDIA_DESCRIPTION_PREDICATE_CUES)
+        and not any(cue in normalized for cue in _LIVE_PERFORMANCE_EVENT_CUES)
+    ):
+        return True
+    return (
+        any(cue in normalized for cue in _BIOGRAPHICAL_IDENTITY_CUES)
+        and any(cue in normalized for cue in _BIOGRAPHICAL_ROLE_CUES)
+        and normalized.endswith(_BIOGRAPHICAL_STATE_ENDINGS)
+    )
+
+
 def non_event_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     if metadata_or_caption_text(normalized):
@@ -786,6 +886,8 @@ def non_event_analytical_text(value: str) -> bool:
     if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
         return True
     if _publication_retrospective_text(normalized):
+        return True
+    if _descriptive_media_profile_text(normalized):
         return True
     if _DEFINITION_STATEMENT_RE.search(normalized) is not None:
         return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
@@ -917,6 +1019,8 @@ def visible_story_issues(
     if stale_explicit_past_event_text(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     elif stale_relative_past_event_text(summary):
+        issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
+    elif stale_relative_period_event_text(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     elif stale_day_only_context(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
