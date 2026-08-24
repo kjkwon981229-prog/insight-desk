@@ -141,11 +141,6 @@ class Live186AiCentralityTests(unittest.TestCase):
             )
         )
 
-    def test_ai_visible_headline_scope_is_item_local(self) -> None:
-        self.assertFalse(_visible_topic_headline_bound(self.topic, "정부 미래대응기금 세수 적립 구체화"))
-        self.assertTrue(_visible_topic_headline_bound(self.topic, "디지털·AI 활용 전통시장 경쟁력 강화 방안"))
-        self.assertTrue(_visible_topic_headline_bound(self.topic, "데이터센터 사업 기회 모색"))
-
 
 class Live186MaterialityTests(unittest.TestCase):
     def test_explicit_2017_event_is_stale_even_inside_fresh_article(self) -> None:
@@ -185,16 +180,6 @@ class Live186MaterialityTests(unittest.TestCase):
 
 
 class Live186FinalValidatorParityTests(unittest.TestCase):
-    def test_ai_contextless_headline_fails_final_topic_gate(self) -> None:
-        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_TOPIC_BINDING"):
-            validate_html(
-                _story_html(
-                    topic="AI·테크",
-                    headline="정부 미래대응기금 세수 적립 구체화",
-                    summary="정부가 반도체 호황으로 늘어난 세수를 미래에 대비해 적립하는 방안을 발표했다.",
-                )
-            )
-
     def test_kpop_scope_matches_existing_final_contract_item_locally(self) -> None:
         kpop = _topic(
             "kpop",

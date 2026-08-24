@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 
 MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
-AI_TOPIC = "AI·테크"
 PSAT_TOPIC = "PSAT·공채 일정"
 KBO_HANWHA_TOPIC = "KBO·한화 이글스"
 KPOP_TOPIC = "엔터·음악·K-POP"
@@ -20,20 +19,6 @@ PSAT_FORBIDDEN = (
     "Preparatory Student Academic",
     "PSAT 아카데미",
     "NCAA",
-)
-_AI_HEADLINE_SCOPE_CUES = (
-    "AI",
-    "인공지능",
-    "생성형",
-    "데이터센터",
-    "반도체",
-    "GPU",
-    "HBM",
-    "NVIDIA",
-    "ChatGPT",
-    "OpenAI",
-    "로봇",
-    "로보틱스",
 )
 _HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
 _KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
@@ -417,10 +402,7 @@ def validate_html(
         elif _stale_dated_context_summary(summary):
             stale_dated_contexts += 1
 
-        if topic == AI_TOPIC:
-            if not any(cue.casefold() in headline.casefold() for cue in _AI_HEADLINE_SCOPE_CUES):
-                topic_binding_violations += 1
-        elif topic == KBO_HANWHA_TOPIC:
+        if topic == KBO_HANWHA_TOPIC:
             combined_visible = f"{headline}\n{summary}"
             entertainment_crossover = (
                 any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)

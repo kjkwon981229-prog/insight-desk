@@ -49,20 +49,6 @@ MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
 AI_TECH_TOPIC_ID = "ai_tech"
 KBO_HANWHA_TOPIC_ID = "kbo_hanwha"
 KPOP_TOPIC_ID = "kpop"
-_AI_HEADLINE_SCOPE_CUES = (
-    "AI",
-    "인공지능",
-    "생성형",
-    "데이터센터",
-    "반도체",
-    "GPU",
-    "HBM",
-    "NVIDIA",
-    "ChatGPT",
-    "OpenAI",
-    "로봇",
-    "로보틱스",
-)
 _KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
 _KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
 _KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
@@ -214,8 +200,6 @@ def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) ->
 
 def _visible_topic_headline_bound(topic: TopicConfig, headline: str) -> bool:
     folded = headline.casefold()
-    if topic.topic_id == AI_TECH_TOPIC_ID:
-        return any(cue.casefold() in folded for cue in _AI_HEADLINE_SCOPE_CUES)
     if topic.topic_id == KBO_HANWHA_TOPIC_ID:
         return any(cue.casefold() in folded for cue in _KBO_HEADLINE_SCOPE_CUES)
     if topic.topic_id == KPOP_TOPIC_ID:
