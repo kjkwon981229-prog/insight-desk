@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -18,7 +18,14 @@ PSAT_FORBIDDEN = (
     "PSAT 아카데미",
     "NCAA",
 )
-_CONTEXT_DEPENDENT_SUMMARY_LEADS = ("여기에 ", "여기에,", "이후 ", "이 딜러는 ")
+_CONTEXT_DEPENDENT_SUMMARY_LEADS = (
+    "여기에 ",
+    "여기에,",
+    "이후 ",
+    "이 딜러는 ",
+    "이번 ",
+    "팬들의 ",
+)
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
     "K탑스타",
@@ -32,10 +39,27 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "수상",
 )
 _NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_CONDITIONAL_EVENT_CUES = (
+    "발표",
+    "밝혔다",
+    "결정",
+    "도입",
+    "시행",
+    "공개",
+    "추진",
+    "합의",
+    "체결",
+    "승인",
+    "확정",
+)
+_STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
+_MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
+_CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
+_URL_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])")
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -75,6 +99,38 @@ def _non_event_analytical_summary(value: str) -> bool:
     return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
 
 
+def _conditional_analytical_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
+        return False
+    return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+
+
+def _stale_dated_context_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    now = datetime.now(timezone.utc)
+    for match in _MONTH_DAY_RE.finditer(normalized):
+        if match.start() > 32:
+            continue
+        year_text, month_text, day_text = match.groups()
+        year = int(year_text) if year_text is not None else now.year
+        try:
+            candidate = datetime(year, int(month_text), int(day_text), tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if year_text is None and candidate > now:
+            try:
+                candidate = candidate.replace(year=year - 1)
+            except ValueError:
+                continue
+        if (now - candidate).total_seconds() <= 72 * 60 * 60:
+            continue
+        tail = normalized[match.end() : match.end() + 24]
+        if any(cue in tail for cue in _STALE_DATE_CONTEXT_CUES):
+            return True
+    return False
+
+
 def _stale_sports_retrospective_summary(value: str) -> bool:
     normalized = " ".join(value.split())
     years = [int(item) for item in _YEAR_RE.findall(normalized)]
@@ -86,6 +142,23 @@ def _stale_sports_retrospective_summary(value: str) -> bool:
         return False
     terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
     return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
+
+
+def _stale_source_url(value: str) -> bool:
+    """Use only a valid YYYYMMDD embedded in a public article URL as a conservative stale backstop."""
+
+    parsed = urlparse(value)
+    haystack = f"{parsed.path}?{parsed.query}"
+    today = datetime.now(timezone.utc).date()
+    for match in _URL_DATE_RE.finditer(haystack):
+        try:
+            candidate = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            continue
+        age_days = (today - candidate).days
+        if age_days > 3:
+            return True
+    return False
 
 
 class FeedParser(HTMLParser):
@@ -148,7 +221,7 @@ class FeedParser(HTMLParser):
 def _validate_source_audit(
     stories: list[dict[str, str]],
     source_audit: dict[str, object],
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     rendered_sources = source_audit.get("rendered_sources")
     if not isinstance(rendered_sources, list):
         raise ValueError("FEED_QUALITY_SOURCE_AUDIT_MISSING")
@@ -158,6 +231,7 @@ def _validate_source_audit(
     seen_source_groups: set[str] = set()
     seen_content: set[str] = set()
     invalid_source_url_indices: list[int] = []
+    stale_source_url_indices: list[int] = []
     duplicate_sources = 0
     duplicate_source_content = 0
 
@@ -179,6 +253,8 @@ def _validate_source_audit(
             raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
         if not source_url_valid:
             invalid_source_url_indices.append(index)
+        elif _stale_source_url(source_url):
+            stale_source_url_indices.append(index)
         audit_event_ids.append(event_id)
         if source_group_key in seen_source_groups:
             duplicate_sources += 1
@@ -199,7 +275,9 @@ def _validate_source_audit(
         )
     if invalid_source_url_indices:
         raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{invalid_source_url_indices[0]}")
-    return duplicate_sources, duplicate_source_content
+    if stale_source_url_indices:
+        raise ValueError(f"FEED_QUALITY_STALE_SOURCE_URL:{stale_source_url_indices[0]}")
+    return duplicate_sources, duplicate_source_content, len(stale_source_url_indices)
 
 
 def validate_html(
@@ -222,6 +300,8 @@ def validate_html(
     headline_summary_collisions = 0
     context_dependent_summaries = 0
     non_event_analytical_summaries = 0
+    conditional_analytical_summaries = 0
+    stale_dated_contexts = 0
     stale_sports_retrospectives = 0
     max_headline = 0
     max_summary = 0
@@ -250,6 +330,10 @@ def validate_html(
             context_dependent_summaries += 1
         if _non_event_analytical_summary(summary):
             non_event_analytical_summaries += 1
+        if _conditional_analytical_summary(summary):
+            conditional_analytical_summaries += 1
+        if _stale_dated_context_summary(summary):
+            stale_dated_contexts += 1
         if _stale_sports_retrospective_summary(summary):
             stale_sports_retrospectives += 1
 
@@ -287,6 +371,12 @@ def validate_html(
         raise ValueError(
             f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
         )
+    if conditional_analytical_summaries:
+        raise ValueError(
+            f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}"
+        )
+    if stale_dated_contexts:
+        raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
     if stale_sports_retrospectives:
         raise ValueError(
             f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}"
@@ -302,8 +392,9 @@ def validate_html(
 
     duplicate_sources = 0
     duplicate_source_content = 0
+    stale_source_urls = 0
     if source_audit is not None:
-        duplicate_sources, duplicate_source_content = _validate_source_audit(
+        duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(
             stories,
             source_audit,
         )
@@ -316,12 +407,15 @@ def validate_html(
         "headline_summary_collisions": headline_summary_collisions,
         "context_dependent_summaries": context_dependent_summaries,
         "non_event_analytical_summaries": non_event_analytical_summaries,
+        "conditional_analytical_summaries": conditional_analytical_summaries,
+        "stale_dated_contexts": stale_dated_contexts,
         "stale_sports_retrospectives": stale_sports_retrospectives,
         "duplicate_headlines": duplicate_headlines,
         "duplicate_summaries": duplicate_summaries,
         "duplicate_content": duplicate_content,
         "duplicate_sources": duplicate_sources,
         "duplicate_source_content": duplicate_source_content,
+        "stale_source_urls": stale_source_urls,
         "psat_forbidden_hits": 0,
         "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
     }

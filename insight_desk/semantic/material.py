@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import lru_cache
 import re
@@ -28,7 +28,14 @@ _SPORTS_DEPICTIVE_ACTION_CUES = (
     "포즈",
 )
 _SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
-_CONTEXT_DEPENDENT_LEADS = ("여기에 ", "여기에,", "이후 ", "이 딜러는 ")
+_CONTEXT_DEPENDENT_LEADS = (
+    "여기에 ",
+    "여기에,",
+    "이후 ",
+    "이 딜러는 ",
+    "이번 ",
+    "팬들의 ",
+)
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
     "K탑스타",
@@ -42,9 +49,25 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "수상",
 )
 _NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_CONDITIONAL_EVENT_CUES = (
+    "발표",
+    "밝혔다",
+    "결정",
+    "도입",
+    "시행",
+    "공개",
+    "추진",
+    "합의",
+    "체결",
+    "승인",
+    "확정",
+)
+_STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
+_MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
+_CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
 
 
 class MaterialEventVerdict(StrEnum):
@@ -63,6 +86,8 @@ class MaterialEventReason(StrEnum):
     DEPICTIVE_SPORTS_CAPTION = "depictive_sports_caption"
     CONTEXT_DEPENDENT_FRAGMENT = "context_dependent_fragment"
     NON_EVENT_ANALYTICAL_JUDGMENT = "non_event_analytical_judgment"
+    CONDITIONAL_ANALYTICAL_SCENARIO = "conditional_analytical_scenario"
+    STALE_DATED_CONTEXT = "stale_dated_context"
     STALE_SPORTS_RETROSPECTIVE = "stale_sports_retrospective"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
@@ -153,6 +178,42 @@ def _non_event_analytical_judgment(text: str) -> bool:
     return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
 
 
+def _conditional_analytical_scenario(text: str) -> bool:
+    """Reject standalone hypothetical/conditional analysis without an actual reporting event."""
+
+    normalized = " ".join(text.split())
+    if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
+        return False
+    return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+
+
+def _dated_context_is_stale(text: str) -> bool:
+    """Reject a sentence led by an explicitly old dated context such as an old release/broadcast."""
+
+    normalized = " ".join(text.split())
+    now = datetime.now(timezone.utc)
+    for match in _MONTH_DAY_RE.finditer(normalized):
+        if match.start() > 32:
+            continue
+        year_text, month_text, day_text = match.groups()
+        year = int(year_text) if year_text is not None else now.year
+        try:
+            candidate = datetime(year, int(month_text), int(day_text), tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if year_text is None and candidate > now + timedelta(hours=6):
+            try:
+                candidate = candidate.replace(year=year - 1)
+            except ValueError:
+                continue
+        if now - candidate <= timedelta(hours=72):
+            continue
+        tail = normalized[match.end() : match.end() + 24]
+        if any(cue in tail for cue in _STALE_DATE_CONTEXT_CUES):
+            return True
+    return False
+
+
 def _stale_sports_retrospective(text: str) -> bool:
     """Reject a fresh article's standalone sentence whose event is explicitly from a prior year."""
 
@@ -224,6 +285,18 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT,),
+            )
+        if _conditional_analytical_scenario(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO,),
+            )
+        if _dated_context_is_stale(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.STALE_DATED_CONTEXT,),
             )
         if _stale_sports_retrospective(text):
             return MaterialEventAssessment(
