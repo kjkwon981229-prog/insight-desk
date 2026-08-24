@@ -187,9 +187,26 @@ def _conditional_analytical_scenario(text: str) -> bool:
     return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
 
 
+def _stale_sports_retrospective(text: str) -> bool:
+    """Reject a fresh article's standalone sentence whose event is explicitly from a prior year."""
+
+    normalized = " ".join(text.split())
+    years = [int(value) for value in _YEAR_RE.findall(normalized)]
+    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if "장면" not in normalized and "기록" not in normalized:
+        return False
+    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
+    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
+
+
 def _dated_context_is_stale(text: str) -> bool:
     """Reject a sentence led by an explicitly old dated context such as an old release/broadcast."""
 
+    if _stale_sports_retrospective(text):
+        return False
     normalized = " ".join(text.split())
     now = datetime.now(timezone.utc)
     for match in _MONTH_DAY_RE.finditer(normalized):
@@ -212,21 +229,6 @@ def _dated_context_is_stale(text: str) -> bool:
         if any(cue in tail for cue in _STALE_DATE_CONTEXT_CUES):
             return True
     return False
-
-
-def _stale_sports_retrospective(text: str) -> bool:
-    """Reject a fresh article's standalone sentence whose event is explicitly from a prior year."""
-
-    normalized = " ".join(text.split())
-    years = [int(value) for value in _YEAR_RE.findall(normalized)]
-    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
-        return False
-    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
-        return False
-    if "장면" not in normalized and "기록" not in normalized:
-        return False
-    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
-    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
 def assess_material_event(
@@ -292,17 +294,17 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO,),
             )
-        if _dated_context_is_stale(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.STALE_DATED_CONTEXT,),
-            )
         if _stale_sports_retrospective(text):
             return MaterialEventAssessment(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
+            )
+        if _dated_context_is_stale(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.STALE_DATED_CONTEXT,),
             )
         literal_fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
         if any(value not in text for value in literal_fields):

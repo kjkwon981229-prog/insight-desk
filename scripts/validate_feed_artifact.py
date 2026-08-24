@@ -106,7 +106,22 @@ def _conditional_analytical_summary(value: str) -> bool:
     return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
 
 
+def _stale_sports_retrospective_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    years = [int(item) for item in _YEAR_RE.findall(normalized)]
+    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if "장면" not in normalized and "기록" not in normalized:
+        return False
+    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
+    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
+
+
 def _stale_dated_context_summary(value: str) -> bool:
+    if _stale_sports_retrospective_summary(value):
+        return False
     normalized = " ".join(value.split())
     now = datetime.now(timezone.utc)
     for match in _MONTH_DAY_RE.finditer(normalized):
@@ -131,19 +146,6 @@ def _stale_dated_context_summary(value: str) -> bool:
     return False
 
 
-def _stale_sports_retrospective_summary(value: str) -> bool:
-    normalized = " ".join(value.split())
-    years = [int(item) for item in _YEAR_RE.findall(normalized)]
-    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
-        return False
-    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
-        return False
-    if "장면" not in normalized and "기록" not in normalized:
-        return False
-    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
-    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
-
-
 def _stale_source_url(value: str) -> bool:
     """Use only a valid YYYYMMDD embedded in a public article URL as a conservative stale backstop."""
 
@@ -155,8 +157,7 @@ def _stale_source_url(value: str) -> bool:
             candidate = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
         except ValueError:
             continue
-        age_days = (today - candidate).days
-        if age_days > 3:
+        if (today - candidate).days > 3:
             return True
     return False
 
@@ -332,10 +333,10 @@ def validate_html(
             non_event_analytical_summaries += 1
         if _conditional_analytical_summary(summary):
             conditional_analytical_summaries += 1
-        if _stale_dated_context_summary(summary):
-            stale_dated_contexts += 1
         if _stale_sports_retrospective_summary(summary):
             stale_sports_retrospectives += 1
+        elif _stale_dated_context_summary(summary):
+            stale_dated_contexts += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
@@ -375,12 +376,12 @@ def validate_html(
         raise ValueError(
             f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}"
         )
-    if stale_dated_contexts:
-        raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
     if stale_sports_retrospectives:
         raise ValueError(
             f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}"
         )
+    if stale_dated_contexts:
+        raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
     if duplicate_headlines:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_summaries:
