@@ -7,7 +7,7 @@ from .discovery import (
     GdeltDocDiscovery,
     NaverNewsDiscovery,
     SequentialNewsDiscovery,
-    default_news_discovery,
+    default_news_discovery as _default_news_discovery,
 )
 from .models import (
     AcquisitionError,
@@ -31,6 +31,14 @@ from .runtime import (
     TrafilaturaExtractor,
     UrlLibHtmlFetcher,
 )
+from .source_quality import source_url_has_stale_embedded_date, with_stale_url_filter
+
+
+def default_news_discovery(*, env: dict[str, str] | None = None) -> SequentialNewsDiscovery:
+    """Return the configured discovery stack with stale-dated public URLs filtered per route."""
+
+    return with_stale_url_filter(_default_news_discovery(env=env))
+
 
 __all__ = [
     "AcquisitionError",
@@ -56,4 +64,5 @@ __all__ = [
     "normalize_kosis_statistics",
     "normalize_naver_items",
     "normalize_opendart_filings",
+    "source_url_has_stale_embedded_date",
 ]
