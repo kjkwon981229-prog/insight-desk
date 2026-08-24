@@ -276,6 +276,7 @@ class PreservationIssueCode(StrEnum):
     META_PHRASE = "meta_phrase"
     TEMPORAL_RELATION_MISMATCH = "temporal_relation_mismatch"
     ARGUMENT_ROLE_MISMATCH = "argument_role_mismatch"
+    NOVEL_ATTRIBUTION = "novel_attribution"
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +337,11 @@ _QUOTE_PATTERNS = (
     re.compile(r"『([^』\n]+)』"),
 )
 _META_PHRASES = ("이 기사에서는", "요약하자면")
+_ATTRIBUTION_ACTOR_RE = re.compile(
+    r"(?:^|[\n.!?。！？]\s*)"
+    r"(?P<actor>[가-힣A-Za-z0-9·&-]+(?:\s+[가-힣A-Za-z0-9·&-]+){0,4}?)"
+    r"(?:에|측에)\s+따르면"
+)
 
 
 def _date_atoms(text: str) -> tuple[str, ...]:
@@ -407,6 +413,18 @@ def _argument_role_inversions(source: str, generated: str) -> tuple[str, ...]:
     return tuple(inversions)
 
 
+def _novel_attribution_actors(source: str, generated: str) -> tuple[str, ...]:
+    """Return generated attribution actors absent from the cited evidence bytes."""
+
+    source_normalized = " ".join(source.split())
+    generated_normalized = re.sub(r"[ \t]+", " ", generated)
+    actors = {
+        " ".join(match.group("actor").split())
+        for match in _ATTRIBUTION_ACTOR_RE.finditer(generated_normalized)
+    }
+    return tuple(sorted(actor for actor in actors if actor not in source_normalized))
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -461,6 +479,11 @@ def validate_preservation(
     for value in _argument_role_inversions(source, generated):
         issues.append(
             PreservationIssue(PreservationIssueCode.ARGUMENT_ROLE_MISMATCH, value)
+        )
+
+    for value in _novel_attribution_actors(source, generated):
+        issues.append(
+            PreservationIssue(PreservationIssueCode.NOVEL_ATTRIBUTION, value)
         )
 
     for value in _quoted_atoms(generated):

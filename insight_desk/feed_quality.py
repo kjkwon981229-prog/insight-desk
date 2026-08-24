@@ -73,6 +73,11 @@ _MISSING_FINANCIAL_VALUE_RE = re.compile(
     r"(?:금리|수익률|환율|가격|지수|비율)(?:이|가|은|는)\s+(?:에|로)\s+"
     r"(?:도달|진입|마감|상승|하락|올랐|내렸)"
 )
+_MISSING_BLOCK_BOUNDARY_RE = re.compile(
+    r"(?:참석|발표|개최|확정|선정|수상|발매|출시|공개)"
+    r"(?=(?!(?:자들?|여부|일정|내용|자료|행사)(?:은|는|이|가))"
+    r"[가-힣A-Za-z0-9·&-]{2,28}(?:은|는|이|가)\s)"
+)
 _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
     r"결정된|출시한|발매한|공개한|상승한|하락한|오른|내린|앞둔|나선|보인|만든|"
@@ -160,6 +165,25 @@ _NON_EVENT_ATTENTION_ENDINGS = (
     "가능성을 주목하고 있습니다",
 )
 _NON_EVENT_INFERENCE_ENDINGS = ("셈이다", "셈입니다")
+_NON_EVENT_TREND_ENDINGS = (
+    "늘고 있다",
+    "늘고 있습니다",
+    "늘어나고 있다",
+    "늘어나고 있습니다",
+    "증가하고 있다",
+    "증가하고 있습니다",
+    "줄고 있다",
+    "줄고 있습니다",
+    "감소하고 있다",
+    "감소하고 있습니다",
+)
+_QUANTIFIED_TREND_RE = re.compile(
+    r"\d[\d,.]*\s*(?:%|％|명|건|개|곳|배|원|달러|경기|승|패|세이브|홀드|이닝)"
+)
+_DEFINITION_STATEMENT_RE = re.compile(
+    r"^(?:[^.!?。！？]{1,80}?)(?:은|는|란)\s+"
+    r"[^.!?。！？]{1,180}?(?:뜻한다|의미한다|말한다|뜻입니다|의미입니다)$"
+)
 _EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
 _EVALUATIVE_CONDITION_ENDINGS = (
     "가능하다고 봤다",
@@ -258,6 +282,17 @@ _CONCRETE_EVENT_PREDICATE_CUES = (
     "도달했다",
     "진입했다",
 )
+_RELATIVE_PAST_PERIOD_RE = re.compile(
+    r"(?:지난해|작년|전년도|지난\s+시즌|직전\s+시즌)"
+)
+_RELATIVE_PAST_COMPARISON_RE = re.compile(
+    r"^(?:(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?\s*)?"
+    r"(?:보다|대비|동기|수준|이후|이래|부터|기록(?:을|보다))"
+)
+_SPORTS_RECORD_RE = re.compile(
+    r"(?:\d+\s*(?:경기|이닝|승|패|세이브|홀드|홈런)|"
+    r"평균자책점|타율|마무리(?:\s+보직|\s+투수)?|선발(?:\s+등판)?|등판|우승|패배)"
+)
 _CONDITIONAL_EVENT_CUES = (
     "발표",
     "밝혔다",
@@ -340,6 +375,7 @@ def malformed_visible_text(value: str) -> bool:
     return (
         _MISSING_FINANCIAL_TENOR_RE.search(normalized) is not None
         or _MISSING_FINANCIAL_VALUE_RE.search(normalized) is not None
+        or _MISSING_BLOCK_BOUNDARY_RE.search(normalized) is not None
     )
 
 
@@ -384,6 +420,21 @@ def stale_explicit_past_event_text(
         if any(cue in prefix for cue in _CONCRETE_EVENT_PREDICATE_CUES):
             continue
         return True
+    return False
+
+
+def stale_relative_past_event_text(value: str) -> bool:
+    normalized = " ".join(value.split())
+    if any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    if _SPORTS_RECORD_RE.search(normalized) is None:
+        return False
+    for match in _RELATIVE_PAST_PERIOD_RE.finditer(normalized):
+        following = normalized[match.end() :].lstrip()
+        if _RELATIVE_PAST_COMPARISON_RE.match(following) is not None:
+            continue
+        if any(cue in following for cue in _CONCRETE_EVENT_PREDICATE_CUES):
+            return True
     return False
 
 
@@ -450,6 +501,12 @@ def non_event_analytical_text(value: str) -> bool:
         return True
     if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
         return True
+    if _DEFINITION_STATEMENT_RE.search(normalized) is not None:
+        return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    if normalized.endswith(_NON_EVENT_TREND_ENDINGS):
+        trailing_sentence = re.split(r"[.!?。！？]\s*", normalized)[-1]
+        if _QUANTIFIED_TREND_RE.search(trailing_sentence) is None:
+            return True
     if (
         normalized.endswith(_NON_EVENT_INFERENCE_ENDINGS)
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
@@ -513,6 +570,8 @@ def visible_story_issues(
     if mixed_event_summary(summary):
         issues.append(VisibleStoryIssue.MIXED_EVENT_SUMMARY)
     if stale_explicit_past_event_text(summary):
+        issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
+    elif stale_relative_past_event_text(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     if kbo_hanwha_comparison_only(topic=topic, headline=headline, summary=summary):
         issues.append(VisibleStoryIssue.TOPIC_BINDING)

@@ -255,6 +255,17 @@ class Live209TrendStateRegressions(unittest.TestCase):
         )
         self.assertIs(assessment.verdict, MaterialEventVerdict.MATERIAL)
 
+    def test_same_event_yield_volatility_context_remains_visible(self) -> None:
+        self.assertFalse(_issue_values(
+            topic="경제·투자",
+            headline="미국 30년 만기 국채 금리 5.3% 도달",
+            summary=(
+                "미국 30년 만기 국채 금리가 5.3%에 도달했다. 이는 미국 "
+                "연방준비제도가 포워드 가이던스를 제거한 가운데 나타난 현상으로, "
+                "채권 변동성이 확대되고 있다."
+            ),
+        ))
+
 
 class Live209RelativePastSportsRegressions(unittest.TestCase):
     _LIVE_HEADLINE = "한화 이글스 김서현, 지난 시즌 마무리 투수 기록"
