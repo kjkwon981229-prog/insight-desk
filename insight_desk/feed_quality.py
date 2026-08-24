@@ -79,7 +79,11 @@ _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"올린|늘린|줄인|마련한|추진한|허용한)$"
 )
 _VISIBLE_BYLINE_RE = re.compile(
+    r"(?:"
     r"^[\(（\[][^\)）\]]{0,80}(?:기자|특파원|뉴스)[\)）\]]\s*"
+    r"|(?:^|[\s,])(?:[가-힣A-Za-z0-9·]+(?:뉴스|일보|신문|방송|통신|TV))\s+"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)(?:가|이)?\s+(?:전했다|보도했다)(?:[.!?。！？]|$)"
+    r")"
 )
 _DISCOURSE_LEADS = ("하지만 ", "그러나 ", "다만 ", "반면 ")
 _DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)")
@@ -175,6 +179,15 @@ _EXPLANATORY_STATE_ENDINGS = (
     "요인으로 해석됩니다",
     "원인으로 해석된다",
     "원인으로 해석됩니다",
+)
+_EXPLANATORY_RELATION_CUES = ("필수불가결", "불가분", "밀접", "필요성")
+_EXPLANATORY_RELATION_ENDINGS = (
+    "연결된다",
+    "연결되어 있다",
+    "연결돼 있다",
+    "관계에 있다",
+    "관련이 있다",
+    "귀결된다",
 )
 _CONCRETE_EVENT_PREDICATE_CUES = (
     "발매했다",
@@ -345,6 +358,12 @@ def non_event_analytical_text(value: str) -> bool:
     if (
         any(cue in normalized for cue in _EXPLANATORY_STATE_NOUN_CUES)
         and normalized.endswith(_EXPLANATORY_STATE_ENDINGS)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
+    if (
+        any(cue in normalized for cue in _EXPLANATORY_RELATION_CUES)
+        and normalized.endswith(_EXPLANATORY_RELATION_ENDINGS)
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     ):
         return True
