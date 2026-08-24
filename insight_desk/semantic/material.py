@@ -59,6 +59,59 @@ _NON_EVENT_ANALYTICAL_ENDINGS = (
     "것으로 풀이된다",
     "것으로 풀이됩니다",
 )
+_NON_EVENT_ATTENTION_ENDINGS = (
+    "관심이 쏠리고 있다",
+    "관심이 쏠리고 있습니다",
+    "관심이 모이고 있다",
+    "관심이 모이고 있습니다",
+    "주목을 받고 있다",
+    "주목받고 있다",
+)
+_EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
+_EVALUATIVE_CONDITION_ENDINGS = (
+    "가능하다고 봤다",
+    "필요하다고 봤다",
+    "가능하다고 평가했다",
+    "필요하다고 평가했다",
+    "의미가 있다고 봤다",
+)
+_DESCRIPTIVE_ATTRIBUTE_CUES = (
+    "장르",
+    "사운드",
+    "스타일",
+    "분위기",
+    "매력",
+    "탑라인",
+    "트랙",
+    "색채",
+    "특징",
+)
+_DESCRIPTIVE_PREDICATE_CUES = (
+    "대비를 이루",
+    "은유한다",
+    "표현한다",
+    "보여준다",
+    "담아낸다",
+    "결합한",
+    "특징이다",
+)
+_CONCRETE_EVENT_PREDICATE_CUES = (
+    "발매했다",
+    "공개했다",
+    "개최했다",
+    "출시했다",
+    "체결했다",
+    "수주했다",
+    "선정됐다",
+    "수상했다",
+    "승리했다",
+    "발표했다",
+    "밝혔다",
+    "확정했다",
+    "도입했다",
+    "시행했다",
+    "데뷔했다",
+)
 _CONDITIONAL_EVENT_CUES = (
     "발표",
     "밝혔다",
@@ -81,6 +134,9 @@ _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
 _MONTH_DAY_ONLY_RE = re.compile(r"(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?")
 _CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
+_DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
+    r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
+)
 
 
 class MaterialEventVerdict(StrEnum):
@@ -182,12 +238,27 @@ def _context_dependent_fragment(text: str, *, subject: str) -> bool:
         return True
     if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
         return True
+    if _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE.search(normalized) is not None:
+        return True
     return _bare_ranking_fragment(normalized)
 
 
 def _non_event_analytical_judgment(text: str) -> bool:
     normalized = " ".join(text.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
-    return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
+    if normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS):
+        return True
+    if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
+        return True
+    if (
+        any(marker in normalized for marker in _EVALUATIVE_CONDITION_MARKERS)
+        and normalized.endswith(_EVALUATIVE_CONDITION_ENDINGS)
+    ):
+        return True
+    return (
+        any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
+        and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    )
 
 
 def _conditional_analytical_scenario(text: str) -> bool:
