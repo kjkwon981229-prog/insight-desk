@@ -8,6 +8,7 @@ import re
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
+from insight_desk.feed_quality import conditional_analytical_text, non_event_analytical_text
 
 from .tooling import KiwiMorphologyHelper
 
@@ -51,80 +52,6 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "어워드",
     "수상",
 )
-_NON_EVENT_ANALYTICAL_ENDINGS = (
-    "설명하기 어렵다",
-    "설명하기 힘들다",
-    "것으로 보인다",
-    "것으로 보입니다",
-    "것으로 풀이된다",
-    "것으로 풀이됩니다",
-)
-_NON_EVENT_ATTENTION_ENDINGS = (
-    "관심이 쏠리고 있다",
-    "관심이 쏠리고 있습니다",
-    "관심이 모이고 있다",
-    "관심이 모이고 있습니다",
-    "주목을 받고 있다",
-    "주목받고 있다",
-)
-_EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
-_EVALUATIVE_CONDITION_ENDINGS = (
-    "가능하다고 봤다",
-    "필요하다고 봤다",
-    "가능하다고 평가했다",
-    "필요하다고 평가했다",
-    "의미가 있다고 봤다",
-)
-_DESCRIPTIVE_ATTRIBUTE_CUES = (
-    "장르",
-    "사운드",
-    "스타일",
-    "분위기",
-    "매력",
-    "탑라인",
-    "트랙",
-    "색채",
-    "특징",
-)
-_DESCRIPTIVE_PREDICATE_CUES = (
-    "대비를 이루",
-    "은유한다",
-    "표현한다",
-    "보여준다",
-    "담아낸다",
-    "결합한",
-    "특징이다",
-)
-_CONCRETE_EVENT_PREDICATE_CUES = (
-    "발매했다",
-    "공개했다",
-    "개최했다",
-    "출시했다",
-    "체결했다",
-    "수주했다",
-    "선정됐다",
-    "수상했다",
-    "승리했다",
-    "발표했다",
-    "밝혔다",
-    "확정했다",
-    "도입했다",
-    "시행했다",
-    "데뷔했다",
-)
-_CONDITIONAL_EVENT_CUES = (
-    "발표",
-    "밝혔다",
-    "결정",
-    "도입",
-    "시행",
-    "공개",
-    "추진",
-    "합의",
-    "체결",
-    "승인",
-    "확정",
-)
 _STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
@@ -133,7 +60,6 @@ _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
 _MONTH_DAY_ONLY_RE = re.compile(r"(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?")
-_CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
 _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
     r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
 )
@@ -244,31 +170,11 @@ def _context_dependent_fragment(text: str, *, subject: str) -> bool:
 
 
 def _non_event_analytical_judgment(text: str) -> bool:
-    normalized = " ".join(text.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
-    if normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS):
-        return True
-    if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
-        return True
-    if (
-        any(marker in normalized for marker in _EVALUATIVE_CONDITION_MARKERS)
-        and normalized.endswith(_EVALUATIVE_CONDITION_ENDINGS)
-    ):
-        return True
-    return (
-        any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
-        and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
-        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
-    )
+    return non_event_analytical_text(text)
 
 
 def _conditional_analytical_scenario(text: str) -> bool:
-    normalized = " ".join(text.split())
-    has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
-    if "더라도" in normalized and "이어야" in normalized:
-        return not has_reporting_event
-    if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
-        return False
-    return not has_reporting_event
+    return conditional_analytical_text(text)
 
 
 def _stale_sports_retrospective(text: str) -> bool:

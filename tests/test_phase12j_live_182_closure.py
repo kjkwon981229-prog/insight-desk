@@ -23,6 +23,7 @@ def _topic() -> TopicConfig:
         intent_anchors=("한화 이글스", "한화", "KBO", "프로야구", "홈런", "경기"),
         required_intent_terms=("한화", "한화 이글스"),
         news_queries=("한화 이글스",),
+        event_terms=("경기", "결과", "승리", "패배", "순위", "선발", "부상", "홈런", "기록"),
     )
 
 

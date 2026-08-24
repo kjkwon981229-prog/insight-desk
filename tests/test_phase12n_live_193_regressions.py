@@ -138,6 +138,54 @@ class Live193KboEventCentralityRegressions(unittest.TestCase):
             object_="한화 이글스와 롯데 자이언츠",
         ))
 
+    def test_unrelated_fact_event_term_cannot_rescue_hanwha_medical_agreement(self) -> None:
+        agreement_text = "대전자생한방병원은 한화 이글스와 의료지원 업무협약을 체결했다."
+        record_text = "롯데 자이언츠 선수는 퓨처스리그 경기에서 홈런을 기록했다."
+        agreement_span = EvidenceSpan(
+            evidence_id="evidence:193:kbo:agreement",
+            article_id="article:193:kbo:multi",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(agreement_text),
+            text=agreement_text,
+        )
+        record_span = EvidenceSpan(
+            evidence_id="evidence:193:kbo:record",
+            article_id="article:193:kbo:multi",
+            field=EvidenceField.BODY,
+            start=len(agreement_text) + 1,
+            end=len(agreement_text) + 1 + len(record_text),
+            text=record_text,
+        )
+        agreement = EventFact(
+            fact_id="fact:193:kbo:agreement",
+            subject="대전자생한방병원",
+            action="의료지원 업무협약을 체결했다",
+            object="한화 이글스",
+            evidence_ids=(agreement_span.evidence_id,),
+        )
+        record = EventFact(
+            fact_id="fact:193:kbo:record",
+            subject="롯데 자이언츠 선수",
+            action="퓨처스리그 경기에서 홈런을 기록했다",
+            evidence_ids=(record_span.evidence_id,),
+        )
+        event = CandidateEvent(
+            event_id="event:193:kbo:multi",
+            topic_id="kbo_hanwha",
+            fact_ids=(agreement.fact_id, record.fact_id),
+            article_ids=(agreement_span.article_id,),
+        )
+        self.assertFalse(event_topic_relevant(
+            event=event,
+            facts={agreement.fact_id: agreement, record.fact_id: record},
+            evidence={
+                agreement_span.evidence_id: agreement_span,
+                record_span.evidence_id: record_span,
+            },
+            topic=_topic("kbo_hanwha"),
+        ))
+
     def test_actual_hanwha_baseball_events_remain_bound(self) -> None:
         cases = (
             (
@@ -204,6 +252,18 @@ class Live193VisibleStandaloneRegressions(unittest.TestCase):
         increment = source.index('stats["published_entries"] += 1')
         self.assertLess(guard, append)
         self.assertLess(guard, increment)
+
+    def test_generic_referential_subject_fails_shared_visible_contract(self) -> None:
+        visible_quality = importlib.import_module("insight_desk.feed_quality")
+        issues = visible_quality.visible_story_issues(
+            topic="KBO·한화 이글스",
+            headline="한화 퓨처스리그 타격 기록",
+            summary="그는 퓨처스리그 한화전에서 3타수 1안타를 기록했다.",
+        )
+        self.assertIn(
+            visible_quality.VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY,
+            issues,
+        )
 
     def test_subject_explicit_sports_stat_remains_standalone(self) -> None:
         report = validate_html(_story_html(

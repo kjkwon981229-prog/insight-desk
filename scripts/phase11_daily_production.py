@@ -22,6 +22,7 @@ from insight_desk.acquisition import (
     default_news_discovery,
 )
 from insight_desk.core import CandidateEvent, ContractBundle, EventFact, EvidenceSpan, SelectionVerdict
+from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
 from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimVerifier
@@ -85,6 +86,12 @@ _KPOP_HEADLINE_SCOPE_CUES = (
     "세븐틴",
 )
 _HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
+_KBO_EVENT_TERM_ALIASES = {
+    "결과": ("누르고", "꺾고", "이겼", "제압", "완파"),
+    "승리": ("누르고", "꺾고", "이겼", "제압", "완파"),
+    "패배": ("패했다", "패전", "졌다"),
+}
+_KBO_RANK_SURFACE_RE = re.compile(r"(?<!\d)\d+\s*위(?!\d)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +104,7 @@ class TopicConfig:
     intent_anchors: tuple[str, ...]
     required_intent_terms: tuple[str, ...]
     news_queries: tuple[str, ...]
+    event_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.topic_id or not self.name:
@@ -133,6 +141,7 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
                 intent_anchors=tuple(str(value) for value in raw.get("intent_anchors", []) if str(value).strip()),
                 required_intent_terms=tuple(str(value) for value in raw.get("required_intent_terms", []) if str(value).strip()),
                 news_queries=tuple(str(value) for value in raw.get("news_queries", []) if str(value).strip()),
+                event_terms=tuple(str(value) for value in raw.get("event_terms", []) if str(value).strip()),
             )
         )
     return tuple(sorted(topics, key=lambda item: (-item.priority, item.topic_id)))
@@ -164,6 +173,18 @@ def _fact_surface(fact: EventFact) -> str:
 def _fact_has_topic_anchor(fact: EventFact, topic: TopicConfig) -> bool:
     surface = _fact_surface(fact)
     return any(_term_present(surface, term) for term in topic.intent_anchors)
+
+
+def _fact_has_configured_kbo_event_term(fact: EventFact, topic: TopicConfig) -> bool:
+    surface = _fact_surface(fact)
+    for term in topic.event_terms:
+        if _term_present(surface, term):
+            return True
+        if any(alias in surface for alias in _KBO_EVENT_TERM_ALIASES.get(term, ())):
+            return True
+        if term == "순위" and _KBO_RANK_SURFACE_RE.search(surface) is not None:
+            return True
+    return False
 
 
 def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
@@ -218,20 +239,24 @@ def event_topic_relevant(
         return False
     cited_text: list[str] = []
     event_facts: list[EventFact] = []
+    cited_by_fact: dict[str, tuple[str, ...]] = {}
     seen_evidence: set[str] = set()
     for fact_id in event.fact_ids:
         fact = facts.get(fact_id)
         if fact is None:
             return False
         event_facts.append(fact)
+        fact_cited_text: list[str] = []
         for evidence_id in fact.evidence_ids:
             span = evidence.get(evidence_id)
             if span is None or span.article_id not in event.article_ids:
                 return False
+            fact_cited_text.append(span.text)
             if evidence_id in seen_evidence:
                 continue
             seen_evidence.add(evidence_id)
             cited_text.append(span.text)
+        cited_by_fact[fact.fact_id] = tuple(fact_cited_text)
     if not cited_text:
         return False
 
@@ -246,7 +271,11 @@ def event_topic_relevant(
         return True
     if _kbo_entertainment_crossover(frozen_facts, cited):
         return False
-    return any(_hanwha_fact_directly_bound(fact, cited) for fact in frozen_facts)
+    return any(
+        _hanwha_fact_directly_bound(fact, cited_by_fact[fact.fact_id])
+        and _fact_has_configured_kbo_event_term(fact, topic)
+        for fact in frozen_facts
+    )
 
 
 def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
@@ -510,6 +539,22 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     if not _visible_topic_headline_bound(topic, visible_headline):
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_topic_binding", status="skip", reason="topic_scope_missing_in_headline"))
                         continue
+                    visible_summary = entry_candidate.final_generation.draft.summary
+                    visible_issues = visible_story_issues(
+                        topic=topic.name,
+                        headline=visible_headline,
+                        summary=visible_summary,
+                    )
+                    if visible_issues:
+                        attempts.append(_attempt(
+                            topic=topic.topic_id,
+                            query=query,
+                            domain=domain,
+                            stage="visible_quality",
+                            status="skip",
+                            reason=";".join(issue.value for issue in visible_issues),
+                        ))
+                        continue
 
                     identity_text = generation_request.evidence_text
                     duplicate_event = False
@@ -551,7 +596,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_identity", status="skip", reason="normalized_headline_already_published"))
                         continue
 
-                    summary_key = " ".join(entry_candidate.final_generation.draft.summary.split()).casefold()
+                    summary_key = " ".join(visible_summary.split()).casefold()
                     if summary_key in published_summary_keys:
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_identity", status="skip", reason="normalized_summary_already_published"))
                         continue

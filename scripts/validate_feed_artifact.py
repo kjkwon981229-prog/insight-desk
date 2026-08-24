@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 
+from insight_desk.feed_quality import VisibleStoryIssue, visible_story_issues
+
 
 MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
@@ -56,102 +58,6 @@ _KPOP_HEADLINE_SCOPE_CUES = (
     "뉴진스",
     "세븐틴",
 )
-_CONTEXT_DEPENDENT_SUMMARY_LEADS = (
-    "여기에 ",
-    "여기에,",
-    "이후 ",
-    "이 딜러는 ",
-    "이번 ",
-    "팬들의 ",
-)
-_CONTEXT_DEPENDENT_SUMMARY_PHRASES = ("이번 상황",)
-_BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
-_BARE_RANKING_CUES = ("최고의 루키",)
-_BARE_RANKING_CONTEXT_TERMS = (
-    "K탑스타",
-    "KTOPSTAR",
-    "투표",
-    "랭킹",
-    "차트",
-    "부문",
-    "시상식",
-    "어워드",
-    "수상",
-)
-_NON_EVENT_ANALYTICAL_ENDINGS = (
-    "설명하기 어렵다",
-    "설명하기 힘들다",
-    "것으로 보인다",
-    "것으로 보입니다",
-    "것으로 풀이된다",
-    "것으로 풀이됩니다",
-)
-_NON_EVENT_ATTENTION_ENDINGS = (
-    "관심이 쏠리고 있다",
-    "관심이 쏠리고 있습니다",
-    "관심이 모이고 있다",
-    "관심이 모이고 있습니다",
-    "주목을 받고 있다",
-    "주목받고 있다",
-)
-_EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
-_EVALUATIVE_CONDITION_ENDINGS = (
-    "가능하다고 봤다",
-    "필요하다고 봤다",
-    "가능하다고 평가했다",
-    "필요하다고 평가했다",
-    "의미가 있다고 봤다",
-)
-_DESCRIPTIVE_ATTRIBUTE_CUES = (
-    "장르",
-    "사운드",
-    "스타일",
-    "분위기",
-    "매력",
-    "탑라인",
-    "트랙",
-    "색채",
-    "특징",
-)
-_DESCRIPTIVE_PREDICATE_CUES = (
-    "대비를 이루",
-    "은유한다",
-    "표현한다",
-    "보여준다",
-    "담아낸다",
-    "결합한",
-    "특징이다",
-)
-_CONCRETE_EVENT_PREDICATE_CUES = (
-    "발매했다",
-    "공개했다",
-    "개최했다",
-    "출시했다",
-    "체결했다",
-    "수주했다",
-    "선정됐다",
-    "수상했다",
-    "승리했다",
-    "발표했다",
-    "밝혔다",
-    "확정했다",
-    "도입했다",
-    "시행했다",
-    "데뷔했다",
-)
-_CONDITIONAL_EVENT_CUES = (
-    "발표",
-    "밝혔다",
-    "결정",
-    "도입",
-    "시행",
-    "공개",
-    "추진",
-    "합의",
-    "체결",
-    "승인",
-    "확정",
-)
 _STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
@@ -160,11 +66,7 @@ _CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
-_CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
 _URL_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])")
-_DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
-    r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
-)
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -178,59 +80,6 @@ def _normalize(value: str) -> str:
 
 def _sentence_identity(value: str) -> str:
     return _normalize(value).rstrip(_SENTENCE_TERMINALS).rstrip()
-
-
-def _bare_ranking_fragment(value: str) -> bool:
-    normalized = " ".join(value.split())
-    has_bare_ranking = (
-        any(cue in normalized for cue in _BARE_RANKING_CUES)
-        or re.search(r"\d+\s*주\s*연속\s*1위", normalized) is not None
-    )
-    if not has_bare_ranking:
-        return False
-    folded = normalized.casefold()
-    return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
-
-
-def _context_dependent_summary(value: str) -> bool:
-    normalized = " ".join(value.split())
-    if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS):
-        return True
-    if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_SUMMARY_PHRASES):
-        return True
-    if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
-        return True
-    if _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE.search(normalized) is not None:
-        return True
-    return _bare_ranking_fragment(normalized)
-
-
-def _non_event_analytical_summary(value: str) -> bool:
-    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
-    if normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS):
-        return True
-    if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
-        return True
-    if (
-        any(marker in normalized for marker in _EVALUATIVE_CONDITION_MARKERS)
-        and normalized.endswith(_EVALUATIVE_CONDITION_ENDINGS)
-    ):
-        return True
-    return (
-        any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
-        and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
-        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
-    )
-
-
-def _conditional_analytical_summary(value: str) -> bool:
-    normalized = " ".join(value.split())
-    has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
-    if "더라도" in normalized and "이어야" in normalized:
-        return not has_reporting_event
-    if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
-        return False
-    return not has_reporting_event
 
 
 def _stale_sports_retrospective_summary(value: str) -> bool:
@@ -462,11 +311,16 @@ def validate_html(
         summary_key = _normalize(summary)
         if _sentence_identity(headline) == _sentence_identity(summary):
             headline_summary_collisions += 1
-        if _context_dependent_summary(summary):
+        visible_issues = visible_story_issues(
+            topic=topic,
+            headline=headline,
+            summary=summary,
+        )
+        if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY in visible_issues:
             context_dependent_summaries += 1
-        if _non_event_analytical_summary(summary):
+        if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY in visible_issues:
             non_event_analytical_summaries += 1
-        if _conditional_analytical_summary(summary):
+        if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY in visible_issues:
             conditional_analytical_summaries += 1
         if _stale_sports_retrospective_summary(summary):
             stale_sports_retrospectives += 1
