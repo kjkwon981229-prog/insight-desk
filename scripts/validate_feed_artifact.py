@@ -306,6 +306,7 @@ def validate_html(
     non_event_analytical_summaries = 0
     conditional_analytical_summaries = 0
     malformed_visible_texts = 0
+    mixed_event_summaries = 0
     stale_dated_contexts = 0
     stale_sports_retrospectives = 0
     topic_binding_violations = 0
@@ -346,13 +347,17 @@ def validate_html(
             conditional_analytical_summaries += 1
         if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT in visible_issues:
             malformed_visible_texts += 1
+        if VisibleStoryIssue.MIXED_EVENT_SUMMARY in visible_issues:
+            mixed_event_summaries += 1
         if _stale_sports_retrospective_summary(summary):
             stale_sports_retrospectives += 1
+        elif VisibleStoryIssue.STALE_DATED_CONTEXT in visible_issues:
+            stale_dated_contexts += 1
         elif _stale_dated_context_summary(summary):
             stale_dated_contexts += 1
 
-        story_topic_binding_violation = False
-        if topic == KBO_HANWHA_TOPIC:
+        story_topic_binding_violation = VisibleStoryIssue.TOPIC_BINDING in visible_issues
+        if not story_topic_binding_violation and topic == KBO_HANWHA_TOPIC:
             combined_visible = f"{headline}\n{summary}"
             entertainment_crossover = (
                 any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
@@ -364,7 +369,7 @@ def validate_html(
                 story_topic_binding_violation = True
             elif not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES):
                 story_topic_binding_violation = True
-        elif topic == KPOP_TOPIC:
+        elif not story_topic_binding_violation and topic == KPOP_TOPIC:
             if not any(cue.casefold() in headline.casefold() for cue in _KPOP_HEADLINE_SCOPE_CUES):
                 story_topic_binding_violation = True
         if story_topic_binding_violation:
@@ -405,6 +410,8 @@ def validate_html(
         raise ValueError(f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}")
     if malformed_visible_texts:
         raise ValueError(f"FEED_QUALITY_MALFORMED_VISIBLE_TEXT:{malformed_visible_texts}")
+    if mixed_event_summaries:
+        raise ValueError(f"FEED_QUALITY_MIXED_EVENT_SUMMARY:{mixed_event_summaries}")
     if stale_sports_retrospectives:
         raise ValueError(f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}")
     if stale_dated_contexts:
@@ -438,6 +445,7 @@ def validate_html(
         "non_event_analytical_summaries": non_event_analytical_summaries,
         "conditional_analytical_summaries": conditional_analytical_summaries,
         "malformed_visible_texts": malformed_visible_texts,
+        "mixed_event_summaries": mixed_event_summaries,
         "stale_dated_contexts": stale_dated_contexts,
         "stale_sports_retrospectives": stale_sports_retrospectives,
         "topic_binding_violations": topic_binding_violations,

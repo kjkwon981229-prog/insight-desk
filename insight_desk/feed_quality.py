@@ -85,6 +85,46 @@ _VISIBLE_BYLINE_RE = re.compile(
     r"[가-힣]{2,4}\s+(?:기자|특파원)(?:가|이)?\s+(?:전했다|보도했다)(?:[.!?。！？]|$)"
     r")"
 )
+_SUBJECTLESS_FUNDING_MAIN_CLAUSE_RE = re.compile(
+    r"(?:^|,\s*)(?:모집액|청약액|수요|자금)(?:을|이|은|는)\s*"
+    r"[^.!?。！？]{0,100}?(?:확보|완판|조달)"
+    r"[^.!?。！？]{0,40}?(?:성공|확정|마무리|했다)"
+)
+_GENERIC_FUNDING_HEADLINE_LEADS = (
+    "투자 심리",
+    "시장 심리",
+    "채권 심리",
+    "자금 모집",
+    "모집액",
+    "수요예측",
+)
+_FUNDING_EVENT_CUES = ("자금 모집", "모집액", "수요예측", "신종자본증권", "회사채")
+_FUNDING_RESULT_CUES = ("완판", "조달", "발행", "확보")
+_NAMED_ACTOR_AFTER_CONTEXT_RE = re.compile(
+    r"(?:속|에도|불구하고)\s+[가-힣A-Za-z0-9·&-]{2,30}(?:은|는|이|가|,)\s*"
+)
+_MIXED_EXPLANATORY_SUBJECT_RE = re.compile(
+    r"[.!?。！？]\s*이는\s+[^.!?。！？]{0,160}?"
+    r"(?:현상|영향|결과|배경)(?:으)?로,\s*"
+    r"[가-힣A-Za-z0-9·&-]{2,30}(?:은|는|이|가)\s+"
+)
+_YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
+_CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
+_PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
+_PAST_YEAR_MODIFIER_CUES = (
+    "설립한",
+    "설립된",
+    "창업한",
+    "창립한",
+    "출범한",
+)
+_KBO_HANWHA_TOPIC = "KBO·한화 이글스"
+_HANWHA_SUBJECT_LEAD_RE = re.compile(r"^한화(?:\s+이글스)?(?:는|은|이|가|,|\s)")
+_HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
+    r"한화(?:\s+이글스)?(?:보다(?:는)?|와\s+마찬가지|\s*대비)"
+    r"[^.!?。！？]{0,40}?\d+\s*경기[^.!?。！？]{0,40}?"
+    r"(?:덜|적게|많이|더)\s*(?:경기(?:를)?\s*)?치렀"
+)
 _DISCOURSE_LEADS = ("하지만 ", "그러나 ", "다만 ", "반면 ")
 _DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)")
 _STALE_DAY_ONLY_EVENT_CUES = (
@@ -215,6 +255,8 @@ _CONCRETE_EVENT_PREDICATE_CUES = (
     "인상했다",
     "인하했다",
     "기록했다",
+    "도달했다",
+    "진입했다",
 )
 _CONDITIONAL_EVENT_CUES = (
     "발표",
@@ -241,6 +283,9 @@ class VisibleStoryIssue(StrEnum):
     NON_EVENT_ANALYTICAL_SUMMARY = "FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY"
     CONDITIONAL_ANALYTICAL_SUMMARY = "FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY"
     MALFORMED_VISIBLE_TEXT = "FEED_QUALITY_MALFORMED_VISIBLE_TEXT"
+    MIXED_EVENT_SUMMARY = "FEED_QUALITY_MIXED_EVENT_SUMMARY"
+    STALE_DATED_CONTEXT = "FEED_QUALITY_STALE_DATED_CONTEXT"
+    TOPIC_BINDING = "FEED_QUALITY_TOPIC_BINDING"
 
 
 def _bare_ranking_fragment(value: str) -> bool:
@@ -274,7 +319,20 @@ def _context_dependent_text(value: str) -> bool:
         and not any(cue in normalized for cue in _CREATED_CATEGORY_PARENT_CUES)
     ):
         return True
+    if _subjectless_funding_result(normalized):
+        return True
     return _bare_ranking_fragment(normalized)
+
+
+def _subjectless_funding_result(normalized: str) -> bool:
+    if _SUBJECTLESS_FUNDING_MAIN_CLAUSE_RE.search(normalized) is not None:
+        return True
+    return (
+        any(normalized.startswith(cue) for cue in _GENERIC_FUNDING_HEADLINE_LEADS)
+        and any(cue in normalized for cue in _FUNDING_EVENT_CUES)
+        and any(cue in normalized for cue in _FUNDING_RESULT_CUES)
+        and _NAMED_ACTOR_AFTER_CONTEXT_RE.search(normalized) is None
+    )
 
 
 def malformed_visible_text(value: str) -> bool:
@@ -299,6 +357,53 @@ def context_dependent_summary(value: str) -> bool:
 
 def visible_metadata_text(value: str) -> bool:
     return _VISIBLE_BYLINE_RE.search(" ".join(value.split())) is not None
+
+
+def mixed_event_summary(value: str) -> bool:
+    return _MIXED_EXPLANATORY_SUBJECT_RE.search(" ".join(value.split())) is not None
+
+
+def stale_explicit_past_event_text(
+    value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    normalized = " ".join(value.split())
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if f"{reference.year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    for match in _YEAR_RE.finditer(normalized):
+        if int(match.group(1)) >= reference.year:
+            continue
+        following = normalized[match.end() : match.end() + 16].lstrip()
+        if any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES):
+            continue
+        if any(following.startswith(cue) for cue in _PAST_YEAR_MODIFIER_CUES):
+            continue
+        prefix = normalized[: match.start()]
+        if any(cue in prefix for cue in _CONCRETE_EVENT_PREDICATE_CUES):
+            continue
+        return True
+    return False
+
+
+def kbo_hanwha_comparison_only(
+    *,
+    topic: str,
+    headline: str,
+    summary: str,
+) -> bool:
+    if topic != _KBO_HANWHA_TOPIC:
+        return False
+    normalized_headline = " ".join(headline.split())
+    normalized_summary = " ".join(summary.split())
+    if _HANWHA_SUBJECT_LEAD_RE.search(normalized_headline) is not None:
+        return False
+    if _HANWHA_SUBJECT_LEAD_RE.search(normalized_summary) is not None:
+        return False
+    return _HANWHA_GAMES_PLAYED_COMPARISON_RE.search(
+        f"{normalized_headline}. {normalized_summary}"
+    ) is not None
 
 
 def _visible_identity(value: str) -> str:
@@ -390,7 +495,6 @@ def visible_story_issues(
     headline: str,
     summary: str,
 ) -> tuple[VisibleStoryIssue, ...]:
-    del topic
     issues: list[VisibleStoryIssue] = []
     if context_dependent_headline(headline):
         issues.append(VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE)
@@ -406,4 +510,10 @@ def visible_story_issues(
         issues.append(VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY)
     if malformed_visible_text(headline) or malformed_visible_text(summary):
         issues.append(VisibleStoryIssue.MALFORMED_VISIBLE_TEXT)
+    if mixed_event_summary(summary):
+        issues.append(VisibleStoryIssue.MIXED_EVENT_SUMMARY)
+    if stale_explicit_past_event_text(summary):
+        issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
+    if kbo_hanwha_comparison_only(topic=topic, headline=headline, summary=summary):
+        issues.append(VisibleStoryIssue.TOPIC_BINDING)
     return tuple(issues)

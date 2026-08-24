@@ -59,6 +59,7 @@ _BARE_RANKING_CONTEXT_TERMS = (
 _STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
+_PAST_YEAR_MODIFIER_CUES = ("설립한", "설립된", "창업한", "창립한", "출범한")
 _CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
@@ -215,9 +216,11 @@ def _explicit_past_year_event(text: str, *, fact: EventFact) -> bool:
             if not date_remainder.strip(" \t,·"):
                 return True
 
-        if action_pos >= 0 and action_pos <= match.start() <= action_pos + 24:
+        if action_pos >= 0 and action_pos <= match.start() < action_pos + len(action):
             following = normalized[match.end() : match.end() + 8].lstrip()
             if any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES):
+                continue
+            if any(following.startswith(cue) for cue in _PAST_YEAR_MODIFIER_CUES):
                 continue
             return True
     return False

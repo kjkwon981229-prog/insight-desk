@@ -86,6 +86,11 @@ _KPOP_HEADLINE_SCOPE_CUES = (
     "세븐틴",
 )
 _HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
+_HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
+    r"한화(?:\s+이글스)?(?:보다(?:는)?|와\s+마찬가지|\s*대비)"
+    r"[^.!?。！？]{0,40}?\d+\s*경기[^.!?。！？]{0,40}?"
+    r"(?:덜|적게|많이|더)\s*(?:경기(?:를)?\s*)?치렀"
+)
 _HANWHA_SUBORDINATE_CONTEXT_CUES = ("가운데", "한편", "사진", "배경")
 _HANWHA_DIRECT_ACTION_CUES = (
     "상대로",
@@ -219,6 +224,10 @@ def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) ->
 
     if "한화" in subject:
         return True
+
+    fact_surface = " ".join(value for value in (subject, action, object_text) if value)
+    if _HANWHA_GAMES_PLAYED_COMPARISON_RE.search(fact_surface) is not None:
+        return False
 
     direct_action = any(cue in action for cue in _HANWHA_DIRECT_ACTION_CUES)
     if not direct_action:
