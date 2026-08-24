@@ -113,6 +113,7 @@ def _validate_source_audit(
     audit_event_ids: list[str] = []
     seen_source_groups: set[str] = set()
     seen_content: set[str] = set()
+    invalid_source_url_indices: list[int] = []
     duplicate_sources = 0
     duplicate_source_content = 0
 
@@ -130,8 +131,10 @@ def _validate_source_audit(
             and parsed_source_url.username is None
             and parsed_source_url.password is None
         )
-        if not event_id or not source_group_key or not content_sha256 or not source_url_valid:
+        if not event_id or not source_group_key or not content_sha256:
             raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
+        if not source_url_valid:
+            invalid_source_url_indices.append(index)
         audit_event_ids.append(event_id)
         if source_group_key in seen_source_groups:
             duplicate_sources += 1
@@ -150,6 +153,8 @@ def _validate_source_audit(
         raise ValueError(
             f"FEED_QUALITY_DUPLICATE_SOURCE_CONTENT:{duplicate_source_content}"
         )
+    if invalid_source_url_indices:
+        raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{invalid_source_url_indices[0]}")
     return duplicate_sources, duplicate_source_content
 
 
