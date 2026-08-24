@@ -56,6 +56,8 @@ _NON_EVENT_ANALYTICAL_ENDINGS = (
     "설명하기 힘들다",
     "것으로 보인다",
     "것으로 보입니다",
+    "것으로 풀이된다",
+    "것으로 풀이됩니다",
 )
 _CONDITIONAL_EVENT_CUES = (
     "발표",
@@ -72,9 +74,12 @@ _CONDITIONAL_EVENT_CUES = (
 )
 _STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
+_PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
+_CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
+_MONTH_DAY_ONLY_RE = re.compile(r"(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?")
 _CONDITIONAL_SCENARIO_RE = re.compile(r"\s(?:경우|시)\s")
 
 
@@ -96,6 +101,7 @@ class MaterialEventReason(StrEnum):
     NON_EVENT_ANALYTICAL_JUDGMENT = "non_event_analytical_judgment"
     CONDITIONAL_ANALYTICAL_SCENARIO = "conditional_analytical_scenario"
     STALE_DATED_CONTEXT = "stale_dated_context"
+    STALE_EXPLICIT_PAST_EVENT = "stale_explicit_past_event"
     STALE_SPORTS_RETROSPECTIVE = "stale_sports_retrospective"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
@@ -207,6 +213,35 @@ def _stale_sports_retrospective(text: str) -> bool:
     return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
+def _explicit_past_year_event(text: str, *, fact: EventFact) -> bool:
+    normalized = " ".join(text.split())
+    now_year = datetime.now(timezone.utc).year
+    past_matches = [match for match in _YEAR_RE.finditer(normalized) if int(match.group(1)) < now_year]
+    if not past_matches:
+        return False
+    if f"{now_year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+
+    subject = " ".join(fact.subject.split())
+    action = " ".join(fact.action.split())
+    subject_pos = normalized.find(subject) if subject else -1
+    action_pos = normalized.find(action) if action else -1
+
+    for match in past_matches:
+        if subject_pos >= 0 and match.end() <= subject_pos:
+            between = normalized[match.end() : subject_pos]
+            date_remainder = _MONTH_DAY_ONLY_RE.sub("", between)
+            if not date_remainder.strip(" \t,·"):
+                return True
+
+        if action_pos >= 0 and action_pos <= match.start() <= action_pos + 24:
+            following = normalized[match.end() : match.end() + 8].lstrip()
+            if any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES):
+                continue
+            return True
+    return False
+
+
 def _dated_context_is_stale(text: str) -> bool:
     if _stale_sports_retrospective(text):
         return False
@@ -300,6 +335,12 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
+            )
+        if _explicit_past_year_event(text, fact=fact):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.STALE_EXPLICIT_PAST_EVENT,),
             )
         if _dated_context_is_stale(text):
             return MaterialEventAssessment(

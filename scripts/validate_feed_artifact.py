@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
+AI_TOPIC = "AI·테크"
 PSAT_TOPIC = "PSAT·공채 일정"
 KBO_HANWHA_TOPIC = "KBO·한화 이글스"
 KPOP_TOPIC = "엔터·음악·K-POP"
@@ -19,6 +20,20 @@ PSAT_FORBIDDEN = (
     "Preparatory Student Academic",
     "PSAT 아카데미",
     "NCAA",
+)
+_AI_HEADLINE_SCOPE_CUES = (
+    "AI",
+    "인공지능",
+    "생성형",
+    "데이터센터",
+    "반도체",
+    "GPU",
+    "HBM",
+    "NVIDIA",
+    "ChatGPT",
+    "OpenAI",
+    "로봇",
+    "로보틱스",
 )
 _HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
 _KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
@@ -83,6 +98,8 @@ _NON_EVENT_ANALYTICAL_ENDINGS = (
     "설명하기 힘들다",
     "것으로 보인다",
     "것으로 보입니다",
+    "것으로 풀이된다",
+    "것으로 풀이됩니다",
 )
 _CONDITIONAL_EVENT_CUES = (
     "발표",
@@ -100,6 +117,8 @@ _CONDITIONAL_EVENT_CUES = (
 _STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
 _SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
+_PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
+_CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
 _SENTENCE_TERMINALS = ".!?。！？"
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
@@ -171,9 +190,25 @@ def _stale_sports_retrospective_summary(value: str) -> bool:
     return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
+def _stale_explicit_past_year_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    match = _YEAR_RE.match(normalized)
+    if match is None:
+        return False
+    now_year = datetime.now(timezone.utc).year
+    if int(match.group(1)) >= now_year:
+        return False
+    if f"{now_year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    following = normalized[match.end() : match.end() + 8].lstrip()
+    return not any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES)
+
+
 def _stale_dated_context_summary(value: str) -> bool:
     if _stale_sports_retrospective_summary(value):
         return False
+    if _stale_explicit_past_year_summary(value):
+        return True
     normalized = " ".join(value.split())
     now = datetime.now(timezone.utc)
     for match in _MONTH_DAY_RE.finditer(normalized):
@@ -382,7 +417,10 @@ def validate_html(
         elif _stale_dated_context_summary(summary):
             stale_dated_contexts += 1
 
-        if topic == KBO_HANWHA_TOPIC:
+        if topic == AI_TOPIC:
+            if not any(cue.casefold() in headline.casefold() for cue in _AI_HEADLINE_SCOPE_CUES):
+                topic_binding_violations += 1
+        elif topic == KBO_HANWHA_TOPIC:
             combined_visible = f"{headline}\n{summary}"
             entertainment_crossover = (
                 any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)

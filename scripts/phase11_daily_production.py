@@ -46,10 +46,58 @@ FRESHNESS_WINDOW = timedelta(hours=72)
 FUTURE_CLOCK_TOLERANCE = timedelta(hours=6)
 MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
+AI_TECH_TOPIC_ID = "ai_tech"
 KBO_HANWHA_TOPIC_ID = "kbo_hanwha"
+KPOP_TOPIC_ID = "kpop"
+_AI_HEADLINE_SCOPE_CUES = (
+    "AI",
+    "인공지능",
+    "생성형",
+    "데이터센터",
+    "반도체",
+    "GPU",
+    "HBM",
+    "NVIDIA",
+    "ChatGPT",
+    "OpenAI",
+    "로봇",
+    "로보틱스",
+)
 _KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
 _KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
 _KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
+_KPOP_HEADLINE_SCOPE_CUES = (
+    "K-POP",
+    "케이팝",
+    "가수",
+    "그룹",
+    "아이돌",
+    "앨범",
+    "음원",
+    "차트",
+    "음악",
+    "뮤직",
+    "음반",
+    "컴백",
+    "데뷔",
+    "콘서트",
+    "공연",
+    "무대",
+    "수상",
+    "빌보드",
+    "Billboard",
+    "HYBE",
+    "하이브",
+    "SM",
+    "JYP",
+    "YG",
+    "BTS",
+    "방탄소년단",
+    "블랙핑크",
+    "아이브",
+    "뉴진스",
+    "세븐틴",
+)
 _HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
 
 
@@ -123,11 +171,17 @@ def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
     return True
 
 
+def _fact_surface(fact: EventFact) -> str:
+    return " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
+
+
+def _fact_has_topic_anchor(fact: EventFact, topic: TopicConfig) -> bool:
+    surface = _fact_surface(fact)
+    return any(_term_present(surface, term) for term in topic.intent_anchors)
+
+
 def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
-    fact_text = "\n".join(
-        " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
-        for fact in facts
-    )
+    fact_text = "\n".join(_fact_surface(fact) for fact in facts)
     combined = f"{fact_text}\n{' '.join(cited_text)}"
     return (
         any(cue in combined for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
@@ -159,10 +213,14 @@ def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) ->
 
 
 def _visible_topic_headline_bound(topic: TopicConfig, headline: str) -> bool:
-    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
-        return True
     folded = headline.casefold()
-    return any(cue.casefold() in folded for cue in _KBO_HEADLINE_SCOPE_CUES)
+    if topic.topic_id == AI_TECH_TOPIC_ID:
+        return any(cue.casefold() in folded for cue in _AI_HEADLINE_SCOPE_CUES)
+    if topic.topic_id == KBO_HANWHA_TOPIC_ID:
+        return any(cue.casefold() in folded for cue in _KBO_HEADLINE_SCOPE_CUES)
+    if topic.topic_id == KPOP_TOPIC_ID:
+        return any(cue.casefold() in folded for cue in _KPOP_HEADLINE_SCOPE_CUES)
+    return True
 
 
 def event_topic_relevant(
@@ -196,10 +254,12 @@ def event_topic_relevant(
     cited = tuple(cited_text)
     if not topic_relevant(title="", body="\n".join(cited), topic=topic):
         return False
-    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
-        return True
 
     frozen_facts = tuple(event_facts)
+    if topic.topic_id == AI_TECH_TOPIC_ID:
+        return any(_fact_has_topic_anchor(fact, topic) for fact in frozen_facts)
+    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
+        return True
     if _kbo_entertainment_crossover(frozen_facts, cited):
         return False
     return any(_hanwha_fact_directly_bound(fact, cited) for fact in frozen_facts)
@@ -464,7 +524,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
 
                     visible_headline = entry_candidate.final_generation.draft.headline
                     if not _visible_topic_headline_bound(topic, visible_headline):
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_topic_binding", status="skip", reason="hanwha_scope_missing_in_headline"))
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_topic_binding", status="skip", reason="topic_scope_missing_in_headline"))
                         continue
 
                     identity_text = generation_request.evidence_text
