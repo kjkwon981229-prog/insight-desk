@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from functools import lru_cache
+import re
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
@@ -26,9 +28,23 @@ _SPORTS_DEPICTIVE_ACTION_CUES = (
     "포즈",
 )
 _SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
-_CONTEXT_DEPENDENT_LEADS = ("여기에 ", "여기에,")
+_CONTEXT_DEPENDENT_LEADS = ("여기에 ", "여기에,", "이후 ", "이 딜러는 ")
+_BARE_RANKING_CUES = ("최고의 루키",)
+_BARE_RANKING_CONTEXT_TERMS = (
+    "K탑스타",
+    "KTOPSTAR",
+    "투표",
+    "랭킹",
+    "차트",
+    "부문",
+    "시상식",
+    "어워드",
+    "수상",
+)
 _NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _SENTENCE_TERMINALS = ".!?。！？"
+_YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 
 
 class MaterialEventVerdict(StrEnum):
@@ -47,6 +63,7 @@ class MaterialEventReason(StrEnum):
     DEPICTIVE_SPORTS_CAPTION = "depictive_sports_caption"
     CONTEXT_DEPENDENT_FRAGMENT = "context_dependent_fragment"
     NON_EVENT_ANALYTICAL_JUDGMENT = "non_event_analytical_judgment"
+    STALE_SPORTS_RETROSPECTIVE = "stale_sports_retrospective"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
 
@@ -109,11 +126,24 @@ def _standalone_sports_photo_caption(text: str) -> bool:
     return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)
 
 
+def _bare_ranking_fragment(normalized: str) -> bool:
+    has_bare_ranking = (
+        any(cue in normalized for cue in _BARE_RANKING_CUES)
+        or re.search(r"\d+\s*주\s*연속\s*1위", normalized) is not None
+    )
+    if not has_bare_ranking:
+        return False
+    folded = normalized.casefold()
+    return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
+
+
 def _context_dependent_fragment(text: str) -> bool:
-    """Reject measured evidence sentences that require an omitted preceding sentence to stand alone."""
+    """Reject evidence sentences whose omitted antecedent or ranking frame is required."""
 
     normalized = " ".join(text.split())
-    return any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS)
+    if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS):
+        return True
+    return _bare_ranking_fragment(normalized)
 
 
 def _non_event_analytical_judgment(text: str) -> bool:
@@ -121,6 +151,21 @@ def _non_event_analytical_judgment(text: str) -> bool:
 
     normalized = " ".join(text.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
+
+
+def _stale_sports_retrospective(text: str) -> bool:
+    """Reject a fresh article's standalone sentence whose event is explicitly from a prior year."""
+
+    normalized = " ".join(text.split())
+    years = [int(value) for value in _YEAR_RE.findall(normalized)]
+    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if "장면" not in normalized and "기록" not in normalized:
+        return False
+    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
+    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
 def assess_material_event(
@@ -179,6 +224,12 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT,),
+            )
+        if _stale_sports_retrospective(text):
+            return MaterialEventAssessment(
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
             )
         literal_fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
         if any(value not in text for value in literal_fields):

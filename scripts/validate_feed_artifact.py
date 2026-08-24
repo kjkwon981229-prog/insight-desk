@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
-import json
 from html.parser import HTMLParser
+import json
 from pathlib import Path
+import re
 from urllib.parse import urlparse
 
 
@@ -16,9 +18,24 @@ PSAT_FORBIDDEN = (
     "PSAT 아카데미",
     "NCAA",
 )
-_CONTEXT_DEPENDENT_SUMMARY_LEADS = ("여기에 ", "여기에,")
+_CONTEXT_DEPENDENT_SUMMARY_LEADS = ("여기에 ", "여기에,", "이후 ", "이 딜러는 ")
+_BARE_RANKING_CUES = ("최고의 루키",)
+_BARE_RANKING_CONTEXT_TERMS = (
+    "K탑스타",
+    "KTOPSTAR",
+    "투표",
+    "랭킹",
+    "차트",
+    "부문",
+    "시상식",
+    "어워드",
+    "수상",
+)
 _NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
+_STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _SENTENCE_TERMINALS = ".!?。！？"
+_YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -34,14 +51,41 @@ def _sentence_identity(value: str) -> str:
     return _normalize(value).rstrip(_SENTENCE_TERMINALS).rstrip()
 
 
+def _bare_ranking_fragment(value: str) -> bool:
+    normalized = " ".join(value.split())
+    has_bare_ranking = (
+        any(cue in normalized for cue in _BARE_RANKING_CUES)
+        or re.search(r"\d+\s*주\s*연속\s*1위", normalized) is not None
+    )
+    if not has_bare_ranking:
+        return False
+    folded = normalized.casefold()
+    return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
+
+
 def _context_dependent_summary(value: str) -> bool:
     normalized = " ".join(value.split())
-    return any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS)
+    if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS):
+        return True
+    return _bare_ranking_fragment(normalized)
 
 
 def _non_event_analytical_summary(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
+
+
+def _stale_sports_retrospective_summary(value: str) -> bool:
+    normalized = " ".join(value.split())
+    years = [int(item) for item in _YEAR_RE.findall(normalized)]
+    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if "장면" not in normalized and "기록" not in normalized:
+        return False
+    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
+    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
 class FeedParser(HTMLParser):
@@ -178,6 +222,7 @@ def validate_html(
     headline_summary_collisions = 0
     context_dependent_summaries = 0
     non_event_analytical_summaries = 0
+    stale_sports_retrospectives = 0
     max_headline = 0
     max_summary = 0
     psat_forbidden_hits: list[str] = []
@@ -205,6 +250,8 @@ def validate_html(
             context_dependent_summaries += 1
         if _non_event_analytical_summary(summary):
             non_event_analytical_summaries += 1
+        if _stale_sports_retrospective_summary(summary):
+            stale_sports_retrospectives += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
@@ -240,6 +287,10 @@ def validate_html(
         raise ValueError(
             f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
         )
+    if stale_sports_retrospectives:
+        raise ValueError(
+            f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}"
+        )
     if duplicate_headlines:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_summaries:
@@ -265,6 +316,7 @@ def validate_html(
         "headline_summary_collisions": headline_summary_collisions,
         "context_dependent_summaries": context_dependent_summaries,
         "non_event_analytical_summaries": non_event_analytical_summaries,
+        "stale_sports_retrospectives": stale_sports_retrospectives,
         "duplicate_headlines": duplicate_headlines,
         "duplicate_summaries": duplicate_summaries,
         "duplicate_content": duplicate_content,

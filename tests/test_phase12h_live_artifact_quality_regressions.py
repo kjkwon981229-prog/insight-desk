@@ -145,12 +145,97 @@ class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
             (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
         )
 
+    def test_live_dealer_antecedent_fragment_defers(self) -> None:
+        text = (
+            "이 딜러는 한은의 예상대로 법인세수와 반도체 대기업의 대규모 성과급 지급 등으로 인해 "
+            "내년에 수요측 물가 압력이 본격화한다면 1차례 인상으로는 긴축의 강도가 충분하지 않을 수 있다고 덧붙였다."
+        )
+        assessment = _material_assessment(
+            text,
+            subject="이 딜러",
+            action="덧붙였다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,))
+
+    def test_live_afterward_fragment_defers(self) -> None:
+        text = "이후 KBO는 올해 피치클록 기준을 더 엄격하게 조정했다."
+        assessment = _material_assessment(
+            text,
+            subject="KBO",
+            action="피치클록 기준을 더 엄격하게 조정했다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,))
+
+    def test_live_bare_kpop_ranking_fragments_defer(self) -> None:
+        cases = (
+            ("그룹 아홉이 최고의 루키로 등극했다.", "그룹 아홉", "최고의 루키로 등극했다"),
+            ("그룹 유니스가 새로운 최고의 루키로 등극했다.", "그룹 유니스", "새로운 최고의 루키로 등극했다"),
+            ("그룹 플레이브가 13주 연속 1위에 올랐다.", "그룹 플레이브", "13주 연속 1위에 올랐다"),
+        )
+        for text, subject, action in cases:
+            with self.subTest(text=text):
+                assessment = _material_assessment(text, subject=subject, action=action)
+                self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+                self.assertEqual(
+                    assessment.reasons,
+                    (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
+                )
+
+    def test_complete_kpop_ranking_context_remains_material(self) -> None:
+        text = "K탑스타 투표 최고의 루키(남) 부문에서 아홉이 1위를 차지했다."
+        assessment = _material_assessment(
+            text,
+            subject="아홉",
+            action="1위를 차지했다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.MATERIAL)
+
+    def test_live_stale_sports_retrospective_defers(self) -> None:
+        text = (
+            "김재현의 역전 만루포를 뛰어넘은 극적인 장면이 2018년 6월 30일 "
+            "한화생명이글스파크에서 열린 롯데 자이언츠와 한화 이글스 경기에서 나왔다."
+        )
+        assessment = _material_assessment(
+            text,
+            subject="극적인 장면",
+            action="경기에서 나왔다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(
+            assessment.reasons,
+            (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
+        )
+
     def test_context_dependent_summary_fails_product_gate(self) -> None:
-        summary = "여기에 오는 27일 한국은행의 기준금리를 결정에도 관심이 쏠립니다."
-        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY"):
+        summaries = (
+            "여기에 오는 27일 한국은행의 기준금리를 결정에도 관심이 쏠립니다.",
+            "이 딜러는 내년에 수요측 물가 압력이 본격화할 수 있다고 덧붙였다.",
+            "이후 KBO는 올해 피치클록 기준을 더 엄격하게 조정했다.",
+            "그룹 아홉이 최고의 루키로 등극했다.",
+            "그룹 유니스가 새로운 최고의 루키로 등극했다.",
+            "그룹 플레이브가 13주 연속 1위에 올랐다.",
+        )
+        for summary in summaries:
+            with self.subTest(summary=summary):
+                with self.assertRaisesRegex(ValueError, "FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY"):
+                    validate_html(
+                        _story_html(
+                            headline="독립 문맥 검증용 제목",
+                            summary=summary,
+                        )
+                    )
+
+    def test_stale_sports_retrospective_fails_product_gate(self) -> None:
+        summary = (
+            "김재현의 역전 만루포를 뛰어넘은 극적인 장면이 2018년 6월 30일 "
+            "한화생명이글스파크에서 열린 롯데 자이언츠와 한화 이글스 경기에서 나왔다."
+        )
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE"):
             validate_html(
                 _story_html(
-                    headline="한국은행 기준금리 결정에 관심 집중",
+                    headline="과거 경기 장면",
                     summary=summary,
                 )
             )
