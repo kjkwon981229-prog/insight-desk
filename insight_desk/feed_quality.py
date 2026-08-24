@@ -257,6 +257,17 @@ _GENERIC_USAGE_DEFINITION_RE = re.compile(
     r"^[^.!?。！？]{1,80}?(?:은|는|란)\s+[^.!?。！？]{1,180}?"
     r"(?:지표|수단|도구)(?:로|으로)\s+(?:활용|사용|쓰)된다$"
 )
+_GENERIC_EVALUATIVE_CLASSIFICATION_RE = re.compile(
+    r"^[^.!?。！？]{1,100}?(?:은|는|이|가)\s+[^.!?。！？]{1,200}?"
+    r"(?:구간|상품|자산|지표|수단|도구|특징)(?:으)?로\s+"
+    r"(?:꼽힌다|평가된다|분류된다|여겨진다|인식된다)$"
+)
+_ENDURING_REQUIREMENT_RE = re.compile(
+    r"(?:계속|여전히|지속적으로)\s+(?:요구|필요)"
+    r"(?:(?:된다|됩니다|하다|합니다)|"
+    r"(?:된다고|된다는|하다고|하다는)\s+"
+    r"(?:설명|분석|평가|진단)(?:했다|됐다|된다))$"
+)
 _EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
 _EVALUATIVE_CONDITION_ENDINGS = (
     "가능하다고 봤다",
@@ -658,8 +669,14 @@ def non_event_analytical_text(value: str) -> bool:
     if (
         _GENERIC_CLASSIFICATION_STATEMENT_RE.search(normalized) is not None
         or _GENERIC_USAGE_DEFINITION_RE.search(normalized) is not None
+        or _GENERIC_EVALUATIVE_CLASSIFICATION_RE.search(normalized) is not None
     ):
         return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    if (
+        _ENDURING_REQUIREMENT_RE.search(normalized) is not None
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
     if normalized.endswith(_NON_EVENT_TREND_ENDINGS):
         trailing_sentence = re.split(r"[.!?。！？]\s*", normalized)[-1]
         if _QUANTIFIED_TREND_RE.search(trailing_sentence) is None:
