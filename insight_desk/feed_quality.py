@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 import re
 
@@ -19,6 +20,13 @@ _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
     "이들이 ",
 )
 _CONTEXT_DEPENDENT_SUMMARY_PHRASES = ("이번 상황",)
+_GENERIC_CONTEXT_SUBJECT_RE = re.compile(
+    r"^(?:(?:이|해당)\s*)?(?:회사|기업|업체)(?:는|은|이|가|\s+측은|\s+측이)(?:\s|$)"
+    r"|^(?:(?:두|세|네)\s+)?(?:투수|선수|타자|팀)(?:는|은|이|가)?(?:\s|$)"
+)
+_REFERENTIAL_EVENT_RE = re.compile(
+    r"(?:^|\s)이번\s+(?:승리|패배|경기|장면|계약|발표|결정|조치|상황)"
+)
 _BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
@@ -35,6 +43,30 @@ _BARE_RANKING_CONTEXT_TERMS = (
 _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
     r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
 )
+_INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
+    r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
+    r"결정된|출시한|발매한|공개한|상승한|하락한|오른|내린|앞둔|나선|보인|만든|"
+    r"올린|늘린|줄인|마련한|추진한|허용한)$"
+)
+_VISIBLE_BYLINE_RE = re.compile(
+    r"^[\(（\[][^\)）\]]{0,80}(?:기자|특파원|뉴스)[\)）\]]\s*"
+)
+_DISCOURSE_LEADS = ("하지만 ", "그러나 ", "다만 ", "반면 ")
+_DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)")
+_STALE_DAY_ONLY_EVENT_CUES = (
+    "경기",
+    "전에서",
+    "등판",
+    "진행",
+    "개최",
+    "발표",
+    "출시",
+    "공개",
+    "체결",
+    "기록",
+    "승리",
+    "패배",
+)
 _NON_EVENT_ANALYTICAL_ENDINGS = (
     "설명하기 어렵다",
     "설명하기 힘들다",
@@ -50,7 +82,10 @@ _NON_EVENT_ATTENTION_ENDINGS = (
     "관심이 모이고 있습니다",
     "주목을 받고 있다",
     "주목받고 있다",
+    "가능성을 주목하고 있다",
+    "가능성을 주목하고 있습니다",
 )
+_NON_EVENT_INFERENCE_ENDINGS = ("셈이다", "셈입니다")
 _EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
 _EVALUATIVE_CONDITION_ENDINGS = (
     "가능하다고 봤다",
@@ -96,6 +131,16 @@ _EXPLANATORY_STATE_ENDINGS = (
     "요인으로 꼽힌다",
     "원인이다",
     "원인으로 꼽힌다",
+    "영향으로 해석된다",
+    "영향으로 해석됩니다",
+    "영향으로 분석된다",
+    "영향으로 분석됩니다",
+    "배경으로 해석된다",
+    "배경으로 해석됩니다",
+    "요인으로 해석된다",
+    "요인으로 해석됩니다",
+    "원인으로 해석된다",
+    "원인으로 해석됩니다",
 )
 _CONCRETE_EVENT_PREDICATE_CUES = (
     "발매했다",
@@ -142,7 +187,10 @@ _SENTENCE_TERMINALS = ".!?。！？"
 
 
 class VisibleStoryIssue(StrEnum):
+    CONTEXT_DEPENDENT_HEADLINE = "FEED_QUALITY_CONTEXT_DEPENDENT_HEADLINE"
     CONTEXT_DEPENDENT_SUMMARY = "FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY"
+    HEADLINE_SUMMARY_COLLISION = "FEED_QUALITY_HEADLINE_SUMMARY_COLLISION"
+    VISIBLE_METADATA = "FEED_QUALITY_VISIBLE_METADATA"
     NON_EVENT_ANALYTICAL_SUMMARY = "FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY"
     CONDITIONAL_ANALYTICAL_SUMMARY = "FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY"
 
@@ -159,11 +207,15 @@ def _bare_ranking_fragment(value: str) -> bool:
     return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
 
 
-def context_dependent_summary(value: str) -> bool:
+def _context_dependent_text(value: str) -> bool:
     normalized = " ".join(value.split())
     if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS):
         return True
     if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_SUMMARY_PHRASES):
+        return True
+    if _GENERIC_CONTEXT_SUBJECT_RE.search(normalized) is not None:
+        return True
+    if _REFERENTIAL_EVENT_RE.search(normalized) is not None:
         return True
     if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
         return True
@@ -172,11 +224,70 @@ def context_dependent_summary(value: str) -> bool:
     return _bare_ranking_fragment(normalized)
 
 
+def context_dependent_headline(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    return (
+        _context_dependent_text(normalized)
+        or _INCOMPLETE_ADNOMINAL_HEADLINE_RE.search(normalized) is not None
+    )
+
+
+def context_dependent_summary(value: str) -> bool:
+    return _context_dependent_text(value)
+
+
+def visible_metadata_text(value: str) -> bool:
+    return _VISIBLE_BYLINE_RE.search(" ".join(value.split())) is not None
+
+
+def _visible_identity(value: str) -> str:
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    for cue in _DISCOURSE_LEADS:
+        if normalized.startswith(cue):
+            normalized = normalized[len(cue) :].lstrip()
+            break
+    return normalized.casefold()
+
+
+def headline_summary_collision(*, headline: str, summary: str) -> bool:
+    return bool(_visible_identity(headline)) and _visible_identity(headline) == _visible_identity(summary)
+
+
+def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
+    normalized = " ".join(value.split())
+    if any(cue in normalized for cue in ("오늘", "현재", "최근")):
+        return False
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    for match in _DAY_ONLY_PAST_RE.finditer(normalized):
+        day = int(match.group(1))
+        candidates: list[datetime] = []
+        for month_offset in (0, -1):
+            month_index = reference.year * 12 + reference.month - 1 + month_offset
+            year, zero_based_month = divmod(month_index, 12)
+            try:
+                candidate = datetime(year, zero_based_month + 1, day, tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if candidate <= reference + timedelta(hours=6):
+                candidates.append(candidate)
+        if not candidates or reference - max(candidates) <= timedelta(hours=72):
+            continue
+        tail = normalized[match.end() : match.end() + 100]
+        if any(cue in tail for cue in _STALE_DAY_ONLY_EVENT_CUES):
+            return True
+    return False
+
+
 def non_event_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     if normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS):
         return True
     if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
+        return True
+    if (
+        normalized.endswith(_NON_EVENT_INFERENCE_ENDINGS)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
         return True
     if (
         any(marker in normalized for marker in _EVALUATIVE_CONDITION_MARKERS)
@@ -212,10 +323,16 @@ def visible_story_issues(
     headline: str,
     summary: str,
 ) -> tuple[VisibleStoryIssue, ...]:
-    del topic, headline
+    del topic
     issues: list[VisibleStoryIssue] = []
+    if context_dependent_headline(headline):
+        issues.append(VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE)
     if context_dependent_summary(summary):
         issues.append(VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY)
+    if headline_summary_collision(headline=headline, summary=summary):
+        issues.append(VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION)
+    if visible_metadata_text(headline) or visible_metadata_text(summary):
+        issues.append(VisibleStoryIssue.VISIBLE_METADATA)
     if non_event_analytical_text(summary):
         issues.append(VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY)
     if conditional_analytical_text(summary):

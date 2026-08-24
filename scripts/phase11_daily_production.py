@@ -86,6 +86,22 @@ _KPOP_HEADLINE_SCOPE_CUES = (
     "세븐틴",
 )
 _HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
+_HANWHA_SUBORDINATE_CONTEXT_CUES = ("가운데", "한편", "사진", "배경")
+_HANWHA_DIRECT_ACTION_CUES = (
+    "상대로",
+    "누르고",
+    "꺾고",
+    "제압",
+    "이겼",
+    "승리했다",
+    "패했다",
+    "홈런",
+    "삼진",
+    "등판",
+    "선발",
+    "부상",
+    "트레이드",
+)
 _KBO_EVENT_TERM_ALIASES = {
     "결과": ("누르고", "꺾고", "이겼", "제압", "완파"),
     "승리": ("누르고", "꺾고", "이겼", "제압", "완파"),
@@ -201,7 +217,21 @@ def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) ->
     object_text = (fact.object or "").strip()
     action = fact.action.strip()
 
-    if "한화" in subject or "한화" in object_text:
+    if "한화" in subject:
+        return True
+
+    direct_action = any(cue in action for cue in _HANWHA_DIRECT_ACTION_CUES)
+    if not direct_action:
+        for text in cited_text:
+            normalized = " ".join(text.split())
+            hanwha_position = normalized.find("한화")
+            if hanwha_position < 0:
+                continue
+            prefix = normalized[max(0, hanwha_position - 100) : hanwha_position]
+            if any(cue in prefix for cue in _HANWHA_SUBORDINATE_CONTEXT_CUES):
+                return False
+
+    if "한화" in object_text:
         return True
 
     action_without_prior_reference = _HANWHA_PRIOR_GAME_REFERENCE_RE.sub("", action)
@@ -662,7 +692,12 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         )
         bundle.validate()
         topic_by_event = {item.candidate.event_id: item.topic.name for item in published}
-        view = build_briefing_view_model(rendered, topic_by_event=topic_by_event)
+        source_by_event = {item.candidate.event_id: item.source_url for item in published}
+        view = build_briefing_view_model(
+            rendered,
+            topic_by_event=topic_by_event,
+            source_by_event=source_by_event,
+        )
         push_worker_url = os.environ.get("PUSH_WORKER_URL", "").strip() or None
         html = render_briefing_html(view, runtime=PwaRuntimeConfig(push_worker_url=push_worker_url))
         if "key-fact-panel" in html or "next-signal" in html or "검색 관심 흐름" in html:

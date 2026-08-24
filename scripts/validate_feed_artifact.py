@@ -9,7 +9,11 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 
-from insight_desk.feed_quality import VisibleStoryIssue, visible_story_issues
+from insight_desk.feed_quality import (
+    VisibleStoryIssue,
+    stale_day_only_context,
+    visible_story_issues,
+)
 
 
 MAX_HEADLINE_CHARS = 120
@@ -116,6 +120,8 @@ def _stale_dated_context_summary(value: str) -> bool:
         return True
     normalized = " ".join(value.split())
     now = datetime.now(timezone.utc)
+    if stale_day_only_context(normalized, now=now):
+        return True
     for match in _MONTH_DAY_RE.finditer(normalized):
         if match.start() > 32:
             continue
@@ -170,6 +176,7 @@ class FeedParser(HTMLParser):
                 "topic": "",
                 "headline": "",
                 "summary": "",
+                "source_url": "",
             }
             self._story_depth = 1
             return
@@ -188,6 +195,8 @@ class FeedParser(HTMLParser):
         elif tag == "span" and "story-topic" in classes:
             self._field = "topic"
             self._field_depth = 1
+        elif tag == "a" and "story-source" in classes:
+            self._story["source_url"] = attributes.get("href") or ""
 
     def handle_endtag(self, tag: str) -> None:
         if self._story is None:
@@ -217,6 +226,7 @@ def _validate_source_audit(
         raise ValueError("FEED_QUALITY_SOURCE_AUDIT_MISSING")
     html_event_ids = [story["event_id"].strip() for story in stories]
     audit_event_ids: list[str] = []
+    audit_source_urls: list[str] = []
     seen_source_groups: set[str] = set()
     seen_content: set[str] = set()
     invalid_source_url_indices: list[int] = []
@@ -244,6 +254,7 @@ def _validate_source_audit(
         elif _stale_source_url(source_url):
             stale_source_url_indices.append(index)
         audit_event_ids.append(event_id)
+        audit_source_urls.append(source_url)
         if source_group_key in seen_source_groups:
             duplicate_sources += 1
         else:
@@ -262,6 +273,12 @@ def _validate_source_audit(
         raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{invalid_source_url_indices[0]}")
     if stale_source_url_indices:
         raise ValueError(f"FEED_QUALITY_STALE_SOURCE_URL:{stale_source_url_indices[0]}")
+    for index, (story, source_url) in enumerate(zip(stories, audit_source_urls, strict=True), start=1):
+        visible_source_url = story.get("source_url", "").strip()
+        if not visible_source_url:
+            raise ValueError(f"FEED_QUALITY_SOURCE_LINK_MISSING:{index}")
+        if visible_source_url != source_url:
+            raise ValueError(f"FEED_QUALITY_SOURCE_LINK_MISMATCH:{index}")
     return duplicate_sources, duplicate_source_content, len(stale_source_url_indices)
 
 
@@ -283,7 +300,9 @@ def validate_html(
     duplicate_summaries = 0
     duplicate_content = 0
     headline_summary_collisions = 0
+    context_dependent_headlines = 0
     context_dependent_summaries = 0
+    visible_metadata_issues = 0
     non_event_analytical_summaries = 0
     conditional_analytical_summaries = 0
     stale_dated_contexts = 0
@@ -309,15 +328,17 @@ def validate_html(
 
         headline_key = _normalize(headline)
         summary_key = _normalize(summary)
-        if _sentence_identity(headline) == _sentence_identity(summary):
-            headline_summary_collisions += 1
         visible_issues = visible_story_issues(
             topic=topic,
             headline=headline,
             summary=summary,
         )
+        if VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION in visible_issues:
+            headline_summary_collisions += 1
         if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY in visible_issues:
             context_dependent_summaries += 1
+        if VisibleStoryIssue.VISIBLE_METADATA in visible_issues:
+            visible_metadata_issues += 1
         if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY in visible_issues:
             non_event_analytical_summaries += 1
         if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY in visible_issues:
@@ -327,6 +348,7 @@ def validate_html(
         elif _stale_dated_context_summary(summary):
             stale_dated_contexts += 1
 
+        story_topic_binding_violation = False
         if topic == KBO_HANWHA_TOPIC:
             combined_visible = f"{headline}\n{summary}"
             entertainment_crossover = (
@@ -334,14 +356,18 @@ def validate_html(
                 and any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
             )
             if entertainment_crossover:
-                topic_binding_violations += 1
+                story_topic_binding_violation = True
             elif not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
-                topic_binding_violations += 1
+                story_topic_binding_violation = True
             elif not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES):
-                topic_binding_violations += 1
+                story_topic_binding_violation = True
         elif topic == KPOP_TOPIC:
             if not any(cue.casefold() in headline.casefold() for cue in _KPOP_HEADLINE_SCOPE_CUES):
-                topic_binding_violations += 1
+                story_topic_binding_violation = True
+        if story_topic_binding_violation:
+            topic_binding_violations += 1
+        elif VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE in visible_issues:
+            context_dependent_headlines += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
@@ -364,8 +390,12 @@ def validate_html(
 
     if headline_summary_collisions:
         raise ValueError(f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}")
+    if context_dependent_headlines:
+        raise ValueError(f"FEED_QUALITY_CONTEXT_DEPENDENT_HEADLINE:{context_dependent_headlines}")
     if context_dependent_summaries:
         raise ValueError(f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}")
+    if visible_metadata_issues:
+        raise ValueError(f"FEED_QUALITY_VISIBLE_METADATA:{visible_metadata_issues}")
     if non_event_analytical_summaries:
         raise ValueError(f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}")
     if conditional_analytical_summaries:
@@ -397,7 +427,9 @@ def validate_html(
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
         "headline_summary_collisions": headline_summary_collisions,
+        "context_dependent_headlines": context_dependent_headlines,
         "context_dependent_summaries": context_dependent_summaries,
+        "visible_metadata_issues": visible_metadata_issues,
         "non_event_analytical_summaries": non_event_analytical_summaries,
         "conditional_analytical_summaries": conditional_analytical_summaries,
         "stale_dated_contexts": stale_dated_contexts,
@@ -409,6 +441,7 @@ def validate_html(
         "duplicate_sources": duplicate_sources,
         "duplicate_source_content": duplicate_source_content,
         "stale_source_urls": stale_source_urls,
+        "visible_source_links": sum(bool(story.get("source_url", "").strip()) for story in stories),
         "psat_forbidden_hits": 0,
         "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
     }

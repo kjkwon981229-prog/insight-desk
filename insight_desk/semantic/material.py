@@ -8,7 +8,11 @@ import re
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
-from insight_desk.feed_quality import conditional_analytical_text, non_event_analytical_text
+from insight_desk.feed_quality import (
+    conditional_analytical_text,
+    non_event_analytical_text,
+    stale_day_only_context,
+)
 
 from .tooling import KiwiMorphologyHelper
 
@@ -224,6 +228,8 @@ def _dated_context_is_stale(text: str) -> bool:
         return False
     normalized = " ".join(text.split())
     now = datetime.now(timezone.utc)
+    if stale_day_only_context(normalized, now=now):
+        return True
     for match in _MONTH_DAY_RE.finditer(normalized):
         if match.start() > 32:
             continue
