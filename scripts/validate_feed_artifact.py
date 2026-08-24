@@ -5,6 +5,7 @@ import hashlib
 import json
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 MAX_HEADLINE_CHARS = 120
@@ -121,7 +122,15 @@ def _validate_source_audit(
         event_id = str(item.get("event_id") or "").strip()
         source_group_key = str(item.get("source_group_key") or "").strip()
         content_sha256 = str(item.get("content_sha256") or "").strip()
-        if not event_id or not source_group_key or not content_sha256:
+        source_url = str(item.get("source_url") or "").strip()
+        parsed_source_url = urlparse(source_url)
+        source_url_valid = (
+            parsed_source_url.scheme in {"http", "https"}
+            and bool(parsed_source_url.netloc)
+            and parsed_source_url.username is None
+            and parsed_source_url.password is None
+        )
+        if not event_id or not source_group_key or not content_sha256 or not source_url_valid:
             raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
         audit_event_ids.append(event_id)
         if source_group_key in seen_source_groups:
