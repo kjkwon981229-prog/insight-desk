@@ -107,8 +107,8 @@ class Phase12CEventTopicBindingTests(unittest.TestCase):
             )
         )
 
-    def test_positive_hanwha_game_event_keeps_binding(self) -> None:
-        self.assertTrue(
+    def test_opponent_centered_hanwha_game_result_is_rejected(self) -> None:
+        self.assertFalse(
             relevant(
                 "프로야구 LG 트윈스가 한화 이글스를 누르고 3위 자리를 되찾았다.",
                 "kbo_hanwha",

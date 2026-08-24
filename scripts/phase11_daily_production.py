@@ -113,6 +113,7 @@ _KBO_EVENT_TERM_ALIASES = {
     "패배": ("패했다", "패전", "졌다"),
 }
 _KBO_RANK_SURFACE_RE = re.compile(r"(?<!\d)\d+\s*위(?!\d)")
+_KBO_OUTCOME_OR_RANK_TERMS = frozenset({"결과", "승리", "패배", "순위"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +209,20 @@ def _fact_has_configured_kbo_event_term(fact: EventFact, topic: TopicConfig) -> 
     return False
 
 
+def _fact_is_kbo_outcome_or_rank(fact: EventFact, topic: TopicConfig) -> bool:
+    surface = _fact_surface(fact)
+    for term in topic.event_terms:
+        if term not in _KBO_OUTCOME_OR_RANK_TERMS:
+            continue
+        if _term_present(surface, term):
+            return True
+        if any(alias in surface for alias in _KBO_EVENT_TERM_ALIASES.get(term, ())):
+            return True
+        if term == "순위" and _KBO_RANK_SURFACE_RE.search(surface) is not None:
+            return True
+    return False
+
+
 def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
     fact_text = "\n".join(_fact_surface(fact) for fact in facts)
     combined = f"{fact_text}\n{' '.join(cited_text)}"
@@ -215,6 +230,20 @@ def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple
         any(cue in combined for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
         and any(cue in combined for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
     )
+
+
+def _hanwha_fact_subject_central(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
+    subject = fact.subject.strip()
+    if "한화" in subject:
+        return True
+    if not subject:
+        return False
+    for text in cited_text:
+        normalized = " ".join(text.split())
+        pattern = rf"한화(?:\s+이글스)?(?:의|\s+)\s*{re.escape(subject)}"
+        if re.search(pattern, normalized):
+            return True
+    return False
 
 
 def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
@@ -313,6 +342,10 @@ def event_topic_relevant(
     return any(
         _hanwha_fact_directly_bound(fact, cited_by_fact[fact.fact_id])
         and _fact_has_configured_kbo_event_term(fact, topic)
+        and (
+            not _fact_is_kbo_outcome_or_rank(fact, topic)
+            or _hanwha_fact_subject_central(fact, cited_by_fact[fact.fact_id])
+        )
         for fact in frozen_facts
     )
 
