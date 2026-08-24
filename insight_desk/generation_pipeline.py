@@ -27,6 +27,7 @@ _CLAUSE_MARKS = ("…", "·", ":", ";", ",", "，")
 _GENERIC_FALLBACK_HEADLINE_RE = re.compile(
     r"^(?:팀은|이 팀은|세 팀(?:은)?|그는|그가|그의|그녀는|그녀가|이들은|이들이)(?:\s|$)"
 )
+_CONTEXTLESS_FALLBACK_CUES = ("하지만", "그러나", "반면", "그럼에도")
 
 
 class ExtractiveFallbackUnavailable(GenerationContractError):
@@ -137,13 +138,13 @@ def _generic_fallback_headline(text: str) -> bool:
     return _GENERIC_FALLBACK_HEADLINE_RE.search(" ".join(text.split())) is not None
 
 
-def _headline_has_explicit_fact_subject(request: GenerationRequest, headline: str) -> bool:
-    normalized = " ".join(headline.split())
-    for fact_id in request.event.fact_ids:
-        subject = request.facts[fact_id].subject.strip()
-        if subject and subject in normalized:
-            return True
-    return False
+def _contextless_fallback_clause(text: str) -> bool:
+    normalized = " ".join(text.split())
+    return (
+        len(normalized) >= 60
+        and normalized.endswith(tuple(".!?。！？"))
+        and any(cue in normalized for cue in _CONTEXTLESS_FALLBACK_CUES)
+    )
 
 
 def _fact_grounded_exact_headline(
@@ -236,16 +237,12 @@ class ExtractiveFallbackGenerator:
 
         collision = _normalized_visible_identity(headline) == _normalized_visible_identity(summary)
         generic_headline = _generic_fallback_headline(headline)
-        missing_explicit_subject = not title_spans and not _headline_has_explicit_fact_subject(
-            request,
-            headline,
-        )
-        if collision or generic_headline or missing_explicit_subject:
-            require_explicit_subject = generic_headline or missing_explicit_subject
+        contextless_clause = not title_spans and _contextless_fallback_clause(headline)
+        if collision or generic_headline or contextless_clause:
             grounded_headline = _fact_grounded_exact_headline(
                 request,
                 summary,
-                require_explicit_subject=require_explicit_subject,
+                require_explicit_subject=generic_headline or contextless_clause,
             )
             if grounded_headline is None:
                 raise ExtractiveFallbackUnavailable(
