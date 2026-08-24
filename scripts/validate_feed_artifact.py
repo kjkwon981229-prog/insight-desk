@@ -305,6 +305,7 @@ def validate_html(
     visible_metadata_issues = 0
     non_event_analytical_summaries = 0
     conditional_analytical_summaries = 0
+    malformed_visible_texts = 0
     stale_dated_contexts = 0
     stale_sports_retrospectives = 0
     topic_binding_violations = 0
@@ -343,6 +344,8 @@ def validate_html(
             non_event_analytical_summaries += 1
         if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY in visible_issues:
             conditional_analytical_summaries += 1
+        if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT in visible_issues:
+            malformed_visible_texts += 1
         if _stale_sports_retrospective_summary(summary):
             stale_sports_retrospectives += 1
         elif _stale_dated_context_summary(summary):
@@ -400,6 +403,8 @@ def validate_html(
         raise ValueError(f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}")
     if conditional_analytical_summaries:
         raise ValueError(f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}")
+    if malformed_visible_texts:
+        raise ValueError(f"FEED_QUALITY_MALFORMED_VISIBLE_TEXT:{malformed_visible_texts}")
     if stale_sports_retrospectives:
         raise ValueError(f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}")
     if stale_dated_contexts:
@@ -432,6 +437,7 @@ def validate_html(
         "visible_metadata_issues": visible_metadata_issues,
         "non_event_analytical_summaries": non_event_analytical_summaries,
         "conditional_analytical_summaries": conditional_analytical_summaries,
+        "malformed_visible_texts": malformed_visible_texts,
         "stale_dated_contexts": stale_dated_contexts,
         "stale_sports_retrospectives": stale_sports_retrospectives,
         "topic_binding_violations": topic_binding_violations,

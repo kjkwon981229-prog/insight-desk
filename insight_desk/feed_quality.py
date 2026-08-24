@@ -18,6 +18,8 @@ _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
     "그녀가 ",
     "이들은 ",
     "이들이 ",
+    "가운데 ",
+    "가운데,",
 )
 _CONTEXT_DEPENDENT_SUMMARY_PHRASES = ("이번 상황",)
 _GENERIC_CONTEXT_SUBJECT_RE = re.compile(
@@ -41,7 +43,35 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "수상",
 )
 _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
-    r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
+    r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+"
+    r"[^,.]{0,60}?\d+\s*(?:타수|이닝|분|경기)\b"
+)
+_CONTEXT_DEPENDENT_CREATED_CATEGORY_RE = re.compile(
+    r"(?:분야|부문)(?:를|을)?\s+(?:신설(?:했|한|한다|됐다|된|된다)?|새로\s+마련)"
+)
+_CREATED_CATEGORY_PARENT_CUES = (
+    "공모전",
+    "공모",
+    "경진대회",
+    "디자인 대전",
+    "시상식",
+    "프로그램",
+    "프로젝트",
+    "사업",
+    "제도",
+    "과정",
+    "학과",
+    "전형",
+    "조직",
+    "본부",
+    "센터",
+)
+_MISSING_FINANCIAL_TENOR_RE = re.compile(
+    r"(?:미국|한국|일본|중국|독일|영국)\s+년\s+만기\s+(?:국채|채권)"
+)
+_MISSING_FINANCIAL_VALUE_RE = re.compile(
+    r"(?:금리|수익률|환율|가격|지수|비율)(?:이|가|은|는)\s+(?:에|로)\s+"
+    r"(?:도달|진입|마감|상승|하락|올랐|내렸)"
 )
 _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
@@ -114,7 +144,7 @@ _DESCRIPTIVE_PREDICATE_CUES = (
     "결합한",
     "특징이다",
 )
-_EXPLANATORY_STATE_NOUN_CUES = ("원인", "배경", "힘", "요인", "영향")
+_EXPLANATORY_STATE_NOUN_CUES = ("원인", "배경", "힘", "요인", "영향", "신호")
 _EXPLANATORY_STATE_ENDINGS = (
     "두드러지고 있다",
     "두드러지고 있습니다",
@@ -122,9 +152,13 @@ _EXPLANATORY_STATE_ENDINGS = (
     "작용하고 있다",
     "작용하고 있습니다",
     "작용한다",
+    "작용할 수 있다",
+    "작용할 수 있습니다",
     "영향을 미치고 있다",
     "영향을 미치고 있습니다",
     "영향을 미친다",
+    "영향을 미칠 수 있다",
+    "영향을 미칠 수 있습니다",
     "배경이다",
     "배경으로 꼽힌다",
     "요인이다",
@@ -193,6 +227,7 @@ class VisibleStoryIssue(StrEnum):
     VISIBLE_METADATA = "FEED_QUALITY_VISIBLE_METADATA"
     NON_EVENT_ANALYTICAL_SUMMARY = "FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY"
     CONDITIONAL_ANALYTICAL_SUMMARY = "FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY"
+    MALFORMED_VISIBLE_TEXT = "FEED_QUALITY_MALFORMED_VISIBLE_TEXT"
 
 
 def _bare_ranking_fragment(value: str) -> bool:
@@ -221,7 +256,20 @@ def _context_dependent_text(value: str) -> bool:
         return True
     if _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE.search(normalized) is not None:
         return True
+    if (
+        _CONTEXT_DEPENDENT_CREATED_CATEGORY_RE.search(normalized) is not None
+        and not any(cue in normalized for cue in _CREATED_CATEGORY_PARENT_CUES)
+    ):
+        return True
     return _bare_ranking_fragment(normalized)
+
+
+def malformed_visible_text(value: str) -> bool:
+    normalized = " ".join(value.split())
+    return (
+        _MISSING_FINANCIAL_TENOR_RE.search(normalized) is not None
+        or _MISSING_FINANCIAL_VALUE_RE.search(normalized) is not None
+    )
 
 
 def context_dependent_headline(value: str) -> bool:
@@ -337,4 +385,6 @@ def visible_story_issues(
         issues.append(VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY)
     if conditional_analytical_text(summary):
         issues.append(VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY)
+    if malformed_visible_text(headline) or malformed_visible_text(summary):
+        issues.append(VisibleStoryIssue.MALFORMED_VISIBLE_TEXT)
     return tuple(issues)

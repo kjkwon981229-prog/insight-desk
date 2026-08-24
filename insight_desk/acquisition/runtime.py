@@ -168,12 +168,13 @@ class TrafilaturaExtractor:
             raise AcquisitionError(FailureKind.INVALID_OUTPUT, "trafilatura dependency unavailable") from exc
 
         try:
+            # `favor_precision=True` discards text inside styled inline spans on measured publisher
+            # pages, including dates, tenors, percentages, and punctuation required for exact proof.
             body: Any = trafilatura.extract(
                 html,
                 include_comments=False,
                 include_tables=True,
                 output_format="txt",
-                favor_precision=True,
             )
         except Exception as exc:
             raise AcquisitionError(FailureKind.EXTRACTION_EMPTY, f"trafilatura failed: {type(exc).__name__}") from exc
