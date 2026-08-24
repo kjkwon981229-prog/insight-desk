@@ -113,7 +113,6 @@ _KBO_EVENT_TERM_ALIASES = {
     "패배": ("패했다", "패전", "졌다"),
 }
 _KBO_RANK_SURFACE_RE = re.compile(r"(?<!\d)\d+\s*위(?!\d)")
-_KBO_OUTCOME_OR_RANK_TERMS = frozenset({"결과", "승리", "패배", "순위"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,18 +208,11 @@ def _fact_has_configured_kbo_event_term(fact: EventFact, topic: TopicConfig) -> 
     return False
 
 
-def _fact_is_kbo_outcome_or_rank(fact: EventFact, topic: TopicConfig) -> bool:
+def _fact_has_kbo_rank_change(fact: EventFact, topic: TopicConfig) -> bool:
+    if "순위" not in topic.event_terms:
+        return False
     surface = _fact_surface(fact)
-    for term in topic.event_terms:
-        if term not in _KBO_OUTCOME_OR_RANK_TERMS:
-            continue
-        if _term_present(surface, term):
-            return True
-        if any(alias in surface for alias in _KBO_EVENT_TERM_ALIASES.get(term, ())):
-            return True
-        if term == "순위" and _KBO_RANK_SURFACE_RE.search(surface) is not None:
-            return True
-    return False
+    return _term_present(surface, "순위") or _KBO_RANK_SURFACE_RE.search(surface) is not None
 
 
 def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
@@ -343,7 +335,7 @@ def event_topic_relevant(
         _hanwha_fact_directly_bound(fact, cited_by_fact[fact.fact_id])
         and _fact_has_configured_kbo_event_term(fact, topic)
         and (
-            not _fact_is_kbo_outcome_or_rank(fact, topic)
+            not _fact_has_kbo_rank_change(fact, topic)
             or _hanwha_fact_subject_central(fact, cited_by_fact[fact.fact_id])
         )
         for fact in frozen_facts
