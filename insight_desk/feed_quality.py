@@ -51,6 +51,15 @@ _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
 _CONTEXT_DEPENDENT_CREATED_CATEGORY_RE = re.compile(
     r"(?:분야|부문)(?:를|을)?\s+(?:신설(?:했|한|한다|됐다|된|된다)?|새로\s+마련)"
 )
+_ORPHANED_OPENING_CONTENT_LEAD_RE = re.compile(
+    r"^(?:개장|개관|출범)\s+(?:첫|후속)\s+콘텐츠로(?:는)?(?:\s|$)"
+)
+_ORPHANED_CHILD_CONTENT_ROLE_RE = re.compile(
+    r"^(?![^.!?。！？]{0,100}(?:에서|의\s+(?:개장|개관|출범)))"
+    r"[^.!?。！？]{1,100}?(?:전시|공연|프로그램|행사|작품|영상|콘텐츠)"
+    r"(?:은|는|이|가)\s+(?:개장\s+|개관\s+)?(?:첫|후속)\s+콘텐츠로\s+"
+    r"(?:마련|선정|공개)"
+)
 _CREATED_CATEGORY_PARENT_CUES = (
     "공모전",
     "공모",
@@ -189,12 +198,55 @@ _NON_EVENT_OPERATIONAL_STATE_ENDINGS = (
     "적용되고 있다",
     "적용되고 있습니다",
 )
+_NON_EVENT_POSSESSION_STATE_ENDINGS = (
+    "보유하고 있다",
+    "보유하고 있습니다",
+    "보유돼 있다",
+    "보유돼 있습니다",
+    "보유되어 있다",
+    "보유되어 있습니다",
+    "갖추고 있다",
+    "갖추고 있습니다",
+)
+_NON_EVENT_AUDIENCE_RESPONSE_CUES = (
+    "관람객",
+    "시청자",
+    "청중",
+    "독자",
+    "팬",
+    "소비자",
+    "이용자",
+    "참가자",
+    "어린이",
+    "흥미",
+    "호기심",
+    "관심",
+    "인기",
+    "호응",
+)
+_NON_EVENT_AUDIENCE_FORECAST_ENDINGS = (
+    "것으로 전망된다",
+    "것으로 전망됩니다",
+    "것으로 기대된다",
+    "것으로 기대됩니다",
+    "것으로 예상된다",
+    "것으로 예상됩니다",
+)
 _QUANTIFIED_TREND_RE = re.compile(
     r"\d[\d,.]*\s*(?:%|％|명|건|개|곳|배|원|달러|경기|승|패|세이브|홀드|이닝)"
 )
 _DEFINITION_STATEMENT_RE = re.compile(
     r"^(?:[^.!?。！？]{1,80}?)(?:은|는|란)\s+"
     r"[^.!?。！？]{1,180}?(?:뜻한다|의미한다|말한다|뜻입니다|의미입니다)$"
+)
+_GENERIC_CLASSIFICATION_STATEMENT_RE = re.compile(
+    r"^[^.!?。！？]{1,80}?(?:은|는|란)\s+[^.!?。！？]{1,180}?"
+    r"(?:구간|파생상품|지표|상품|자산|제도|방식|개념|용어|수단|도구|특징)"
+    r"(?:이다|입니다)$"
+)
+_GENERIC_USAGE_DEFINITION_RE = re.compile(
+    r"^[^.!?。！？]{1,80}?(?:은|는|란)\s+[^.!?。！？]{1,180}?"
+    r"(?:지표|수단|도구)(?:로|으로)\s+(?:활용|사용|쓰)된다$"
 )
 _EVALUATIVE_CONDITION_MARKERS = ("해야", "돼야", "되어야")
 _EVALUATIVE_CONDITION_ENDINGS = (
@@ -396,9 +448,19 @@ def _context_dependent_text(value: str) -> bool:
         and not any(cue in normalized for cue in _CREATED_CATEGORY_PARENT_CUES)
     ):
         return True
+    if orphaned_parent_content_role_text(normalized):
+        return True
     if _subjectless_funding_result(normalized):
         return True
     return _bare_ranking_fragment(normalized)
+
+
+def orphaned_parent_content_role_text(value: str) -> bool:
+    normalized = " ".join(value.split())
+    return (
+        _ORPHANED_OPENING_CONTENT_LEAD_RE.search(normalized) is not None
+        or _ORPHANED_CHILD_CONTENT_ROLE_RE.search(normalized) is not None
+    )
 
 
 def _subjectless_funding_result(normalized: str) -> bool:
@@ -563,12 +625,28 @@ def non_event_analytical_text(value: str) -> bool:
         return True
     if _DEFINITION_STATEMENT_RE.search(normalized) is not None:
         return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    if (
+        _GENERIC_CLASSIFICATION_STATEMENT_RE.search(normalized) is not None
+        or _GENERIC_USAGE_DEFINITION_RE.search(normalized) is not None
+    ):
+        return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     if normalized.endswith(_NON_EVENT_TREND_ENDINGS):
         trailing_sentence = re.split(r"[.!?。！？]\s*", normalized)[-1]
         if _QUANTIFIED_TREND_RE.search(trailing_sentence) is None:
             return True
     if (
         normalized.endswith(_NON_EVENT_OPERATIONAL_STATE_ENDINGS)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
+    if (
+        normalized.endswith(_NON_EVENT_POSSESSION_STATE_ENDINGS)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
+    if (
+        any(cue in normalized for cue in _NON_EVENT_AUDIENCE_RESPONSE_CUES)
+        and normalized.endswith(_NON_EVENT_AUDIENCE_FORECAST_ENDINGS)
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     ):
         return True
