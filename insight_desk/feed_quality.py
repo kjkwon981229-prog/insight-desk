@@ -64,6 +64,31 @@ _ORPHANED_CHILD_CONTENT_ROLE_RE = re.compile(
     r"(?:은|는|이|가)\s+(?:개장\s+|개관\s+)?(?:첫|후속)\s+콘텐츠로\s+"
     r"(?:마련|선정|공개)"
 )
+_PARENTLESS_STAGE_LEAD_RE = re.compile(r"^무대(?:에는|에|는)(?:\s|$)")
+_GENERIC_STAGE_APPEARANCE_RE = re.compile(
+    r"(?:무대\s+출연|무대에\s+출연(?:한다|합니다|할\s+예정이다|할\s+예정입니다))"
+    r"[.!?。！？]?$"
+)
+_PERFORMER_CUES = (
+    "가수",
+    "그룹",
+    "밴드",
+    "아티스트",
+    "래퍼",
+    "보컬",
+    "아이돌",
+    "K-POP",
+    "케이팝",
+    "힙합",
+)
+_NAMED_PERFORMANCE_PARENT_CUES = (
+    "콘서트",
+    "축제",
+    "페스티벌",
+    "쇼케이스",
+    "시상식",
+    "음악제",
+)
 _REFERENTIAL_REMAINDER_RE = re.compile(
     r"(?:^|[\s,·])(?:나머지|그\s*외|이외의?)\s*\d+\s*"
     r"(?:종목|명|개|곳|팀|기관|기업|업체|회사|제품|콘텐츠|작품|곡|경기)"
@@ -155,6 +180,9 @@ _HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
     r"(?:덜|적게|많이|더)\s*(?:경기(?:를)?\s*)?치렀"
 )
 _DISCOURSE_LEADS = ("하지만 ", "그러나 ", "다만 ", "반면 ")
+_LEADING_QUARTER_RE = re.compile(
+    r"^(?:(지난)\s+)?(?:(20\d{2})년\s*)?([1-4])분기(?:\s|$)"
+)
 _DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)")
 _BARE_DAY_SPORTS_EVENT_RE = re.compile(
     r"(?<!\d)([0-3]?\d)일(?!\s*(?:동안|간|뒤|후|째))\s+"
@@ -363,6 +391,13 @@ _ABSTRACT_TRANSFORMATION_ASSERTION_RE = re.compile(
     r"(?:재정의하|다시\s+정의하|바꾸|변화시키|열어가|확장하)"
     r"고\s+있다고\s+(?:밝혔다|말했다|설명했다|강조했다)$"
 )
+_EDUCATIONAL_RANGE_RE = re.compile(
+    r"(?:소식|사례|개념|용어)부터\s+[^.!?。！？]{1,180}?까지\s+"
+    r"[^.!?。！？]{1,120}?(?:접할|볼|확인할|찾아볼)\s+수\s+있다$"
+)
+_VAGUE_IMPACT_STATE_RE = re.compile(
+    r"(?:영향|효과|변화)(?:이|가)\s+(?:나타나고|이어지고|확산되고)\s+있다$"
+)
 _CONCRETE_EVENT_PREDICATE_CUES = (
     "발매했다",
     "공개했다",
@@ -502,6 +537,8 @@ def _context_dependent_text(value: str) -> bool:
         return True
     if orphaned_parent_content_role_text(normalized):
         return True
+    if parentless_performer_lineup_text(normalized):
+        return True
     if referential_remainder_text(normalized):
         return True
     if _subjectless_funding_result(normalized):
@@ -514,6 +551,18 @@ def orphaned_parent_content_role_text(value: str) -> bool:
     return (
         _ORPHANED_OPENING_CONTENT_LEAD_RE.search(normalized) is not None
         or _ORPHANED_CHILD_CONTENT_ROLE_RE.search(normalized) is not None
+    )
+
+
+def parentless_performer_lineup_text(value: str) -> bool:
+    normalized = " ".join(value.split())
+    if not any(cue in normalized for cue in _PERFORMER_CUES):
+        return False
+    if any(cue in normalized for cue in _NAMED_PERFORMANCE_PARENT_CUES):
+        return False
+    return (
+        _PARENTLESS_STAGE_LEAD_RE.search(normalized) is not None
+        or _GENERIC_STAGE_APPEARANCE_RE.search(normalized) is not None
     )
 
 
@@ -673,6 +722,26 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
     return False
 
 
+def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
+    normalized = " ".join(value.split())
+    match = _LEADING_QUARTER_RE.search(normalized)
+    if match is None:
+        return False
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    past_text, year_text, quarter_text = match.groups()
+    quarter = int(quarter_text)
+    current_quarter = (reference.month - 1) // 3 + 1
+    if year_text is not None:
+        year = int(year_text)
+    elif quarter > current_quarter or (past_text is not None and quarter >= current_quarter):
+        year = reference.year - 1
+    else:
+        year = reference.year
+    current_ordinal = reference.year * 4 + current_quarter
+    quarter_ordinal = year * 4 + quarter
+    return current_ordinal - quarter_ordinal >= 2
+
+
 def _publication_retrospective_text(normalized: str) -> bool:
     for sentence in re.split(r"[.!?。！？]\s*", normalized):
         sentence = sentence.strip()
@@ -769,6 +838,17 @@ def non_event_analytical_text(value: str) -> bool:
         and _QUANTIFIED_TREND_RE.search(normalized) is None
     ):
         return True
+    if (
+        _EDUCATIONAL_RANGE_RE.search(normalized) is not None
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
+    if (
+        _VAGUE_IMPACT_STATE_RE.search(normalized) is not None
+        and _QUANTIFIED_TREND_RE.search(normalized) is None
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
     return (
         any(cue in normalized for cue in _DESCRIPTIVE_ATTRIBUTE_CUES)
         and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
@@ -817,6 +897,8 @@ def visible_story_issues(
     elif stale_relative_past_event_text(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     elif stale_day_only_context(summary):
+        issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
+    elif stale_quarter_context(summary):
         issues.append(VisibleStoryIssue.STALE_DATED_CONTEXT)
     if kbo_hanwha_comparison_only(topic=topic, headline=headline, summary=summary):
         issues.append(VisibleStoryIssue.TOPIC_BINDING)

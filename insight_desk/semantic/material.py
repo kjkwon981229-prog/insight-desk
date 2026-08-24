@@ -13,8 +13,10 @@ from insight_desk.feed_quality import (
     generic_civic_actor_text,
     non_event_analytical_text,
     orphaned_parent_content_role_text,
+    parentless_performer_lineup_text,
     referential_remainder_text,
     stale_day_only_context,
+    stale_quarter_context,
     stale_relative_past_event_text,
 )
 
@@ -167,6 +169,8 @@ def _context_dependent_fragment(text: str, *, subject: str) -> bool:
     normalized = " ".join(text.split())
     if orphaned_parent_content_role_text(normalized):
         return True
+    if parentless_performer_lineup_text(normalized):
+        return True
     if referential_remainder_text(normalized):
         return True
     if generic_civic_actor_text(normalized):
@@ -241,6 +245,8 @@ def _dated_context_is_stale(text: str) -> bool:
         return False
     normalized = " ".join(text.split())
     now = datetime.now(timezone.utc)
+    if stale_quarter_context(normalized, now=now):
+        return True
     if stale_day_only_context(normalized, now=now):
         return True
     for match in _MONTH_DAY_RE.finditer(normalized):
