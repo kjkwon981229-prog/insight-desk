@@ -46,6 +46,11 @@ FRESHNESS_WINDOW = timedelta(hours=72)
 FUTURE_CLOCK_TOLERANCE = timedelta(hours=6)
 MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
+KBO_HANWHA_TOPIC_ID = "kbo_hanwha"
+_KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
+_KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
+_KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
+_HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +123,48 @@ def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
     return True
 
 
+def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
+    fact_text = "\n".join(
+        " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
+        for fact in facts
+    )
+    combined = f"{fact_text}\n{' '.join(cited_text)}"
+    return (
+        any(cue in combined for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
+        and any(cue in combined for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
+    )
+
+
+def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
+    subject = fact.subject.strip()
+    object_text = (fact.object or "").strip()
+    action = fact.action.strip()
+
+    if "한화" in subject or "한화" in object_text:
+        return True
+
+    action_without_prior_reference = _HANWHA_PRIOR_GAME_REFERENCE_RE.sub("", action)
+    if "한화" in action_without_prior_reference:
+        return True
+
+    for text in cited_text:
+        normalized = " ".join(text.split())
+        for entity in (subject, object_text):
+            if not entity:
+                continue
+            pattern = rf"한화(?:\s+이글스)?(?:의)?\s+{re.escape(entity)}"
+            if re.search(pattern, normalized):
+                return True
+    return False
+
+
+def _visible_topic_headline_bound(topic: TopicConfig, headline: str) -> bool:
+    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
+        return True
+    folded = headline.casefold()
+    return any(cue.casefold() in folded for cue in _KBO_HEADLINE_SCOPE_CUES)
+
+
 def event_topic_relevant(
     *,
     event: CandidateEvent,
@@ -128,11 +175,13 @@ def event_topic_relevant(
     if event.topic_id != topic.topic_id:
         return False
     cited_text: list[str] = []
+    event_facts: list[EventFact] = []
     seen_evidence: set[str] = set()
     for fact_id in event.fact_ids:
         fact = facts.get(fact_id)
         if fact is None:
             return False
+        event_facts.append(fact)
         for evidence_id in fact.evidence_ids:
             span = evidence.get(evidence_id)
             if span is None or span.article_id not in event.article_ids:
@@ -143,7 +192,17 @@ def event_topic_relevant(
             cited_text.append(span.text)
     if not cited_text:
         return False
-    return topic_relevant(title="", body="\n".join(cited_text), topic=topic)
+
+    cited = tuple(cited_text)
+    if not topic_relevant(title="", body="\n".join(cited), topic=topic):
+        return False
+    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
+        return True
+
+    frozen_facts = tuple(event_facts)
+    if _kbo_entertainment_crossover(frozen_facts, cited):
+        return False
+    return any(_hanwha_fact_directly_bound(fact, cited) for fact in frozen_facts)
 
 
 def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
@@ -403,6 +462,11 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
+                    visible_headline = entry_candidate.final_generation.draft.headline
+                    if not _visible_topic_headline_bound(topic, visible_headline):
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_topic_binding", status="skip", reason="hanwha_scope_missing_in_headline"))
+                        continue
+
                     identity_text = generation_request.evidence_text
                     duplicate_event = False
                     identity_facts = {**facts, **article_facts}
@@ -438,7 +502,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     if duplicate_event:
                         continue
 
-                    headline_key = " ".join(entry_candidate.final_generation.draft.headline.split()).casefold()
+                    headline_key = " ".join(visible_headline.split()).casefold()
                     if headline_key in published_headline_keys:
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_identity", status="skip", reason="normalized_headline_already_published"))
                         continue

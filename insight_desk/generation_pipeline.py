@@ -137,6 +137,15 @@ def _generic_fallback_headline(text: str) -> bool:
     return _GENERIC_FALLBACK_HEADLINE_RE.search(" ".join(text.split())) is not None
 
 
+def _headline_has_explicit_fact_subject(request: GenerationRequest, headline: str) -> bool:
+    normalized = " ".join(headline.split())
+    for fact_id in request.event.fact_ids:
+        subject = request.facts[fact_id].subject.strip()
+        if subject and subject in normalized:
+            return True
+    return False
+
+
 def _fact_grounded_exact_headline(
     request: GenerationRequest,
     summary: str,
@@ -227,11 +236,16 @@ class ExtractiveFallbackGenerator:
 
         collision = _normalized_visible_identity(headline) == _normalized_visible_identity(summary)
         generic_headline = _generic_fallback_headline(headline)
-        if collision or generic_headline:
+        missing_explicit_subject = not title_spans and not _headline_has_explicit_fact_subject(
+            request,
+            headline,
+        )
+        if collision or generic_headline or missing_explicit_subject:
+            require_explicit_subject = generic_headline or missing_explicit_subject
             grounded_headline = _fact_grounded_exact_headline(
                 request,
                 summary,
-                require_explicit_subject=generic_headline,
+                require_explicit_subject=require_explicit_subject,
             )
             if grounded_headline is None:
                 raise ExtractiveFallbackUnavailable(

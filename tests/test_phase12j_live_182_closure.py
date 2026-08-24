@@ -5,7 +5,12 @@ import unittest
 from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
 from insight_desk.generation import GenerationRequest
 from insight_desk.generation_pipeline import ExtractiveFallbackGenerator, ExtractiveFallbackUnavailable
-from scripts.phase11_daily_production import TopicConfig, event_topic_relevant
+from scripts.phase11_daily_production import (
+    TopicConfig,
+    _visible_topic_headline_bound,
+    event_topic_relevant,
+)
+from scripts.validate_feed_artifact import validate_html
 
 
 def _topic() -> TopicConfig:
@@ -46,6 +51,18 @@ def _event(text: str, *, subject: str, action: str, object_: str | None = None):
     return event, {fact.fact_id: fact}, {span.evidence_id: span}
 
 
+def _story_html(*, headline: str, summary: str) -> str:
+    return (
+        '<!doctype html><html><body>'
+        '<article id="story-1" class="story-row" data-event-id="event:182">'
+        '<div class="story-main">'
+        '<div class="story-meta"><span class="story-topic">KBO·한화 이글스</span></div>'
+        f'<h3>{headline}</h3>'
+        f'<p class="story-summary">{summary}</p>'
+        '</div></article></body></html>'
+    )
+
+
 class Live182TopicCentralityTests(unittest.TestCase):
     def test_hanwha_previous_game_reference_is_not_a_hanwha_event(self) -> None:
         text = "지난 19일 대전 한화 이글스전 이후 4경기 만에 홈런이 나왔다."
@@ -82,6 +99,25 @@ class Live182TopicCentralityTests(unittest.TestCase):
         self.assertTrue(
             event_topic_relevant(event=event, facts=facts, evidence=evidence, topic=_topic())
         )
+
+    def test_visible_hanwha_scope_is_item_local_before_final_validator(self) -> None:
+        topic = _topic()
+        self.assertFalse(_visible_topic_headline_bound(topic, "4경기 만의 홈런 기록"))
+        self.assertTrue(
+            _visible_topic_headline_bound(topic, "프로야구 한화 이글스 연패로 가을 야구 멀어져")
+        )
+
+    def test_entertainment_hanwha_crossover_fails_final_product_gate(self) -> None:
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_TOPIC_BINDING"):
+            validate_html(
+                _story_html(
+                    headline="그룹 코르티스 멤버 성현, 한화 이글스 승리 요정 정조준",
+                    summary=(
+                        "그룹 코르티스 멤버 성현이 한화 이글스의 승리 요정을 목표로 한다고 "
+                        "한화 이글스 공식 계정이 밝혔다."
+                    ),
+                )
+            )
 
 
 class Live182FallbackHeadlineTests(unittest.TestCase):

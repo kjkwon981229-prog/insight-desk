@@ -22,6 +22,8 @@ PSAT_FORBIDDEN = (
 )
 _HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
 _KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
+_KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
+_KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
 _KPOP_HEADLINE_SCOPE_CUES = (
     "K-POP",
     "케이팝",
@@ -382,7 +384,13 @@ def validate_html(
 
         if topic == KBO_HANWHA_TOPIC:
             combined_visible = f"{headline}\n{summary}"
-            if not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
+            entertainment_crossover = (
+                any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
+                and any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
+            )
+            if entertainment_crossover:
+                topic_binding_violations += 1
+            elif not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
                 topic_binding_violations += 1
             elif not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES):
                 topic_binding_violations += 1
