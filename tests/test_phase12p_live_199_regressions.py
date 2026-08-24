@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
+from unittest.mock import patch
+import sys
 import unittest
 
 from insight_desk.acquisition.runtime import TrafilaturaExtractor
@@ -203,11 +206,27 @@ class Live199InlineSourceFidelityRegressions(unittest.TestCase):
             + "</article></body></html>"
         )
 
-    def test_trafilatura_preserves_inline_span_numbers_and_punctuation(self) -> None:
-        extracted = TrafilaturaExtractor().extract(
-            self._inline_span_html(),
-            url="https://example.com/live-199-inline-spans",
-        )
+    def test_trafilatura_route_avoids_destructive_precision_mode(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def extract(html: str, **kwargs: object) -> str:
+            del html
+            calls.append(kwargs)
+            if kwargs.get("favor_precision") is True:
+                return (
+                    "미국 연방준비제도연준가 통화정책 경로를 전환한 가운데미국 "
+                    "년 만기 국채 금리가 에 도달했다"
+                )
+            return self._SOURCE_SENTENCE
+
+        fake_module = SimpleNamespace(extract=extract)
+        with patch.dict(sys.modules, {"trafilatura": fake_module}):
+            extracted = TrafilaturaExtractor().extract(
+                self._inline_span_html(),
+                url="https://example.com/live-199-inline-spans",
+            )
+
+        self.assertIsNot(calls[0].get("favor_precision"), True)
         self.assertIn(self._SOURCE_SENTENCE, extracted.body)
         for literal in ("(Fed·연준)", "30년", "5.3%", "가운데, 미국"):
             with self.subTest(literal=literal):
