@@ -14,12 +14,46 @@ MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
 PSAT_TOPIC = "PSAT·공채 일정"
 KBO_HANWHA_TOPIC = "KBO·한화 이글스"
+KPOP_TOPIC = "엔터·음악·K-POP"
 PSAT_FORBIDDEN = (
     "Preparatory Student Academic",
     "PSAT 아카데미",
     "NCAA",
 )
 _HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
+_KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
+_KPOP_HEADLINE_SCOPE_CUES = (
+    "K-POP",
+    "케이팝",
+    "가수",
+    "그룹",
+    "아이돌",
+    "앨범",
+    "음원",
+    "차트",
+    "음악",
+    "뮤직",
+    "음반",
+    "컴백",
+    "데뷔",
+    "콘서트",
+    "공연",
+    "무대",
+    "수상",
+    "빌보드",
+    "Billboard",
+    "HYBE",
+    "하이브",
+    "SM",
+    "JYP",
+    "YG",
+    "BTS",
+    "방탄소년단",
+    "블랙핑크",
+    "아이브",
+    "뉴진스",
+    "세븐틴",
+)
 _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
     "여기에 ",
     "여기에,",
@@ -42,7 +76,12 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "어워드",
     "수상",
 )
-_NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_NON_EVENT_ANALYTICAL_ENDINGS = (
+    "설명하기 어렵다",
+    "설명하기 힘들다",
+    "것으로 보인다",
+    "것으로 보입니다",
+)
 _CONDITIONAL_EVENT_CUES = (
     "발표",
     "밝혔다",
@@ -158,8 +197,6 @@ def _stale_dated_context_summary(value: str) -> bool:
 
 
 def _stale_source_url(value: str) -> bool:
-    """Use only a valid YYYYMMDD embedded in a public article URL as a conservative stale backstop."""
-
     parsed = urlparse(value)
     haystack = f"{parsed.path}?{parsed.query}"
     today = datetime.now(timezone.utc).date()
@@ -196,7 +233,6 @@ class FeedParser(HTMLParser):
             return
         if self._story is None:
             return
-
         self._story_depth += 1
         if self._field is not None:
             self._field_depth += 1
@@ -237,7 +273,6 @@ def _validate_source_audit(
     rendered_sources = source_audit.get("rendered_sources")
     if not isinstance(rendered_sources, list):
         raise ValueError("FEED_QUALITY_SOURCE_AUDIT_MISSING")
-
     html_event_ids = [story["event_id"].strip() for story in stories]
     audit_event_ids: list[str] = []
     seen_source_groups: set[str] = set()
@@ -246,7 +281,6 @@ def _validate_source_audit(
     stale_source_url_indices: list[int] = []
     duplicate_sources = 0
     duplicate_source_content = 0
-
     for index, item in enumerate(rendered_sources, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
@@ -276,15 +310,12 @@ def _validate_source_audit(
             duplicate_source_content += 1
         else:
             seen_content.add(content_sha256)
-
     if html_event_ids != audit_event_ids:
         raise ValueError("FEED_QUALITY_SOURCE_AUDIT_EVENT_MISMATCH")
     if duplicate_sources:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_SOURCE:{duplicate_sources}")
     if duplicate_source_content:
-        raise ValueError(
-            f"FEED_QUALITY_DUPLICATE_SOURCE_CONTENT:{duplicate_source_content}"
-        )
+        raise ValueError(f"FEED_QUALITY_DUPLICATE_SOURCE_CONTENT:{duplicate_source_content}")
     if invalid_source_url_indices:
         raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{invalid_source_url_indices[0]}")
     if stale_source_url_indices:
@@ -327,7 +358,6 @@ def validate_html(
         topic = story["topic"].strip()
         if not event_id or not headline or not summary:
             raise ValueError(f"FEED_QUALITY_INCOMPLETE_STORY:{index}")
-
         max_headline = max(max_headline, len(headline))
         max_summary = max(max_summary, len(summary))
         if len(headline) > MAX_HEADLINE_CHARS:
@@ -354,23 +384,25 @@ def validate_html(
             combined_visible = f"{headline}\n{summary}"
             if not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
                 topic_binding_violations += 1
+            elif not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES):
+                topic_binding_violations += 1
+        elif topic == KPOP_TOPIC:
+            if not any(cue.casefold() in headline.casefold() for cue in _KPOP_HEADLINE_SCOPE_CUES):
+                topic_binding_violations += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
         else:
             seen_headlines.add(headline_key)
-
         if summary_key in seen_summaries:
             duplicate_summaries += 1
         else:
             seen_summaries.add(summary_key)
-
         content_key = (headline_key, summary_key)
         if content_key in seen_content:
             duplicate_content += 1
         else:
             seen_content.add(content_key)
-
         if topic == PSAT_TOPIC:
             combined = f"{headline}\n{summary}".casefold()
             for forbidden in PSAT_FORBIDDEN:
@@ -378,25 +410,15 @@ def validate_html(
                     psat_forbidden_hits.append(forbidden)
 
     if headline_summary_collisions:
-        raise ValueError(
-            f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}"
-        )
+        raise ValueError(f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}")
     if context_dependent_summaries:
-        raise ValueError(
-            f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}"
-        )
+        raise ValueError(f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}")
     if non_event_analytical_summaries:
-        raise ValueError(
-            f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
-        )
+        raise ValueError(f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}")
     if conditional_analytical_summaries:
-        raise ValueError(
-            f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}"
-        )
+        raise ValueError(f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}")
     if stale_sports_retrospectives:
-        raise ValueError(
-            f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}"
-        )
+        raise ValueError(f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}")
     if stale_dated_contexts:
         raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
     if topic_binding_violations:
@@ -414,10 +436,7 @@ def validate_html(
     duplicate_source_content = 0
     stale_source_urls = 0
     if source_audit is not None:
-        duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(
-            stories,
-            source_audit,
-        )
+        duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(stories, source_audit)
 
     return {
         "status": "PASS",
@@ -448,7 +467,6 @@ def main() -> None:
     parser.add_argument("--audit", type=Path)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-
     html = args.html.read_text(encoding="utf-8")
     source_audit = None
     if args.audit is not None:

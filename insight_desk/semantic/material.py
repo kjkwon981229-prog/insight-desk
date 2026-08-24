@@ -37,6 +37,7 @@ _CONTEXT_DEPENDENT_LEADS = (
     "팬들의 ",
 )
 _CONTEXT_DEPENDENT_PHRASES = ("이번 상황",)
+_GENERIC_REFERENTIAL_SUBJECTS = frozenset({"그", "그가", "그는", "그녀", "그녀가", "그녀는", "이들", "이들이", "이들은"})
 _BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
@@ -50,7 +51,12 @@ _BARE_RANKING_CONTEXT_TERMS = (
     "어워드",
     "수상",
 )
-_NON_EVENT_ANALYTICAL_ENDINGS = ("설명하기 어렵다", "설명하기 힘들다")
+_NON_EVENT_ANALYTICAL_ENDINGS = (
+    "설명하기 어렵다",
+    "설명하기 힘들다",
+    "것으로 보인다",
+    "것으로 보입니다",
+)
 _CONDITIONAL_EVENT_CUES = (
     "발표",
     "밝혔다",
@@ -129,8 +135,6 @@ def _cited_text(
 
 
 def _publisher_notice_boilerplate(text: str) -> bool:
-    """Reject only high-confidence publisher reuse/legal notices, not reported copyright events."""
-
     return (
         any(cue in text for cue in _PUBLISHER_NOTICE_PERMISSION_CUES)
         and sum(term in text for term in _PUBLISHER_NOTICE_RESTRICTION_TERMS) >= 2
@@ -139,8 +143,6 @@ def _publisher_notice_boilerplate(text: str) -> bool:
 
 
 def _standalone_sports_photo_caption(text: str) -> bool:
-    """Reject a narrow class of one-sentence sports image captions, not ongoing news generally."""
-
     normalized = " ".join(text.split())
     if not normalized or len(normalized) > 180:
         return False
@@ -164,10 +166,10 @@ def _bare_ranking_fragment(normalized: str) -> bool:
     return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
 
 
-def _context_dependent_fragment(text: str) -> bool:
-    """Reject evidence sentences whose omitted antecedent or ranking frame is required."""
-
+def _context_dependent_fragment(text: str, *, subject: str) -> bool:
     normalized = " ".join(text.split())
+    if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS:
+        return True
     if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS):
         return True
     if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_PHRASES):
@@ -178,15 +180,11 @@ def _context_dependent_fragment(text: str) -> bool:
 
 
 def _non_event_analytical_judgment(text: str) -> bool:
-    """Reject narrow measured explanatory judgments that state no concrete event."""
-
     normalized = " ".join(text.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     return normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS)
 
 
 def _conditional_analytical_scenario(text: str) -> bool:
-    """Reject standalone hypothetical/concessive analysis without an actual reporting event."""
-
     normalized = " ".join(text.split())
     has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
     if "더라도" in normalized and "이어야" in normalized:
@@ -197,8 +195,6 @@ def _conditional_analytical_scenario(text: str) -> bool:
 
 
 def _stale_sports_retrospective(text: str) -> bool:
-    """Reject a fresh article's standalone sentence whose event is explicitly from a prior year."""
-
     normalized = " ".join(text.split())
     years = [int(value) for value in _YEAR_RE.findall(normalized)]
     if not years or not any(year < datetime.now(timezone.utc).year for year in years):
@@ -212,8 +208,6 @@ def _stale_sports_retrospective(text: str) -> bool:
 
 
 def _dated_context_is_stale(text: str) -> bool:
-    """Reject a sentence led by an explicitly old dated context such as an old release/broadcast."""
-
     if _stale_sports_retrospective(text):
         return False
     normalized = " ".join(text.split())
@@ -247,8 +241,6 @@ def assess_material_event(
     evidence: Mapping[str, EvidenceSpan],
     morphology: KiwiMorphologyHelper | None = None,
 ) -> MaterialEventAssessment:
-    """Return MATERIAL only for event-local, literal, explicit evidence; otherwise DEFER."""
-
     if morphology is None:
         try:
             morphology = _shared_morphology()
@@ -285,7 +277,7 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,),
             )
-        if _context_dependent_fragment(text):
+        if _context_dependent_fragment(text, subject=fact.subject):
             return MaterialEventAssessment(
                 event.event_id,
                 MaterialEventVerdict.DEFER,

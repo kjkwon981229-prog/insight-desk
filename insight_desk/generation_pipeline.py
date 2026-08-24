@@ -24,6 +24,9 @@ FALLBACK_HEADLINE_MAX_CHARS = MAX_GENERATED_HEADLINE_CHARS
 FALLBACK_SUMMARY_MAX_CHARS = MAX_GENERATED_SUMMARY_CHARS
 _SENTENCE_END_RE = re.compile(r"[.!?。！？](?=\s|$)")
 _CLAUSE_MARKS = ("…", "·", ":", ";", ",", "，")
+_GENERIC_FALLBACK_HEADLINE_RE = re.compile(
+    r"^(?:팀은|이 팀은|세 팀(?:은)?|그는|그가|그의|그녀는|그녀가|이들은|이들이)(?:\s|$)"
+)
 
 
 class ExtractiveFallbackUnavailable(GenerationContractError):
@@ -130,7 +133,16 @@ def _normalized_visible_identity(text: str) -> str:
     return _normalized_visible_text(text).rstrip(".!?。！？").rstrip()
 
 
-def _fact_grounded_exact_headline(request: GenerationRequest, summary: str) -> str | None:
+def _generic_fallback_headline(text: str) -> bool:
+    return _GENERIC_FALLBACK_HEADLINE_RE.search(" ".join(text.split())) is not None
+
+
+def _fact_grounded_exact_headline(
+    request: GenerationRequest,
+    summary: str,
+    *,
+    require_explicit_subject: bool = False,
+) -> str | None:
     """Find a distinct headline that is still a literal substring of the cited fact sentence."""
 
     summary_key = _normalized_visible_identity(summary)
@@ -153,12 +165,16 @@ def _fact_grounded_exact_headline(request: GenerationRequest, summary: str) -> s
                     candidate
                     and len(candidate) <= FALLBACK_HEADLINE_MAX_CHARS
                     and _normalized_visible_identity(candidate) != summary_key
+                    and not _generic_fallback_headline(candidate)
                 ):
                     return candidate
 
+        if require_explicit_subject:
+            continue
         if (
             len(action) <= FALLBACK_HEADLINE_MAX_CHARS
             and _normalized_visible_identity(action) != summary_key
+            and not _generic_fallback_headline(action)
         ):
             return action
     return None
@@ -208,11 +224,18 @@ class ExtractiveFallbackGenerator:
         )
         if not summary:
             raise ExtractiveFallbackUnavailable("exact-source fallback summary is empty")
-        if _normalized_visible_identity(headline) == _normalized_visible_identity(summary):
-            grounded_headline = _fact_grounded_exact_headline(request, summary)
+
+        collision = _normalized_visible_identity(headline) == _normalized_visible_identity(summary)
+        generic_headline = _generic_fallback_headline(headline)
+        if collision or generic_headline:
+            grounded_headline = _fact_grounded_exact_headline(
+                request,
+                summary,
+                require_explicit_subject=generic_headline,
+            )
             if grounded_headline is None:
                 raise ExtractiveFallbackUnavailable(
-                    "exact-source fallback cannot form distinct headline and summary excerpts"
+                    "exact-source fallback cannot form a standalone distinct headline"
                 )
             headline = grounded_headline
 

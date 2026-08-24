@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 
@@ -57,6 +58,76 @@ class IdentityResolution:
             raise ValueError("identity resolution event count does not match decision")
 
 
+_IDENTITY_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9.+-]*|[가-힣]{2,}|\d[\d,]*(?:\.\d+)?")
+_COMMON_IDENTITY_TOKENS = frozenset(
+    {
+        "대한",
+        "관련",
+        "이번",
+        "통해",
+        "위해",
+        "따라",
+        "밝혔다",
+        "전했다",
+        "기록했다",
+        "진행했다",
+        "예정이다",
+        "있다고",
+        "했다",
+        "한다",
+        "있다",
+        "규모를",
+    }
+)
+
+
+def _identity_lexical_anchors(text: str) -> frozenset[str]:
+    anchors: set[str] = set()
+    for raw in _IDENTITY_TOKEN_RE.findall(text):
+        token = raw.casefold().strip()
+        if not token or token[0].isdigit() or len(token) < 3:
+            continue
+        if token in _COMMON_IDENTITY_TOKENS:
+            continue
+        anchors.add(token)
+    return frozenset(anchors)
+
+
+def _identity_numeric_anchors(text: str) -> frozenset[str]:
+    anchors: set[str] = set()
+    for raw in _IDENTITY_TOKEN_RE.findall(text):
+        compact = raw.replace(",", "")
+        if not compact or not compact[0].isdigit():
+            continue
+        integer = compact.split(".", 1)[0]
+        if len(integer) < 3:
+            continue
+        try:
+            value = int(integer)
+        except ValueError:
+            continue
+        if 1900 <= value <= 2100:
+            continue
+        anchors.add(compact)
+    return frozenset(anchors)
+
+
+def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
+    """Return True only for unusually specific cross-source overlap.
+
+    Event identity is not ordinary document equivalence: one report may contain more detail than
+    another report about the same event. This anchor never overrides deterministic identity
+    conflicts upstream. It only permits asymmetric entailment to receive the full two-verifier
+    check when the pair shares a distinctive numeric fact and several lexical anchors.
+    """
+
+    shared_numbers = _identity_numeric_anchors(left_text) & _identity_numeric_anchors(right_text)
+    if not shared_numbers:
+        return False
+    shared_lexical = _identity_lexical_anchors(left_text) & _identity_lexical_anchors(right_text)
+    return len(shared_lexical) >= 4
+
+
 def _stable_identity_token(*parts: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
 
@@ -104,12 +175,14 @@ def judge_same_event_mutual_entailment(
     primary: IdentityClaimVerifier,
     secondary: IdentityClaimVerifier,
 ) -> SemanticIdentityJudgment:
-    """Judge event equivalence only after two-way support from two independent verifier slots.
+    """Judge same-event identity with contradiction safety and detail-asymmetry tolerance.
 
-    The local/secondary slot runs first so clearly different or unavailable pairs spend no external
-    provider budget. A positive same-event judgment requires left->right and right->left entailment
-    from both slots. Explicit negative support means different-event; missing/provider-failed results
-    remain unavailable and therefore keep the events separate under the frozen identity policy.
+    Ordinary pairs retain the strict historical contract: a local negative short-circuits external
+    verification and positive identity requires bidirectional support from both independent slots.
+    For a pair with an unusually strong shared event anchor, a single directional rejection may be
+    caused by one source carrying extra details. Such a pair receives both directions from both
+    independent verifier slots. It is accepted only when each slot supports at least one direction;
+    two negatives from either slot still mean different-event, and any unavailable check fails safe.
     """
 
     left = " ".join(left_text.split()).strip()
@@ -119,7 +192,10 @@ def judge_same_event_mutual_entailment(
     if primary.verifier_id == secondary.verifier_id:
         raise ValueError("identity primary and secondary verifier ids must be independent")
 
+    strong_anchor = has_strong_shared_event_anchor(left, right)
     directions = (("left_to_right", left, right), ("right_to_left", right, left))
+
+    secondary_results: list[bool] = []
     secondary_checks = 0
     for direction, claim, evidence in directions:
         check = _safe_identity_verify(
@@ -129,13 +205,6 @@ def judge_same_event_mutual_entailment(
             evidence_text=evidence,
         )
         secondary_checks += 1
-        if check.entailed is False:
-            return SemanticIdentityJudgment(
-                False,
-                "secondary_rejected_equivalence",
-                secondary_checks,
-                0,
-            )
         if check.entailed is None:
             return SemanticIdentityJudgment(
                 None,
@@ -143,7 +212,24 @@ def judge_same_event_mutual_entailment(
                 secondary_checks,
                 0,
             )
+        secondary_results.append(check.entailed)
+        if check.entailed is False and not strong_anchor:
+            return SemanticIdentityJudgment(
+                False,
+                "secondary_rejected_equivalence",
+                secondary_checks,
+                0,
+            )
 
+    if not any(secondary_results):
+        return SemanticIdentityJudgment(
+            False,
+            "secondary_rejected_both_directions",
+            secondary_checks,
+            0,
+        )
+
+    primary_results: list[bool] = []
     primary_checks = 0
     for direction, claim, evidence in directions:
         check = _safe_identity_verify(
@@ -153,13 +239,6 @@ def judge_same_event_mutual_entailment(
             evidence_text=evidence,
         )
         primary_checks += 1
-        if check.entailed is False:
-            return SemanticIdentityJudgment(
-                False,
-                "primary_rejected_equivalence",
-                secondary_checks,
-                primary_checks,
-            )
         if check.entailed is None:
             return SemanticIdentityJudgment(
                 None,
@@ -167,10 +246,40 @@ def judge_same_event_mutual_entailment(
                 secondary_checks,
                 primary_checks,
             )
+        primary_results.append(check.entailed)
+        if check.entailed is False and not strong_anchor:
+            return SemanticIdentityJudgment(
+                False,
+                "primary_rejected_equivalence",
+                secondary_checks,
+                primary_checks,
+            )
 
+    if not any(primary_results):
+        return SemanticIdentityJudgment(
+            False,
+            "primary_rejected_both_directions",
+            secondary_checks,
+            primary_checks,
+        )
+
+    if all(secondary_results) and all(primary_results):
+        return SemanticIdentityJudgment(
+            True,
+            "mutual_entailment_supported_by_both_slots",
+            secondary_checks,
+            primary_checks,
+        )
+    if strong_anchor:
+        return SemanticIdentityJudgment(
+            True,
+            "strong_shared_event_anchor_with_independent_asymmetric_support",
+            secondary_checks,
+            primary_checks,
+        )
     return SemanticIdentityJudgment(
-        True,
-        "mutual_entailment_supported_by_both_slots",
+        False,
+        "bidirectional_equivalence_not_supported",
         secondary_checks,
         primary_checks,
     )
