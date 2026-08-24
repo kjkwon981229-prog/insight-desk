@@ -75,6 +75,7 @@ class PublishedCandidate:
     source_group_key: str
     content_sha256: str
     identity_text: str
+    source_url: str
 
 
 def load_topics(path: Path) -> tuple[TopicConfig, ...]:
@@ -454,6 +455,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             source_group_key=source_group_key,
                             content_sha256=content_sha256,
                             identity_text=identity_text,
+                            source_url=article.provenance.url,
                         )
                     )
                     published_headline_keys.add(headline_key)
@@ -487,6 +489,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 "event_id": entry.event_id,
                 "source_group_key": source.source_group_key,
                 "content_sha256": source.content_sha256,
+                "source_url": source.source_url,
                 "render_mode": source.candidate.final_generation.render_mode.value,
                 "verification_recovery_reason": source.candidate.verification_recovery_reason.value if source.candidate.verification_recovery_reason is not None else "",
             }
