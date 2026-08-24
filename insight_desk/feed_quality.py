@@ -24,6 +24,8 @@ _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
 _CONTEXT_DEPENDENT_SUMMARY_PHRASES = ("이번 상황",)
 _GENERIC_CONTEXT_SUBJECT_RE = re.compile(
     r"^(?:(?:이|해당)\s*)?(?:회사|기업|업체)(?:는|은|이|가|\s+측은|\s+측이)(?:\s|$)"
+    r"|^(?:양사|양측|(?:두|세|네)\s+(?:회사|기업|업체|기관|조직))"
+    r"(?:는|은|이|가)(?:\s|$)"
     r"|^(?:(?:두|세|네)\s+)?(?:투수|선수|타자|팀)(?:는|은|이|가)?(?:\s|$)"
 )
 _REFERENTIAL_EVENT_RE = re.compile(
@@ -177,6 +179,16 @@ _NON_EVENT_TREND_ENDINGS = (
     "감소하고 있다",
     "감소하고 있습니다",
 )
+_NON_EVENT_OPERATIONAL_STATE_ENDINGS = (
+    "활용되고 있다",
+    "활용되고 있습니다",
+    "사용되고 있다",
+    "사용되고 있습니다",
+    "운영되고 있다",
+    "운영되고 있습니다",
+    "적용되고 있다",
+    "적용되고 있습니다",
+)
 _QUANTIFIED_TREND_RE = re.compile(
     r"\d[\d,.]*\s*(?:%|％|명|건|개|곳|배|원|달러|경기|승|패|세이브|홀드|이닝)"
 )
@@ -281,6 +293,36 @@ _CONCRETE_EVENT_PREDICATE_CUES = (
     "기록했다",
     "도달했다",
     "진입했다",
+    "투입했다",
+    "가동했다",
+    "운용을 시작했다",
+    "사용을 시작했다",
+    "활용을 시작했다",
+)
+_PUBLICATION_SELF_REFERENCE_RE = re.compile(r"^(?:본지|본보)(?:는|가)\s+")
+_PUBLICATION_RETROSPECTIVE_STRONG_CUES = (
+    "앞서 ",
+    "과거 ",
+    "종전 ",
+    "이전에 ",
+    "지난달 ",
+    "지난해 ",
+    "지난주 ",
+    "지난 분기 ",
+    "지난 연도 ",
+    "지난 기사에서 ",
+)
+_PUBLICATION_REPORTING_ENDINGS = (
+    "전했다",
+    "보도했다",
+    "다뤘다",
+    "소개했다",
+)
+_PUBLICATION_PRIOR_REPORT_ENDINGS = (
+    "전한 바 있다",
+    "보도한 바 있다",
+    "다룬 바 있다",
+    "소개한 바 있다",
 )
 _RELATIVE_PAST_PERIOD_RE = re.compile(
     r"(?:지난해|작년|전년도|지난\s+시즌|직전\s+시즌)"
@@ -495,11 +537,29 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
     return False
 
 
+def _publication_retrospective_text(normalized: str) -> bool:
+    for sentence in re.split(r"[.!?。！？]\s*", normalized):
+        sentence = sentence.strip()
+        if _PUBLICATION_SELF_REFERENCE_RE.search(sentence) is None:
+            continue
+        if sentence.endswith(_PUBLICATION_PRIOR_REPORT_ENDINGS):
+            return True
+        if not sentence.endswith(_PUBLICATION_REPORTING_ENDINGS):
+            continue
+        if any(cue in sentence for cue in _PUBLICATION_RETROSPECTIVE_STRONG_CUES):
+            return True
+        if "최근 " in sentence and "이미 " in sentence:
+            return True
+    return False
+
+
 def non_event_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     if normalized.endswith(_NON_EVENT_ANALYTICAL_ENDINGS):
         return True
     if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
+        return True
+    if _publication_retrospective_text(normalized):
         return True
     if _DEFINITION_STATEMENT_RE.search(normalized) is not None:
         return not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
@@ -507,6 +567,11 @@ def non_event_analytical_text(value: str) -> bool:
         trailing_sentence = re.split(r"[.!?。！？]\s*", normalized)[-1]
         if _QUANTIFIED_TREND_RE.search(trailing_sentence) is None:
             return True
+    if (
+        normalized.endswith(_NON_EVENT_OPERATIONAL_STATE_ENDINGS)
+        and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
+    ):
+        return True
     if (
         normalized.endswith(_NON_EVENT_INFERENCE_ENDINGS)
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
