@@ -36,6 +36,8 @@ _CONTEXT_DEPENDENT_LEADS = (
     "이번 ",
     "팬들의 ",
 )
+_CONTEXT_DEPENDENT_PHRASES = ("이번 상황",)
+_BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
     "K탑스타",
@@ -168,6 +170,10 @@ def _context_dependent_fragment(text: str) -> bool:
     normalized = " ".join(text.split())
     if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS):
         return True
+    if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_PHRASES):
+        return True
+    if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
+        return True
     return _bare_ranking_fragment(normalized)
 
 
@@ -179,12 +185,15 @@ def _non_event_analytical_judgment(text: str) -> bool:
 
 
 def _conditional_analytical_scenario(text: str) -> bool:
-    """Reject standalone hypothetical/conditional analysis without an actual reporting event."""
+    """Reject standalone hypothetical/concessive analysis without an actual reporting event."""
 
     normalized = " ".join(text.split())
+    has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+    if "더라도" in normalized and "이어야" in normalized:
+        return not has_reporting_event
     if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
         return False
-    return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+    return not has_reporting_event
 
 
 def _stale_sports_retrospective(text: str) -> bool:

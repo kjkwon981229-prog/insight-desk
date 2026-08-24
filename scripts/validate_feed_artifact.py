@@ -13,11 +13,13 @@ from urllib.parse import urlparse
 MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
 PSAT_TOPIC = "PSAT·공채 일정"
+KBO_HANWHA_TOPIC = "KBO·한화 이글스"
 PSAT_FORBIDDEN = (
     "Preparatory Student Academic",
     "PSAT 아카데미",
     "NCAA",
 )
+_HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
 _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
     "여기에 ",
     "여기에,",
@@ -26,6 +28,8 @@ _CONTEXT_DEPENDENT_SUMMARY_LEADS = (
     "이번 ",
     "팬들의 ",
 )
+_CONTEXT_DEPENDENT_SUMMARY_PHRASES = ("이번 상황",)
+_BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
 _BARE_RANKING_CUES = ("최고의 루키",)
 _BARE_RANKING_CONTEXT_TERMS = (
     "K탑스타",
@@ -91,6 +95,10 @@ def _context_dependent_summary(value: str) -> bool:
     normalized = " ".join(value.split())
     if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS):
         return True
+    if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_SUMMARY_PHRASES):
+        return True
+    if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
+        return True
     return _bare_ranking_fragment(normalized)
 
 
@@ -101,9 +109,12 @@ def _non_event_analytical_summary(value: str) -> bool:
 
 def _conditional_analytical_summary(value: str) -> bool:
     normalized = " ".join(value.split())
+    has_reporting_event = any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+    if "더라도" in normalized and "이어야" in normalized:
+        return not has_reporting_event
     if _CONDITIONAL_SCENARIO_RE.search(normalized) is None:
         return False
-    return not any(cue in normalized for cue in _CONDITIONAL_EVENT_CUES)
+    return not has_reporting_event
 
 
 def _stale_sports_retrospective_summary(value: str) -> bool:
@@ -304,6 +315,7 @@ def validate_html(
     conditional_analytical_summaries = 0
     stale_dated_contexts = 0
     stale_sports_retrospectives = 0
+    topic_binding_violations = 0
     max_headline = 0
     max_summary = 0
     psat_forbidden_hits: list[str] = []
@@ -337,6 +349,11 @@ def validate_html(
             stale_sports_retrospectives += 1
         elif _stale_dated_context_summary(summary):
             stale_dated_contexts += 1
+
+        if topic == KBO_HANWHA_TOPIC:
+            combined_visible = f"{headline}\n{summary}"
+            if not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
+                topic_binding_violations += 1
 
         if headline_key in seen_headlines:
             duplicate_headlines += 1
@@ -382,6 +399,8 @@ def validate_html(
         )
     if stale_dated_contexts:
         raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
+    if topic_binding_violations:
+        raise ValueError(f"FEED_QUALITY_TOPIC_BINDING:{topic_binding_violations}")
     if duplicate_headlines:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_HEADLINE:{duplicate_headlines}")
     if duplicate_summaries:
@@ -411,6 +430,7 @@ def validate_html(
         "conditional_analytical_summaries": conditional_analytical_summaries,
         "stale_dated_contexts": stale_dated_contexts,
         "stale_sports_retrospectives": stale_sports_retrospectives,
+        "topic_binding_violations": topic_binding_violations,
         "duplicate_headlines": duplicate_headlines,
         "duplicate_summaries": duplicate_summaries,
         "duplicate_content": duplicate_content,

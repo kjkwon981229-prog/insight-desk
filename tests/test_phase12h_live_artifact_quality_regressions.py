@@ -168,6 +168,48 @@ class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
         self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
         self.assertEqual(assessment.reasons, (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,))
 
+    def test_live_deictic_economy_situation_fragment_defers(self) -> None:
+        text = "채권시장은 한은의 이번 8월 금융통화위원회 기준금리 인상을 위한 사전 포석으로 이번 상황을 해석하고 있다."
+        assessment = _material_assessment(
+            text,
+            subject="채권시장",
+            action="이번 상황을 해석하고 있다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,))
+
+    def test_live_bare_anniversary_voting_fragment_defers(self) -> None:
+        text = "데뷔 20주년을 맞은 가운데 팬들의 꾸준한 투표 참여가 이어지며 여전한 관심과 응원 열기를 보여줬다."
+        assessment = _material_assessment(
+            text,
+            subject="팬들의 꾸준한 투표 참여",
+            action="이어지며 여전한 관심과 응원 열기를 보여줬다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,))
+
+    def test_live_concessive_normative_ai_statement_defers(self) -> None:
+        text = "로봇과 인공지능이 고도화되더라도 여행객을 맞이하고 진정성 있는 경험을 제공하는 주체는 인간이어야 함을 분명히 했다."
+        assessment = _material_assessment(
+            text,
+            subject="여행객을 맞이하고 진정성 있는 경험을 제공하는 주체",
+            action="인간이어야 함을 분명히 했다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(
+            assessment.reasons,
+            (MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO,),
+        )
+
+    def test_concessive_normative_policy_announcement_remains_material(self) -> None:
+        text = "AI가 고도화되더라도 인간이 최종 책임 주체이어야 한다는 원칙을 정부가 발표했다."
+        assessment = _material_assessment(
+            text,
+            subject="정부",
+            action="발표했다",
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.MATERIAL)
+
     def test_live_bare_kpop_ranking_fragments_defer(self) -> None:
         cases = (
             ("그룹 아홉이 최고의 루키로 등극했다.", "그룹 아홉", "최고의 루키로 등극했다"),
@@ -213,6 +255,8 @@ class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
             "여기에 오는 27일 한국은행의 기준금리를 결정에도 관심이 쏠립니다.",
             "이 딜러는 내년에 수요측 물가 압력이 본격화할 수 있다고 덧붙였다.",
             "이후 KBO는 올해 피치클록 기준을 더 엄격하게 조정했다.",
+            "채권시장은 한은의 이번 8월 금융통화위원회 기준금리 인상을 위한 사전 포석으로 이번 상황을 해석하고 있다.",
+            "데뷔 20주년을 맞은 가운데 팬들의 꾸준한 투표 참여가 이어지며 여전한 관심과 응원 열기를 보여줬다.",
             "그룹 아홉이 최고의 루키로 등극했다.",
             "그룹 유니스가 새로운 최고의 루키로 등극했다.",
             "그룹 플레이브가 13주 연속 1위에 올랐다.",
@@ -226,6 +270,32 @@ class Phase12HLiveArtifactQualityRegressions(unittest.TestCase):
                             summary=summary,
                         )
                     )
+
+    def test_concessive_normative_ai_summary_fails_product_gate(self) -> None:
+        summary = "로봇과 인공지능이 고도화되더라도 여행객을 맞이하고 진정성 있는 경험을 제공하는 주체는 인간이어야 함을 분명히 했다."
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY"):
+            validate_html(
+                _story_html(
+                    headline="여행 맞이 주체, 인간이 정수임",
+                    summary=summary,
+                )
+            )
+
+    def test_hanwha_topic_rejects_generic_kbo_visible_cards(self) -> None:
+        cases = (
+            (
+                "가을 야구 진출 경쟁 가열",
+                "프로야구가 가을 야구 진출 티켓을 두고 더욱 뜨거운 경쟁을 이어가고 있다고 전했다.",
+            ),
+            (
+                "키움, 김재현 끝내기 만루홈런으로 KIA전 8-7 승리",
+                "23일 서울 고척스카이돔에서 열린 2026 신한SOL KBO리그 KIA와의 홈경기에서 키움이 김재현의 끝내기 만루홈런을 앞세워 8-7로 승리했다.",
+            ),
+        )
+        for headline, summary in cases:
+            with self.subTest(headline=headline):
+                with self.assertRaisesRegex(ValueError, "FEED_QUALITY_TOPIC_BINDING"):
+                    validate_html(_story_html(headline=headline, summary=summary))
 
     def test_stale_sports_retrospective_fails_product_gate(self) -> None:
         summary = (

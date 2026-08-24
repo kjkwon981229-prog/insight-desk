@@ -27,6 +27,25 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
         self.assertFalse(topic_relevant(title="채용 일정 발표", body="기업 채용 일정이 공개됐다.", topic=topic))
         self.assertTrue(topic_relevant(title="국가공무원 채용 일정", body="인사혁신처가 5급 공채 일정을 발표했다.", topic=topic))
 
+    def test_hanwha_topic_requires_hanwha_not_generic_kbo(self) -> None:
+        topic = next(topic for topic in load_topics(Path("config/topics.json")) if topic.topic_id == "kbo_hanwha")
+        self.assertNotIn("KBO", topic.required_intent_terms)
+        self.assertNotIn("프로야구", topic.required_intent_terms)
+        self.assertFalse(
+            topic_relevant(
+                title="키움, KIA전 8-7 승리",
+                body="프로야구 KBO리그에서 키움이 끝내기 만루홈런으로 KIA를 8-7로 이겼다.",
+                topic=topic,
+            )
+        )
+        self.assertTrue(
+            topic_relevant(
+                title="한화 이글스 선발 로테이션 조정",
+                body="한화 이글스가 다음 KBO리그 경기를 앞두고 선발 로테이션을 조정했다.",
+                topic=topic,
+            )
+        )
+
     def test_psat_acronym_alone_cannot_match_non_civil_service_academy(self) -> None:
         topic = next(topic for topic in load_topics(Path("config/topics.json")) if topic.topic_id == "psat_recruitment")
         self.assertNotIn("PSAT", topic.required_intent_terms)
