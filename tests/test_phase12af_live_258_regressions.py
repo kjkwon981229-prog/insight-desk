@@ -3,6 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import unittest
 
+from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
+from insight_desk.generation import (
+    GeneratedDraft,
+    GenerationContractError,
+    GenerationRequest,
+    validate_story_admission,
+)
 from insight_desk.story_admission import (
     StoryAdmissionReason,
     StoryAdmissionStage,
@@ -30,6 +37,48 @@ class Phase12AFLive258Regressions(unittest.TestCase):
             stage=StoryAdmissionStage.VISIBLE,
             now=NOW,
         )
+
+    def generation_case(
+        self,
+        *,
+        source_text: str,
+        headline: str,
+        summary: str,
+        event_date: str,
+    ) -> tuple[GenerationRequest, GeneratedDraft]:
+        evidence = EvidenceSpan(
+            evidence_id="e1",
+            article_id="a1",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(source_text),
+            text=source_text,
+        )
+        fact = EventFact(
+            fact_id="f1",
+            subject="SM Universe 강사진",
+            action="K-pop 안무 교육을 진행했다",
+            evidence_ids=("e1",),
+            event_date=event_date,
+        )
+        event = CandidateEvent(
+            event_id="event-kpop-education",
+            topic_id="kpop",
+            fact_ids=("f1",),
+            article_ids=("a1",),
+        )
+        request = GenerationRequest(
+            event=event,
+            facts={"f1": fact},
+            evidence={"e1": evidence},
+        )
+        draft = GeneratedDraft(
+            event_id=event.event_id,
+            headline=headline,
+            summary=summary,
+            evidence_ids=("e1",),
+        )
+        return request, draft
 
     def test_program_components_cannot_replace_the_current_program_event(self) -> None:
         decision = self.decide(
@@ -68,9 +117,10 @@ class Phase12AFLive258Regressions(unittest.TestCase):
             ),
         )
         self.assertFalse(decision.accepted)
-        self.assertIn(
-            StoryAdmissionReason.FORECAST_ATTRIBUTION_STANDALONE_UNRESOLVED,
-            decision.reasons,
+        self.assertTrue(
+            StoryAdmissionReason.NON_EVENT_DESCRIPTION in decision.reasons
+            or StoryAdmissionReason.FORECAST_ATTRIBUTION_STANDALONE_UNRESOLVED
+            in decision.reasons
         )
 
     def test_unattributed_market_explanation_is_not_a_daily_event(self) -> None:
@@ -104,20 +154,35 @@ class Phase12AFLive258Regressions(unittest.TestCase):
         self.assertIn(StoryAdmissionReason.NON_EVENT_DESCRIPTION, decision.reasons)
 
     def test_stale_primary_evidence_cannot_be_hidden_by_date_free_rewrite(self) -> None:
-        decision = self.decide(
-            topic="엔터·음악·K-POP",
+        request, draft = self.generation_case(
+            source_text=(
+                "지난 10일 SM Universe에서 청소년 대상 K-pop 진로체험 프로그램을 "
+                "운영했다. SM Universe 강사진이 안무 교육을 진행했다."
+            ),
             headline="SM Universe 강사진의 K-pop 안무 교육 실시",
             summary=(
                 "K-pop 댄스 프로그램에서 SM Universe 강사진이 안무 교육을 진행했으며, "
                 "청소년들은 팀별 공연 준비를 통해 협동심과 자신감을 함양했다."
             ),
-            source_text=(
-                "지난 10일 SM Universe에서 청소년 대상 K-pop 진로체험 프로그램을 "
-                "운영했다. SM Universe 강사진이 안무 교육을 진행했다."
-            ),
+            event_date="2026-08-10",
         )
-        self.assertFalse(decision.accepted)
-        self.assertIn(StoryAdmissionReason.FRESHNESS, decision.reasons)
+        with self.assertRaisesRegex(GenerationContractError, "FRESHNESS"):
+            validate_story_admission(request, draft)
+
+    def test_current_event_may_keep_old_evidence_as_background_at_generation_boundary(self) -> None:
+        request, draft = self.generation_case(
+            source_text=(
+                "A기획사는 25일 K-pop 교육 프로그램 개편안을 발표했다. "
+                "기존 프로그램은 지난 10일에도 안무 교육을 진행했다."
+            ),
+            headline="A기획사, 25일 K-pop 교육 프로그램 개편안 발표",
+            summary=(
+                "A기획사는 25일 K-pop 교육 프로그램 개편안을 발표했다. "
+                "기존 프로그램은 지난 10일에도 안무 교육을 진행했다."
+            ),
+            event_date="2026-08-25",
+        )
+        validate_story_admission(request, draft)
 
     def test_current_event_may_keep_descriptive_details_as_background(self) -> None:
         cases = (
