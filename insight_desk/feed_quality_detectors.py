@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 import re
 
 # Low-level story-quality detectors live here. They expose individual signals only;
 # admission policy composition belongs exclusively to story_admission.py.
 from insight_desk.feed_quality_detectors_core import *  # noqa: F401,F403
 from insight_desk.feed_quality_detectors_core import (
+    non_event_analytical_text as _core_non_event_analytical_text,
+    stale_day_only_context as _core_stale_day_only_context,
+    stale_explicit_past_event_text as _core_stale_explicit_past_event_text,
+    stale_quarter_context as _core_stale_quarter_context,
+    stale_relative_past_event_text as _core_stale_relative_past_event_text,
     stale_relative_period_event_text as _core_stale_relative_period_event_text,
 )
 
@@ -41,6 +47,103 @@ _SPORTS_DEPICTIVE_ACTION_CUES = (
 )
 _SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
 
+_PRIMARY_CURRENT_EVENT_CUES = (
+    "발표",
+    "공개",
+    "출시",
+    "도입",
+    "시행",
+    "개정",
+    "변경",
+    "확정",
+    "결정",
+    "체결",
+    "유치",
+    "투자",
+    "인수",
+    "선발",
+    "접수",
+    "합격",
+    "수상",
+    "공연",
+    "개최",
+    "실시",
+    "진행",
+    "기록",
+    "조사",
+    "응답",
+    "상승",
+    "하락",
+    "증가",
+    "감소",
+)
+_PRIMARY_GOAL_RE = re.compile(
+    r"(?:목표|목적|지향점|방향)(?:으?로)?[^.!?。！？]{0,24}?(?:한다|삼는다|두고\s*있다|이다)$"
+)
+_PRIMARY_NORMATIVE_ENDINGS = (
+    "해야 한다",
+    "하여야 한다",
+    "충족해야 한다",
+    "적용해야 한다",
+    "필요하다",
+    "요구된다",
+    "준수해야 한다",
+)
+_PRIMARY_ANALYTICAL_CUES = (
+    "시각이 우세",
+    "견해가 우세",
+    "의견이 우세",
+    "의견도 맞서",
+    "의견이 맞서",
+    "견해가 맞서",
+    "전망이 엇갈",
+    "의견이 엇갈",
+    "견해가 엇갈",
+    "논쟁",
+)
+_PRIMARY_ABSTRACT_RESPONSE_CUES = ("변화", "체계", "환경", "상황", "흐름")
+_PRIMARY_RESPONSE_ENDINGS = (
+    "대응한다",
+    "대응하고 있다",
+    "대응하고 있습니다",
+    "선제적으로 대응한다",
+)
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+
+
+def _primary_sentence(value: str) -> str:
+    normalized = " ".join(value.split()).strip()
+    if not normalized:
+        return ""
+    for sentence in _SENTENCE_SPLIT_RE.split(normalized):
+        sentence = sentence.strip()
+        if sentence:
+            return sentence
+    return normalized
+
+
+def _has_primary_current_event(value: str) -> bool:
+    return any(cue in value for cue in _PRIMARY_CURRENT_EVENT_CUES)
+
+
+def _primary_non_event_state(value: str) -> bool:
+    normalized = _primary_sentence(value).rstrip(".!?。！？").rstrip()
+    if not normalized:
+        return False
+    if _has_primary_current_event(normalized):
+        return False
+    if _PRIMARY_GOAL_RE.search(normalized) is not None:
+        return True
+    if normalized.endswith(_PRIMARY_NORMATIVE_ENDINGS):
+        return True
+    if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
+        return True
+    if normalized.endswith(_PRIMARY_RESPONSE_ENDINGS) and any(
+        cue in normalized for cue in _PRIMARY_ABSTRACT_RESPONSE_CUES
+    ):
+        return True
+    return False
+
 
 def _current_week_aggregate(value: str) -> bool:
     normalized = " ".join(value.split())
@@ -58,8 +161,16 @@ def _prior_period_policy_event(value: str) -> bool:
     return _PRIOR_PERIOD_POLICY_EVENT_RE.search(decimal_normalized) is not None
 
 
+def stale_explicit_past_event_text(value: str, *, now: datetime | None = None) -> bool:
+    return _core_stale_explicit_past_event_text(_primary_sentence(value), now=now)
+
+
+def stale_relative_past_event_text(value: str) -> bool:
+    return _core_stale_relative_past_event_text(_primary_sentence(value))
+
+
 def stale_relative_period_event_text(value: str) -> bool:
-    normalized = " ".join(value.split())
+    normalized = _primary_sentence(value)
     # `지난 주말` is one relative-weekend expression. The core pattern's `지난 주`
     # prefix must not reinterpret it as a completed stale week.
     if "지난 주말" in normalized or "지난주말" in normalized:
@@ -70,11 +181,24 @@ def stale_relative_period_event_text(value: str) -> bool:
     if _current_week_aggregate(normalized):
         return False
     # Conversely, a prior-period policy action is stale background when the
-    # visible proposition itself is the old action. Include transitive `올렸다` /
-    # `내렸다`, which the original intransitive market-price cue set omitted.
+    # primary visible proposition itself is the old action. Include transitive
+    # `올렸다` / `내렸다`, which the original market-price cue set omitted.
     if _prior_period_policy_event(normalized):
         return True
     return _core_stale_relative_period_event_text(normalized)
+
+
+def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
+    return _core_stale_day_only_context(_primary_sentence(value), now=now)
+
+
+def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
+    return _core_stale_quarter_context(_primary_sentence(value), now=now)
+
+
+def non_event_analytical_text(value: str) -> bool:
+    primary = _primary_sentence(value)
+    return _core_non_event_analytical_text(primary) or _primary_non_event_state(primary)
 
 
 def publisher_notice_boilerplate(value: str) -> bool:

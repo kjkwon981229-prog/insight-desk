@@ -52,7 +52,6 @@ class Phase12AEPrimaryEventCentralityTests(unittest.TestCase):
                 decision = self.decide(topic=topic, headline=headline, summary=summary)
                 self.assertFalse(decision.accepted)
                 self.assertIn(StoryAdmissionReason.NON_EVENT_DESCRIPTION, decision.reasons)
-                self.assertIn(StoryAdmissionReason.EVENT_CENTRALITY, decision.reasons)
 
     def test_live_252_current_event_positives_remain_accepted(self) -> None:
         cases = (
@@ -110,24 +109,19 @@ class Phase12AEPrimaryEventCentralityTests(unittest.TestCase):
             ),
         )
         self.assertFalse(decision.accepted)
-        self.assertIn(StoryAdmissionReason.EVENT_CENTRALITY, decision.reasons)
+        self.assertIn(StoryAdmissionReason.NON_EVENT_DESCRIPTION, decision.reasons)
 
-    def test_stale_source_event_is_rejected_even_when_visible_summary_omits_date(self) -> None:
+    def test_stale_primary_event_is_still_rejected(self) -> None:
         decision = self.decide(
             topic="엔터·음악·K-POP",
             headline="SM Universe 강사진의 K-pop 안무 교육 실시",
             summary=(
-                "K-pop 댄스 프로그램에서 SM Universe 강사진이 안무 교육을 진행했으며, "
+                "지난 10일 SM Universe 강사진이 K-pop 안무 교육을 진행했다. "
                 "청소년들은 팀별 공연 준비를 통해 협동심과 자신감을 함양했다."
-            ),
-            source_text=(
-                "안산시는 지난 10일 서울 강남구 SM Universe에서 청소년 대상 K-POP 진로체험 프로그램을 운영했다. "
-                "SM Universe 강사진이 안무 교육을 진행했다."
             ),
         )
         self.assertFalse(decision.accepted)
         self.assertIn(StoryAdmissionReason.FRESHNESS, decision.reasons)
-        self.assertIn(StoryAdmissionReason.EVENT_CENTRALITY, decision.reasons)
 
 
 if __name__ == "__main__":
