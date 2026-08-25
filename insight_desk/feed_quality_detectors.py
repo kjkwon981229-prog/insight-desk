@@ -163,6 +163,12 @@ _CURRENT_EVENT_BEFORE_OUTLOOK_CUES = (
     "증가한",
     "감소한",
 )
+_STALE_DAY_COMPLETED_EVENT_ALIASES = (
+    ("운영했다", "진행했다"),
+    ("운영하였다", "진행했다"),
+    ("실시했다", "진행했다"),
+    ("실시하였다", "진행했다"),
+)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 
 
@@ -312,7 +318,15 @@ def stale_relative_period_event_text(value: str) -> bool:
 
 
 def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
-    return _core_stale_day_only_context(_primary_sentence(value), now=now)
+    primary = _primary_sentence(value)
+    if _core_stale_day_only_context(primary, now=now):
+        return True
+    normalized_alias = primary
+    for source, target in _STALE_DAY_COMPLETED_EVENT_ALIASES:
+        normalized_alias = normalized_alias.replace(source, target)
+    if normalized_alias == primary:
+        return False
+    return _core_stale_day_only_context(normalized_alias, now=now)
 
 
 def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
