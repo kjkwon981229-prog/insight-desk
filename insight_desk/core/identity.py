@@ -51,6 +51,9 @@ def _normalized(value: str | None) -> str | None:
 
 _SUBJECT_TOKEN_RE = re.compile(r"[a-z][a-z0-9.+-]*|[가-힣]{2,}")
 _SUBJECT_DESCRIPTOR_TOKENS = frozenset({"소속"})
+_EVENT_DATE_RE = re.compile(
+    r"(?:(20\d{2})년\s*)?(?:(1[0-2]|[1-9])월\s*)?([1-9]|[12]\d|3[01])일"
+)
 
 
 def _subject_tokens(value: str) -> frozenset[str]:
@@ -76,6 +79,29 @@ def _subject_surface_compatible(left: str, right: str) -> bool:
     if not left_tokens or not right_tokens:
         return False
     return left_tokens <= right_tokens or right_tokens <= left_tokens
+
+
+def _event_date_surface_compatible(left: str, right: str) -> bool:
+    """Treat different precision for the same explicit Korean date as non-conflicting.
+
+    ``25일`` and ``2026년 8월 25일`` do not contradict each other; one simply carries more
+    precision. Explicitly different days, months, or years remain hard conflicts. This helper only
+    opens the downstream semantic-identity check and never declares a merge itself.
+    """
+
+    left_match = _EVENT_DATE_RE.fullmatch(left)
+    right_match = _EVENT_DATE_RE.fullmatch(right)
+    if left_match is None or right_match is None:
+        return False
+    left_year, left_month, left_day = left_match.groups()
+    right_year, right_month, right_day = right_match.groups()
+    if left_day != right_day:
+        return False
+    if left_month is not None and right_month is not None and left_month != right_month:
+        return False
+    if left_year is not None and right_year is not None and left_year != right_year:
+        return False
+    return True
 
 
 def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck:
@@ -104,6 +130,11 @@ def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck
         if left_normalized == right_normalized:
             matching.append(name)
         elif name == "subject" and _subject_surface_compatible(
+            left_normalized,
+            right_normalized,
+        ):
+            continue
+        elif name == "event_date" and _event_date_surface_compatible(
             left_normalized,
             right_normalized,
         ):
