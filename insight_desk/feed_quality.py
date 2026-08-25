@@ -94,6 +94,23 @@ _REFERENTIAL_REMAINDER_RE = re.compile(
     r"(?:종목|명|개|곳|팀|기관|기업|업체|회사|제품|콘텐츠|작품|곡|경기)"
     r"(?:은|는|이|가|을|를)?(?:\s|$)"
 )
+_INTENT_EXPLANATORY_END_RE = re.compile(
+    r"(?:겠다는|겠다고\s+한다는)\s+것이다$"
+)
+_SUBORDINATE_INTENT_CONNECTOR_RE = re.compile(
+    r"(?:자|면서|때문에)\s+"
+)
+_NON_SUBJECT_PARTICLE_ENDINGS = (
+    "다는",
+    "라는",
+    "에서는",
+    "로는",
+    "에는",
+    "과는",
+    "와는",
+    "까지는",
+    "부터는",
+)
 _CREATED_CATEGORY_PARENT_CUES = (
     "공모전",
     "공모",
@@ -169,6 +186,23 @@ _MIXED_EXPLANATORY_SUBJECT_RE = re.compile(
     r"(?:현상|영향|결과|배경)(?:으)?로,\s*"
     r"[가-힣A-Za-z0-9·&-]{2,30}(?:은|는|이|가)\s+"
 )
+_HISTORICAL_DECADE_RE = re.compile(r"(?<!\d)((?:18|19|20)\d{2})년대")
+_CURRENT_RESEARCH_OBJECT_CUES = (
+    "연구 결과",
+    "연구결과",
+    "조사 결과",
+    "조사결과",
+    "분석 결과",
+    "분석결과",
+    "보고서",
+    "논문",
+)
+_CURRENT_RESEARCH_REPORTING_CUES = (
+    "발표했다",
+    "공개했다",
+    "발간했다",
+    "출간했다",
+)
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
 _CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
 _PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
@@ -194,6 +228,13 @@ _DAY_ONLY_PAST_RE = re.compile(r"(?:^|[,.]\s*|\s)지난\s+([0-3]?\d)일(?:\s|$)"
 _BARE_DAY_SPORTS_EVENT_RE = re.compile(
     r"(?<!\d)([0-3]?\d)일(?!\s*(?:동안|간|뒤|후|째))\s+"
     r"[^.!?。！？]{0,80}?(?:경기|전)에서(?:\s|$)"
+)
+_BARE_DAY_MATERIAL_EVENT_RE = re.compile(
+    r"(?<!\d)([0-3]?\d)일"
+    r"(?:\s*(?:과|와|·|,)\s*[0-3]?\d일)?"
+    r"(?!\s*(?:동안|간|뒤|후|째))\s+"
+    r"[^.!?。！？]{0,120}?"
+    r"(?:콘서트|공연|쇼케이스|페스티벌|시상식|행사|발매|출시|공개|발표|체결)"
 )
 _STALE_DAY_ONLY_EVENT_CUES = (
     "경기",
@@ -406,6 +447,21 @@ _BIOGRAPHICAL_STATE_ENDINGS = (
     "소속되어 있다",
     "소속되어 있습니다",
 )
+_BIOGRAPHICAL_COMPOSITION_CUES = (
+    "구성된",
+    "구성돼",
+    "구성되어",
+    "인조",
+    "멤버로 구성",
+)
+_BIOGRAPHICAL_REPUTATION_CUES = (
+    "글로벌 인기",
+    "인기를 얻",
+    "대표하는",
+    "대표 팀",
+    "대표 그룹",
+    "자리매김",
+)
 _EXPLANATORY_STATE_NOUN_CUES = ("원인", "배경", "힘", "요인", "영향", "신호")
 _EXPLANATORY_STATE_ENDINGS = (
     "두드러지고 있다",
@@ -537,6 +593,44 @@ _RELATIVE_PAST_PERIOD_RE = re.compile(
 _RELATIVE_PAST_EVENT_PERIOD_RE = re.compile(
     r"(?:지난달|지난\s+달|지난주|지난\s+주|지난\s+분기|지난\s+연도)"
 )
+_PAST_EVENT_BRIDGE_RE = re.compile(r"(?:뒤|후|이후)(?:\s|,)")
+_PAST_EVENT_ADNOMINAL_CUES = (
+    "발매한",
+    "공개한",
+    "개최한",
+    "출시한",
+    "체결한",
+    "수주한",
+    "선정된",
+    "수상한",
+    "발표한",
+    "확정한",
+    "결정한",
+    "도입한",
+    "시행한",
+    "마감한",
+    "올린",
+    "내린",
+    "인상한",
+    "인하한",
+    "기록한",
+    "도달한",
+    "진입한",
+    "투입한",
+    "가동한",
+)
+_CURRENT_PROPOSITION_CUES = (
+    "오늘",
+    "현재",
+    "오는",
+    "이번",
+    "가능성",
+    "전망",
+    "예상",
+    "예정",
+    "회의",
+    "결정",
+)
 _RELATIVE_PAST_COMPARISON_RE = re.compile(
     r"^(?:(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?\s*)?"
     r"(?:보다|대비|동기|수준|이후|이래|부터|기록(?:을|보다))"
@@ -643,8 +737,32 @@ def parentless_performer_lineup_text(value: str) -> bool:
     )
 
 
+def _has_explicit_clause_subject(value: str) -> bool:
+    for token in value.split():
+        normalized_token = token.strip(" \\t,·()[]{}'\"")
+        if not normalized_token.endswith(("은", "는", "이", "가")):
+            continue
+        if normalized_token.endswith(_NON_SUBJECT_PARTICLE_ENDINGS):
+            continue
+        return True
+    return False
+
+
+def _subjectless_intentional_remainder_text(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    if _INTENT_EXPLANATORY_END_RE.search(normalized) is None:
+        return False
+    connectors = tuple(_SUBORDINATE_INTENT_CONNECTOR_RE.finditer(normalized))
+    main_clause = normalized[connectors[-1].end() :] if connectors else normalized
+    return not _has_explicit_clause_subject(main_clause)
+
+
 def referential_remainder_text(value: str) -> bool:
-    return _REFERENTIAL_REMAINDER_RE.search(" ".join(value.split())) is not None
+    normalized = " ".join(value.split())
+    return (
+        _REFERENTIAL_REMAINDER_RE.search(normalized) is not None
+        or _subjectless_intentional_remainder_text(normalized)
+    )
 
 
 def generic_civic_actor_text(value: str) -> bool:
@@ -698,8 +816,48 @@ def visible_metadata_text(value: str) -> bool:
     return metadata_or_caption_text(value)
 
 
+def _relative_past_bridge_to_current_text(normalized: str) -> bool:
+    for match in _RELATIVE_PAST_EVENT_PERIOD_RE.finditer(normalized):
+        following = normalized[match.end() :].lstrip()
+        bridge = _PAST_EVENT_BRIDGE_RE.search(following)
+        if bridge is None:
+            continue
+        past_clause = following[: bridge.start()]
+        current_clause = following[bridge.end() :]
+        if (
+            any(cue in past_clause for cue in _PAST_EVENT_ADNOMINAL_CUES)
+            and any(cue in current_clause for cue in _CURRENT_PROPOSITION_CUES)
+        ):
+            return True
+    return False
+
+
 def mixed_event_summary(value: str) -> bool:
-    return _MIXED_EXPLANATORY_SUBJECT_RE.search(" ".join(value.split())) is not None
+    normalized = " ".join(value.split())
+    return (
+        _MIXED_EXPLANATORY_SUBJECT_RE.search(normalized) is not None
+        or _relative_past_bridge_to_current_text(normalized)
+    )
+
+
+def _historical_background_text(
+    value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    normalized = " ".join(value.split())
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if f"{reference.year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
+        return False
+    if (
+        any(cue in normalized for cue in _CURRENT_RESEARCH_OBJECT_CUES)
+        and any(cue in normalized for cue in _CURRENT_RESEARCH_REPORTING_CUES)
+    ):
+        return False
+    return any(
+        int(match.group(1)) <= reference.year - 10
+        for match in _HISTORICAL_DECADE_RE.finditer(normalized)
+    )
 
 
 def stale_explicit_past_event_text(
@@ -709,6 +867,8 @@ def stale_explicit_past_event_text(
 ) -> bool:
     normalized = " ".join(value.split())
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if _historical_background_text(normalized, now=reference):
+        return True
     if f"{reference.year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
         return False
     for match in _YEAR_RE.finditer(normalized):
@@ -743,6 +903,8 @@ def stale_relative_past_event_text(value: str) -> bool:
 
 def stale_relative_period_event_text(value: str) -> bool:
     normalized = " ".join(value.split())
+    if _relative_past_bridge_to_current_text(normalized):
+        return True
     if any(cue in normalized for cue in _CURRENT_EVENT_CUES):
         return False
     for match in _RELATIVE_PAST_EVENT_PERIOD_RE.finditer(normalized):
@@ -792,13 +954,16 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
         return False
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     matches = (
-        (match, False) for match in _DAY_ONLY_PAST_RE.finditer(normalized)
+        (match, True, False) for match in _DAY_ONLY_PAST_RE.finditer(normalized)
     )
     sports_matches = (
-        (match, True) for match in _BARE_DAY_SPORTS_EVENT_RE.finditer(normalized)
+        (match, False, True) for match in _BARE_DAY_SPORTS_EVENT_RE.finditer(normalized)
+    )
+    material_matches = (
+        (match, False, True) for match in _BARE_DAY_MATERIAL_EVENT_RE.finditer(normalized)
     )
     seen_days: set[tuple[int, int]] = set()
-    for match, sports_event in (*matches, *sports_matches):
+    for match, explicit_past, event_match in (*matches, *sports_matches, *material_matches):
         day = int(match.group(1))
         day_key = (match.start(1), day)
         if day_key in seen_days:
@@ -812,12 +977,24 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
                 candidate = datetime(year, zero_based_month + 1, day, tzinfo=timezone.utc)
             except ValueError:
                 continue
-            if candidate <= reference + timedelta(hours=6):
-                candidates.append(candidate)
-        if not candidates or reference - max(candidates) <= timedelta(hours=72):
+            candidates.append(candidate)
+        if not candidates:
+            continue
+        if explicit_past:
+            past_candidates = [
+                candidate for candidate in candidates if candidate <= reference + timedelta(hours=6)
+            ]
+            if not past_candidates:
+                continue
+            candidate = max(past_candidates)
+        else:
+            candidate = min(candidates, key=lambda item: abs(item - reference))
+            if candidate > reference + timedelta(hours=6):
+                continue
+        if reference - candidate <= timedelta(hours=72):
             continue
         event_surface = normalized[match.start() : match.end() + 100]
-        if sports_event or any(cue in event_surface for cue in _STALE_DAY_ONLY_EVENT_CUES):
+        if event_match or any(cue in event_surface for cue in _STALE_DAY_ONLY_EVENT_CUES):
             return True
     return False
 
@@ -870,6 +1047,11 @@ def _descriptive_media_profile_text(normalized: str) -> bool:
         and not any(cue in normalized for cue in _LIVE_PERFORMANCE_EVENT_CUES)
     ):
         return True
+    if (
+        any(cue in normalized for cue in _BIOGRAPHICAL_COMPOSITION_CUES)
+        and any(cue in normalized for cue in _BIOGRAPHICAL_REPUTATION_CUES)
+    ):
+        return True
     return (
         any(cue in normalized for cue in _BIOGRAPHICAL_IDENTITY_CUES)
         and any(cue in normalized for cue in _BIOGRAPHICAL_ROLE_CUES)
@@ -886,6 +1068,8 @@ def non_event_analytical_text(value: str) -> bool:
     if normalized.endswith(_NON_EVENT_ATTENTION_ENDINGS):
         return True
     if _publication_retrospective_text(normalized):
+        return True
+    if _historical_background_text(normalized):
         return True
     if _descriptive_media_profile_text(normalized):
         return True
