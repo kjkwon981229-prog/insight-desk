@@ -9,6 +9,7 @@ from insight_desk.core import CandidateEvent, EventFact, IdentityDecision, Verif
 
 from .baseball_identity import same_game_result_fingerprint
 from .events import compare_candidate_identity
+from .market_identity import same_market_session_close_fingerprint
 
 
 class IdentityClaimVerifier(Protocol):
@@ -222,8 +223,9 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
     conflicts upstream. It only permits asymmetric entailment to receive the full two-verifier
     check. The historical large-number and mixed-script paths remain unchanged. Baseball identity
     gets two narrow additional paths: a detailed box-score fingerprint or a reciprocal final-game
-    score with the same two teams, day, and venue. Every path still requires both independent
-    verifier slots before any merge.
+    score with the same two teams, day, and venue. Domestic market identity gets one equally narrow
+    path for a same-day close described once by a named index and once by the broad market, with the
+    same closing direction. Every path still requires both independent verifier slots before merge.
     """
 
     left_lexical = _identity_lexical_anchors(left_text)
@@ -237,6 +239,9 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
         return True
 
     if same_game_result_fingerprint(left_text, right_text):
+        return True
+
+    if same_market_session_close_fingerprint(left_text, right_text):
         return True
 
     smaller_count = min(len(left_lexical), len(right_lexical))
@@ -382,7 +387,7 @@ def judge_same_event_mutual_entailment(
             False,
             "primary_rejected_both_directions",
             secondary_checks,
-            primary_checks,
+            0,
         )
 
     if all(secondary_results) and all(primary_results):
