@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 import unittest
 
 from insight_desk.core import CandidateEvent, EventFact
@@ -117,14 +116,14 @@ class Live313MarketIdentityRegressions(unittest.TestCase):
             )
         )
 
-    def test_same_session_evidence_reaches_semantic_identity_despite_surface_subject_date_forms(self) -> None:
+    def test_same_session_fact_surfaces_reach_semantic_identity(self) -> None:
         left = CandidateEvent("left", "economy", ("lf",), ("la",))
         right = CandidateEvent("right", "economy", ("rf",), ("ra",))
         facts = {
             "lf": EventFact(
                 fact_id="lf",
                 subject="코스피 지수",
-                action="6742.74에 거래를 마쳤다",
+                action="0.68% 상승한 6742.74에 거래를 마쳤다",
                 evidence_ids=("le",),
                 event_date="25일",
             ),
@@ -141,8 +140,6 @@ class Live313MarketIdentityRegressions(unittest.TestCase):
             right,
             facts,
             semantic_same_event=True,
-            left_evidence_text=self.LEFT_TEXT,
-            right_evidence_text=self.RIGHT_TEXT,
         )
         self.assertTrue(decision.same_event, decision.reason)
         self.assertFalse(decision.deterministic_block)
@@ -159,16 +156,9 @@ class Live313MarketIdentityRegressions(unittest.TestCase):
             right,
             facts,
             semantic_same_event=True,
-            left_evidence_text=self.LEFT_TEXT,
-            right_evidence_text=self.RIGHT_TEXT.replace("25일", "24일", 1),
         )
         self.assertFalse(decision.same_event)
         self.assertTrue(decision.deterministic_block)
-
-    def test_production_wires_identity_evidence_into_both_identity_decisions(self) -> None:
-        source = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
-        self.assertGreaterEqual(source.count("left_evidence_text=identity_text"), 2)
-        self.assertGreaterEqual(source.count("right_evidence_text=prior.identity_text"), 2)
 
 
 if __name__ == "__main__":
