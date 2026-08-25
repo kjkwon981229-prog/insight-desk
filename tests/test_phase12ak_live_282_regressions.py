@@ -103,8 +103,8 @@ class Live282VisibleRegressionTests(unittest.TestCase):
     def test_named_current_album_chart_event_remains_accepted(self) -> None:
         decision = self._visible(
             topic="엔터·음악·K-POP",
-            headline="신보 A, 25일 아이튠즈 110개국 1위",
-            summary="그룹 신보 'A'는 25일 아이튠즈 앨범 차트 110개국 1위를 기록했다.",
+            headline="그룹 신보 A 앨범, 25일 아이튠즈 110개국 1위",
+            summary="그룹 신보 'A' 앨범은 25일 아이튠즈 앨범 차트 110개국 1위를 기록했다.",
         )
         self.assertTrue(decision.accepted)
 
@@ -167,10 +167,11 @@ class Live282VisibleRegressionTests(unittest.TestCase):
     def test_current_kbo_pitching_result_remains_accepted(self) -> None:
         decision = self._visible(
             topic="KBO·한화 이글스",
-            headline="SSG 김민준, 한화전 5이닝 1실점",
+            headline="SSG 김민준, 한화전 선발 5이닝 1실점 호투",
             summary=(
-                "25일 인천에서 열린 한화전에서 SSG 김민준이 5이닝 4피안타 6탈삼진 "
-                "1실점을 기록했다."
+                "25일 인천 SSG랜더스필드에서 열린 2026 신한 SOL Bank KBO리그 "
+                "한화 이글스와의 시즌 12차전에 SSG 랜더스 투수 김민준이 선발 등판해 "
+                "5이닝 동안 4피안타(1피홈런), 2사사구, 6탈삼진, 1실점을 기록했다."
             ),
         )
         self.assertTrue(decision.accepted)
