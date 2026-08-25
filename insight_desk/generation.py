@@ -35,16 +35,14 @@ def validate_story_admission(request: GenerationRequest, draft: GeneratedDraft) 
     )
 
     # The visible rewrite may omit a stale date phrase that is present in the
-    # event evidence. Reuse the same shared decision for the evidence surface and
-    # project only FRESHNESS. Other evidence-side reasons are intentionally not
-    # promoted: descriptive or historical background remains allowed when the
-    # primary event itself is current.
+    # event evidence. Reuse the same shared decision on the source/material
+    # representation and project only FRESHNESS. Other material-side reasons are
+    # intentionally not promoted: descriptive or historical background remains
+    # allowed when the primary event itself is current.
     evidence_decision = evaluate_story_admission(
         topic=topic,
-        headline=draft.headline,
-        summary=request.evidence_text,
         source_text=request.evidence_text,
-        stage=StoryAdmissionStage.VISIBLE,
+        stage=StoryAdmissionStage.MATERIAL,
     )
     evidence_stale = StoryAdmissionReason.FRESHNESS in evidence_decision.reasons
 
