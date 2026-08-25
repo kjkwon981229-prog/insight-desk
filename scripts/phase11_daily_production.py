@@ -9,6 +9,7 @@ except ImportError:  # direct `python scripts/phase11_daily_production.py`
     import phase11_daily_production_core as _core  # type: ignore
 
 from insight_desk.feed_quality import VisibleStoryIssue
+from insight_desk.semantic.baseball_identity import kbo_visible_result_redundant
 from insight_desk.story_admission import (
     StoryAdmissionReason,
     StoryAdmissionStage,

@@ -6,6 +6,7 @@ import re
 _SCORE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:대|[-:])\s*(\d{1,2})(?!\d)")
 _DAY_RE = re.compile(r"(?<!\d)([0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
 _OUTCOME_CUES = ("승리", "이겼", "이기고", "꺾", "제압", "패배", "졌다", "패했다")
+_WIN_CUES = ("완파", "제압", "꺾", "이겼", "승리")
 _KBO_TEAM_ALIASES = {
     "한화": ("한화 이글스", "한화"),
     "SSG": ("SSG 랜더스", "SSG랜더스", "SSG"),
@@ -24,7 +25,7 @@ _LOCATION_ALIASES = {
     "서울잠실": ("잠실", "잠실야구장"),
     "고척": ("고척", "고척스카이돔", "고척 스카이돔"),
     "수원": ("수원", "수원KT위즈파크", "KT위즈파크", "kt wiz park"),
-    "광주": ("광주", "광주-기아 챔피언스 필드", "광주기아챔피언스필드"),
+    "광주": ("광주", "기아챔피언스필드", "광주-기아 챔피언스 필드", "광주기아챔피언스필드"),
     "대구": ("대구", "대구삼성라이온즈파크", "삼성라이온즈파크"),
     "부산": ("부산", "사직", "사직야구장"),
     "창원": ("창원", "창원NC파크", "NC파크"),
@@ -64,6 +65,32 @@ def _locations(text: str) -> frozenset[str]:
     )
 
 
+def _winning_team(text: str, teams: frozenset[str]) -> str | None:
+    normalized = " ".join(text.split())
+    if len(teams) != 2 or not normalized:
+        return None
+    win_surface = "|".join(re.escape(cue) for cue in _WIN_CUES)
+    for team in sorted(teams):
+        team_aliases = sorted(_KBO_TEAM_ALIASES[team], key=len, reverse=True)
+        opponent_aliases = [
+            alias
+            for opponent in teams
+            if opponent != team
+            for alias in sorted(_KBO_TEAM_ALIASES[opponent], key=len, reverse=True)
+        ]
+        for team_alias in team_aliases:
+            for opponent_alias in opponent_aliases:
+                pattern = (
+                    rf"{re.escape(team_alias)}(?:은|는|이|가|,)?"
+                    rf"[^.!?。！？]{{0,90}}?{re.escape(opponent_alias)}"
+                    rf"(?:을|를|와|과|에게|에|,)?[^.!?。！？]{{0,50}}?"
+                    rf"(?:{win_surface})"
+                )
+                if re.search(pattern, normalized, flags=re.IGNORECASE):
+                    return team
+    return None
+
+
 def same_game_result_fingerprint(left_text: str, right_text: str) -> bool:
     """Recognize one KBO final-result event across winner/loser perspective changes.
 
@@ -97,3 +124,53 @@ def same_game_result_fingerprint(left_text: str, right_text: str) -> bool:
         return False
 
     return any(cue in left for cue in _OUTCOME_CUES) and any(cue in right for cue in _OUTCOME_CUES)
+
+
+def kbo_visible_result_redundant(
+    *,
+    prior_headline: str,
+    prior_summary: str,
+    candidate_headline: str,
+    candidate_summary: str,
+) -> bool:
+    """Suppress a generic KBO result only when an earlier visible card is strictly more specific.
+
+    The gate is deliberately directional. It returns true only when the prior card names a score and
+    the candidate omits it, while both cards still identify the same two-team Hanwha matchup, the same
+    winner, and a shared stadium/city anchor. Conflicting explicit days block suppression. Two scored
+    results, opposite winners, different opponents, or different venues always remain separate here.
+    """
+
+    prior = " ".join(f"{prior_headline} {prior_summary}".split())
+    candidate = " ".join(f"{candidate_headline} {candidate_summary}".split())
+    prior_teams = _team_set(prior)
+    candidate_teams = _team_set(candidate)
+    if (
+        len(prior_teams) != 2
+        or prior_teams != candidate_teams
+        or "한화" not in prior_teams
+    ):
+        return False
+
+    prior_locations = _locations(prior)
+    candidate_locations = _locations(candidate)
+    if not prior_locations or not candidate_locations or not (prior_locations & candidate_locations):
+        return False
+
+    prior_day = _day(prior)
+    candidate_day = _day(candidate)
+    if prior_day is not None and candidate_day is not None and prior_day != candidate_day:
+        return False
+
+    prior_winner = _winning_team(prior_summary, prior_teams) or _winning_team(
+        prior_headline, prior_teams
+    )
+    candidate_winner = _winning_team(candidate_summary, candidate_teams) or _winning_team(
+        candidate_headline, candidate_teams
+    )
+    if prior_winner is None or prior_winner != candidate_winner:
+        return False
+
+    prior_score = _score_pair(prior)
+    candidate_score = _score_pair(candidate)
+    return prior_score is not None and candidate_score is None

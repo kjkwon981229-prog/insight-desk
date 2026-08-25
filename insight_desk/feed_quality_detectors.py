@@ -102,6 +102,10 @@ _PRIMARY_NORMATIVE_ENDINGS = (
     "필요하다",
     "요구된다",
     "준수해야 한다",
+    "해서는 곤란하다",
+    "해서는 곤란합니다",
+    "해서는 안 된다",
+    "해서는 안 됩니다",
 )
 _PRIMARY_ANALYTICAL_CUES = (
     "시각이 우세",
@@ -205,6 +209,19 @@ _PRIMARY_AI_TREND_STRATEGY_RE = re.compile(
 _PRIMARY_PROMOTIONAL_ROLLUP_RE = re.compile(
     r"(?:이어지는|연이은)\s+(?:컴백|복귀|발매|공개)\s+소식[^.!?。！？]{0,180}?"
     r"(?:장식|달구|기대감|관심)[^.!?。！？]{0,80}?(?:있다|있습니다|한다|합니다)$"
+)
+_PRIMARY_PROMOTIONAL_TRAINING_BENEFIT_RE = re.compile(
+    r"(?:교육|안무교육|훈련|프로그램)[^.!?。！？]{0,120}?"
+    r"(?:진행|운영)[^.!?。！？]{0,100}?"
+    r"(?:전문성|협동심|자신감|역량)[^.!?。！？]{0,80}?"
+    r"(?:더했다|높였다|쌓았다|키웠다)$"
+)
+_PRIMARY_KBO_TEAM_PARTICIPATION_RE = re.compile(
+    r"^(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
+    r"두산(?:\s*베어스)?|롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|KT(?:\s*위즈)?|"
+    r"NC(?:\s*다이노스)?|키움(?:\s*히어로즈)?)(?:은|는|이|가)"
+    r"[^.!?。！？]{0,260}?(?:경기|대결)에서\s+출전했다$",
+    flags=re.IGNORECASE,
 )
 _PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
     r"(?:현상|흐름|양상|움직임)(?:이|가)\s+[^.!?。！？]{0,100}?"
@@ -349,6 +366,8 @@ def _primary_non_event_state(value: str) -> bool:
         return True
     if normalized.endswith(_PRIMARY_NORMATIVE_ENDINGS):
         return True
+    if _PRIMARY_KBO_TEAM_PARTICIPATION_RE.search(normalized) is not None:
+        return True
     if (
         any(cue in normalized for cue in _PRIMARY_STATIC_RULE_CUES)
         and normalized.endswith(_PRIMARY_STATIC_RULE_ENDINGS)
@@ -367,6 +386,11 @@ def _primary_non_event_state(value: str) -> bool:
         return True
     if (
         _PRIMARY_PROMOTIONAL_ROLLUP_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_PROMOTIONAL_TRAINING_BENEFIT_RE.search(normalized) is not None
         and _EXPLICIT_DAY_RE.search(normalized) is None
     ):
         return True
