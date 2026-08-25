@@ -99,6 +99,8 @@ _PRIMARY_ANALYTICAL_CUES = (
     "전망이 엇갈",
     "의견이 엇갈",
     "견해가 엇갈",
+    "시장 무게중심",
+    "판단이 우세",
     "논쟁",
 )
 _PRIMARY_ABSTRACT_RESPONSE_CUES = ("변화", "체계", "환경", "상황", "흐름")
@@ -107,6 +109,48 @@ _PRIMARY_RESPONSE_ENDINGS = (
     "대응하고 있다",
     "대응하고 있습니다",
     "선제적으로 대응한다",
+)
+_PRIMARY_COMPONENT_CONTAINER_CUES = (
+    "과정",
+    "프로그램",
+    "교육",
+    "커리큘럼",
+    "항목",
+    "내용",
+)
+_PRIMARY_COMPONENT_ENDINGS = (
+    "포함한다",
+    "포함하고 있다",
+    "포함하고 있습니다",
+    "구성된다",
+    "구성돼 있다",
+    "구성되어 있다",
+)
+_PRIMARY_METHOD_ENDINGS = (
+    "방식이다",
+    "방식입니다",
+    "구조다",
+    "구조이다",
+    "형태다",
+    "형태이다",
+)
+_REPORTING_ACTOR_RE = re.compile(
+    r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,160}?"
+    r"(?:발표했다|공개했다|밝혔다|전망했다|예상했다|내다봤다|분석했다|발간했다|공표했다)"
+)
+_FORECAST_SURFACE_RE = re.compile(
+    r"(?:전망됐|전망된다|전망됩니다|예상됐|예상된다|예상됩니다|유력시된다|유력하다|"
+    r"가능성(?:은|이)\s*(?:낮|높)(?:다|습니다)|판단이\s*우세(?:하다|합니다)|"
+    r"시장\s+무게중심[^.!?。！？]{0,80}?기울고\s+있다)"
+)
+_FORECAST_EXPLICIT_ATTRIBUTION_CUES = (
+    "에 따르면",
+    "보고서에서",
+    "보고서는",
+    "조사에서",
+    "조사에서는",
+    "설문에서",
+    "설문에서는",
 )
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 
@@ -122,8 +166,29 @@ def _primary_sentence(value: str) -> str:
     return normalized
 
 
+def _sentences(value: str) -> tuple[str, ...]:
+    normalized = " ".join(value.split()).strip()
+    if not normalized:
+        return ()
+    return tuple(
+        sentence.strip()
+        for sentence in _SENTENCE_SPLIT_RE.split(normalized)
+        if sentence.strip()
+    )
+
+
 def _has_primary_current_event(value: str) -> bool:
     return any(cue in value for cue in _PRIMARY_CURRENT_EVENT_CUES)
+
+
+def _primary_reporting_event(value: str) -> bool:
+    normalized = value.rstrip(".!?。！？").rstrip()
+    if _REPORTING_ACTOR_RE.search(normalized) is not None:
+        return True
+    return (
+        any(cue in normalized for cue in ("조사에서", "설문에서", "보고서에서"))
+        and any(cue in normalized for cue in ("발표", "공개", "응답", "전망", "예상"))
+    )
 
 
 def _primary_non_event_state(value: str) -> bool:
@@ -136,6 +201,13 @@ def _primary_non_event_state(value: str) -> bool:
         return True
     if normalized.endswith(_PRIMARY_NORMATIVE_ENDINGS):
         return True
+    if (
+        normalized.endswith(_PRIMARY_COMPONENT_ENDINGS)
+        and any(cue in normalized for cue in _PRIMARY_COMPONENT_CONTAINER_CUES)
+    ):
+        return True
+    if normalized.endswith(_PRIMARY_METHOD_ENDINGS):
+        return True
     if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
         return True
     if normalized.endswith(_PRIMARY_RESPONSE_ENDINGS) and any(
@@ -144,6 +216,31 @@ def _primary_non_event_state(value: str) -> bool:
         return True
     if _has_primary_current_event(normalized):
         return False
+    return False
+
+
+def _forecast_sentence_attributed(sentence: str) -> bool:
+    if any(cue in sentence for cue in _FORECAST_EXPLICIT_ATTRIBUTION_CUES):
+        return True
+    if _REPORTING_ACTOR_RE.search(sentence.rstrip(".!?。！？").rstrip()) is not None:
+        return True
+    return (
+        "%" in sentence
+        and any(cue in sentence for cue in ("응답자", "조사", "설문"))
+    )
+
+
+def unattributed_forecast_text(value: str) -> bool:
+    """Return true when a visible outlook/consensus claim has no visible source.
+
+    This is a low-level attribution signal. It intentionally does not reject
+    prospective concrete events (for example, an announced album release).
+    """
+    for sentence in _sentences(value):
+        if _FORECAST_SURFACE_RE.search(sentence) is None:
+            continue
+        if not _forecast_sentence_attributed(sentence):
+            return True
     return False
 
 
@@ -199,11 +296,18 @@ def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
 
 
 def non_event_analytical_text(value: str) -> bool:
-    # Preserve the established whole-card non-event detector because a secondary
-    # proposition can still be card-central when the headline explicitly promotes
-    # it (e.g. statement + unquantified trend). Add the primary-state detector on
-    # top; do not replace the established signal with first-sentence-only logic.
-    return _core_non_event_analytical_text(value) or _primary_non_event_state(value)
+    # A visible, attributed reporting event remains the card's primary event even
+    # when a later sentence supplies descriptive background. This is the key
+    # distinction between permitted background and a background proposition that
+    # has replaced the news event itself.
+    primary = _primary_sentence(value)
+    primary_non_event = _primary_non_event_state(primary)
+    if unattributed_forecast_text(value):
+        return True
+    core_non_event = _core_non_event_analytical_text(value)
+    if core_non_event and _primary_reporting_event(primary) and not primary_non_event:
+        return False
+    return core_non_event or primary_non_event
 
 
 def publisher_notice_boilerplate(value: str) -> bool:
