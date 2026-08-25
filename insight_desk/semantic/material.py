@@ -1,24 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import lru_cache
-import re
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
-from insight_desk.feed_quality import (
-    conditional_analytical_text,
-    generic_civic_actor_text,
-    non_event_analytical_text,
-    orphaned_parent_content_role_text,
-    parentless_performer_lineup_text,
-    referential_remainder_text,
-    stale_day_only_context,
-    stale_quarter_context,
-    stale_relative_past_event_text,
-    stale_relative_period_event_text,
+from insight_desk.story_admission import (
+    StoryAdmissionInput,
+    StoryAdmissionStage,
+    evaluate_story_admission,
 )
 
 from .tooling import KiwiMorphologyHelper
@@ -40,41 +31,6 @@ _SPORTS_DEPICTIVE_ACTION_CUES = (
     "포즈",
 )
 _SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
-_CONTEXT_DEPENDENT_LEADS = (
-    "여기에 ",
-    "여기에,",
-    "이후 ",
-    "이 딜러는 ",
-    "이번 ",
-    "팬들의 ",
-)
-_CONTEXT_DEPENDENT_PHRASES = ("이번 상황",)
-_GENERIC_REFERENTIAL_SUBJECTS = frozenset({"그", "그가", "그는", "그녀", "그녀가", "그녀는", "이들", "이들이", "이들은"})
-_BARE_ANNIVERSARY_LEAD_RE = re.compile(r"^데뷔\s+\d+\s*주년을\s+맞은\s+가운데(?:\s|$)")
-_BARE_RANKING_CUES = ("최고의 루키",)
-_BARE_RANKING_CONTEXT_TERMS = (
-    "K탑스타",
-    "KTOPSTAR",
-    "투표",
-    "랭킹",
-    "차트",
-    "부문",
-    "시상식",
-    "어워드",
-    "수상",
-)
-_STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
-_STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
-_PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
-_PAST_YEAR_MODIFIER_CUES = ("설립한", "설립된", "창업한", "창립한", "출범한")
-_CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
-_SENTENCE_TERMINALS = ".!?。！？"
-_YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
-_MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
-_MONTH_DAY_ONLY_RE = re.compile(r"(?:1[0-2]|0?[1-9])월(?:\s*(?:[0-2]?\d|3[01])일)?")
-_DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE = re.compile(
-    r"^(?:지난\s+)?\d{1,2}일\s+[^,.]{0,60}?(?:경기|전)에서\s+\d+\s*(?:타수|이닝|분|경기)\b"
-)
 
 
 class MaterialEventVerdict(StrEnum):
@@ -155,121 +111,20 @@ def _standalone_sports_photo_caption(text: str) -> bool:
     return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)
 
 
-def _bare_ranking_fragment(normalized: str) -> bool:
-    has_bare_ranking = (
-        any(cue in normalized for cue in _BARE_RANKING_CUES)
-        or re.search(r"\d+\s*주\s*연속\s*1위", normalized) is not None
+def _shared_material_rejection(codes: tuple[str, ...]) -> MaterialEventReason | None:
+    code_set = set(codes)
+    ordered = (
+        ("MATERIAL_CONTEXT_DEPENDENT_FRAGMENT", MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT),
+        ("MATERIAL_NON_EVENT_ANALYTICAL_JUDGMENT", MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT),
+        ("MATERIAL_CONDITIONAL_ANALYTICAL_SCENARIO", MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO),
+        ("MATERIAL_STALE_SPORTS_RETROSPECTIVE", MaterialEventReason.STALE_SPORTS_RETROSPECTIVE),
+        ("MATERIAL_STALE_EXPLICIT_PAST_EVENT", MaterialEventReason.STALE_EXPLICIT_PAST_EVENT),
+        ("MATERIAL_STALE_DATED_CONTEXT", MaterialEventReason.STALE_DATED_CONTEXT),
     )
-    if not has_bare_ranking:
-        return False
-    folded = normalized.casefold()
-    return not any(term.casefold() in folded for term in _BARE_RANKING_CONTEXT_TERMS)
-
-
-def _context_dependent_fragment(text: str, *, subject: str) -> bool:
-    normalized = " ".join(text.split())
-    if orphaned_parent_content_role_text(normalized):
-        return True
-    if parentless_performer_lineup_text(normalized):
-        return True
-    if referential_remainder_text(normalized):
-        return True
-    if generic_civic_actor_text(normalized):
-        return True
-    if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS:
-        return True
-    if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_LEADS):
-        return True
-    if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_PHRASES):
-        return True
-    if _BARE_ANNIVERSARY_LEAD_RE.search(normalized) is not None:
-        return True
-    if _DATE_LED_SUBJECTLESS_SPORTS_RESULT_RE.search(normalized) is not None:
-        return True
-    return _bare_ranking_fragment(normalized)
-
-
-def _non_event_analytical_judgment(text: str) -> bool:
-    return non_event_analytical_text(text)
-
-
-def _conditional_analytical_scenario(text: str) -> bool:
-    return conditional_analytical_text(text)
-
-
-def _stale_sports_retrospective(text: str) -> bool:
-    normalized = " ".join(text.split())
-    years = [int(value) for value in _YEAR_RE.findall(normalized)]
-    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
-        return False
-    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
-        return False
-    if "장면" not in normalized and "기록" not in normalized:
-        return False
-    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
-    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
-
-
-def _explicit_past_year_event(text: str, *, fact: EventFact) -> bool:
-    normalized = " ".join(text.split())
-    now_year = datetime.now(timezone.utc).year
-    past_matches = [match for match in _YEAR_RE.finditer(normalized) if int(match.group(1)) < now_year]
-    if not past_matches:
-        return False
-    if f"{now_year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
-        return False
-
-    subject = " ".join(fact.subject.split())
-    action = " ".join(fact.action.split())
-    subject_pos = normalized.find(subject) if subject else -1
-    action_pos = normalized.find(action) if action else -1
-
-    for match in past_matches:
-        if subject_pos >= 0 and match.end() <= subject_pos:
-            between = normalized[match.end() : subject_pos]
-            date_remainder = _MONTH_DAY_ONLY_RE.sub("", between)
-            if not date_remainder.strip(" \t,·"):
-                return True
-
-        if action_pos >= 0 and action_pos <= match.start() < action_pos + len(action):
-            following = normalized[match.end() : match.end() + 8].lstrip()
-            if any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES):
-                continue
-            if any(following.startswith(cue) for cue in _PAST_YEAR_MODIFIER_CUES):
-                continue
-            return True
-    return False
-
-
-def _dated_context_is_stale(text: str) -> bool:
-    if _stale_sports_retrospective(text):
-        return False
-    normalized = " ".join(text.split())
-    now = datetime.now(timezone.utc)
-    if stale_quarter_context(normalized, now=now):
-        return True
-    if stale_day_only_context(normalized, now=now):
-        return True
-    for match in _MONTH_DAY_RE.finditer(normalized):
-        if match.start() > 32:
-            continue
-        year_text, month_text, day_text = match.groups()
-        year = int(year_text) if year_text is not None else now.year
-        try:
-            candidate = datetime(year, int(month_text), int(day_text), tzinfo=timezone.utc)
-        except ValueError:
-            continue
-        if year_text is None and candidate > now + timedelta(hours=6):
-            try:
-                candidate = candidate.replace(year=year - 1)
-            except ValueError:
-                continue
-        if now - candidate <= timedelta(hours=72):
-            continue
-        tail = normalized[match.end() : match.end() + 24]
-        if any(cue in tail for cue in _STALE_DATE_CONTEXT_CUES):
-            return True
-    return False
+    for code, reason in ordered:
+        if code in code_set:
+            return reason
+    return None
 
 
 def assess_material_event(
@@ -294,7 +149,9 @@ def assess_material_event(
         fact = facts.get(fact_id)
         if fact is None:
             return MaterialEventAssessment(
-                event.event_id, MaterialEventVerdict.DEFER, (MaterialEventReason.FACT_MISSING,)
+                event.event_id,
+                MaterialEventVerdict.DEFER,
+                (MaterialEventReason.FACT_MISSING,),
             )
         text, evidence_error = _cited_text(event, fact, evidence)
         if evidence_error is not None or text is None:
@@ -315,49 +172,27 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,),
             )
-        if _context_dependent_fragment(text, subject=fact.subject):
+
+        admission = evaluate_story_admission(
+            StoryAdmissionInput(
+                stage=StoryAdmissionStage.MATERIAL,
+                topic=event.topic_id,
+                summary=text,
+                source_text=text,
+                subject=fact.subject,
+            )
+        )
+        if not admission.accepted:
+            reason = _shared_material_rejection(admission.compatibility_codes)
             return MaterialEventAssessment(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
-                (MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
+                (reason or MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT,),
             )
-        if _non_event_analytical_judgment(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT,),
-            )
-        if _conditional_analytical_scenario(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO,),
-            )
-        if _stale_sports_retrospective(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.STALE_SPORTS_RETROSPECTIVE,),
-            )
-        if stale_relative_past_event_text(text) or stale_relative_period_event_text(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.STALE_EXPLICIT_PAST_EVENT,),
-            )
-        if _explicit_past_year_event(text, fact=fact):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.STALE_EXPLICIT_PAST_EVENT,),
-            )
-        if _dated_context_is_stale(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.STALE_DATED_CONTEXT,),
-            )
-        literal_fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
+
+        literal_fields = (fact.subject, fact.action) + (
+            (fact.object,) if fact.object is not None else ()
+        )
         if any(value not in text for value in literal_fields):
             return MaterialEventAssessment(
                 event.event_id,
@@ -380,4 +215,8 @@ def assess_material_event(
         if used_nominal
         else MaterialEventReason.EVIDENCE_BOUND_EXPLICIT_PREDICATE
     )
-    return MaterialEventAssessment(event.event_id, MaterialEventVerdict.MATERIAL, (reason,))
+    return MaterialEventAssessment(
+        event.event_id,
+        MaterialEventVerdict.MATERIAL,
+        (reason,),
+    )

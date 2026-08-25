@@ -9,68 +9,20 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 
-from insight_desk.feed_quality import (
-    VisibleStoryIssue,
-    stale_day_only_context,
-    visible_story_issues,
-)
+from insight_desk.feed_quality import VisibleStoryIssue
+from insight_desk.story_admission import StoryAdmissionStage, evaluate_story_admission
 
 
 MAX_HEADLINE_CHARS = 120
 MAX_SUMMARY_CHARS = 420
 PSAT_TOPIC = "PSAT·공채 일정"
-KBO_HANWHA_TOPIC = "KBO·한화 이글스"
-KPOP_TOPIC = "엔터·음악·K-POP"
 PSAT_FORBIDDEN = (
     "Preparatory Student Academic",
     "PSAT 아카데미",
     "NCAA",
 )
-_HANWHA_TOPIC_TERMS = ("한화", "한화 이글스")
-_KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
-_KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
-_KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
-_KPOP_HEADLINE_SCOPE_CUES = (
-    "K-POP",
-    "케이팝",
-    "가수",
-    "그룹",
-    "아이돌",
-    "앨범",
-    "음원",
-    "차트",
-    "음악",
-    "뮤직",
-    "음반",
-    "컴백",
-    "데뷔",
-    "콘서트",
-    "공연",
-    "무대",
-    "수상",
-    "빌보드",
-    "Billboard",
-    "HYBE",
-    "하이브",
-    "SM",
-    "JYP",
-    "YG",
-    "BTS",
-    "방탄소년단",
-    "블랙핑크",
-    "아이브",
-    "뉴진스",
-    "세븐틴",
-)
-_STALE_DATE_CONTEXT_CUES = ("공개된", "열린", "개최된", "진행된", "발표된", "출시된", "방송된")
-_SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
-_STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
-_PAST_YEAR_BACKGROUND_CUES = ("부터", "이후", "이래")
-_CURRENT_EVENT_CUES = ("올해", "오늘", "현재", "최근")
-_SENTENCE_TERMINALS = ".!?。！？"
-_YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
-_MONTH_DAY_RE = re.compile(r"(?<!\d)(?:(20\d{2})년\s*)?(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일")
 _URL_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])")
+_FQ_STALE_SPORTS = "FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE"
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -80,68 +32,6 @@ def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
 
 def _normalize(value: str) -> str:
     return " ".join(value.split()).casefold()
-
-
-def _sentence_identity(value: str) -> str:
-    return _normalize(value).rstrip(_SENTENCE_TERMINALS).rstrip()
-
-
-def _stale_sports_retrospective_summary(value: str) -> bool:
-    normalized = " ".join(value.split())
-    years = [int(item) for item in _YEAR_RE.findall(normalized)]
-    if not years or not any(year < datetime.now(timezone.utc).year for year in years):
-        return False
-    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
-        return False
-    if "장면" not in normalized and "기록" not in normalized:
-        return False
-    terminal_stripped = normalized.rstrip(_SENTENCE_TERMINALS).rstrip()
-    return terminal_stripped.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
-
-
-def _stale_explicit_past_year_summary(value: str) -> bool:
-    normalized = " ".join(value.split())
-    match = _YEAR_RE.match(normalized)
-    if match is None:
-        return False
-    now_year = datetime.now(timezone.utc).year
-    if int(match.group(1)) >= now_year:
-        return False
-    if f"{now_year}년" in normalized or any(cue in normalized for cue in _CURRENT_EVENT_CUES):
-        return False
-    following = normalized[match.end() : match.end() + 8].lstrip()
-    return not any(following.startswith(cue) for cue in _PAST_YEAR_BACKGROUND_CUES)
-
-
-def _stale_dated_context_summary(value: str) -> bool:
-    if _stale_sports_retrospective_summary(value):
-        return False
-    if _stale_explicit_past_year_summary(value):
-        return True
-    normalized = " ".join(value.split())
-    now = datetime.now(timezone.utc)
-    if stale_day_only_context(normalized, now=now):
-        return True
-    for match in _MONTH_DAY_RE.finditer(normalized):
-        if match.start() > 32:
-            continue
-        year_text, month_text, day_text = match.groups()
-        year = int(year_text) if year_text is not None else now.year
-        try:
-            candidate = datetime(year, int(month_text), int(day_text), tzinfo=timezone.utc)
-        except ValueError:
-            continue
-        if year_text is None and candidate > now:
-            try:
-                candidate = candidate.replace(year=year - 1)
-            except ValueError:
-                continue
-        if (now - candidate).total_seconds() <= 72 * 60 * 60:
-            continue
-        tail = normalized[match.end() : match.end() + 24]
-        if any(cue in tail for cue in _STALE_DATE_CONTEXT_CUES):
-            return True
-    return False
 
 
 def _stale_source_url(value: str) -> bool:
@@ -273,7 +163,9 @@ def _validate_source_audit(
         raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{invalid_source_url_indices[0]}")
     if stale_source_url_indices:
         raise ValueError(f"FEED_QUALITY_STALE_SOURCE_URL:{stale_source_url_indices[0]}")
-    for index, (story, source_url) in enumerate(zip(stories, audit_source_urls, strict=True), start=1):
+    for index, (story, source_url) in enumerate(
+        zip(stories, audit_source_urls, strict=True), start=1
+    ):
         visible_source_url = story.get("source_url", "").strip()
         if not visible_source_url:
             raise ValueError(f"FEED_QUALITY_SOURCE_LINK_MISSING:{index}")
@@ -314,6 +206,8 @@ def validate_html(
     max_summary = 0
     psat_forbidden_hits: list[str] = []
 
+    issue_values = {item.value for item in VisibleStoryIssue}
+
     for index, story in enumerate(stories, start=1):
         event_id = story["event_id"].strip()
         headline = story["headline"].strip()
@@ -328,55 +222,43 @@ def validate_html(
         if len(summary) > MAX_SUMMARY_CHARS:
             raise ValueError(f"FEED_QUALITY_SUMMARY_TOO_LONG:{index}:{len(summary)}")
 
-        headline_key = _normalize(headline)
-        summary_key = _normalize(summary)
-        visible_issues = visible_story_issues(
+        decision = evaluate_story_admission(
             topic=topic,
             headline=headline,
             summary=summary,
+            source_text=summary,
+            stage=StoryAdmissionStage.VISIBLE,
         )
-        if VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION in visible_issues:
+        codes = set(decision.compatibility_codes)
+        topic_violation = VisibleStoryIssue.TOPIC_BINDING.value in codes
+        if VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION.value in codes:
             headline_summary_collisions += 1
-        if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY in visible_issues:
-            context_dependent_summaries += 1
-        if VisibleStoryIssue.VISIBLE_METADATA in visible_issues:
-            visible_metadata_issues += 1
-        if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY in visible_issues:
-            non_event_analytical_summaries += 1
-        if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY in visible_issues:
-            conditional_analytical_summaries += 1
-        if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT in visible_issues:
-            malformed_visible_texts += 1
-        if VisibleStoryIssue.MIXED_EVENT_SUMMARY in visible_issues:
-            mixed_event_summaries += 1
-        if _stale_sports_retrospective_summary(summary):
-            stale_sports_retrospectives += 1
-        elif VisibleStoryIssue.STALE_DATED_CONTEXT in visible_issues:
-            stale_dated_contexts += 1
-        elif _stale_dated_context_summary(summary):
-            stale_dated_contexts += 1
-
-        story_topic_binding_violation = VisibleStoryIssue.TOPIC_BINDING in visible_issues
-        if not story_topic_binding_violation and topic == KBO_HANWHA_TOPIC:
-            combined_visible = f"{headline}\n{summary}"
-            entertainment_crossover = (
-                any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
-                and any(cue in combined_visible for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
-            )
-            if entertainment_crossover:
-                story_topic_binding_violation = True
-            elif not any(term in combined_visible for term in _HANWHA_TOPIC_TERMS):
-                story_topic_binding_violation = True
-            elif not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES):
-                story_topic_binding_violation = True
-        elif not story_topic_binding_violation and topic == KPOP_TOPIC:
-            if not any(cue.casefold() in headline.casefold() for cue in _KPOP_HEADLINE_SCOPE_CUES):
-                story_topic_binding_violation = True
-        if story_topic_binding_violation:
-            topic_binding_violations += 1
-        elif VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE in visible_issues:
+        if (
+            VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE.value in codes
+            and not topic_violation
+        ):
             context_dependent_headlines += 1
+        if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY.value in codes:
+            context_dependent_summaries += 1
+        if VisibleStoryIssue.VISIBLE_METADATA.value in codes:
+            visible_metadata_issues += 1
+        if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY.value in codes:
+            non_event_analytical_summaries += 1
+        if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY.value in codes:
+            conditional_analytical_summaries += 1
+        if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT.value in codes:
+            malformed_visible_texts += 1
+        if VisibleStoryIssue.MIXED_EVENT_SUMMARY.value in codes:
+            mixed_event_summaries += 1
+        if _FQ_STALE_SPORTS in codes:
+            stale_sports_retrospectives += 1
+        elif VisibleStoryIssue.STALE_DATED_CONTEXT.value in codes:
+            stale_dated_contexts += 1
+        if topic_violation:
+            topic_binding_violations += 1
 
+        headline_key = _normalize(headline)
+        summary_key = _normalize(summary)
         if headline_key in seen_headlines:
             duplicate_headlines += 1
         else:
@@ -390,30 +272,48 @@ def validate_html(
             duplicate_content += 1
         else:
             seen_content.add(content_key)
+
         if topic == PSAT_TOPIC:
             combined = f"{headline}\n{summary}".casefold()
             for forbidden in PSAT_FORBIDDEN:
                 if forbidden.casefold() in combined:
                     psat_forbidden_hits.append(forbidden)
 
+        # Guard against a shared decision rejection that lacks a legacy public
+        # FEED_QUALITY code. Production must fail closed rather than silently pass.
+        if not decision.accepted and not (codes & issue_values) and _FQ_STALE_SPORTS not in codes:
+            context_dependent_summaries += 1
+
     if headline_summary_collisions:
-        raise ValueError(f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}")
+        raise ValueError(
+            f"FEED_QUALITY_HEADLINE_SUMMARY_COLLISION:{headline_summary_collisions}"
+        )
     if context_dependent_headlines:
-        raise ValueError(f"FEED_QUALITY_CONTEXT_DEPENDENT_HEADLINE:{context_dependent_headlines}")
+        raise ValueError(
+            f"FEED_QUALITY_CONTEXT_DEPENDENT_HEADLINE:{context_dependent_headlines}"
+        )
     if context_dependent_summaries:
-        raise ValueError(f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}")
+        raise ValueError(
+            f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}"
+        )
     if visible_metadata_issues:
         raise ValueError(f"FEED_QUALITY_VISIBLE_METADATA:{visible_metadata_issues}")
     if non_event_analytical_summaries:
-        raise ValueError(f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}")
+        raise ValueError(
+            f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
+        )
     if conditional_analytical_summaries:
-        raise ValueError(f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}")
+        raise ValueError(
+            f"FEED_QUALITY_CONDITIONAL_ANALYTICAL_SUMMARY:{conditional_analytical_summaries}"
+        )
     if malformed_visible_texts:
         raise ValueError(f"FEED_QUALITY_MALFORMED_VISIBLE_TEXT:{malformed_visible_texts}")
     if mixed_event_summaries:
         raise ValueError(f"FEED_QUALITY_MIXED_EVENT_SUMMARY:{mixed_event_summaries}")
     if stale_sports_retrospectives:
-        raise ValueError(f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}")
+        raise ValueError(
+            f"FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE:{stale_sports_retrospectives}"
+        )
     if stale_dated_contexts:
         raise ValueError(f"FEED_QUALITY_STALE_DATED_CONTEXT:{stale_dated_contexts}")
     if topic_binding_violations:
@@ -425,13 +325,18 @@ def validate_html(
     if duplicate_content:
         raise ValueError(f"FEED_QUALITY_DUPLICATE_CONTENT:{duplicate_content}")
     if psat_forbidden_hits:
-        raise ValueError("FEED_QUALITY_PSAT_FALSE_POSITIVE:" + ",".join(sorted(set(psat_forbidden_hits))))
+        raise ValueError(
+            "FEED_QUALITY_PSAT_FALSE_POSITIVE:"
+            + ",".join(sorted(set(psat_forbidden_hits)))
+        )
 
     duplicate_sources = 0
     duplicate_source_content = 0
     stale_source_urls = 0
     if source_audit is not None:
-        duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(stories, source_audit)
+        duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(
+            stories, source_audit
+        )
 
     return {
         "status": "PASS",
@@ -455,7 +360,9 @@ def validate_html(
         "duplicate_sources": duplicate_sources,
         "duplicate_source_content": duplicate_source_content,
         "stale_source_urls": stale_source_urls,
-        "visible_source_links": sum(bool(story.get("source_url", "").strip()) for story in stories),
+        "visible_source_links": sum(
+            bool(story.get("source_url", "").strip()) for story in stories
+        ),
         "psat_forbidden_hits": 0,
         "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
     }
@@ -476,8 +383,13 @@ def main() -> None:
     report = validate_html(html, source_audit=source_audit)
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("FEED_QUALITY_PASS " + " ".join(f"{key}={value}" for key, value in report.items() if key != "status"))
+        args.report.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    print(
+        "FEED_QUALITY_PASS "
+        + " ".join(f"{key}={value}" for key, value in report.items() if key != "status")
+    )
 
 
 if __name__ == "__main__":
