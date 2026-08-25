@@ -19,6 +19,8 @@ _SUBJECTLESS_MARKET_HEADLINE_RE = re.compile(
 _MALFORMED_KBO_LEAGUE_YEAR_RE = re.compile(
     r"(?<!\d)\d{3}\s+신한(?:은행)?\s+(?:SOL(?:\s+Bank)?\s+)?KBO리그"
 )
+_GENERIC_LABOR_MANAGEMENT_RE = re.compile(r"^노사(?:는|가|의|,|\s)")
+_REFERENTIAL_REPORT_LEAD_RE = re.compile(r"^(?:같은\s+)?보도(?:는|가)(?:\s|$)")
 
 
 def _orphaned_referential_event(value: str) -> bool:
@@ -26,18 +28,31 @@ def _orphaned_referential_event(value: str) -> bool:
     return _ORPHANED_REFERENTIAL_EVENT_RE.search(normalized) is not None
 
 
+def _orphaned_visible_actor(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    return (
+        _GENERIC_LABOR_MANAGEMENT_RE.search(normalized) is not None
+        or _REFERENTIAL_REPORT_LEAD_RE.search(normalized) is not None
+    )
+
+
 def context_dependent_headline(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
     return (
         _impl.context_dependent_headline(normalized)
         or _orphaned_referential_event(normalized)
+        or _orphaned_visible_actor(normalized)
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
     )
 
 
 def context_dependent_summary(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
-    return _impl.context_dependent_summary(normalized) or _orphaned_referential_event(normalized)
+    return (
+        _impl.context_dependent_summary(normalized)
+        or _orphaned_referential_event(normalized)
+        or _orphaned_visible_actor(normalized)
+    )
 
 
 def malformed_visible_text(value: str) -> bool:
