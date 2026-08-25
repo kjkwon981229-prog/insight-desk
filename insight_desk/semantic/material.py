@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import StrEnum
 from functools import lru_cache
 from typing import Mapping
@@ -180,6 +181,7 @@ def assess_material_event(
                 summary=text,
                 source_text=text,
                 subject=fact.subject,
+                now=datetime.now(timezone.utc),
             )
         )
         if not admission.accepted:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 # Low-level deterministic detectors remain public for compatibility. Policy
 # composition moved to story_admission; this module is now only a detector façade
 # plus the legacy visible-story adapter.
@@ -20,6 +22,7 @@ def visible_story_issues(
         summary=summary,
         source_text=summary,
         stage=StoryAdmissionStage.VISIBLE,
+        now=datetime.now(timezone.utc),
     )
     known = {item.value: item for item in VisibleStoryIssue}
     return tuple(

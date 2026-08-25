@@ -49,9 +49,12 @@ class StoryAdmissionDecision:
 
 _KBO_TOPIC_NAMES = frozenset({"KBO·한화 이글스", "kbo_hanwha"})
 _KPOP_TOPIC_NAMES = frozenset({"엔터·음악·K-POP", "kpop"})
+_GENERIC_REFERENTIAL_SUBJECTS = frozenset(
+    {"그", "그가", "그는", "그녀", "그녀가", "그녀는", "이들", "이들이", "이들은"}
+)
 _KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
 _KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
-_KBO_BASEBALL_EVENT_CUES = (
+_KBO_COMPETITIVE_EVENT_CUES = (
     "경기",
     "승리",
     "패배",
@@ -68,20 +71,14 @@ _KBO_BASEBALL_EVENT_CUES = (
     "부상",
     "관중",
     "경기 시간",
-    "KBO",
-    "프로야구",
     "퓨처스리그",
     "기록",
 )
-_KBO_NON_BASEBALL_PARTNERSHIP_CUES = (
-    "의료지원",
-    "협력병원",
-    "한의치료",
-    "병원",
-)
+_KBO_NON_BASEBALL_PARTNERSHIP_CUES = ("의료지원", "협력병원", "한의치료", "병원")
 _KBO_RANK_CUES = ("순위", "리그 1위", "리그 2위", "리그 3위", "리그 4위", "리그 5위")
+_KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
 _HANWHA_OPPONENT_RE = re.compile(
-    r"한화(?:\s+이글스)?(?:전|와의\s+경기|와\s+경기|와의\s+맞대결)"
+    r"한화(?:\s+이글스)?(?:전|와의\s+경기|와\s+경기|와의\s+맞대결|를|을)"
 )
 _KPOP_HEADLINE_SCOPE_CUES = (
     "K-POP",
@@ -126,10 +123,10 @@ _BIO_REPUTATION_CUES = ("글로벌 인기", "인기를 얻", "대표하는", "�
 _SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
 _STALE_SPORTS_RETROSPECTIVE_ENDINGS = ("나왔다", "벌어졌다", "기록됐다", "기록되었다")
 _YEAR_RE = re.compile(r"(?<!\d)(20\d{2})년")
-_RELATIVE_PAST_EVENT_RE = re.compile(r"(?:지난달|지난\s+달|지난주|지난\s+주|지난\s+분기|지난\s+연도)")
-_RELATIVE_PAST_EVENT_PREDICATE_RE = re.compile(
-    r"(?:올렸|내렸|인상했|인하했|동결했|발표했|공개했|출시했|발매했|개최했|"
-    r"체결했|수주했|선정됐|수상했|승리했|패했|기록했|도달했|진입했|투입했|가동했)"
+_STALE_PRIOR_POLICY_EVENT_RE = re.compile(
+    r"(?:지난달|지난\s+달|지난\s+분기|지난\s+연도)"
+    r"[^.!?。！？]{0,140}?(?:기준금리|정책금리|금리)"
+    r"[^.!?。！？]{0,100}?(?:올렸|내렸|인상했|인하했|동결했)"
 )
 _BARE_FORECAST_END_RE = re.compile(
     r"(?:유력시된다|유력하다|유력합니다|전망된다|전망됩니다|예상된다|예상됩니다)$"
@@ -199,29 +196,21 @@ def _stale_sports_retrospective(value: str, *, now: datetime) -> bool:
     return terminal.endswith(_STALE_SPORTS_RETROSPECTIVE_ENDINGS)
 
 
-def _stale_relative_material_event(value: str) -> bool:
-    normalized = " ".join(value.split())
-    match = _RELATIVE_PAST_EVENT_RE.search(normalized)
-    if match is None:
-        return False
-    tail = normalized[match.end() :]
-    return _RELATIVE_PAST_EVENT_PREDICATE_RE.search(tail) is not None
+def _stale_prior_policy_event(value: str) -> bool:
+    return _STALE_PRIOR_POLICY_EVENT_RE.search(" ".join(value.split())) is not None
 
 
 def _bare_unattributed_forecast(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
-    if len(normalized) > 90 or _BARE_FORECAST_END_RE.search(normalized) is None:
+    if len(normalized) > 35 or _BARE_FORECAST_END_RE.search(normalized) is None:
         return False
-    if any(cue in normalized for cue in _FORECAST_ATTRIBUTION_CUES):
-        return False
-    # A measured current event plus a forecast is not a bare forecast card.
-    if re.search(r"\d[\d,.]*\s*(?:%|％|원|조\s*원|억\s*원|명|건|개|배)", normalized):
-        return False
-    return True
+    return not any(cue in normalized for cue in _FORECAST_ATTRIBUTION_CUES)
 
 
 def _kbo_topic_ownership_violation(headline: str, summary: str) -> bool:
     combined = " ".join(f"{headline} {summary}".split())
+    if "한화" not in combined:
+        return True
     if detectors.kbo_hanwha_comparison_only(
         topic="KBO·한화 이글스", headline=headline, summary=summary
     ):
@@ -233,7 +222,7 @@ def _kbo_topic_ownership_violation(headline: str, summary: str) -> bool:
         return True
     if (
         any(cue in combined for cue in _KBO_NON_BASEBALL_PARTNERSHIP_CUES)
-        and not any(cue in combined for cue in _KBO_BASEBALL_EVENT_CUES)
+        and not any(cue in combined for cue in _KBO_COMPETITIVE_EVENT_CUES)
     ):
         return True
     if _HANWHA_OPPONENT_RE.search(combined) is not None and any(
@@ -242,12 +231,21 @@ def _kbo_topic_ownership_violation(headline: str, summary: str) -> bool:
         lead = headline.split(",", 1)[0].strip()
         if "한화" not in lead:
             return True
+    if (
+        detectors.context_dependent_headline(headline)
+        and not any(cue.casefold() in headline.casefold() for cue in _KBO_HEADLINE_SCOPE_CUES)
+    ):
+        return True
     return False
 
 
 def _kpop_topic_ownership_violation(headline: str) -> bool:
     folded = headline.casefold()
-    return not any(cue.casefold() in folded for cue in _KPOP_HEADLINE_SCOPE_CUES)
+    if any(cue.casefold() in folded for cue in _KPOP_HEADLINE_SCOPE_CUES):
+        return False
+    # A named K-culture venue/event with an explicit exhibition is a valid
+    # entertainment event even when the compact headline omits the word K-POP.
+    return not ("k-문화" in folded and "전시" in headline)
 
 
 def _freshness_codes(value: str, *, now: datetime) -> tuple[bool, tuple[str, ...]]:
@@ -257,7 +255,7 @@ def _freshness_codes(value: str, *, now: datetime) -> tuple[bool, tuple[str, ...
         detectors.stale_explicit_past_event_text(value, now=now)
         or detectors.stale_relative_past_event_text(value)
         or detectors.stale_relative_period_event_text(value)
-        or _stale_relative_material_event(value)
+        or _stale_prior_policy_event(value)
     ):
         return True, (_FQ_STALE, _MATERIAL_STALE_EXPLICIT)
     if detectors.stale_day_only_context(value, now=now) or detectors.stale_quarter_context(
@@ -300,12 +298,13 @@ def evaluate_story_admission(
 
     if resolved_stage is StoryAdmissionStage.MATERIAL:
         text = source_text or summary
-        if detectors.context_dependent_summary(text):
+        if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS or detectors.context_dependent_summary(text):
             reject(StoryAdmissionReason.STANDALONE_COMPLETENESS, _FQ_CONTEXT_SUMMARY, _MATERIAL_CONTEXT)
         if detectors.visible_metadata_text(text):
             reject(StoryAdmissionReason.METADATA, _FQ_METADATA, _MATERIAL_NON_EVENT)
         if detectors.malformed_visible_text(text):
             reject(StoryAdmissionReason.MALFORMED, _FQ_MALFORMED, _MATERIAL_CONTEXT)
+            reasons.append(StoryAdmissionReason.STANDALONE_COMPLETENESS)
         if detectors.conditional_analytical_text(text):
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL, _MATERIAL_CONDITIONAL)
         if detectors.non_event_analytical_text(text):
@@ -336,6 +335,7 @@ def evaluate_story_admission(
         reject(StoryAdmissionReason.METADATA, _FQ_METADATA)
     if detectors.malformed_visible_text(headline) or detectors.malformed_visible_text(visible_text):
         reject(StoryAdmissionReason.MALFORMED, _FQ_MALFORMED)
+        reasons.append(StoryAdmissionReason.STANDALONE_COMPLETENESS)
     if detectors.conditional_analytical_text(visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL)
     if detectors.non_event_analytical_text(visible_text):
@@ -349,9 +349,6 @@ def evaluate_story_admission(
     stale, stale_codes = _freshness_codes(visible_text, now=reference)
     if stale:
         reject(StoryAdmissionReason.FRESHNESS, *stale_codes)
-        # A stale/background proposition promoted as today's visible event is also a
-        # centrality failure. Keeping this additive reason makes the policy explicit
-        # without changing any legacy FEED_QUALITY error surface.
         reasons.append(StoryAdmissionReason.EVENT_CENTRALITY)
 
     if _bare_unattributed_forecast(visible_text):
@@ -373,9 +370,6 @@ def evaluate_story_admission(
     )
 
 
-# The detector module is a byte-preserved extraction of the former feed_quality
-# implementation. Replace its old composite entry point at runtime so there is no
-# second active admission path; all callers converge here.
 def _detector_visible_story_issues(*, topic: str, headline: str, summary: str):
     decision = evaluate_story_admission(
         topic=topic,
@@ -388,4 +382,7 @@ def _detector_visible_story_issues(*, topic: str, headline: str, summary: str):
     return tuple(known[code] for code in decision.compatibility_codes if code in known)
 
 
+# The detector module is a byte-preserved extraction of the former feed_quality
+# implementation. Replace its composite entry point so there is no second active
+# admission path even when callers import the detector module directly.
 detectors.visible_story_issues = _detector_visible_story_issues
