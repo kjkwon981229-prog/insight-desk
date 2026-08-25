@@ -9,7 +9,11 @@ from insight_desk.generation_core import (
     GenerationRequest,
     Groq20BBriefingGenerator as _CoreGroq20BBriefingGenerator,
 )
-from insight_desk.story_admission import StoryAdmissionStage, evaluate_story_admission
+from insight_desk.story_admission import (
+    StoryAdmissionReason,
+    StoryAdmissionStage,
+    evaluate_story_admission,
+)
 
 
 _TOPIC_NAMES = {
@@ -21,16 +25,37 @@ _TOPIC_NAMES = {
 
 
 def validate_story_admission(request: GenerationRequest, draft: GeneratedDraft) -> None:
-    decision = evaluate_story_admission(
-        topic=_TOPIC_NAMES.get(request.event.topic_id, request.event.topic_id),
+    topic = _TOPIC_NAMES.get(request.event.topic_id, request.event.topic_id)
+    visible_decision = evaluate_story_admission(
+        topic=topic,
         headline=draft.headline,
         summary=draft.summary,
         source_text=request.evidence_text,
         stage=StoryAdmissionStage.VISIBLE,
     )
-    if not decision.accepted:
-        reasons = ",".join(reason.value for reason in decision.reasons)
-        raise GenerationContractError(f"story admission rejected generated draft: {reasons}")
+
+    # The visible rewrite may omit a stale date phrase that is present in the
+    # event evidence. Reuse the same shared decision for the evidence surface and
+    # project only FRESHNESS. Other evidence-side reasons are intentionally not
+    # promoted: descriptive or historical background remains allowed when the
+    # primary event itself is current.
+    evidence_decision = evaluate_story_admission(
+        topic=topic,
+        headline=draft.headline,
+        summary=request.evidence_text,
+        source_text=request.evidence_text,
+        stage=StoryAdmissionStage.VISIBLE,
+    )
+    evidence_stale = StoryAdmissionReason.FRESHNESS in evidence_decision.reasons
+
+    if not visible_decision.accepted or evidence_stale:
+        reasons = list(visible_decision.reasons)
+        if evidence_stale and StoryAdmissionReason.FRESHNESS not in reasons:
+            reasons.append(StoryAdmissionReason.FRESHNESS)
+        reason_text = ",".join(reason.value for reason in reasons)
+        raise GenerationContractError(
+            f"story admission rejected generated draft: {reason_text}"
+        )
 
 
 class Groq20BBriefingGenerator(_CoreGroq20BBriefingGenerator):
