@@ -76,6 +76,7 @@ build_rendered_briefing
 render_briefing_html
 ContractBundle
 default_news_discovery
+discovery.search(
 for event in semantic_result.events:
     event_topic_relevant(
     topic_relevant=event_relevant,
@@ -94,6 +95,7 @@ for event in semantic_result.events:
     "generation_stats"
     "rendered_sources"
     "tool_usage": tool_usage
+    "discovery": discovery.route_stats
 """
 
 
