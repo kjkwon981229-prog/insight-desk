@@ -18,6 +18,7 @@ from insight_desk.providers.transport import ProviderTransportError
 
 
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+HEADLINE = "네오팩토리 AI 공장 구축 사업 15억달러 수주"
 
 
 def request() -> GenerationRequest:
@@ -70,7 +71,7 @@ class HealthyAlternate:
         self.calls += 1
         return GeneratedDraft(
             event_id=item.event.event_id,
-            headline=TEXT,
+            headline=HEADLINE,
             summary=TEXT,
             evidence_ids=item.evidence_ids,
         )
@@ -97,7 +98,7 @@ class Phase12BGenerationCircuitTests(unittest.TestCase):
 
         self.assertEqual(transport.calls, 1)
         self.assertEqual(alternate.calls, 1)
-        self.assertEqual(result.draft.headline, TEXT)
+        self.assertEqual(result.draft.headline, HEADLINE)
         self.assertEqual(result.attempts[0].error_code, "rate_limited:429")
 
     def test_recovery_layer_wires_optional_gemini_without_removing_exact_fallback(self) -> None:

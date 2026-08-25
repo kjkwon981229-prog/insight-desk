@@ -87,10 +87,10 @@ def request(event_id: str, text: str) -> GenerationRequest:
     )
 
 
-def candidate(event_id: str, text: str):
+def candidate(event_id: str, text: str, *, headline: str):
     return produce_phase7_entry_candidate(
         request(event_id, text),
-        primary_generator=Generator(headline=text, summary=text),
+        primary_generator=Generator(headline=headline, summary=text),
         primary_verifier=Verifier(
             CLOUDFLARE_VERIFIER_ID,
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
@@ -107,8 +107,9 @@ def candidate(event_id: str, text: str):
 class Phase8EndToEndTests(unittest.TestCase):
     def test_verified_candidate_flows_to_locked_pwa_html_and_unpublishable_item_is_omitted(self) -> None:
         accepted_text = "네오팩토리가 AI 공장 구축 사업을 수주했다."
+        accepted_headline = "네오팩토리 AI 공장 구축 사업 수주"
         rejected_text = "검증되지 않은 별도 사건이다."
-        accepted = candidate("event:accepted", accepted_text)
+        accepted = candidate("event:accepted", accepted_text, headline=accepted_headline)
         rejected = UnpublishableCandidate("event:rejected")
 
         rendered = build_rendered_briefing(

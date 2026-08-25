@@ -62,7 +62,7 @@ class HealthyGenerator:
         self.calls += 1
         return GeneratedDraft(
             event_id=item.event.event_id,
-            headline=TEXT,
+            headline=FALLBACK_HEADLINE,
             summary=TEXT,
             evidence_ids=item.evidence_ids,
         )
