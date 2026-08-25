@@ -26,7 +26,7 @@ _LOCATION_ALIASES = {
     "서울잠실": ("잠실", "잠실야구장"),
     "고척": ("고척", "고척스카이돔", "고척 스카이돔"),
     "수원": ("수원", "수원KT위즈파크", "KT위즈파크", "kt wiz park"),
-    "광주": ("광주", "기아챔피언스필드", "광주-기아 챔피언스 필드", "광주기아챔피언스필드"),
+    "광주": ("광주", "기아챔피언스필드", "광주-기아챔피언스 필드", "광주기아챔피언스필드"),
     "대구": ("대구", "대구삼성라이온즈파크", "삼성라이온즈파크"),
     "부산": ("부산", "사직", "사직야구장"),
     "창원": ("창원", "창원NC파크", "NC파크"),
@@ -66,7 +66,35 @@ def _locations(text: str) -> frozenset[str]:
     )
 
 
+def _outcome_subject_team(
+    text: str,
+    teams: frozenset[str],
+    cues: tuple[str, ...],
+) -> str | None:
+    """Resolve an explicitly grammatical outcome subject independent of opponent word order."""
+
+    normalized = " ".join(text.split())
+    if len(teams) != 2 or not normalized:
+        return None
+    cue_surface = "|".join(re.escape(cue) for cue in cues)
+    matched: set[str] = set()
+    for team in teams:
+        for alias in sorted(_KBO_TEAM_ALIASES[team], key=len, reverse=True):
+            pattern = (
+                rf"{re.escape(alias)}(?:은|는|이|가)"
+                rf"[^.!?。！？]{{0,70}}?(?:{cue_surface})"
+            )
+            if re.search(pattern, normalized, flags=re.IGNORECASE):
+                matched.add(team)
+                break
+    return next(iter(matched)) if len(matched) == 1 else None
+
+
 def _winning_team(text: str, teams: frozenset[str]) -> str | None:
+    explicit_subject = _outcome_subject_team(text, teams, _WIN_CUES)
+    if explicit_subject is not None:
+        return explicit_subject
+
     normalized = " ".join(text.split())
     if len(teams) != 2 or not normalized:
         return None
@@ -93,6 +121,10 @@ def _winning_team(text: str, teams: frozenset[str]) -> str | None:
 
 
 def _losing_team(text: str, teams: frozenset[str]) -> str | None:
+    explicit_subject = _outcome_subject_team(text, teams, _LOSS_CUES)
+    if explicit_subject is not None:
+        return explicit_subject
+
     normalized = " ".join(text.split())
     if len(teams) != 2 or not normalized:
         return None
