@@ -27,7 +27,7 @@ _CURRENT_WEEK_AGGREGATE_CUES = (
     "주간 기록",
 )
 _PRIOR_PERIOD_POLICY_EVENT_RE = re.compile(
-    r"(?:지난달|지난\s+달|지난\s+분기|지난\s+연도)"
+    r"(?:지난달|지난\s+달|지난\s+(?:1[0-2]|[1-9])월|지난\s+분기|지난\s+연도)"
     r"[^!?。！？]{0,180}?(?:기준금리|정책금리|금리)"
     r"[^!?。！？]{0,120}?(?:올렸|내렸|인상했|인하했|동결했)"
 )
@@ -101,6 +101,7 @@ _PRIMARY_ANALYTICAL_CUES = (
     "견해가 엇갈",
     "시장 무게중심",
     "판단이 우세",
+    "의미로 풀이",
     "논쟁",
 )
 _PRIMARY_ABSTRACT_RESPONSE_CUES = ("변화", "체계", "환경", "상황", "흐름")
@@ -167,6 +168,17 @@ _PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
     r"(?:현상|흐름|양상|움직임)(?:이|가)\s+[^.!?。！？]{0,100}?"
     r"(?:나타나고|이어지고|강화되고|확산되고)\s+있(?:다|습니다)$"
 )
+_PRIMARY_PERFORMANCE_EVALUATION_RE = re.compile(
+    r"(?:연기|감정선|연기자|배우)[^.!?。！？]{0,180}?"
+    r"(?:가능성|역량|매력)[^.!?。！？]{0,80}?"
+    r"(?:드러냈다|보여줬다|보여주었다|입증했다)$"
+)
+_PRIMARY_CAREER_HISTORY_RE = re.compile(
+    r"(?:출신|데뷔\s+이후)[^.!?。！？]{0,180}?"
+    r"(?:가수|배우|연기자|방송인)[^.!?。！？]{0,180}?"
+    r"(?:활동\s+분야|활동\s+영역|분야|영역)[^.!?。！？]{0,80}?"
+    r"(?:넓혀왔다|넓혀\s+왔다|확장해왔다|확장해\s+왔다)$"
+)
 _ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
     r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
     r"(?:전망했다|예상했다|내다봤다)"
@@ -203,6 +215,10 @@ _STALE_DAY_COMPLETED_EVENT_ALIASES = (
     ("운영하였다", "진행했다"),
     ("실시했다", "진행했다"),
     ("실시하였다", "진행했다"),
+    ("제외했다", "진행했다"),
+    ("제외하였다", "진행했다"),
+    ("말소했다", "진행했다"),
+    ("등록했다", "진행했다"),
 )
 _SAME_YEAR_EXPLICIT_DATE_RE = re.compile(
     r"(?<!\d)(20\d{2})년\s*(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일"
@@ -232,6 +248,7 @@ _SAME_YEAR_DATED_EVENT_CUES = (
     "상승",
     "하락",
 )
+_EXPLICIT_DAY_RE = re.compile(r"(?<!\d)(?:[0-2]?\d|3[01])일")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 
 
@@ -293,6 +310,13 @@ def _primary_non_event_state(value: str) -> bool:
     if _PRIMARY_REFERENTIAL_PLAN_RE.search(normalized) is not None:
         return True
     if _PRIMARY_UNATTRIBUTED_STATE_RE.search(normalized) is not None:
+        return True
+    if (
+        _PRIMARY_PERFORMANCE_EVALUATION_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if _PRIMARY_CAREER_HISTORY_RE.search(normalized) is not None:
         return True
     if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
         return True
