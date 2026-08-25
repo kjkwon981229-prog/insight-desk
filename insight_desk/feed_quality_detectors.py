@@ -21,6 +21,11 @@ _MALFORMED_KBO_LEAGUE_YEAR_RE = re.compile(
 )
 _GENERIC_LABOR_MANAGEMENT_RE = re.compile(r"^노사(?:는|가|의|,|\s)")
 _REFERENTIAL_REPORT_LEAD_RE = re.compile(r"^(?:같은\s+)?보도(?:는|가)(?:\s|$)")
+_GENERIC_COMPANY_LEAD_RE = re.compile(r"^(?:(?:이|해당|그)\s+)?회사(?:는|가|의)(?:\s|$)")
+_SUBJECTLESS_STOCK_TO_COMPANY_RE = re.compile(
+    r"^주가(?:는|가)?[^.!?。！？,，]{0,100}(?:가운데|상황에서|속에서)?\s*[,，]\s*"
+    r"(?:(?:이|해당|그)\s+)?회사(?:는|가|의)(?:\s|$)"
+)
 _ORPHANED_TEST_REFERENCE_RE = re.compile(r"(?:^|\s)해당\s+테스트(?:에|에서|를|는|가|의|\s)")
 _INTERPRETIVE_BACKGROUND_END_RE = re.compile(
     r"(?:상징적으로\s+)?(?:드러낸|보여주는)\s+(?:표현|사례|대목)(?:이다|입니다)$"
@@ -48,6 +53,8 @@ def _orphaned_visible_actor(value: str) -> bool:
     return (
         _GENERIC_LABOR_MANAGEMENT_RE.search(normalized) is not None
         or _REFERENTIAL_REPORT_LEAD_RE.search(normalized) is not None
+        or _GENERIC_COMPANY_LEAD_RE.search(normalized) is not None
+        or _SUBJECTLESS_STOCK_TO_COMPANY_RE.search(normalized) is not None
     )
 
 
