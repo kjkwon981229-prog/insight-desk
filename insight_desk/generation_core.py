@@ -277,6 +277,7 @@ class PreservationIssueCode(StrEnum):
     TEMPORAL_RELATION_MISMATCH = "temporal_relation_mismatch"
     ARGUMENT_ROLE_MISMATCH = "argument_role_mismatch"
     NOVEL_ATTRIBUTION = "novel_attribution"
+    OUTCOME_FINALITY_MISMATCH = "outcome_finality_mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,6 +343,13 @@ _ATTRIBUTION_ACTOR_RE = re.compile(
     r"(?P<actor>[가-힣A-Za-z0-9·&-]+(?:\s+[가-힣A-Za-z0-9·&-]+){0,4}?)"
     r"(?:에|측에)\s+따르면"
 )
+_GAME_SCORE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:대|[-:])\s*(\d{1,2})(?!\d)")
+_FINAL_GAME_OUTCOME_RE = re.compile(r"(?:승리|이겼|이기고|꺾(?:었다|고|으며)|제압|패배|졌다|패했다)")
+_INTERMEDIATE_GAME_STATE_RE = re.compile(
+    r"(?:달아났|앞섰|리드(?:를|가|해|하며|했다)?|점수차|추가점|추가\s+득점|"
+    r"득점하며|득점해|벌렸|벌리며|점수를\s+냈)"
+)
+_SENTENCE_RE = re.compile(r"[^.!?。！？\n]+(?:[.!?。！？]|$)")
 
 
 def _date_atoms(text: str) -> tuple[str, ...]:
@@ -425,6 +433,46 @@ def _novel_attribution_actors(source: str, generated: str) -> tuple[str, ...]:
     return tuple(sorted(actor for actor in actors if actor not in source_normalized))
 
 
+def _score_atom(match: re.Match[str]) -> str:
+    return "-".join(str(value) for value in sorted(int(item) for item in match.groups()))
+
+
+def _score_contexts(text: str) -> dict[str, tuple[str, ...]]:
+    contexts: dict[str, list[str]] = {}
+    for sentence_match in _SENTENCE_RE.finditer(text):
+        sentence = sentence_match.group(0).strip()
+        if not sentence:
+            continue
+        for score_match in _GAME_SCORE_RE.finditer(sentence):
+            contexts.setdefault(_score_atom(score_match), []).append(sentence)
+    return {key: tuple(values) for key, values in contexts.items()}
+
+
+def _outcome_finality_mismatches(source: str, generated: str) -> tuple[str, ...]:
+    """Reject a measured in-game score when generation promotes it to a completed result.
+
+    The score itself may be copied exactly and still change meaning. A source sentence such as
+    `7-1로 달아났다` is an intermediate game state, not evidence that the game ended 7-1. This
+    detector only fires when generated text asserts a final outcome for the same score while the
+    cited source has an intermediate-state cue and no final-outcome cue for that score.
+    """
+
+    source_contexts = _score_contexts(source)
+    generated_contexts = _score_contexts(generated)
+    mismatches: list[str] = []
+    for score, generated_sentences in generated_contexts.items():
+        if not any(_FINAL_GAME_OUTCOME_RE.search(sentence) for sentence in generated_sentences):
+            continue
+        source_sentences = source_contexts.get(score, ())
+        if not source_sentences:
+            continue
+        if any(_FINAL_GAME_OUTCOME_RE.search(sentence) for sentence in source_sentences):
+            continue
+        if any(_INTERMEDIATE_GAME_STATE_RE.search(sentence) for sentence in source_sentences):
+            mismatches.append(score)
+    return tuple(sorted(set(mismatches)))
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -432,9 +480,10 @@ def validate_preservation(
     """Deterministically reject source-literal and measured relation violations before verification.
 
     This gate blocks novel event/evidence references, dates, numeric expressions, quoted text,
-    measured temporal-direction changes, measured definition-role inversions, and the explicit
-    NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not pretend to prove general
-    semantic support; that remains the frozen Cloudflare + local mDeBERTa verification role.
+    measured temporal-direction changes, definition-role inversions, source outcome-finality
+    changes, and the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not
+    pretend to prove general semantic support; that remains the frozen Cloudflare + local mDeBERTa
+    verification role.
     """
 
     issues: list[PreservationIssue] = []
@@ -484,6 +533,11 @@ def validate_preservation(
     for value in _novel_attribution_actors(source, generated):
         issues.append(
             PreservationIssue(PreservationIssueCode.NOVEL_ATTRIBUTION, value)
+        )
+
+    for value in _outcome_finality_mismatches(source, generated):
+        issues.append(
+            PreservationIssue(PreservationIssueCode.OUTCOME_FINALITY_MISMATCH, value)
         )
 
     for value in _quoted_atoms(generated):

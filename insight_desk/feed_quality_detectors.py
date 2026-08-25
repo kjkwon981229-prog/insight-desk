@@ -193,6 +193,19 @@ _PRIMARY_STATIC_RULE_ENDINGS = (
     "제한된다",
     "제한됩니다",
 )
+_PRIMARY_STATIC_ASSET_CLASSIFICATION_RE = re.compile(
+    r"(?:안전자산|위험자산)(?:으)?로\s+분류[^.!?。！？]{0,180}?"
+    r"(?:\d{1,3}\s*%|전액)[^.!?。！？]{0,100}?"
+    r"(?:편입|투자)[^.!?。！？]{0,70}?(?:가능하다|가능합니다|할\s+수\s+있다|할\s+수\s+있습니다)$"
+)
+_PRIMARY_AI_TREND_STRATEGY_RE = re.compile(
+    r"(?:개발자|연구자)[^.!?。！？]{0,160}?(?:늘어나|증가하|확산되)[^.!?。！？]{0,180}?"
+    r"(?:전략|흐름|움직임)(?:이|가)\s+(?:등장|나타나|확산)[^.!?。！？]{0,30}?(?:했다|한다|하고\s+있다|하고\s+있습니다)$"
+)
+_PRIMARY_PROMOTIONAL_ROLLUP_RE = re.compile(
+    r"(?:이어지는|연이은)\s+(?:컴백|복귀|발매|공개)\s+소식[^.!?。！？]{0,180}?"
+    r"(?:장식|달구|기대감|관심)[^.!?。！？]{0,80}?(?:있다|있습니다|한다|합니다)$"
+)
 _PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
     r"(?:현상|흐름|양상|움직임)(?:이|가)\s+[^.!?。！？]{0,100}?"
     r"(?:나타나고|이어지고|강화되고|확산되고)\s+있(?:다|습니다)$"
@@ -339,6 +352,21 @@ def _primary_non_event_state(value: str) -> bool:
     if (
         any(cue in normalized for cue in _PRIMARY_STATIC_RULE_CUES)
         and normalized.endswith(_PRIMARY_STATIC_RULE_ENDINGS)
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_STATIC_ASSET_CLASSIFICATION_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_AI_TREND_STRATEGY_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_PROMOTIONAL_ROLLUP_RE.search(normalized) is not None
         and _EXPLICIT_DAY_RE.search(normalized) is None
     ):
         return True

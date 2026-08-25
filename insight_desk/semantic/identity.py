@@ -7,6 +7,7 @@ from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, EventFact, IdentityDecision, VerificationCheck
 
+from .baseball_identity import same_game_result_fingerprint
 from .events import compare_candidate_identity
 
 
@@ -219,10 +220,10 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
     Event identity is not ordinary document equivalence: one report may contain more detail than
     another report about the same event. This anchor never overrides deterministic identity
     conflicts upstream. It only permits asymmetric entailment to receive the full two-verifier
-    check. The historical large-number and mixed-script paths remain unchanged. Baseball box-score
-    detail gets one narrow additional path only when at least four unit-bound stats overlap at 80%
-    or better and at least two non-stat player/game-context anchors also match. Every path still
-    requires both independent verifier slots before any merge.
+    check. The historical large-number and mixed-script paths remain unchanged. Baseball identity
+    gets two narrow additional paths: a detailed box-score fingerprint or a reciprocal final-game
+    score with the same two teams, day, and venue. Every path still requires both independent
+    verifier slots before any merge.
     """
 
     left_lexical = _identity_lexical_anchors(left_text)
@@ -233,6 +234,9 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
         return len(shared_lexical) >= 4
 
     if _has_shared_baseball_stat_fingerprint(left_text, right_text):
+        return True
+
+    if same_game_result_fingerprint(left_text, right_text):
         return True
 
     smaller_count = min(len(left_lexical), len(right_lexical))

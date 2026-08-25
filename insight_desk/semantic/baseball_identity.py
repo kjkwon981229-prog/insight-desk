@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+import re
+
+
+_SCORE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:대|[-:])\s*(\d{1,2})(?!\d)")
+_DAY_RE = re.compile(r"(?<!\d)([0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
+_OUTCOME_CUES = ("승리", "이겼", "이기고", "꺾", "제압", "패배", "졌다", "패했다")
+_KBO_TEAM_ALIASES = {
+    "한화": ("한화 이글스", "한화"),
+    "SSG": ("SSG 랜더스", "SSG랜더스", "SSG"),
+    "KIA": ("KIA 타이거즈", "KIA"),
+    "LG": ("LG 트윈스", "LG"),
+    "두산": ("두산 베어스", "두산"),
+    "롯데": ("롯데 자이언츠", "롯데"),
+    "삼성": ("삼성 라이온즈", "삼성"),
+    "KT": ("KT 위즈", "kt wiz", "KT"),
+    "NC": ("NC 다이노스", "NC"),
+    "키움": ("키움 히어로즈", "키움"),
+}
+_LOCATION_ALIASES = {
+    "인천": ("인천", "SSG랜더스필드", "SSG 랜더스필드"),
+    "대전": ("대전", "한화생명 볼파크"),
+    "서울잠실": ("잠실", "잠실야구장"),
+    "고척": ("고척", "고척스카이돔", "고척 스카이돔"),
+    "수원": ("수원", "수원KT위즈파크", "KT위즈파크", "kt wiz park"),
+    "광주": ("광주", "광주-기아 챔피언스 필드", "광주기아챔피언스필드"),
+    "대구": ("대구", "대구삼성라이온즈파크", "삼성라이온즈파크"),
+    "부산": ("부산", "사직", "사직야구장"),
+    "창원": ("창원", "창원NC파크", "NC파크"),
+}
+
+
+def _team_set(text: str) -> frozenset[str]:
+    folded = text.casefold()
+    matched: set[str] = set()
+    for canonical, aliases in _KBO_TEAM_ALIASES.items():
+        if any(alias.casefold() in folded for alias in aliases):
+            matched.add(canonical)
+    return frozenset(matched)
+
+
+def _score_pair(text: str) -> tuple[int, int] | None:
+    match = _SCORE_RE.search(text)
+    if match is None:
+        return None
+    left, right = (int(value) for value in match.groups())
+    return tuple(sorted((left, right)))
+
+
+def _day(text: str) -> int | None:
+    match = _DAY_RE.search(text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _locations(text: str) -> frozenset[str]:
+    folded = text.casefold()
+    return frozenset(
+        canonical
+        for canonical, aliases in _LOCATION_ALIASES.items()
+        if any(alias.casefold() in folded for alias in aliases)
+    )
+
+
+def same_game_result_fingerprint(left_text: str, right_text: str) -> bool:
+    """Recognize one KBO final-result event across winner/loser perspective changes.
+
+    This is only a retrieval/identity anchor. It never declares a merge by itself. Both texts must
+    explicitly name the same two KBO teams, carry the same reciprocal score, the same day, a shared
+    stadium/city anchor, and an outcome predicate. Date/location conflicts therefore remain hard
+    contradictions in the canonical identity layer.
+    """
+
+    left = " ".join(left_text.split())
+    right = " ".join(right_text.split())
+    if not left or not right:
+        return False
+
+    left_teams = _team_set(left)
+    right_teams = _team_set(right)
+    if len(left_teams) != 2 or left_teams != right_teams or "한화" not in left_teams:
+        return False
+
+    left_score = _score_pair(left)
+    right_score = _score_pair(right)
+    if left_score is None or left_score != right_score:
+        return False
+
+    left_day = _day(left)
+    right_day = _day(right)
+    if left_day is None or left_day != right_day:
+        return False
+
+    if not (_locations(left) & _locations(right)):
+        return False
+
+    return any(cue in left for cue in _OUTCOME_CUES) and any(cue in right for cue in _OUTCOME_CUES)
