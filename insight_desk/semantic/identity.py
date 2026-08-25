@@ -80,6 +80,58 @@ _COMMON_IDENTITY_TOKENS = frozenset(
         "규모를",
     }
 )
+_BASEBALL_STAT_RE = re.compile(
+    r"(?<!\d)(\d+(?:\.\d+)?)\s*"
+    r"(이닝|피안타|피홈런|사사구|볼넷|탈삼진|실점|자책점|타수|안타|홈런|타점|득점|도루)"
+)
+_BASEBALL_CONTEXT_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9.+-]*|[가-힣]{2,}")
+_BASEBALL_CONTEXT_SUFFIXES = (
+    "에서",
+    "에게",
+    "으로",
+    "까지",
+    "부터",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "와",
+    "과",
+)
+_BASEBALL_GENERIC_CONTEXT_TOKENS = frozenset(
+    {
+        "프로야구",
+        "경기",
+        "선발",
+        "투수",
+        "타자",
+        "등판",
+        "호투",
+        "기록",
+        "기록했다",
+        "기록한",
+        "동안",
+        "상대로",
+        "상대",
+        "이닝",
+        "피안타",
+        "피홈런",
+        "사사구",
+        "볼넷",
+        "탈삼진",
+        "실점",
+        "자책점",
+        "타수",
+        "안타",
+        "홈런",
+        "타점",
+        "득점",
+        "도루",
+    }
+)
 
 
 def _identity_lexical_anchors(text: str) -> frozenset[str]:
@@ -118,15 +170,59 @@ def _identity_numeric_anchors(text: str) -> frozenset[str]:
     return frozenset(anchors)
 
 
+def _baseball_stat_anchors(text: str) -> frozenset[str]:
+    return frozenset(
+        f"{unit}:{value}"
+        for value, unit in _BASEBALL_STAT_RE.findall(text)
+    )
+
+
+def _baseball_context_anchors(text: str) -> frozenset[str]:
+    anchors: set[str] = set()
+    for raw in _BASEBALL_CONTEXT_TOKEN_RE.findall(text):
+        token = raw.casefold().strip()
+        if not token:
+            continue
+        if _ASCII_IDENTITY_TOKEN_RE.fullmatch(token) is not None:
+            if len(token) < 3:
+                continue
+        else:
+            for suffix in _BASEBALL_CONTEXT_SUFFIXES:
+                if token.endswith(suffix) and len(token) - len(suffix) >= 2:
+                    token = token[: -len(suffix)]
+                    break
+        if token in _COMMON_IDENTITY_TOKENS or token in _BASEBALL_GENERIC_CONTEXT_TOKENS:
+            continue
+        if token.isdigit():
+            continue
+        anchors.add(token)
+    return frozenset(anchors)
+
+
+def _has_shared_baseball_stat_fingerprint(left_text: str, right_text: str) -> bool:
+    left_stats = _baseball_stat_anchors(left_text)
+    right_stats = _baseball_stat_anchors(right_text)
+    smaller_stat_count = min(len(left_stats), len(right_stats))
+    if smaller_stat_count < 4:
+        return False
+    shared_stats = left_stats & right_stats
+    if len(shared_stats) < 4 or len(shared_stats) / smaller_stat_count < 0.80:
+        return False
+
+    shared_context = _baseball_context_anchors(left_text) & _baseball_context_anchors(right_text)
+    return len(shared_context) >= 2
+
+
 def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
     """Return True only for unusually specific cross-source overlap.
 
     Event identity is not ordinary document equivalence: one report may contain more detail than
     another report about the same event. This anchor never overrides deterministic identity
     conflicts upstream. It only permits asymmetric entailment to receive the full two-verifier
-    check. The historical numeric path remains unchanged; a second path covers high-overlap
-    mixed-script event text with multiple shared named anchors and still requires both independent
-    verifier slots before any merge.
+    check. The historical large-number and mixed-script paths remain unchanged. Baseball box-score
+    detail gets one narrow additional path only when at least four unit-bound stats overlap at 80%
+    or better and at least two non-stat player/game-context anchors also match. Every path still
+    requires both independent verifier slots before any merge.
     """
 
     left_lexical = _identity_lexical_anchors(left_text)
@@ -135,6 +231,9 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
     shared_numbers = _identity_numeric_anchors(left_text) & _identity_numeric_anchors(right_text)
     if shared_numbers:
         return len(shared_lexical) >= 4
+
+    if _has_shared_baseball_stat_fingerprint(left_text, right_text):
+        return True
 
     smaller_count = min(len(left_lexical), len(right_lexical))
     if smaller_count == 0 or len(shared_lexical) < 7:
