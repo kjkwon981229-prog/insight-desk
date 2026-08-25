@@ -5,6 +5,9 @@ import re
 
 _BROAD_MARKET_RE = re.compile(r"(?:국내|한국)\s*(?:증시|주식시장)|(?<![가-힣])증시(?![가-힣])")
 _DAY_RE = re.compile(r"(?<!\d)([1-9]|[12]\d|3[01])일")
+_FULL_DATE_RE = re.compile(
+    r"(?:(20\d{2})년\s*)?(?:(1[0-2]|[1-9])월\s*)?([1-9]|[12]\d|3[01])일"
+)
 _CLOSE_RE = re.compile(r"(?:마감|장을\s+마쳤|거래를\s+마쳤|종가)")
 _DIRECTION_RE = re.compile(
     r"(?P<up>상승(?:세)?|반등|올라|오르)|(?P<down>하락(?:세)?|급락|내려|내리)"
@@ -30,22 +33,50 @@ def _broad_market(value: str) -> bool:
     return _BROAD_MARKET_RE.search(_normalized(value)) is not None
 
 
-def market_subject_perspective_compatible(left: str, right: str) -> bool:
-    """Return True only for broad-market versus one named-index perspective.
-
-    This never equates two different named indexes. It exists only to prevent a grammatical
-    perspective difference (for example ``코스피 지수`` versus ``국내 증시``) from becoming a
-    deterministic contradiction before the independent semantic identity checks can run.
-    """
-
+def _market_perspective_compatible(left: str, right: str) -> bool:
     left_kind = _index_kind(left)
     right_kind = _index_kind(right)
-    left_broad = _broad_market(left)
-    right_broad = _broad_market(right)
+    if left_kind is not None and right_kind is not None and left_kind != right_kind:
+        return False
     return bool(
-        (left_kind is not None and right_kind is None and right_broad)
-        or (right_kind is not None and left_kind is None and left_broad)
+        (left_kind is not None and right_kind is None and _broad_market(right))
+        or (right_kind is not None and left_kind is None and _broad_market(left))
     )
+
+
+def market_subject_perspective_compatible(left: str, right: str) -> bool:
+    """Return True only for broad-market versus one named-index subject perspective."""
+
+    return _market_perspective_compatible(left, right)
+
+
+def _date_parts(value: str | None) -> tuple[int | None, int | None, int] | None:
+    normalized = _normalized(value or "")
+    matches = list(_FULL_DATE_RE.finditer(normalized))
+    if len(matches) != 1:
+        return None
+    year, month, day = matches[0].groups()
+    return (
+        int(year) if year is not None else None,
+        int(month) if month is not None else None,
+        int(day),
+    )
+
+
+def _dates_compatible(left: str | None, right: str | None) -> bool:
+    left_parts = _date_parts(left)
+    right_parts = _date_parts(right)
+    if left_parts is None or right_parts is None:
+        return False
+    left_year, left_month, left_day = left_parts
+    right_year, right_month, right_day = right_parts
+    if left_day != right_day:
+        return False
+    if left_month is not None and right_month is not None and left_month != right_month:
+        return False
+    if left_year is not None and right_year is not None and left_year != right_year:
+        return False
+    return True
 
 
 def _close_direction(value: str) -> str | None:
@@ -74,13 +105,21 @@ def same_market_session_fact_perspective(
     left_date: str | None,
     right_date: str | None,
 ) -> bool:
-    """Identify only a same-date close viewed as index versus broad domestic market."""
+    """Identify one close despite grammatical subject and date-surface differences.
 
-    if not market_subject_perspective_compatible(left_subject, right_subject):
+    Fact extractors may choose a causal actor such as ``개인·기관 매수세`` as the subject even
+    when the action explicitly says ``국내 증시가 ... 마쳤다``. Use the complete evidence-bound
+    fact surface for the market perspective, while requiring compatible explicit calendar dates and
+    the same closing direction. The subject-only path remains available as an additional anchor but
+    is not required.
+    """
+
+    if not (
+        _market_perspective_compatible(left_text, right_text)
+        or market_subject_perspective_compatible(left_subject, right_subject)
+    ):
         return False
-    left_date_key = _normalized(left_date or "")
-    right_date_key = _normalized(right_date or "")
-    if not left_date_key or left_date_key != right_date_key:
+    if not _dates_compatible(left_date, right_date):
         return False
     left_direction = _close_direction(left_text)
     right_direction = _close_direction(right_text)
@@ -102,14 +141,7 @@ def same_market_session_close_fingerprint(left_text: str, right_text: str) -> bo
     if len(left_days) != 1 or left_days != right_days:
         return False
 
-    left_kind = _index_kind(left)
-    right_kind = _index_kind(right)
-    if left_kind is not None and right_kind is not None and left_kind != right_kind:
-        return False
-    if not (
-        (left_kind is not None and _broad_market(right))
-        or (right_kind is not None and _broad_market(left))
-    ):
+    if not _market_perspective_compatible(left, right):
         return False
 
     left_direction = _close_direction(left)
