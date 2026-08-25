@@ -118,6 +118,7 @@ def assess_material_event(
     facts: Mapping[str, EventFact],
     evidence: Mapping[str, EvidenceSpan],
     morphology: KiwiMorphologyHelper | None = None,
+    now: datetime | None = None,
 ) -> MaterialEventAssessment:
     if morphology is None:
         try:
@@ -154,7 +155,7 @@ def assess_material_event(
                 summary=admission_text,
                 source_text=admission_text,
                 subject=fact.subject,
-                now=datetime.now(timezone.utc),
+                now=now or datetime.now(timezone.utc),
             )
         )
         if not admission.accepted:
