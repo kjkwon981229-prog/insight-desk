@@ -96,6 +96,11 @@ for event in semantic_result.events:
     "rendered_sources"
     "tool_usage": tool_usage
     "discovery": discovery.route_stats
+    "fact_extraction": extractor.route_stats
+    "acquisition": acquisition_stats
+    "generation": generation_route_stats
+    "verification": verification_stats
+    "identity": identity_stats
 """
 
 
