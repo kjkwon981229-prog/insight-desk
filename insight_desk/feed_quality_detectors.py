@@ -134,9 +134,9 @@ _PRIMARY_METHOD_ENDINGS = (
     "형태다",
     "형태이다",
 )
-_REPORTING_ACTOR_RE = re.compile(
-    r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,160}?"
-    r"(?:발표했다|공개했다|밝혔다|전망했다|예상했다|내다봤다|분석했다|발간했다|공표했다)"
+_ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
+    r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
+    r"(?:전망했다|예상했다|내다봤다)"
 )
 _FORECAST_SURFACE_RE = re.compile(
     r"(?:전망됐|전망된다|전망됩니다|예상됐|예상된다|예상됩니다|유력시된다|유력하다|"
@@ -151,6 +151,17 @@ _FORECAST_EXPLICIT_ATTRIBUTION_CUES = (
     "조사에서는",
     "설문에서",
     "설문에서는",
+)
+_CURRENT_EVENT_BEFORE_OUTLOOK_CUES = (
+    "돌파한",
+    "넘어선",
+    "넘었다",
+    "기록한",
+    "마감한",
+    "상승한",
+    "하락한",
+    "증가한",
+    "감소한",
 )
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 
@@ -181,13 +192,13 @@ def _has_primary_current_event(value: str) -> bool:
     return any(cue in value for cue in _PRIMARY_CURRENT_EVENT_CUES)
 
 
-def _primary_reporting_event(value: str) -> bool:
+def _primary_attributed_forecast(value: str) -> bool:
     normalized = value.rstrip(".!?。！？").rstrip()
-    if _REPORTING_ACTOR_RE.search(normalized) is not None:
+    if _ATTRIBUTED_FORECAST_ACTOR_RE.search(normalized) is not None:
         return True
     return (
         any(cue in normalized for cue in ("조사에서", "설문에서", "보고서에서"))
-        and any(cue in normalized for cue in ("발표", "공개", "응답", "전망", "예상"))
+        and any(cue in normalized for cue in ("응답", "전망", "예상"))
     )
 
 
@@ -219,22 +230,35 @@ def _primary_non_event_state(value: str) -> bool:
     return False
 
 
+def _forecast_has_current_event_before_outlook(sentence: str) -> bool:
+    if "가운데" not in sentence:
+        return False
+    prefix = sentence.split("가운데", 1)[0]
+    return any(char.isdigit() for char in prefix) and any(
+        cue in prefix for cue in _CURRENT_EVENT_BEFORE_OUTLOOK_CUES
+    )
+
+
 def _forecast_sentence_attributed(sentence: str) -> bool:
     if any(cue in sentence for cue in _FORECAST_EXPLICIT_ATTRIBUTION_CUES):
         return True
-    if _REPORTING_ACTOR_RE.search(sentence.rstrip(".!?。！？").rstrip()) is not None:
+    if _ATTRIBUTED_FORECAST_ACTOR_RE.search(sentence.rstrip(".!?。！？").rstrip()) is not None:
         return True
-    return (
+    if (
         "%" in sentence
         and any(cue in sentence for cue in ("응답자", "조사", "설문"))
-    )
+    ):
+        return True
+    return _forecast_has_current_event_before_outlook(sentence)
 
 
 def unattributed_forecast_text(value: str) -> bool:
     """Return true when a visible outlook/consensus claim has no visible source.
 
-    This is a low-level attribution signal. It intentionally does not reject
-    prospective concrete events (for example, an announced album release).
+    A quantified current event may carry a subordinate outlook in the same
+    proposition (for example, debt crossing a measured threshold followed by a
+    consequence outlook). Prospective concrete events such as announced releases
+    are outside this detector.
     """
     for sentence in _sentences(value):
         if _FORECAST_SURFACE_RE.search(sentence) is None:
@@ -296,16 +320,16 @@ def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
 
 
 def non_event_analytical_text(value: str) -> bool:
-    # A visible, attributed reporting event remains the card's primary event even
-    # when a later sentence supplies descriptive background. This is the key
-    # distinction between permitted background and a background proposition that
-    # has replaced the news event itself.
+    # Preserve the established whole-card detector. Only a visibly attributed
+    # forecast/reporting proposition may keep later descriptive background from
+    # turning the whole card into a non-event; generic claims or abstract
+    # analysis are never rescued merely because they end with `밝혔다/분석했다`.
     primary = _primary_sentence(value)
     primary_non_event = _primary_non_event_state(primary)
     if unattributed_forecast_text(value):
         return True
     core_non_event = _core_non_event_analytical_text(value)
-    if core_non_event and _primary_reporting_event(primary) and not primary_non_event:
+    if core_non_event and _primary_attributed_forecast(primary) and not primary_non_event:
         return False
     return core_non_event or primary_non_event
 
