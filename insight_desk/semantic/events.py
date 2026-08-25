@@ -20,6 +20,7 @@ from insight_desk.core import (
 )
 
 from .baseball_identity import same_game_result_fingerprint
+from .market_identity import same_market_session_fact_perspective
 from .material import MaterialEventAssessment, assess_material_event
 
 
@@ -375,6 +376,22 @@ def compare_candidate_identity(
     if left.topic_id == "kbo_hanwha" and same_game_result_fingerprint(
         _fact_identity_surface(left_fact),
         _fact_identity_surface(right_fact),
+    ):
+        left_key = _without_subject(left_key)
+        right_key = _without_subject(right_key)
+
+    # One domestic market close may likewise be written from a named-index perspective or a broad
+    # domestic-market perspective. Relax only that grammatical subject field when the extracted
+    # facts agree on an explicit date and the same closing direction. Different indexes and date,
+    # location, or cause conflicts remain deterministic blocks; a merge still requires the existing
+    # independent semantic identity judgment.
+    if left.topic_id == "economy" and same_market_session_fact_perspective(
+        left_subject=left_fact.subject,
+        right_subject=right_fact.subject,
+        left_text=_fact_identity_surface(left_fact),
+        right_text=_fact_identity_surface(right_fact),
+        left_date=left_fact.event_date,
+        right_date=right_fact.event_date,
     ):
         left_key = _without_subject(left_key)
         right_key = _without_subject(right_key)
