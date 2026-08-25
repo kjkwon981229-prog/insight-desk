@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 
 
 class IdentityPrecheckVerdict(StrEnum):
@@ -48,18 +49,30 @@ def _normalized(value: str | None) -> str | None:
     return normalized or None
 
 
-def _subject_surface_compatible(left: str, right: str) -> bool:
-    """Treat descriptor-only subject expansion as ambiguous, not as an explicit entity conflict.
+_SUBJECT_TOKEN_RE = re.compile(r"[a-z][a-z0-9.+-]*|[가-힣]{2,}")
+_SUBJECT_DESCRIPTOR_TOKENS = frozenset({"소속"})
 
-    Phase 6 currently receives evidence-bound surface subjects rather than a stable entity ID.
-    If every token from one subject also appears in the other, the difference is compatible with
-    an added descriptor (for example ``공간 ax 기업 hdc랩스`` versus
-    ``공간 ax 솔루션 기업 hdc랩스``). Such pairs still require downstream semantic same-event
-    verification; this helper never declares a merge by itself.
+
+def _subject_tokens(value: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in _SUBJECT_TOKEN_RE.findall(value)
+        if token not in _SUBJECT_DESCRIPTOR_TOKENS
+    )
+
+
+def _subject_surface_compatible(left: str, right: str) -> bool:
+    """Treat descriptor/orthography-only subject expansion as ambiguous, not a hard conflict.
+
+    Phase 6 still receives evidence-bound subject surfaces rather than stable entity IDs. Tokenizing
+    punctuation and parenthetical romanization lets forms such as ``SM 유니버스(Universe) 강사진``
+    and ``SM Universe 소속 강사진`` reach the existing semantic same-event judgment. The helper
+    never declares a merge by itself; genuinely different subject tokens remain a deterministic
+    conflict.
     """
 
-    left_tokens = frozenset(left.split())
-    right_tokens = frozenset(right.split())
+    left_tokens = _subject_tokens(left)
+    right_tokens = _subject_tokens(right)
     if not left_tokens or not right_tokens:
         return False
     return left_tokens <= right_tokens or right_tokens <= left_tokens

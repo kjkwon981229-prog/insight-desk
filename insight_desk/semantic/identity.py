@@ -59,6 +59,7 @@ class IdentityResolution:
 
 
 _IDENTITY_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9.+-]*|[가-힣]{2,}|\d[\d,]*(?:\.\d+)?")
+_ASCII_IDENTITY_TOKEN_RE = re.compile(r"[a-z][a-z0-9.+-]*")
 _COMMON_IDENTITY_TOKENS = frozenset(
     {
         "대한",
@@ -85,7 +86,12 @@ def _identity_lexical_anchors(text: str) -> frozenset[str]:
     anchors: set[str] = set()
     for raw in _IDENTITY_TOKEN_RE.findall(text):
         token = raw.casefold().strip()
-        if not token or token[0].isdigit() or len(token) < 3:
+        if not token or token[0].isdigit():
+            continue
+        if _ASCII_IDENTITY_TOKEN_RE.fullmatch(token) is not None:
+            if len(token) < 3:
+                continue
+        elif len(token) < 2:
             continue
         if token in _COMMON_IDENTITY_TOKENS:
             continue
@@ -118,14 +124,27 @@ def has_strong_shared_event_anchor(left_text: str, right_text: str) -> bool:
     Event identity is not ordinary document equivalence: one report may contain more detail than
     another report about the same event. This anchor never overrides deterministic identity
     conflicts upstream. It only permits asymmetric entailment to receive the full two-verifier
-    check when the pair shares a distinctive numeric fact and several lexical anchors.
+    check. The historical numeric path remains unchanged; a second path covers high-overlap
+    mixed-script event text with multiple shared named anchors and still requires both independent
+    verifier slots before any merge.
     """
 
+    left_lexical = _identity_lexical_anchors(left_text)
+    right_lexical = _identity_lexical_anchors(right_text)
+    shared_lexical = left_lexical & right_lexical
     shared_numbers = _identity_numeric_anchors(left_text) & _identity_numeric_anchors(right_text)
-    if not shared_numbers:
+    if shared_numbers:
+        return len(shared_lexical) >= 4
+
+    smaller_count = min(len(left_lexical), len(right_lexical))
+    if smaller_count == 0 or len(shared_lexical) < 7:
         return False
-    shared_lexical = _identity_lexical_anchors(left_text) & _identity_lexical_anchors(right_text)
-    return len(shared_lexical) >= 4
+    shared_named = {
+        token
+        for token in shared_lexical
+        if _ASCII_IDENTITY_TOKEN_RE.fullmatch(token) is not None
+    }
+    return len(shared_named) >= 2 and len(shared_lexical) / smaller_count >= 0.60
 
 
 def _stable_identity_token(*parts: str) -> str:

@@ -134,6 +134,30 @@ _PRIMARY_METHOD_ENDINGS = (
     "형태다",
     "형태이다",
 )
+_PRIMARY_ABSENCE_STATE_ENDINGS = (
+    "발표되지 않았다",
+    "발표되지 않았습니다",
+    "발표되지 않은 상태다",
+    "발표되지 않은 상태입니다",
+    "공개되지 않았다",
+    "공개되지 않았습니다",
+    "공개되지 않은 상태다",
+    "공개되지 않은 상태입니다",
+    "확정되지 않았다",
+    "확정되지 않았습니다",
+    "확정되지 않은 상태다",
+    "확정되지 않은 상태입니다",
+    "결정되지 않았다",
+    "결정되지 않았습니다",
+    "결정되지 않은 상태다",
+    "결정되지 않은 상태입니다",
+    "계획이 없다",
+    "계획은 없다",
+    "계획이 없습니다",
+    "계획은 없습니다",
+    "미정이다",
+    "미정입니다",
+)
 _ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
     r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
     r"(?:전망했다|예상했다|내다봤다)"
@@ -224,6 +248,8 @@ def _primary_non_event_state(value: str) -> bool:
     ):
         return True
     if normalized.endswith(_PRIMARY_METHOD_ENDINGS):
+        return True
+    if normalized.endswith(_PRIMARY_ABSENCE_STATE_ENDINGS):
         return True
     if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
         return True
