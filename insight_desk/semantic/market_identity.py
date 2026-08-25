@@ -4,17 +4,12 @@ import re
 
 
 _BROAD_MARKET_RE = re.compile(r"(?:국내|한국)\s*(?:증시|주식시장)|(?<![가-힣])증시(?![가-힣])")
-_INDEX_RE = re.compile(r"(?i)(?<![A-Za-z가-힣])(?:코스피|KOSPI|코스닥|KOSDAQ)(?![A-Za-z가-힣])")
 _DAY_RE = re.compile(r"(?<!\d)([1-9]|[12]\d|3[01])일")
 _CLOSE_RE = re.compile(r"(?:마감|장을\s+마쳤|거래를\s+마쳤|종가)")
-_UP_CLOSE_RE = re.compile(
-    r"(?:상승(?:세)?(?:한|해|하며|으로)?|올라|오르며|반등해)[^.!?。！？]{0,90}"
-    r"(?:마감|장을\s+마쳤|거래를\s+마쳤)"
+_DIRECTION_RE = re.compile(
+    r"(?P<up>상승(?:세)?|반등|올라|오르)|(?P<down>하락(?:세)?|급락|내려|내리)"
 )
-_DOWN_CLOSE_RE = re.compile(
-    r"(?:하락(?:세)?(?:한|해|하며|으로)?|내려|내리며|급락해)[^.!?。！？]{0,90}"
-    r"(?:마감|장을\s+마쳤|거래를\s+마쳤)"
-)
+_MAX_DIRECTION_TO_CLOSE_CHARS = 50
 
 
 def _normalized(value: str) -> str:
@@ -54,14 +49,20 @@ def market_subject_perspective_compatible(left: str, right: str) -> bool:
 
 
 def _close_direction(value: str) -> str | None:
+    """Resolve the direction nearest the final close cue, not an earlier intraday move."""
+
     normalized = _normalized(value)
-    if _CLOSE_RE.search(normalized) is None:
+    close_matches = list(_CLOSE_RE.finditer(normalized))
+    if not close_matches:
         return None
-    up = _UP_CLOSE_RE.search(normalized) is not None
-    down = _DOWN_CLOSE_RE.search(normalized) is not None
-    if up == down:
+    close = close_matches[-1]
+    directions = list(_DIRECTION_RE.finditer(normalized[: close.start()]))
+    if not directions:
         return None
-    return "up" if up else "down"
+    nearest = directions[-1]
+    if close.start() - nearest.end() > _MAX_DIRECTION_TO_CLOSE_CHARS:
+        return None
+    return "up" if nearest.lastgroup == "up" else "down"
 
 
 def same_market_session_fact_perspective(
