@@ -387,7 +387,7 @@ def judge_same_event_mutual_entailment(
             False,
             "primary_rejected_both_directions",
             secondary_checks,
-            0,
+            primary_checks,
         )
 
     if all(secondary_results) and all(primary_results):
