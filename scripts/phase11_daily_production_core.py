@@ -39,6 +39,7 @@ from insight_desk.semantic import (
     resolve_candidate_pair,
 )
 from insight_desk.semantic.material import MaterialEventVerdict, assess_material_event
+from insight_desk.semantic.visible_identity import visible_event_redundant
 from insight_desk.story_admission import (
     StoryAdmissionInput,
     StoryAdmissionReason,
@@ -453,6 +454,25 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         if not isinstance(prior_event, CandidateEvent):
                             raise AssertionError("published candidate lost event identity provenance")
                         identity_stats["comparisons"] += 1
+                        prior_draft = prior.candidate.final_generation.draft
+                        if visible_event_redundant(
+                            topic_id=topic.topic_id,
+                            prior_headline=prior_draft.headline,
+                            prior_summary=prior_draft.summary,
+                            candidate_headline=visible_headline,
+                            candidate_summary=visible_summary,
+                        ):
+                            identity_stats["same_event"] += 1
+                            attempts.append(_attempt(
+                                topic=topic.topic_id,
+                                query=query,
+                                domain=domain,
+                                stage="event_identity",
+                                status="skip",
+                                reason="visible_event_fingerprint_already_published",
+                            ))
+                            duplicate_event = True
+                            break
                         precheck = compare_candidate_identity(event, prior_event, identity_facts)
                         if precheck.deterministic_block:
                             identity_stats["deterministic_blocks"] += 1
