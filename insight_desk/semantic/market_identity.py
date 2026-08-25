@@ -8,9 +8,11 @@ _DAY_RE = re.compile(r"(?<!\d)([1-9]|[12]\d|3[01])일")
 _FULL_DATE_RE = re.compile(
     r"(?:(20\d{2})년\s*)?(?:(1[0-2]|[1-9])월\s*)?([1-9]|[12]\d|3[01])일"
 )
+_ISO_DATE_RE = re.compile(r"(20\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])")
 _CLOSE_RE = re.compile(r"(?:마감|장을\s+마쳤|거래를\s+마쳤|종가)")
 _DIRECTION_RE = re.compile(
-    r"(?P<up>상승(?:세)?|반등|올라|오르)|(?P<down>하락(?:세)?|급락|내려|내리)"
+    r"(?P<up>상승(?:세)?|반등|올라|오르|오른)|"
+    r"(?P<down>하락(?:세)?|급락|내려|내리|내린)"
 )
 _MAX_DIRECTION_TO_CLOSE_CHARS = 50
 
@@ -52,18 +54,28 @@ def market_subject_perspective_compatible(left: str, right: str) -> bool:
 
 def _date_parts(value: str | None) -> tuple[int | None, int | None, int] | None:
     normalized = _normalized(value or "")
-    matches = list(_FULL_DATE_RE.finditer(normalized))
-    if len(matches) != 1:
-        return None
-    year, month, day = matches[0].groups()
-    return (
-        int(year) if year is not None else None,
-        int(month) if month is not None else None,
-        int(day),
-    )
+    korean = _FULL_DATE_RE.fullmatch(normalized)
+    if korean is not None:
+        year, month, day = korean.groups()
+        return (
+            int(year) if year is not None else None,
+            int(month) if month is not None else None,
+            int(day),
+        )
+    iso = _ISO_DATE_RE.fullmatch(normalized)
+    if iso is not None:
+        year, month, day = iso.groups()
+        return int(year), int(month), int(day)
+    return None
 
 
 def _dates_compatible(left: str | None, right: str | None) -> bool:
+    left_normalized = _normalized(left or "")
+    right_normalized = _normalized(right or "")
+    if not left_normalized or not right_normalized:
+        return False
+    if left_normalized == right_normalized:
+        return True
     left_parts = _date_parts(left)
     right_parts = _date_parts(right)
     if left_parts is None or right_parts is None:
