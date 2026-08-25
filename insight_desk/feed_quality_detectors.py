@@ -130,8 +130,8 @@ def _primary_non_event_state(value: str) -> bool:
     normalized = _primary_sentence(value).rstrip(".!?。！？").rstrip()
     if not normalized:
         return False
-    if _has_primary_current_event(normalized):
-        return False
+    # These are proposition types, so they outrank incidental event words inside
+    # subordinate/background phrases such as `계약 체결 후 ... 충족해야 한다`.
     if _PRIMARY_GOAL_RE.search(normalized) is not None:
         return True
     if normalized.endswith(_PRIMARY_NORMATIVE_ENDINGS):
@@ -142,6 +142,8 @@ def _primary_non_event_state(value: str) -> bool:
         cue in normalized for cue in _PRIMARY_ABSTRACT_RESPONSE_CUES
     ):
         return True
+    if _has_primary_current_event(normalized):
+        return False
     return False
 
 
@@ -197,8 +199,11 @@ def stale_quarter_context(value: str, *, now: datetime | None = None) -> bool:
 
 
 def non_event_analytical_text(value: str) -> bool:
-    primary = _primary_sentence(value)
-    return _core_non_event_analytical_text(primary) or _primary_non_event_state(primary)
+    # Preserve the established whole-card non-event detector because a secondary
+    # proposition can still be card-central when the headline explicitly promotes
+    # it (e.g. statement + unquantified trend). Add the primary-state detector on
+    # top; do not replace the established signal with first-sentence-only logic.
+    return _core_non_event_analytical_text(value) or _primary_non_event_state(value)
 
 
 def publisher_notice_boilerplate(value: str) -> bool:
