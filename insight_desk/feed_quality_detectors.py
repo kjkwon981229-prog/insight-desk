@@ -132,8 +132,6 @@ _PRIMARY_COMPONENT_CONTAINER_CUES = (
     "커리큘럼",
     "항목",
     "내용",
-    "분야",
-    "부문",
 )
 _PRIMARY_COMPONENT_ENDINGS = (
     "포함한다",
@@ -142,8 +140,9 @@ _PRIMARY_COMPONENT_ENDINGS = (
     "구성된다",
     "구성돼 있다",
     "구성되어 있다",
-    "구성했다",
-    "구성하였다",
+)
+_PRIMARY_GENERIC_COMPONENT_SECTION_RE = re.compile(
+    r"^(?:전시\s+)?(?:분야|부문)(?:은|는|이|가)(?:\s|$)"
 )
 _PRIMARY_METHOD_ENDINGS = (
     "방식이다",
@@ -341,6 +340,11 @@ def _primary_non_event_state(value: str) -> bool:
         any(cue in normalized for cue in _PRIMARY_STATIC_RULE_CUES)
         and normalized.endswith(_PRIMARY_STATIC_RULE_ENDINGS)
         and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_GENERIC_COMPONENT_SECTION_RE.search(normalized) is not None
+        and normalized.endswith(("구성했다", "구성하였다"))
     ):
         return True
     if (
