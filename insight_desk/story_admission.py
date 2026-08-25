@@ -4,12 +4,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 import re
+from typing import Mapping
 
 from insight_desk import feed_quality_detectors as detectors
+from insight_desk.core import CandidateEvent, EventFact, EvidenceSpan
 
 
 class StoryAdmissionStage(StrEnum):
     MATERIAL = "material"
+    ROUTING = "routing"
     VISIBLE = "visible"
 
 
@@ -37,6 +40,12 @@ class StoryAdmissionInput:
     source_text: str = ""
     subject: str = ""
     now: datetime | None = None
+    event: CandidateEvent | None = None
+    facts: Mapping[str, EventFact] | None = None
+    evidence: Mapping[str, EvidenceSpan] | None = None
+    intent_anchors: tuple[str, ...] = ()
+    required_intent_terms: tuple[str, ...] = ()
+    event_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +56,9 @@ class StoryAdmissionDecision:
     compatibility_codes: tuple[str, ...] = ()
 
 
+_AI_TECH_TOPIC_ID = "ai_tech"
 _KBO_TOPIC_NAMES = frozenset({"KBO·한화 이글스", "kbo_hanwha"})
+_KBO_TOPIC_ID = "kbo_hanwha"
 _KPOP_TOPIC_NAMES = frozenset({"엔터·음악·K-POP", "kpop"})
 _GENERIC_REFERENTIAL_SUBJECTS = frozenset(
     {"그", "그가", "그는", "그녀", "그녀가", "그녀는", "이들", "이들이", "이들은"}
@@ -143,6 +154,34 @@ _FORECAST_ATTRIBUTION_CUES = (
     "밝혔다",
     "분석했다",
 )
+_HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
+_HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
+    r"한화(?:\s+이글스)?(?:보다(?:는)?|와\s+마찬가지|\s*대비)"
+    r"[^.!?。！？]{0,40}?\d+\s*경기[^.!?。！？]{0,40}?"
+    r"(?:덜|적게|많이|더)\s*(?:경기(?:를)?\s*)?치렀"
+)
+_HANWHA_SUBORDINATE_CONTEXT_CUES = ("가운데", "한편", "사진", "배경")
+_HANWHA_DIRECT_ACTION_CUES = (
+    "상대로",
+    "누르고",
+    "꺾고",
+    "제압",
+    "이겼",
+    "승리했다",
+    "패했다",
+    "홈런",
+    "삼진",
+    "등판",
+    "선발",
+    "부상",
+    "트레이드",
+)
+_KBO_EVENT_TERM_ALIASES = {
+    "결과": ("누르고", "꺾고", "이겼", "제압", "완파"),
+    "승리": ("누르고", "꺾고", "이겼", "제압", "완파"),
+    "패배": ("패했다", "패전", "졌다"),
+}
+_KBO_RANK_SURFACE_RE = re.compile(r"(?<!\d)\d+\s*위(?!\d)")
 
 
 _FQ_CONTEXT_HEADLINE = detectors.VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE.value
@@ -163,6 +202,8 @@ _MATERIAL_CONDITIONAL = "MATERIAL_CONDITIONAL_ANALYTICAL_SCENARIO"
 _MATERIAL_STALE_EXPLICIT = "MATERIAL_STALE_EXPLICIT_PAST_EVENT"
 _MATERIAL_STALE_DATED = "MATERIAL_STALE_DATED_CONTEXT"
 _MATERIAL_STALE_SPORTS = "MATERIAL_STALE_SPORTS_RETROSPECTIVE"
+_MATERIAL_PUBLISHER_NOTICE = "MATERIAL_PUBLISHER_NOTICE_BOILERPLATE"
+_MATERIAL_DEPICTIVE_SPORTS = "MATERIAL_DEPICTIVE_SPORTS_CAPTION"
 
 
 def _dedupe(values):
@@ -265,6 +306,191 @@ def _freshness_codes(value: str, *, now: datetime) -> tuple[bool, tuple[str, ...
     return False, ()
 
 
+def _term_present(text: str, term: str) -> bool:
+    term = term.strip()
+    if not term:
+        return False
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 .+&/-]*", term):
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])"
+        return re.search(pattern, text, flags=re.IGNORECASE) is not None
+    return term.casefold() in text.casefold()
+
+
+def _fact_surface(fact: EventFact) -> str:
+    return " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
+
+
+def _fact_has_topic_anchor(fact: EventFact, intent_anchors: tuple[str, ...]) -> bool:
+    surface = _fact_surface(fact)
+    return any(_term_present(surface, term) for term in intent_anchors)
+
+
+def _fact_has_configured_kbo_event_term(fact: EventFact, event_terms: tuple[str, ...]) -> bool:
+    surface = _fact_surface(fact)
+    for term in event_terms:
+        if _term_present(surface, term):
+            return True
+        if any(alias in surface for alias in _KBO_EVENT_TERM_ALIASES.get(term, ())):
+            return True
+        if term == "순위" and _KBO_RANK_SURFACE_RE.search(surface) is not None:
+            return True
+    return False
+
+
+def _fact_has_kbo_rank_change(fact: EventFact, event_terms: tuple[str, ...]) -> bool:
+    if "순위" not in event_terms:
+        return False
+    surface = _fact_surface(fact)
+    return _term_present(surface, "순위") or _KBO_RANK_SURFACE_RE.search(surface) is not None
+
+
+def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
+    fact_text = "\n".join(_fact_surface(fact) for fact in facts)
+    combined = f"{fact_text}\n{' '.join(cited_text)}"
+    return (
+        any(cue in combined for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
+        and any(cue in combined for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
+    )
+
+
+def _hanwha_fact_subject_central(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
+    subject = fact.subject.strip()
+    if "한화" in subject:
+        return True
+    if not subject:
+        return False
+    for text in cited_text:
+        normalized = " ".join(text.split())
+        pattern = rf"한화(?:\s+이글스)?(?:의|\s+)\s*{re.escape(subject)}"
+        if re.search(pattern, normalized):
+            return True
+    return False
+
+
+def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
+    subject = fact.subject.strip()
+    object_text = (fact.object or "").strip()
+    action = fact.action.strip()
+    if "한화" in subject:
+        return True
+    fact_surface = " ".join(value for value in (subject, action, object_text) if value)
+    if _HANWHA_GAMES_PLAYED_COMPARISON_RE.search(fact_surface) is not None:
+        return False
+    direct_action = any(cue in action for cue in _HANWHA_DIRECT_ACTION_CUES)
+    if not direct_action:
+        for text in cited_text:
+            normalized = " ".join(text.split())
+            hanwha_position = normalized.find("한화")
+            if hanwha_position < 0:
+                continue
+            prefix = normalized[max(0, hanwha_position - 100) : hanwha_position]
+            if any(cue in prefix for cue in _HANWHA_SUBORDINATE_CONTEXT_CUES):
+                return False
+    if "한화" in object_text:
+        return True
+    action_without_prior_reference = _HANWHA_PRIOR_GAME_REFERENCE_RE.sub("", action)
+    if "한화" in action_without_prior_reference:
+        return True
+    for text in cited_text:
+        normalized = " ".join(text.split())
+        for entity in (subject, object_text):
+            if not entity:
+                continue
+            pattern = rf"한화(?:\s+이글스)?(?:의)?\s+{re.escape(entity)}"
+            if re.search(pattern, normalized):
+                return True
+    return False
+
+
+def _routing_decision(admission: StoryAdmissionInput) -> StoryAdmissionDecision:
+    reasons: list[StoryAdmissionReason] = []
+
+    def reject(reason: StoryAdmissionReason) -> None:
+        reasons.append(reason)
+
+    event = admission.event
+    facts = admission.facts
+    evidence = admission.evidence
+    if event is None or facts is None or evidence is None or event.topic_id != admission.topic:
+        reject(StoryAdmissionReason.TOPIC_OWNERSHIP)
+        return StoryAdmissionDecision(
+            stage=StoryAdmissionStage.ROUTING,
+            accepted=False,
+            reasons=_dedupe(reasons),
+        )
+
+    cited_text: list[str] = []
+    event_facts: list[EventFact] = []
+    cited_by_fact: dict[str, tuple[str, ...]] = {}
+    seen_evidence: set[str] = set()
+    for fact_id in event.fact_ids:
+        fact = facts.get(fact_id)
+        if fact is None:
+            reject(StoryAdmissionReason.EVENT_CENTRALITY)
+            break
+        event_facts.append(fact)
+        fact_cited_text: list[str] = []
+        for evidence_id in fact.evidence_ids:
+            span = evidence.get(evidence_id)
+            if span is None or span.article_id not in event.article_ids:
+                reject(StoryAdmissionReason.EVENT_CENTRALITY)
+                break
+            fact_cited_text.append(span.text)
+            if evidence_id not in seen_evidence:
+                seen_evidence.add(evidence_id)
+                cited_text.append(span.text)
+        cited_by_fact[fact.fact_id] = tuple(fact_cited_text)
+        if reasons:
+            break
+    if reasons or not cited_text:
+        if not reasons:
+            reject(StoryAdmissionReason.EVENT_CENTRALITY)
+        return StoryAdmissionDecision(
+            stage=StoryAdmissionStage.ROUTING,
+            accepted=False,
+            reasons=_dedupe(reasons),
+        )
+
+    cited = tuple(cited_text)
+    combined = "\n".join(cited)
+    if not any(_term_present(combined, term) for term in admission.intent_anchors):
+        reject(StoryAdmissionReason.TOPIC_OWNERSHIP)
+    if admission.required_intent_terms and not any(
+        _term_present(combined, term) for term in admission.required_intent_terms
+    ):
+        reject(StoryAdmissionReason.TOPIC_OWNERSHIP)
+    if reasons:
+        return StoryAdmissionDecision(
+            stage=StoryAdmissionStage.ROUTING,
+            accepted=False,
+            reasons=_dedupe(reasons),
+        )
+
+    frozen_facts = tuple(event_facts)
+    if admission.topic == _AI_TECH_TOPIC_ID:
+        if not any(_fact_has_topic_anchor(fact, admission.intent_anchors) for fact in frozen_facts):
+            reject(StoryAdmissionReason.EVENT_CENTRALITY)
+    elif admission.topic == _KBO_TOPIC_ID:
+        if _kbo_entertainment_crossover(frozen_facts, cited):
+            reject(StoryAdmissionReason.TOPIC_OWNERSHIP)
+        elif not any(
+            _hanwha_fact_directly_bound(fact, cited_by_fact[fact.fact_id])
+            and _fact_has_configured_kbo_event_term(fact, admission.event_terms)
+            and (
+                not _fact_has_kbo_rank_change(fact, admission.event_terms)
+                or _hanwha_fact_subject_central(fact, cited_by_fact[fact.fact_id])
+            )
+            for fact in frozen_facts
+        ):
+            reject(StoryAdmissionReason.EVENT_CENTRALITY)
+
+    return StoryAdmissionDecision(
+        stage=StoryAdmissionStage.ROUTING,
+        accepted=not reasons,
+        reasons=_dedupe(reasons),
+    )
+
+
 def evaluate_story_admission(
     admission: StoryAdmissionInput | None = None,
     *,
@@ -276,6 +502,7 @@ def evaluate_story_admission(
     stage: StoryAdmissionStage | str = StoryAdmissionStage.VISIBLE,
     now: datetime | None = None,
 ) -> StoryAdmissionDecision:
+    routing_admission: StoryAdmissionInput | None = None
     if admission is not None:
         if any((topic, headline, summary, source_text, subject)) or now is not None or stage != StoryAdmissionStage.VISIBLE:
             raise TypeError("pass StoryAdmissionInput or keyword fields, not both")
@@ -286,8 +513,14 @@ def evaluate_story_admission(
         subject = admission.subject
         stage = admission.stage
         now = admission.now
+        routing_admission = admission
 
     resolved_stage = stage if isinstance(stage, StoryAdmissionStage) else StoryAdmissionStage(stage)
+    if resolved_stage is StoryAdmissionStage.ROUTING:
+        if routing_admission is None:
+            raise TypeError("routing admission requires StoryAdmissionInput")
+        return _routing_decision(routing_admission)
+
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     reasons: list[StoryAdmissionReason] = []
     codes: list[str] = []
@@ -298,6 +531,10 @@ def evaluate_story_admission(
 
     if resolved_stage is StoryAdmissionStage.MATERIAL:
         text = source_text or summary
+        if detectors.publisher_notice_boilerplate(text):
+            reject(StoryAdmissionReason.METADATA, _MATERIAL_PUBLISHER_NOTICE)
+        if detectors.standalone_sports_photo_caption(text):
+            reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _MATERIAL_DEPICTIVE_SPORTS)
         if subject.strip() in _GENERIC_REFERENTIAL_SUBJECTS or detectors.context_dependent_summary(text):
             reject(StoryAdmissionReason.STANDALONE_COMPLETENESS, _FQ_CONTEXT_SUMMARY, _MATERIAL_CONTEXT)
         if detectors.visible_metadata_text(text):
@@ -368,21 +605,3 @@ def evaluate_story_admission(
         reasons=_dedupe(reasons),
         compatibility_codes=_dedupe(codes),
     )
-
-
-def _detector_visible_story_issues(*, topic: str, headline: str, summary: str):
-    decision = evaluate_story_admission(
-        topic=topic,
-        headline=headline,
-        summary=summary,
-        source_text=summary,
-        stage=StoryAdmissionStage.VISIBLE,
-    )
-    known = {item.value: item for item in detectors.VisibleStoryIssue}
-    return tuple(known[code] for code in decision.compatibility_codes if code in known)
-
-
-# The detector module is a byte-preserved extraction of the former feed_quality
-# implementation. Replace its composite entry point so there is no second active
-# admission path even when callers import the detector module directly.
-detectors.visible_story_issues = _detector_visible_story_issues

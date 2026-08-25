@@ -39,6 +39,12 @@ from insight_desk.semantic import (
     resolve_candidate_pair,
 )
 from insight_desk.semantic.material import MaterialEventVerdict, assess_material_event
+from insight_desk.story_admission import (
+    StoryAdmissionInput,
+    StoryAdmissionReason,
+    StoryAdmissionStage,
+    evaluate_story_admission,
+)
 from insight_desk.ui import PwaRuntimeConfig, build_briefing_view_model, render_briefing_html
 
 
@@ -47,72 +53,6 @@ FRESHNESS_WINDOW = timedelta(hours=72)
 FUTURE_CLOCK_TOLERANCE = timedelta(hours=6)
 MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
-AI_TECH_TOPIC_ID = "ai_tech"
-KBO_HANWHA_TOPIC_ID = "kbo_hanwha"
-KPOP_TOPIC_ID = "kpop"
-_KBO_HEADLINE_SCOPE_CUES = ("한화", "KBO", "프로야구")
-_KBO_ENTERTAINMENT_ENTITY_CUES = ("그룹", "아이돌", "멤버", "가수", "배우")
-_KBO_ENTERTAINMENT_ACTION_CUES = ("승리 요정", "시구", "시타")
-_KPOP_HEADLINE_SCOPE_CUES = (
-    "K-POP",
-    "케이팝",
-    "가수",
-    "그룹",
-    "아이돌",
-    "앨범",
-    "음원",
-    "차트",
-    "음악",
-    "뮤직",
-    "음반",
-    "컴백",
-    "데뷔",
-    "콘서트",
-    "공연",
-    "무대",
-    "수상",
-    "빌보드",
-    "Billboard",
-    "HYBE",
-    "하이브",
-    "SM",
-    "JYP",
-    "YG",
-    "BTS",
-    "방탄소년단",
-    "블랙핑크",
-    "아이브",
-    "뉴진스",
-    "세븐틴",
-)
-_HANWHA_PRIOR_GAME_REFERENCE_RE = re.compile(r"한화(?:\s+이글스)?전\s*(?:이후|이래|뒤)")
-_HANWHA_GAMES_PLAYED_COMPARISON_RE = re.compile(
-    r"한화(?:\s+이글스)?(?:보다(?:는)?|와\s+마찬가지|\s*대비)"
-    r"[^.!?。！？]{0,40}?\d+\s*경기[^.!?。！？]{0,40}?"
-    r"(?:덜|적게|많이|더)\s*(?:경기(?:를)?\s*)?치렀"
-)
-_HANWHA_SUBORDINATE_CONTEXT_CUES = ("가운데", "한편", "사진", "배경")
-_HANWHA_DIRECT_ACTION_CUES = (
-    "상대로",
-    "누르고",
-    "꺾고",
-    "제압",
-    "이겼",
-    "승리했다",
-    "패했다",
-    "홈런",
-    "삼진",
-    "등판",
-    "선발",
-    "부상",
-    "트레이드",
-)
-_KBO_EVENT_TERM_ALIASES = {
-    "결과": ("누르고", "꺾고", "이겼", "제압", "완파"),
-    "승리": ("누르고", "꺾고", "이겼", "제압", "완파"),
-    "패배": ("패했다", "패전", "졌다"),
-}
-_KBO_RANK_SURFACE_RE = re.compile(r"(?<!\d)\d+\s*위(?!\d)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +109,7 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
 
 
 def _term_present(text: str, term: str) -> bool:
+    """Acquisition-level configured literal matcher; not a story-admission policy."""
     term = term.strip()
     if not term:
         return False
@@ -179,6 +120,7 @@ def _term_present(text: str, term: str) -> bool:
 
 
 def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
+    """Preserved article-acquisition preselection using configured source-query terms."""
     text = f"{title}\n{body}"
     if not any(_term_present(text, term) for term in topic.intent_anchors):
         return False
@@ -187,105 +129,16 @@ def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
     return True
 
 
-def _fact_surface(fact: EventFact) -> str:
-    return " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
-
-
-def _fact_has_topic_anchor(fact: EventFact, topic: TopicConfig) -> bool:
-    surface = _fact_surface(fact)
-    return any(_term_present(surface, term) for term in topic.intent_anchors)
-
-
-def _fact_has_configured_kbo_event_term(fact: EventFact, topic: TopicConfig) -> bool:
-    surface = _fact_surface(fact)
-    for term in topic.event_terms:
-        if _term_present(surface, term):
-            return True
-        if any(alias in surface for alias in _KBO_EVENT_TERM_ALIASES.get(term, ())):
-            return True
-        if term == "순위" and _KBO_RANK_SURFACE_RE.search(surface) is not None:
-            return True
-    return False
-
-
-def _fact_has_kbo_rank_change(fact: EventFact, topic: TopicConfig) -> bool:
-    if "순위" not in topic.event_terms:
-        return False
-    surface = _fact_surface(fact)
-    return _term_present(surface, "순위") or _KBO_RANK_SURFACE_RE.search(surface) is not None
-
-
-def _kbo_entertainment_crossover(facts: tuple[EventFact, ...], cited_text: tuple[str, ...]) -> bool:
-    fact_text = "\n".join(_fact_surface(fact) for fact in facts)
-    combined = f"{fact_text}\n{' '.join(cited_text)}"
-    return (
-        any(cue in combined for cue in _KBO_ENTERTAINMENT_ENTITY_CUES)
-        and any(cue in combined for cue in _KBO_ENTERTAINMENT_ACTION_CUES)
-    )
-
-
-def _hanwha_fact_subject_central(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
-    subject = fact.subject.strip()
-    if "한화" in subject:
-        return True
-    if not subject:
-        return False
-    for text in cited_text:
-        normalized = " ".join(text.split())
-        pattern = rf"한화(?:\s+이글스)?(?:의|\s+)\s*{re.escape(subject)}"
-        if re.search(pattern, normalized):
-            return True
-    return False
-
-
-def _hanwha_fact_directly_bound(fact: EventFact, cited_text: tuple[str, ...]) -> bool:
-    subject = fact.subject.strip()
-    object_text = (fact.object or "").strip()
-    action = fact.action.strip()
-
-    if "한화" in subject:
-        return True
-
-    fact_surface = " ".join(value for value in (subject, action, object_text) if value)
-    if _HANWHA_GAMES_PLAYED_COMPARISON_RE.search(fact_surface) is not None:
-        return False
-
-    direct_action = any(cue in action for cue in _HANWHA_DIRECT_ACTION_CUES)
-    if not direct_action:
-        for text in cited_text:
-            normalized = " ".join(text.split())
-            hanwha_position = normalized.find("한화")
-            if hanwha_position < 0:
-                continue
-            prefix = normalized[max(0, hanwha_position - 100) : hanwha_position]
-            if any(cue in prefix for cue in _HANWHA_SUBORDINATE_CONTEXT_CUES):
-                return False
-
-    if "한화" in object_text:
-        return True
-
-    action_without_prior_reference = _HANWHA_PRIOR_GAME_REFERENCE_RE.sub("", action)
-    if "한화" in action_without_prior_reference:
-        return True
-
-    for text in cited_text:
-        normalized = " ".join(text.split())
-        for entity in (subject, object_text):
-            if not entity:
-                continue
-            pattern = rf"한화(?:\s+이글스)?(?:의)?\s+{re.escape(entity)}"
-            if re.search(pattern, normalized):
-                return True
-    return False
-
-
 def _visible_topic_headline_bound(topic: TopicConfig, headline: str) -> bool:
-    folded = headline.casefold()
-    if topic.topic_id == KBO_HANWHA_TOPIC_ID:
-        return any(cue.casefold() in folded for cue in _KBO_HEADLINE_SCOPE_CUES)
-    if topic.topic_id == KPOP_TOPIC_ID:
-        return any(cue.casefold() in folded for cue in _KPOP_HEADLINE_SCOPE_CUES)
-    return True
+    """Compatibility projection of the shared visible admission decision."""
+    decision = evaluate_story_admission(
+        topic=topic.name,
+        headline=headline,
+        summary=headline,
+        source_text=headline,
+        stage=StoryAdmissionStage.VISIBLE,
+    )
+    return StoryAdmissionReason.TOPIC_OWNERSHIP not in decision.reasons
 
 
 def event_topic_relevant(
@@ -295,54 +148,24 @@ def event_topic_relevant(
     evidence: dict[str, EvidenceSpan],
     topic: TopicConfig,
 ) -> bool:
-    if event.topic_id != topic.topic_id:
-        return False
-    cited_text: list[str] = []
-    event_facts: list[EventFact] = []
-    cited_by_fact: dict[str, tuple[str, ...]] = {}
-    seen_evidence: set[str] = set()
-    for fact_id in event.fact_ids:
-        fact = facts.get(fact_id)
-        if fact is None:
-            return False
-        event_facts.append(fact)
-        fact_cited_text: list[str] = []
-        for evidence_id in fact.evidence_ids:
-            span = evidence.get(evidence_id)
-            if span is None or span.article_id not in event.article_ids:
-                return False
-            fact_cited_text.append(span.text)
-            if evidence_id in seen_evidence:
-                continue
-            seen_evidence.add(evidence_id)
-            cited_text.append(span.text)
-        cited_by_fact[fact.fact_id] = tuple(fact_cited_text)
-    if not cited_text:
-        return False
-
-    cited = tuple(cited_text)
-    if not topic_relevant(title="", body="\n".join(cited), topic=topic):
-        return False
-
-    frozen_facts = tuple(event_facts)
-    if topic.topic_id == AI_TECH_TOPIC_ID:
-        return any(_fact_has_topic_anchor(fact, topic) for fact in frozen_facts)
-    if topic.topic_id != KBO_HANWHA_TOPIC_ID:
-        return True
-    if _kbo_entertainment_crossover(frozen_facts, cited):
-        return False
-    return any(
-        _hanwha_fact_directly_bound(fact, cited_by_fact[fact.fact_id])
-        and _fact_has_configured_kbo_event_term(fact, topic)
-        and (
-            not _fact_has_kbo_rank_change(fact, topic)
-            or _hanwha_fact_subject_central(fact, cited_by_fact[fact.fact_id])
+    """Compatibility bool projection of the one shared routing decision."""
+    decision = evaluate_story_admission(
+        StoryAdmissionInput(
+            stage=StoryAdmissionStage.ROUTING,
+            topic=topic.topic_id,
+            event=event,
+            facts=facts,
+            evidence=evidence,
+            intent_anchors=topic.intent_anchors,
+            required_intent_terms=topic.required_intent_terms,
+            event_terms=topic.event_terms,
         )
-        for fact in frozen_facts
     )
+    return decision.accepted
 
 
 def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
+    """Preserved article-source acquisition freshness threshold."""
     if published_at is None:
         return None
     age = now.astimezone(timezone.utc) - published_at.astimezone(timezone.utc)

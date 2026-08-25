@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import re
 
-# The original detector implementation is byte-preserved in the sibling core.
-# This module remains detector-only: it narrows three measured lexical/date
-# boundaries and contains no admission composition or topic policy.
+# Low-level story-quality detectors live here. They expose individual signals only;
+# admission policy composition belongs exclusively to story_admission.py.
 from insight_desk.feed_quality_detectors_core import *  # noqa: F401,F403
 from insight_desk.feed_quality_detectors_core import (
     stale_relative_period_event_text as _core_stale_relative_period_event_text,
@@ -26,6 +25,21 @@ _PRIOR_PERIOD_POLICY_EVENT_RE = re.compile(
     r"[^!?。！？]{0,180}?(?:기준금리|정책금리|금리)"
     r"[^!?。！？]{0,120}?(?:올렸|내렸|인상했|인하했|동결했)"
 )
+_PUBLISHER_NOTICE_PERMISSION_CUES = ("무단", "사전허가없이", "사전 허가 없이")
+_PUBLISHER_NOTICE_RESTRICTION_TERMS = ("복사", "배포", "전재", "재배포", "판매")
+_PUBLISHER_NOTICE_LEGAL_CUES = ("책임", "금지", "저작권")
+_SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
+_SPORTS_DEPICTIVE_ACTION_CUES = (
+    "투구",
+    "타격",
+    "수비",
+    "훈련",
+    "캐치볼",
+    "몸을 풀",
+    "세리머니",
+    "포즈",
+)
+_SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
 
 
 def _current_week_aggregate(value: str) -> bool:
@@ -61,3 +75,25 @@ def stale_relative_period_event_text(value: str) -> bool:
     if _prior_period_policy_event(normalized):
         return True
     return _core_stale_relative_period_event_text(normalized)
+
+
+def publisher_notice_boilerplate(value: str) -> bool:
+    normalized = " ".join(value.split())
+    return (
+        any(cue in normalized for cue in _PUBLISHER_NOTICE_PERMISSION_CUES)
+        and sum(term in normalized for term in _PUBLISHER_NOTICE_RESTRICTION_TERMS) >= 2
+        and any(cue in normalized for cue in _PUBLISHER_NOTICE_LEGAL_CUES)
+    )
+
+
+def standalone_sports_photo_caption(value: str) -> bool:
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > 180:
+        return False
+    if sum(normalized.count(mark) for mark in ".!?。！？") > 1:
+        return False
+    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
+        return False
+    if not any(cue in normalized for cue in _SPORTS_DEPICTIVE_ACTION_CUES):
+        return False
+    return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)

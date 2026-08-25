@@ -17,21 +17,6 @@ from .tooling import KiwiMorphologyHelper
 
 
 _EXPLICIT_NOMINAL_MATERIAL_ACTIONS = frozenset({"선발투수 예고"})
-_PUBLISHER_NOTICE_PERMISSION_CUES = ("무단", "사전허가없이", "사전 허가 없이")
-_PUBLISHER_NOTICE_RESTRICTION_TERMS = ("복사", "배포", "전재", "재배포", "판매")
-_PUBLISHER_NOTICE_LEGAL_CUES = ("책임", "금지", "저작권")
-_SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
-_SPORTS_DEPICTIVE_ACTION_CUES = (
-    "투구",
-    "타격",
-    "수비",
-    "훈련",
-    "캐치볼",
-    "몸을 풀",
-    "세리머니",
-    "포즈",
-)
-_SPORTS_DEPICTIVE_ENDINGS = ("고 있다", "고 있다.", "고 있습니다", "고 있습니다.")
 
 
 class MaterialEventVerdict(StrEnum):
@@ -91,30 +76,11 @@ def _cited_text(
     return "\n\n".join(parts), None
 
 
-def _publisher_notice_boilerplate(text: str) -> bool:
-    return (
-        any(cue in text for cue in _PUBLISHER_NOTICE_PERMISSION_CUES)
-        and sum(term in text for term in _PUBLISHER_NOTICE_RESTRICTION_TERMS) >= 2
-        and any(cue in text for cue in _PUBLISHER_NOTICE_LEGAL_CUES)
-    )
-
-
-def _standalone_sports_photo_caption(text: str) -> bool:
-    normalized = " ".join(text.split())
-    if not normalized or len(normalized) > 180:
-        return False
-    if sum(normalized.count(mark) for mark in ".!?。！？") > 1:
-        return False
-    if not any(cue in normalized for cue in _SPORTS_CONTEXT_CUES):
-        return False
-    if not any(cue in normalized for cue in _SPORTS_DEPICTIVE_ACTION_CUES):
-        return False
-    return normalized.endswith(_SPORTS_DEPICTIVE_ENDINGS)
-
-
 def _shared_material_rejection(codes: tuple[str, ...]) -> MaterialEventReason | None:
     code_set = set(codes)
     ordered = (
+        ("MATERIAL_PUBLISHER_NOTICE_BOILERPLATE", MaterialEventReason.PUBLISHER_NOTICE_BOILERPLATE),
+        ("MATERIAL_DEPICTIVE_SPORTS_CAPTION", MaterialEventReason.DEPICTIVE_SPORTS_CAPTION),
         ("MATERIAL_CONTEXT_DEPENDENT_FRAGMENT", MaterialEventReason.CONTEXT_DEPENDENT_FRAGMENT),
         ("MATERIAL_NON_EVENT_ANALYTICAL_JUDGMENT", MaterialEventReason.NON_EVENT_ANALYTICAL_JUDGMENT),
         ("MATERIAL_CONDITIONAL_ANALYTICAL_SCENARIO", MaterialEventReason.CONDITIONAL_ANALYTICAL_SCENARIO),
@@ -160,18 +126,6 @@ def assess_material_event(
                 event.event_id,
                 MaterialEventVerdict.DEFER,
                 (evidence_error or MaterialEventReason.EVIDENCE_MISSING,),
-            )
-        if _publisher_notice_boilerplate(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.PUBLISHER_NOTICE_BOILERPLATE,),
-            )
-        if _standalone_sports_photo_caption(text):
-            return MaterialEventAssessment(
-                event.event_id,
-                MaterialEventVerdict.DEFER,
-                (MaterialEventReason.DEPICTIVE_SPORTS_CAPTION,),
             )
 
         admission = evaluate_story_admission(

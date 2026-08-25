@@ -14,6 +14,7 @@ from insight_desk.generation import (
     MAX_GENERATED_SUMMARY_CHARS,
     PreservationReport,
     validate_preservation,
+    validate_story_admission,
 )
 from insight_desk.providers.transport import ProviderTransportError
 
@@ -250,12 +251,17 @@ class ExtractiveFallbackGenerator:
                 )
             headline = grounded_headline
 
-        return GeneratedDraft(
+        draft = GeneratedDraft(
             event_id=request.event.event_id,
             headline=headline,
             summary=summary,
             evidence_ids=evidence_ids,
         )
+        try:
+            validate_story_admission(request, draft)
+        except GenerationContractError as exc:
+            raise ExtractiveFallbackUnavailable(str(exc)) from exc
+        return draft
 
 
 def _provider_error_code(exc: ProviderTransportError) -> str:
@@ -272,6 +278,9 @@ def _attempt_generated(
 ) -> tuple[GeneratedDraft | None, PreservationReport | None, GenerationAttempt]:
     try:
         draft = generator.generate(request)
+        # Every provider route, including independently implemented alternates,
+        # consumes the same final story-admission decision before preservation.
+        validate_story_admission(request, draft)
     except GenerationContractError as exc:
         return (
             None,
