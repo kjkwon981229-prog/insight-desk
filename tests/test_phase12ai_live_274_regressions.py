@@ -119,8 +119,8 @@ class Live274VisibleRegressionTests(unittest.TestCase):
     def test_current_kpop_release_announcement_remains_accepted(self) -> None:
         decision = self._visible(
             topic="엔터·음악·K-POP",
-            headline="제니, 28일 신곡 공개",
-            summary="제니는 25일 신곡 'Fallen Angel'을 28일 공개한다고 발표했다.",
+            headline="제니, 28일 신곡 음원 공개",
+            summary="제니는 25일 신곡 음원 'Fallen Angel'을 28일 공개한다고 발표했다.",
         )
         self.assertTrue(decision.accepted)
 
