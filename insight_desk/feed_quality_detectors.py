@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import re
 
 # Low-level story-quality detectors live here. They expose individual signals only;
@@ -159,7 +159,8 @@ _PRIMARY_ABSENCE_STATE_ENDINGS = (
     "미정입니다",
 )
 _PRIMARY_REFERENTIAL_PLAN_RE = re.compile(
-    r"^(?:이번|해당)\s+[^.!?。！？]{1,90}?(?:통해|기반으로|바탕으로)\s+"
+    r"^(?:[^.!?。！？]{1,80}?(?:은|는|이|가)\s+)?(?:이번|해당)\s+"
+    r"[^.!?。！？]{1,90}?(?:통해|기반으로|바탕으로)\s+"
     r"[^.!?。！？]{1,220}?(?:할|해나갈)\s+계획(?:이다|입니다)$"
 )
 _PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
@@ -202,6 +203,34 @@ _STALE_DAY_COMPLETED_EVENT_ALIASES = (
     ("운영하였다", "진행했다"),
     ("실시했다", "진행했다"),
     ("실시하였다", "진행했다"),
+)
+_SAME_YEAR_EXPLICIT_DATE_RE = re.compile(
+    r"(?<!\d)(20\d{2})년\s*(1[0-2]|0?[1-9])월\s*([0-2]?\d|3[01])일"
+)
+_SAME_YEAR_DATED_EVENT_CUES = (
+    "인수",
+    "낙찰",
+    "매각",
+    "체결",
+    "발표",
+    "출시",
+    "발매",
+    "공개",
+    "진행",
+    "개최",
+    "선정",
+    "수주",
+    "투자",
+    "확정",
+    "결정",
+    "승리",
+    "패배",
+    "기록",
+    "인상",
+    "인하",
+    "동결",
+    "상승",
+    "하락",
 )
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 
@@ -331,7 +360,23 @@ def _prior_period_policy_event(value: str) -> bool:
 
 
 def stale_explicit_past_event_text(value: str, *, now: datetime | None = None) -> bool:
-    return _core_stale_explicit_past_event_text(_primary_sentence(value), now=now)
+    primary = _primary_sentence(value)
+    if _core_stale_explicit_past_event_text(primary, now=now):
+        return True
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    for match in _SAME_YEAR_EXPLICIT_DATE_RE.finditer(primary):
+        year, month, day = (int(item) for item in match.groups())
+        try:
+            candidate = datetime(year, month, day, tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        age = reference - candidate
+        if age <= timedelta(hours=72) or candidate > reference + timedelta(hours=6):
+            continue
+        event_surface = primary[match.end() : match.end() + 180]
+        if any(cue in event_surface for cue in _SAME_YEAR_DATED_EVENT_CUES):
+            return True
+    return False
 
 
 def stale_relative_past_event_text(value: str) -> bool:
