@@ -37,6 +37,7 @@ _PUBLISHER_NOTICE_LEGAL_CUES = ("책임", "금지", "저작권")
 _SPORTS_CONTEXT_CUES = ("경기에서", "전에서", "경기 중", "경기에")
 _SPORTS_DEPICTIVE_ACTION_CUES = (
     "투구",
+    "공을 던지",
     "타격",
     "수비",
     "훈련",
@@ -179,6 +180,15 @@ _PRIMARY_CAREER_HISTORY_RE = re.compile(
     r"(?:활동\s+분야|활동\s+영역|분야|영역)[^.!?。！？]{0,80}?"
     r"(?:넓혀왔다|넓혀\s+왔다|확장해왔다|확장해\s+왔다)$"
 )
+_PRIMARY_INSTITUTIONAL_PROCEDURE_RE = re.compile(
+    r"(?:회의|위원회|금통위|금융통화위원회)[^.!?。！？]{0,180}?"
+    r"(?:열리기|개최되기)\s+전에[^.!?。！？]{0,220}?"
+    r"(?:기간|절차|관행)(?:을|를)?\s+(?:가진다|둔다|운영한다|갖는다)$"
+)
+_PRIMARY_CAUSAL_ANALYSIS_RE = re.compile(
+    r"(?:영향|요인|배경|원인)(?:으)?로\s+"
+    r"(?:분석했|해석했|진단했)(?:다|습니다)$"
+)
 _ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
     r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
     r"(?:전망했다|예상했다|내다봤다)"
@@ -318,6 +328,16 @@ def _primary_non_event_state(value: str) -> bool:
         return True
     if _PRIMARY_CAREER_HISTORY_RE.search(normalized) is not None:
         return True
+    if (
+        _PRIMARY_INSTITUTIONAL_PROCEDURE_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_CAUSAL_ANALYSIS_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
     if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
         return True
     if normalized.endswith(_PRIMARY_RESPONSE_ENDINGS) and any(
@@ -430,7 +450,7 @@ def stale_day_only_context(value: str, *, now: datetime | None = None) -> bool:
     primary = _primary_sentence(value)
     if _core_stale_day_only_context(primary, now=now):
         return True
-    normalized_alias = primary
+    normalized_alias = primary.replace("경기 중", "경기에서")
     for source, target in _STALE_DAY_COMPLETED_EVENT_ALIASES:
         normalized_alias = normalized_alias.replace(source, target)
     if normalized_alias == primary:
