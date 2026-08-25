@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import StrEnum
 from functools import lru_cache
 from typing import Mapping
@@ -76,6 +76,24 @@ def _cited_text(
     return "\n\n".join(parts), None
 
 
+def _material_admission_text(text: str, fact: EventFact) -> str:
+    """Project a provenance-bound EventFact date into the shared freshness decision.
+
+    The evidence bytes stay untouched for literal-field and verification checks. A date recovered
+    from adjacent exact source context is metadata on the same EventFact; formatting it as an
+    explicit Korean date lets the existing StoryAdmissionDecision apply its canonical freshness
+    rule instead of creating a second temporal policy here.
+    """
+
+    if fact.event_date is None:
+        return text
+    try:
+        parsed = date.fromisoformat(fact.event_date)
+    except ValueError:
+        return text
+    return f"{parsed.year}년 {parsed.month}월 {parsed.day}일 {text}"
+
+
 def _shared_material_rejection(codes: tuple[str, ...]) -> MaterialEventReason | None:
     code_set = set(codes)
     ordered = (
@@ -128,12 +146,13 @@ def assess_material_event(
                 (evidence_error or MaterialEventReason.EVIDENCE_MISSING,),
             )
 
+        admission_text = _material_admission_text(text, fact)
         admission = evaluate_story_admission(
             StoryAdmissionInput(
                 stage=StoryAdmissionStage.MATERIAL,
                 topic=event.topic_id,
-                summary=text,
-                source_text=text,
+                summary=admission_text,
+                source_text=admission_text,
                 subject=fact.subject,
                 now=datetime.now(timezone.utc),
             )
