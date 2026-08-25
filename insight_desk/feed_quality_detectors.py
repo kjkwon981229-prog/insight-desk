@@ -158,6 +158,14 @@ _PRIMARY_ABSENCE_STATE_ENDINGS = (
     "미정이다",
     "미정입니다",
 )
+_PRIMARY_REFERENTIAL_PLAN_RE = re.compile(
+    r"^(?:이번|해당)\s+[^.!?。！？]{1,90}?(?:통해|기반으로|바탕으로)\s+"
+    r"[^.!?。！？]{1,220}?(?:할|해나갈)\s+계획(?:이다|입니다)$"
+)
+_PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
+    r"(?:현상|흐름|양상|움직임)(?:이|가)\s+[^.!?。！？]{0,100}?"
+    r"(?:나타나고|이어지고|강화되고|확산되고)\s+있(?:다|습니다)$"
+)
 _ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
     r"^[^.!?。！？]{1,80}?(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
     r"(?:전망했다|예상했다|내다봤다)"
@@ -165,7 +173,9 @@ _ATTRIBUTED_FORECAST_ACTOR_RE = re.compile(
 _FORECAST_SURFACE_RE = re.compile(
     r"(?:전망됐|전망된다|전망됩니다|예상됐|예상된다|예상됩니다|유력시된다|유력하다|"
     r"가능성(?:은|이)\s*(?:낮|높)(?:다|습니다)|판단이\s*우세(?:하다|합니다)|"
-    r"시장\s+무게중심[^.!?。！？]{0,80}?기울고\s+있다)"
+    r"시장\s+무게중심[^.!?。！？]{0,80}?기울고\s+있다|"
+    r"전망(?:은|이|도)\s+[^.!?。！？]{0,140}?(?:강화|끌어올|압박|작용|영향을\s+미치)"
+    r"[^.!?。！？]{0,60}?(?:있다|있습니다|한다|합니다|했다|했습니다))"
 )
 _FORECAST_EXPLICIT_ATTRIBUTION_CUES = (
     "에 따르면",
@@ -250,6 +260,10 @@ def _primary_non_event_state(value: str) -> bool:
     if normalized.endswith(_PRIMARY_METHOD_ENDINGS):
         return True
     if normalized.endswith(_PRIMARY_ABSENCE_STATE_ENDINGS):
+        return True
+    if _PRIMARY_REFERENTIAL_PLAN_RE.search(normalized) is not None:
+        return True
+    if _PRIMARY_UNATTRIBUTED_STATE_RE.search(normalized) is not None:
         return True
     if any(cue in normalized for cue in _PRIMARY_ANALYTICAL_CUES):
         return True
