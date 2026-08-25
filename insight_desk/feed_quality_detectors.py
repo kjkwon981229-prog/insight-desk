@@ -60,6 +60,10 @@ _TRAILING_DATELINE_BYLINE_RE = re.compile(
     r"(?:^|[.!?。！？]\s*)[\(（][^()（）]{1,60}=[^()（）]{1,60}[\)）]\s*"
     r"[가-힣]{2,4}\s+(?:기자|특파원)$"
 )
+_LEADING_DATELINE_BYLINE_RE = re.compile(
+    r"^[\(（][^()（）]{1,80}=[^()（）]{1,80}[\)）]\s*"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)\s*=\s*"
+)
 
 _PRIMARY_CURRENT_EVENT_CUES = (
     "발표",
@@ -223,6 +227,17 @@ _PRIMARY_KBO_TEAM_PARTICIPATION_RE = re.compile(
     r"[^.!?。！？]{0,260}?(?:경기|대결)에서\s+출전했다$",
     flags=re.IGNORECASE,
 )
+_PRIMARY_MARKET_ATTENTION_RE = re.compile(
+    r"(?:시장(?:의)?\s+)?관심(?:은|이)\s+[^.!?。！？]{0,220}?"
+    r"(?:실적|실적\s+발표|발표|공개)[^.!?。！？]{0,100}?"
+    r"(?:쏠리고|모이고)\s+있(?:다|습니다)$"
+)
+_PRIMARY_POLICY_COMMENTARY_RE = re.compile(
+    r"(?:기준금리|정책금리|금리)[^.!?。！？]{0,180}?"
+    r"(?:말|논리|효과|의미)(?:은|는|이|가)?[^.!?。！？]{0,100}?"
+    r"(?:빛을\s+잃|힘을\s+잃|퇴색|약해지)[^.!?。！？]{0,80}?"
+    r"(?:있다|있습니다|하고\s+있다|하고\s+있습니다)$"
+)
 _PRIMARY_UNATTRIBUTED_STATE_RE = re.compile(
     r"(?:현상|흐름|양상|움직임)(?:이|가)\s+[^.!?。！？]{0,100}?"
     r"(?:나타나고|이어지고|강화되고|확산되고)\s+있(?:다|습니다)$"
@@ -369,6 +384,16 @@ def _primary_non_event_state(value: str) -> bool:
     if _PRIMARY_KBO_TEAM_PARTICIPATION_RE.search(normalized) is not None:
         return True
     if (
+        _PRIMARY_MARKET_ATTENTION_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
+        _PRIMARY_POLICY_COMMENTARY_RE.search(normalized) is not None
+        and _EXPLICIT_DAY_RE.search(normalized) is None
+    ):
+        return True
+    if (
         any(cue in normalized for cue in _PRIMARY_STATIC_RULE_CUES)
         and normalized.endswith(_PRIMARY_STATIC_RULE_ENDINGS)
         and _EXPLICIT_DAY_RE.search(normalized) is None
@@ -497,6 +522,7 @@ def metadata_or_caption_text(value: str) -> bool:
     return (
         _core_metadata_or_caption_text(value)
         or _TRAILING_DATELINE_BYLINE_RE.search(normalized) is not None
+        or _LEADING_DATELINE_BYLINE_RE.search(normalized) is not None
     )
 
 

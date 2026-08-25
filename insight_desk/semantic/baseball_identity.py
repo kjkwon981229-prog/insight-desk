@@ -7,6 +7,7 @@ _SCORE_RE = re.compile(r"(?<!\d)(\d{1,2})\s*(?:대|[-:])\s*(\d{1,2})(?!\d)")
 _DAY_RE = re.compile(r"(?<!\d)([0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
 _OUTCOME_CUES = ("승리", "이겼", "이기고", "꺾", "제압", "패배", "졌다", "패했다")
 _WIN_CUES = ("완파", "제압", "꺾", "이겼", "승리")
+_LOSS_CUES = ("패배", "패하며", "패했다", "패전", "졌다")
 _KBO_TEAM_ALIASES = {
     "한화": ("한화 이글스", "한화"),
     "SSG": ("SSG 랜더스", "SSG랜더스", "SSG"),
@@ -91,6 +92,41 @@ def _winning_team(text: str, teams: frozenset[str]) -> str | None:
     return None
 
 
+def _losing_team(text: str, teams: frozenset[str]) -> str | None:
+    normalized = " ".join(text.split())
+    if len(teams) != 2 or not normalized:
+        return None
+    loss_surface = "|".join(re.escape(cue) for cue in _LOSS_CUES)
+    for team in sorted(teams):
+        team_aliases = sorted(_KBO_TEAM_ALIASES[team], key=len, reverse=True)
+        opponent_aliases = [
+            alias
+            for opponent in teams
+            if opponent != team
+            for alias in sorted(_KBO_TEAM_ALIASES[opponent], key=len, reverse=True)
+        ]
+        for team_alias in team_aliases:
+            for opponent_alias in opponent_aliases:
+                pattern = (
+                    rf"{re.escape(team_alias)}(?:은|는|이|가|,)?"
+                    rf"[^.!?。！？]{{0,180}}?{re.escape(opponent_alias)}"
+                    rf"[^.!?。！？]{{0,120}}?(?:{loss_surface})"
+                )
+                if re.search(pattern, normalized, flags=re.IGNORECASE):
+                    return team
+    return None
+
+
+def _resolved_winner(text: str, teams: frozenset[str]) -> str | None:
+    winner = _winning_team(text, teams)
+    if winner is not None:
+        return winner
+    loser = _losing_team(text, teams)
+    if loser is None:
+        return None
+    return next((team for team in teams if team != loser), None)
+
+
 def same_game_result_fingerprint(left_text: str, right_text: str) -> bool:
     """Recognize one KBO final-result event across winner/loser perspective changes.
 
@@ -133,12 +169,13 @@ def kbo_visible_result_redundant(
     candidate_headline: str,
     candidate_summary: str,
 ) -> bool:
-    """Suppress a generic KBO result only when an earlier visible card is strictly more specific.
+    """Suppress a redundant visible KBO result without broad semantic collapsing.
 
-    The gate is deliberately directional. It returns true only when the prior card names a score and
-    the candidate omits it, while both cards still identify the same two-team Hanwha matchup, the same
-    winner, and a shared stadium/city anchor. Conflicting explicit days block suppression. Two scored
-    results, opposite winners, different opponents, or different venues always remain separate here.
+    The prior and candidate must name the same two-team Hanwha matchup, resolve to the same winner,
+    and share a stadium/city anchor. Conflicting explicit days block suppression. A scored prior may
+    suppress a generic candidate, and reciprocal scored winner/loser reports may collapse only when
+    their score pairs agree. Opposite winners, score conflicts, different opponents, or different
+    venues remain separate.
     """
 
     prior = " ".join(f"{prior_headline} {prior_summary}".split())
@@ -162,10 +199,10 @@ def kbo_visible_result_redundant(
     if prior_day is not None and candidate_day is not None and prior_day != candidate_day:
         return False
 
-    prior_winner = _winning_team(prior_summary, prior_teams) or _winning_team(
+    prior_winner = _resolved_winner(prior_summary, prior_teams) or _resolved_winner(
         prior_headline, prior_teams
     )
-    candidate_winner = _winning_team(candidate_summary, candidate_teams) or _winning_team(
+    candidate_winner = _resolved_winner(candidate_summary, candidate_teams) or _resolved_winner(
         candidate_headline, candidate_teams
     )
     if prior_winner is None or prior_winner != candidate_winner:
@@ -173,4 +210,8 @@ def kbo_visible_result_redundant(
 
     prior_score = _score_pair(prior)
     candidate_score = _score_pair(candidate)
-    return prior_score is not None and candidate_score is None
+    if prior_score is None:
+        return False
+    if candidate_score is None:
+        return True
+    return prior_score == candidate_score
