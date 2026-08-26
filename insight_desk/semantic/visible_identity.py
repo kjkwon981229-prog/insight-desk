@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from .baseball_identity import kbo_visible_lineup_redundant, kbo_visible_result_redundant
+from .baseball_identity import (
+    kbo_visible_lineup_redundant,
+    kbo_visible_result_redundant,
+    same_game_result_fingerprint,
+)
 from .market_identity import same_market_session_close_fingerprint
 from .statistical_identity import same_statistical_release_fingerprint
 
@@ -18,15 +22,14 @@ def visible_event_redundant(
     """Recognize only high-precision publication duplicates before semantic identity calls.
 
     The gate remains narrower than general event identity. KBO results, starting lineups, and market
-    closes are resolved from visible surfaces. Official statistical releases may additionally use
-    exact source provenance
-    when generation erased the release label from one child fact. The source-backed path still requires
-    the same actor, reference month, and exact multi-token statistical release label; it never performs
-    fuzzy matching and does not alter the Phase 6 semantic-verification contract.
+    closes are resolved from visible surfaces. KBO final results and official statistical releases may
+    additionally use exact source provenance when generation erased identity-bearing detail from one
+    visible child fact. Source-backed paths remain deterministic and contradiction-sensitive; they do
+    not alter the Phase 6 semantic-verification contract.
     """
 
     if topic_id == "kbo_hanwha":
-        return kbo_visible_lineup_redundant(
+        visible_duplicate = kbo_visible_lineup_redundant(
             prior_headline=prior_headline,
             prior_summary=prior_summary,
             candidate_headline=candidate_headline,
@@ -36,6 +39,13 @@ def visible_event_redundant(
             prior_summary=prior_summary,
             candidate_headline=candidate_headline,
             candidate_summary=candidate_summary,
+        )
+        if visible_duplicate:
+            return True
+        return bool(
+            prior_source_text
+            and candidate_source_text
+            and same_game_result_fingerprint(prior_source_text, candidate_source_text)
         )
 
     if topic_id == "economy":
