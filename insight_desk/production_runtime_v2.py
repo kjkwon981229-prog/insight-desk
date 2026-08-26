@@ -11,6 +11,7 @@ from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
     install_production_orchestration,
 )
+from insight_desk.production_phase6_v2 import EvidenceIntegrityPhase6EventEngine
 from insight_desk.production_phase7_v2 import (
     _ORIGINAL_GENERATION_STORY_ADMISSION,
     _ORIGINAL_PIPELINE_STORY_ADMISSION,
@@ -20,6 +21,7 @@ from insight_desk.production_phase7_v2 import (
 
 _CORE_HOOKS = (
     "SemanticPipeline",
+    "Phase6EventEngine",
     "topic_relevant",
     "event_topic_relevant",
     "assess_material_event",
@@ -63,6 +65,7 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
+        core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         scope_phase7_story_readmission(core_module)
         yield registry
     finally:
