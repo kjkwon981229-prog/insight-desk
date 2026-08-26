@@ -7,12 +7,6 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
-import insight_desk.production_orchestrator_v2 as orchestration_module
-from insight_desk.event_understanding_v2 import (
-    EventTopicOwnershipVerdict,
-    EventUnderstandingSemanticPipeline,
-    PrimaryEventUnderstandingOwner,
-)
 from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
     install_production_orchestration,
@@ -45,7 +39,6 @@ _CORE_HOOKS = (
 )
 _MARKERS = (
     "_INSIGHT_DESK_V2_REGISTRY",
-    "_INSIGHT_DESK_V2_EVENT_UNDERSTANDING_OWNER",
     "_INSIGHT_DESK_V2_IDENTITY_OWNER",
     "_INSIGHT_DESK_V2_AUTHORITATIVE_OWNER",
 )
@@ -68,64 +61,14 @@ def production_v2_runtime(core_module: ModuleType):
     }
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
-    semantic_pipeline_snapshot = orchestration_module.LegacySemanticPipeline
 
     registry: ProductionV2Registry | None = None
-    event_understanding = PrimaryEventUnderstandingOwner()
     try:
-        # Event understanding must run before CanonicalEvent creation and authoritative enrichment.
-        # The compatibility orchestrator constructs its inner semantic pipeline lazily, so scoping
-        # this one dependency here preserves import-time purity and leaves historical helpers alone.
-        orchestration_module.LegacySemanticPipeline = lambda *args, **kwargs: (
-            EventUnderstandingSemanticPipeline(
-                *args,
-                owner=event_understanding,
-                **kwargs,
-            )
-        )
         registry = install_production_orchestration(core_module)
-        core_module._INSIGHT_DESK_V2_EVENT_UNDERSTANDING_OWNER = event_understanding
-
-        # The compatibility installer still contains its pre-V2 event-evidence helper for
-        # historical direct-installer tests. Actual production immediately removes that helper from
-        # authority: event-level eligibility consumes only CanonicalEvent structure already produced
-        # by Event Understanding and never re-reads facts, EvidenceSpan, or SourceDocument text.
-        def event_topic_relevant_v2(*, event, facts, evidence, topic) -> bool:
-            del facts, evidence
-            canonical = registry.canonical_event(event.event_id)
-            decision = event_understanding.decide_topic_ownership(
-                canonical,
-                topic_id=topic.topic_id,
-                intent_anchors=tuple(topic.intent_anchors),
-                required_intent_terms=tuple(topic.required_intent_terms),
-            )
-            return decision.verdict is EventTopicOwnershipVerdict.OWNED
-
-        core_module.event_topic_relevant = event_topic_relevant_v2
-
-        # Keep unresolved ownership observable without logging article text or re-opening semantic
-        # authority in the publication validator. The orchestrator's existing audit writer remains
-        # authoritative for the rest of the runtime graph.
-        installed_write_json = core_module._write_json
-
-        def write_json_with_event_understanding(path, payload) -> None:
-            if (
-                isinstance(payload, dict)
-                and "rendered_sources" in payload
-                and "provider_roles" in payload
-            ):
-                payload = {
-                    **payload,
-                    "event_understanding": event_understanding.audit_stats,
-                }
-            installed_write_json(path, payload)
-
-        core_module._write_json = write_json_with_event_understanding
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         scope_phase7_story_readmission(core_module)
         yield registry
     finally:
-        orchestration_module.LegacySemanticPipeline = semantic_pipeline_snapshot
         for name, value in hook_snapshot.items():
             setattr(core_module, name, value)
         for name, value in marker_snapshot.items():
