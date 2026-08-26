@@ -5,7 +5,11 @@ from html import escape
 from typing import Mapping
 from urllib.parse import urlsplit
 
-from insight_desk.core import RenderMode, RenderedBriefing
+from insight_desk.core import RenderMode, RenderedBriefing, VerifiedPublication
+from insight_desk.publication_identity_v2 import (
+    PublicationIdentityManifest,
+    manifest_from_mapping,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +51,7 @@ class BriefingViewModel:
     briefing_id: str
     generated_label: str
     stories: tuple[StoryViewModel, ...]
+    publication_manifest: PublicationIdentityManifest | None = None
 
     def __post_init__(self) -> None:
         if not self.briefing_id.strip():
@@ -56,6 +61,15 @@ class BriefingViewModel:
         event_ids = tuple(story.event_id for story in self.stories)
         if len(event_ids) != len(set(event_ids)):
             raise ValueError("view model must not contain duplicate event ids")
+        if self.publication_manifest is not None:
+            if self.publication_manifest.briefing_id != self.briefing_id:
+                raise ValueError("publication manifest belongs to another briefing")
+            manifest_event_ids = tuple(
+                publication.event_id
+                for publication in self.publication_manifest.publications
+            )
+            if manifest_event_ids != event_ids:
+                raise ValueError("publication manifest order/identity differs from PWA stories")
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,11 +98,14 @@ def build_briefing_view_model(
     *,
     topic_by_event: Mapping[str, str] | None = None,
     source_by_event: Mapping[str, str] | None = None,
+    publication_by_event: Mapping[str, VerifiedPublication] | None = None,
 ) -> BriefingViewModel:
-    """Build UI data using only verified fields plus explicitly supplied topics and source URLs.
+    """Build UI data from verified fields without re-interpreting news meaning.
 
-    No topic, confidence, key fact, trend, history, source label, or next-signal text is inferred.
-    Missing optional UI data stays absent so the HTML renderer can omit that slot entirely.
+    Canonical V2 production supplies ``publication_by_event``. The resulting manifest preserves
+    publication/event/source/verification/parent/time/authority identity in machine-readable PWA
+    data while the visible card remains the already-verified headline, summary, topic, and source
+    link. Legacy callers may omit the manifest.
     """
 
     topics = topic_by_event or {}
@@ -105,10 +122,18 @@ def build_briefing_view_model(
         )
         for index, entry in enumerate(briefing.entries, start=1)
     )
+    manifest = None
+    if publication_by_event is not None:
+        manifest = manifest_from_mapping(
+            briefing.briefing_id,
+            tuple(entry.event_id for entry in briefing.entries),
+            publication_by_event,
+        )
     return BriefingViewModel(
         briefing_id=briefing.briefing_id,
         generated_label=briefing.generated_at.strftime("%Y. %m. %d %H:%M"),
         stories=stories,
+        publication_manifest=manifest,
     )
 
 
@@ -149,6 +174,25 @@ def _story_html(story: StoryViewModel) -> str:
     )
 
 
+def _publication_contract_html(view: BriefingViewModel) -> str:
+    manifest = view.publication_manifest
+    if manifest is None:
+        return ""
+    # Prevent a source URL or identifier from terminating the JSON script element. JSON semantics
+    # are preserved because these are standard Unicode escapes.
+    payload = (
+        manifest.canonical_json()
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+    return (
+        '<script id="insight-desk-publication-contract" type="application/json" '
+        f'data-publication-digest="{escape(manifest.sha256, quote=True)}">'
+        f'{payload}</script>'
+    )
+
+
 def _push_html(config: PwaRuntimeConfig) -> tuple[str, str, str]:
     if config.push_worker_url is None:
         return "", "", ""
@@ -178,12 +222,13 @@ def render_briefing_html(
     """Render a production briefing using locked assets without manufacturing missing UI facts.
 
     The PWA manifest is always linked. Push controls are emitted only when an explicit HTTPS Worker
-    URL is configured; otherwise no broken or misleading notification UI is shown. The notification
-    service worker is served from the Pages root so its `./` scope is valid without special headers.
+    URL is configured; otherwise no broken or misleading notification UI is shown. Canonical V2
+    identity, when supplied, is emitted as inert JSON rather than inferred visible copy.
     """
 
     runtime_config = runtime or PwaRuntimeConfig()
     push_meta, push_section, push_script = _push_html(runtime_config)
+    publication_contract = _publication_contract_html(view)
     story_count = len(view.stories)
     if view.stories:
         lead_items = "".join(
@@ -257,6 +302,7 @@ def render_briefing_html(
   </section>
   <footer>Insight Desk</footer>
 </main>
+{publication_contract}
 {push_script}
 </body>
 </html>
