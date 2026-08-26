@@ -59,6 +59,9 @@ _INCOMPLETE_IDENTITY_ROLE_RE = re.compile(
     r"^[가-힣]\s+(?:국회의원|의원|회장|부회장|대표이사|대표|사장|부사장|"
     r"위원장|장관|차관|총재|감독|코치|교수|박사)$"
 )
+_ACTION_PROJECTION_TOKEN_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:[⅛¼⅜½⅝¾⅞⅓⅔])?(?:%|％)?[가-힣A-Za-z]*|[가-힣A-Za-z·]{2,}"
+)
 _PROSPECTIVE_TEMPORAL_STATES = frozenset({"planned", "announced_prospective", "resuming"})
 
 
@@ -165,6 +168,28 @@ def _incomplete_event_subject(subject: str) -> bool:
     return _INCOMPLETE_IDENTITY_ROLE_RE.fullmatch(" ".join(subject.split()).strip()) is not None
 
 
+def _action_projection_tokens(value: str) -> frozenset[str]:
+    """Return only literal lexical anchors used to prove headline/action projection.
+
+    This is intentionally fail-open for loose paraphrase. The identity invariant should require a
+    headline subject only when the headline demonstrably reuses the primary fact's action surface;
+    another exact-source fact in the same evidence span must remain a valid headline candidate.
+    """
+
+    return frozenset(
+        token.casefold()
+        for token in _ACTION_PROJECTION_TOKEN_RE.findall(" ".join(value.split()))
+        if token
+    )
+
+
+def _headline_projects_primary_action(*, headline: str, action: str) -> bool:
+    headline_tokens = _action_projection_tokens(headline)
+    action_tokens = _action_projection_tokens(action)
+    shared = headline_tokens & action_tokens
+    return len(shared) >= 2 and sum(len(token) for token in shared) >= 5
+
+
 def _publication_identity_issues(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -173,8 +198,9 @@ def _publication_identity_issues(
 
     Phase 6A emits one fact per production candidate. Publication may paraphrase that fact, but it
     may not publish an already-incomplete named actor, erase a concrete evidence-bound primary
-    subject from the standalone headline, or strip the date/counterparty that identifies a planned
-    event. This is deliberately narrower than exact action-string preservation.
+    subject from a headline that demonstrably projects that fact's action, or strip the
+    date/counterparty that identifies a planned event. This remains narrower than exact action-string
+    preservation and does not force one fact's actor into a headline drawn from another cited fact.
     """
 
     fact = _primary_event_fact(request)
@@ -196,6 +222,7 @@ def _publication_identity_issues(
         subject
         and subject not in _GENERIC_PRIMARY_SUBJECTS
         and _normalized_surface_present(cited, subject)
+        and _headline_projects_primary_action(headline=draft.headline, action=fact.action)
         and not _normalized_surface_present(draft.headline, subject)
     ):
         issues.append(
@@ -249,9 +276,10 @@ def validate_preservation(
     """Extend the frozen core report with source-to-publication identity preservation.
 
     In addition to the measured date/attribution protections, every generation route—including
-    exact-source fallback—must preserve the identity-bearing slots of the primary EventFact. Exact
-    source bytes are not automatically publication-safe when a fallback selects only a clause and
-    drops who/what-date/counterparty context.
+    exact-source fallback—must preserve the identity-bearing slots of the primary EventFact when the
+    visible card demonstrably projects that fact. Exact source bytes are not automatically
+    publication-safe when a fallback selects only a clause and drops who/what-date/counterparty
+    context.
     """
 
     core_report = _core_validate_preservation(request, draft)
