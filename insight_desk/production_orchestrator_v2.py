@@ -30,6 +30,7 @@ from insight_desk.core import (
     VerificationVerdict,
 )
 from insight_desk.core.contracts import ContractBundle as LegacyContractBundle
+from insight_desk.publication_identity_v2 import PublicationIdentityManifest
 from insight_desk.semantic.identity import (
     SemanticIdentityJudgment,
     judge_same_event_mutual_entailment as legacy_judge_same_event,
@@ -440,6 +441,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
     registry = ProductionV2Registry()
     identity = CanonicalIdentityEngine(registry)
     authoritative = AuthoritativeEnricher.from_environment()
+    publication_manifest: PublicationIdentityManifest | None = None
 
     legacy_topic_relevant = core_module.topic_relevant
     legacy_build_view = core_module.build_briefing_view_model
@@ -561,6 +563,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
         )
 
     def build_view_v2(briefing, *, topic_by_event=None, source_by_event=None):
+        nonlocal publication_manifest
         del topic_by_event, source_by_event
         topics = {
             event_id: publication.topic
@@ -570,14 +573,37 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             event_id: publication.primary_source_url
             for event_id, publication in registry.publications_by_event.items()
         }
+        publication_manifest = PublicationIdentityManifest.from_verified(
+            briefing.briefing_id,
+            tuple(registry.publications_by_event.values()),
+        )
         return legacy_build_view(
             briefing,
             topic_by_event=topics,
             source_by_event=sources,
+            publication_by_event=registry.publications_by_event,
         )
 
     def write_json_v2(path, payload) -> None:
-        if isinstance(payload, dict) and "rendered_sources" in payload and "provider_roles" in payload:
+        if not isinstance(payload, dict):
+            legacy_write_json(path, payload)
+            return
+
+        if payload.get("publish") is True and "briefing_id" in payload and "published_entries" in payload:
+            if publication_manifest is None:
+                raise ContractError("published V2 state missing publication identity manifest")
+            if str(payload.get("briefing_id")) != publication_manifest.briefing_id:
+                raise ContractError("run state briefing identity differs from PWA publication identity")
+            payload = {
+                **payload,
+                "publication_contract_version": publication_manifest.version,
+                "publication_digest": publication_manifest.sha256,
+                "publication_ids": list(publication_manifest.publication_ids),
+            }
+
+        if "rendered_sources" in payload and "provider_roles" in payload:
+            if payload.get("publish") is True and publication_manifest is None:
+                raise ContractError("published V2 audit missing publication identity manifest")
             payload = {
                 **payload,
                 "publication_contract_version": 2,
@@ -589,6 +615,15 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                     "verified_publications": len(registry.publications_by_event),
                     "validated": registry.v2_bundle_validated,
                 },
+                "publication_identity": (
+                    {
+                        "briefing_id": publication_manifest.briefing_id,
+                        "sha256": publication_manifest.sha256,
+                        "publication_ids": list(publication_manifest.publication_ids),
+                    }
+                    if publication_manifest is not None
+                    else None
+                ),
                 "authoritative_enrichment": authoritative.audit_stats,
                 "runtime_authority": {
                     "relevance": "relevance_engine",
@@ -598,6 +633,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                     "generation": "publication_generator",
                     "verification": "claim_verification_engine",
                     "publication": "publication_contract",
+                    "rendering": "pwa_renderer",
                     "story_admission_semantic_gate": False,
                     "visible_identity_semantic_gate": False,
                 },
