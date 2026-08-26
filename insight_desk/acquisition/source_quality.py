@@ -53,7 +53,7 @@ class NewsDiscoveryRoute(Protocol):
 
 @dataclass(slots=True)
 class StaleUrlFilteringRoute:
-    """Drop stale-dated URLs before SequentialNewsDiscovery decides a route succeeded."""
+    """Drop stale-dated URLs before the discovery aggregator merges route candidates."""
 
     inner: NewsDiscoveryRoute
 
@@ -76,12 +76,12 @@ class StaleUrlFilteringRoute:
 
 
 def with_stale_url_filter(discovery):
-    """Wrap every configured route so an all-stale route can fall through to the next route."""
+    """Wrap every configured route without changing multi-provider aggregation semantics."""
 
-    from .discovery import SequentialNewsDiscovery
+    from .discovery import AggregatedNewsDiscovery
 
-    if not isinstance(discovery, SequentialNewsDiscovery):
-        raise TypeError("stale URL filter requires SequentialNewsDiscovery")
-    return SequentialNewsDiscovery(
+    if not isinstance(discovery, AggregatedNewsDiscovery):
+        raise TypeError("stale URL filter requires AggregatedNewsDiscovery")
+    return AggregatedNewsDiscovery(
         tuple(StaleUrlFilteringRoute(route) for route in discovery.routes)
     )
