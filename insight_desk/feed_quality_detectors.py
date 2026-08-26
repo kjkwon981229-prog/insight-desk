@@ -63,6 +63,22 @@ _ROLLING_SPORTS_FORM_RE = re.compile(
 _ROLLING_SPORTS_FORM_END_RE = re.compile(
     r"(?:기록했다|기록하였다|기록했습니다|그쳤다|그쳤습니다)$"
 )
+_AI_PREVIEW_PUBLISHER_NOTICE_RE = re.compile(
+    r"^\*?\s*위\s+내용은\s+생성형\s+AI로\s+예측한\s+경기\s+분석(?:\s|$)",
+    flags=re.IGNORECASE,
+)
+_COMPONENT_FEATURE_SUBJECT_RE = re.compile(
+    r"^(?:[가-힣A-Za-z0-9·-]+\s+){0,5}"
+    r"(?:팝업\s+전시|전시|부스|체험존|전시관|체험\s+공간|프로그램)"
+    r"(?:은|는|이|가)(?=\s)"
+)
+_COMPONENT_FEATURE_END_RE = re.compile(
+    r"(?:제공한다|제공합니다|지원한다|지원합니다|운영한다|운영합니다|"
+    r"구성된다|구성됩니다)$"
+)
+_COMPONENT_CURRENT_EVENT_RE = re.compile(
+    r"(?:개막|개최|오픈|문을\s+열|출시|공개|발표|도입|신설|시작|선보였|선보인다)"
+)
 _KBO_TEAM_RE = re.compile(
     r"(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
     r"두산(?:\s*베어스)?|롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|KT(?:\s*위즈)?|"
@@ -212,6 +228,29 @@ def _unidentified_kbo_result(value: str) -> bool:
     return _KBO_SCORE_RE.search(normalized) is None and _KBO_DAY_RE.search(normalized) is None
 
 
+def _publisher_ai_preview_notice(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    return _AI_PREVIEW_PUBLISHER_NOTICE_RE.search(normalized) is not None
+
+
+def _component_feature_state(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    if not primary or _COMPONENT_FEATURE_SUBJECT_RE.search(primary) is None:
+        return False
+    if _COMPONENT_CURRENT_EVENT_RE.search(primary) is not None:
+        return False
+    return _COMPONENT_FEATURE_END_RE.search(primary) is not None
+
+
+def visible_metadata_text(value: str) -> bool:
+    return _impl.visible_metadata_text(value) or _publisher_ai_preview_notice(value)
+
+
+def publisher_notice_boilerplate(value: str) -> bool:
+    return _impl.publisher_notice_boilerplate(value) or _publisher_ai_preview_notice(value)
+
+
 def context_dependent_headline(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
     return (
@@ -268,6 +307,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or rolling_form_only
+        or _component_feature_state(primary)
     )
 
 
