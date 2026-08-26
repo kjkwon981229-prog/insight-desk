@@ -55,7 +55,14 @@ _GENERIC_MARKET_COGNITION_RE = re.compile(
     r"[^.!?。！？]{0,260}?"
     r"(?:보고\s+있다|보고\s+있습니다|평가한다|평가하고\s+있다|평가하고\s+있습니다|"
     r"판단한다|판단하고\s+있다|해석한다|해석하고\s+있다|"
-    r"주목하고\s+있다|주목하고\s+있습니다|기대하고\s+있다|기대하고\s+있습니다)$"
+    r"주목하고\s+있다|주목하고\s+있습니다|기대하고\s+있다|기대하고\s+있습니다|"
+    r"관심(?:을)?\s+(?:쏟고|집중하고)\s+있다|관심(?:을)?\s+(?:쏟고|집중하고)\s+있습니다)$"
+)
+_ROLLING_MARKET_STATE_RE = re.compile(
+    r"^(?:코스피|코스닥|원달러\s*환율|원·달러\s*환율|환율|증시|주가지수)"
+    r"(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
+    r"(?:등락을\s+반복|오르내리)[^.!?。！？]{0,100}?"
+    r"(?:방향을\s+잡|방향성을\s+찾)[^.!?。！？]{0,30}?못하고\s+있다$"
 )
 _ABSTRACT_EMERGENCE_ATTENTION_RE = re.compile(
     r"(?:모델|방식|전략|흐름|움직임)(?:이|가)\s+"
@@ -90,6 +97,14 @@ _COMPONENT_FEATURE_END_RE = re.compile(
 _COMPONENT_CURRENT_EVENT_RE = re.compile(
     r"(?:개막|개최|오픈|문을\s+열|출시|공개|발표|도입|신설|시작|선보였|선보인다)"
 )
+_PARENTLESS_EXHIBITION_FEATURE_RE = re.compile(
+    r"^(?:K-POP\s+)?(?:[A-Za-z가-힣0-9·-]+\s+){0,3}"
+    r"(?:팝업\s+전시|체험관|전시관|체험존)에서\s+"
+    r"(?:관람객|방문객)(?:은|는|이|가)\s+[^.!?。！？]{1,220}?"
+    r"(?:체험|제작|이용)[^.!?。！？]{0,100}?"
+    r"(?:할\s+수\s+있|이용할\s+수\s+있)[^.!?。！？]{0,140}?"
+    r"(?:안내|다국어)[^.!?。！？]{0,80}?제공된다$"
+)
 _LEADING_TIMESTAMP_CHROME_RE = re.compile(
     r"^\s*[-–—]?\s*(?:입력|기사입력|등록|수정|업데이트)\s+"
     r"20\d{2}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2})?(?=\s|$)",
@@ -98,6 +113,7 @@ _LEADING_TIMESTAMP_CHROME_RE = re.compile(
 _SQUARE_BRACKET_BYLINE_RE = re.compile(
     r"\[[^\]\n=]{1,50}=[^\]\n]{1,50}\s+(?:기자|특파원)\]"
 )
+_LEADING_SECTION_GLYPH_RE = re.compile(r"^[◆◇](?=\S)")
 _STATIC_COMPANY_CAPABILITY_RE = re.compile(
     r"(?:\d[\d,.]*(?:만|천|백)?\s*점\s+이상|\d[\d,.]*\s*개(?:의)?)"
     r"\s*(?:의\s+)?(?:제품|의료기기|품목)"
@@ -191,6 +207,11 @@ _SUBJECTLESS_CAUSAL_REMAINDER_RE = re.compile(
     r"[^.!?。！？]{0,60}?(?:고|며)[,，]?\s+"
     r"[^.!?。！？]{0,140}?부담(?:을|이)?\s+(?:주|준|준다|된다)"
 )
+_ORPHANED_REPORTING_ADNOMINAL_HEADLINE_RE = re.compile(
+    r"^(?:발표|공개|발간|공표|집계|작성|조사)한\s+"
+    r"[^.!?。！？]{1,180}?(?:통계|자료|보고서|조사|분석)"
+    r"(?:에\s+따르면|에서)(?:[,，]?\s|$)"
+)
 _GENERIC_RATE_HEADLINE_RE = re.compile(r"^(?:상품\s+)?금리(?:는|가)?(?=\s)")
 _SCOPED_RATE_SUMMARY_RE = re.compile(
     r"(?:주담대|주택담보대출|신용대출|일반신용대출|기업대출|가계대출|예금은행)"
@@ -236,6 +257,13 @@ _HEADLESS_ONGOING_ACTION_HEADLINE_RE = re.compile(
 )
 _INSTITUTIONAL_SUMMARY_ACTOR_RE = re.compile(
     r"(?:저축은행|시중은행|은행|증권사|기업|업체)(?:들)?(?:은|는|이|가)"
+)
+_RETROSPECTIVE_CONTINUITY_SUMMARY_RE = re.compile(
+    r"(?:선보이며|소개하며|공개하며)[^.!?。！？]{0,140}?"
+    r"팬들과\s+소통(?:을)?\s+(?:이어왔|해\s*왔)(?:다|습니다)$"
+)
+_RELEASE_PROMOTION_HEADLINE_RE = re.compile(
+    r"(?:영상|브이로그|뮤직비디오|비하인드|콘텐츠)[^.!?。！？]{0,80}?공개$"
 )
 _ANONYMOUS_GENERALIZATION_END_RE = re.compile(
     r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
@@ -497,6 +525,15 @@ def _headline_drops_ordinary_action_actor(*, headline: str, summary: str) -> boo
     )
 
 
+def _headline_promotes_retrospective_continuity(*, headline: str, summary: str) -> bool:
+    normalized_headline = " ".join(headline.split()).rstrip(".!?。！？").rstrip()
+    normalized_summary = " ".join(summary.split()).rstrip(".!?。！？").rstrip()
+    return (
+        _RELEASE_PROMOTION_HEADLINE_RE.search(normalized_headline) is not None
+        and _RETROSPECTIVE_CONTINUITY_SUMMARY_RE.search(normalized_summary) is not None
+    )
+
+
 def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
@@ -507,6 +544,11 @@ def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
     if _headline_drops_bare_numeric_metric(headline=normalized_headline, summary=normalized_summary):
         return True
     if _headline_drops_ordinary_action_actor(headline=normalized_headline, summary=normalized_summary):
+        return True
+    if _headline_promotes_retrospective_continuity(
+        headline=normalized_headline,
+        summary=normalized_summary,
+    ):
         return True
     reporting_actor = _leading_summary_subject_surface(summary)
     if reporting_actor is not None and _REPORTING_PREDICATE_END_RE.search(normalized_headline):
@@ -558,7 +600,11 @@ def _publisher_ai_preview_notice(value: str) -> bool:
 def _component_feature_state(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
     primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
-    if not primary or _COMPONENT_FEATURE_SUBJECT_RE.search(primary) is None:
+    if not primary:
+        return False
+    if _PARENTLESS_EXHIBITION_FEATURE_RE.search(primary) is not None:
+        return True
+    if _COMPONENT_FEATURE_SUBJECT_RE.search(primary) is None:
         return False
     if _COMPONENT_CURRENT_EVENT_RE.search(primary) is not None:
         return False
@@ -570,6 +616,7 @@ def _visible_extraction_chrome(value: str) -> bool:
     return (
         _LEADING_TIMESTAMP_CHROME_RE.search(normalized) is not None
         or _SQUARE_BRACKET_BYLINE_RE.search(normalized) is not None
+        or _LEADING_SECTION_GLYPH_RE.search(normalized) is not None
     )
 
 
@@ -678,6 +725,7 @@ def context_dependent_headline(value: str) -> bool:
         or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
         or _CONNECTIVE_LED_HEADLINE_RE.search(normalized) is not None
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
+        or _ORPHANED_REPORTING_ADNOMINAL_HEADLINE_RE.search(normalized) is not None
     )
 
 
@@ -750,6 +798,7 @@ def non_event_analytical_text(value: str) -> bool:
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
         or _unattributed_passive_interpretation(primary)
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
+        or _ROLLING_MARKET_STATE_RE.search(primary) is not None
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
