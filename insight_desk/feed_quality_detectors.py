@@ -126,6 +126,7 @@ _SQUARE_BRACKET_BYLINE_RE = re.compile(
     r"\[[^\]\n=]{1,50}=[^\]\n]{1,50}\s+(?:기자|특파원)\]"
 )
 _LEADING_SECTION_GLYPH_RE = re.compile(r"^[◆◇](?=\S)")
+_LEADING_SOURCE_BULLET_RE = re.compile(r"^(?:[-–—•])\s+")
 _STATIC_COMPANY_CAPABILITY_RE = re.compile(
     r"(?:\d[\d,.]*(?:만|천|백)?\s*점\s+이상|\d[\d,.]*\s*개(?:의)?)"
     r"\s*(?:의\s+)?(?:제품|의료기기|품목)"
@@ -143,6 +144,14 @@ _STATIC_PRODUCT_DEFINITION_RE = re.compile(
 _STATIC_COMPANY_IDENTITY_RE = re.compile(
     r"^[가-힣A-Za-z0-9·&()/_+.-]{2,40}(?:은|는|이|가)\s+"
     r"[^.!?。！？]{1,260}?(?:제조|개발|공급|운영|제공)하는\s+기업(?:이다|입니다)$"
+)
+_SURVEY_METHOD_ONLY_RE = re.compile(
+    r"(?:국가|지역)(?:들)?(?:을|를)\s+[^.!?。！？]{0,100}?"
+    r"선정(?:하여|해)\s+[^.!?。！？]{0,100}?(?:조사|설문)(?:을)?\s+(?:진행|실시)했다$"
+)
+_ONGOING_STRATEGY_DESCRIPTION_RE = re.compile(
+    r"^[가-힣A-Za-z0-9·&()/_+.-]{2,50}(?:은|는|이|가)\s+"
+    r"[^.!?。！？]{1,240}?(?:전략|체계)(?:을)?\s+(?:제시|추진|전개|구축)하고\s+있다$"
 )
 _ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
     r"(?:이야기|서사|메시지)(?:가|를|은|는)?"
@@ -184,6 +193,9 @@ _KBO_GENERIC_RESULT_RE = re.compile(
 )
 _KBO_SCORE_RE = re.compile(r"(?<!\d)\d{1,2}\s*(?:대|[-:])\s*\d{1,2}(?!\d)")
 _KBO_DAY_RE = re.compile(r"(?<!\d)(?:[0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
+_MATCHLESS_HANWHA_STARTER_PREVIEW_RE = re.compile(
+    r"^한화(?:\s+이글스)?\s+[가-힣A-Za-z·-]+(?:\s+[가-힣A-Za-z·-]+){0,2}\s+선발\s+등판$"
+)
 
 # Discourse references are handled as a syntactic family instead of extending one
 # live-specific noun blacklist. Measure-like heads still form a semantic class because
@@ -272,6 +284,10 @@ _ONGOING_BUSINESS_EXPANSION_RE = re.compile(
 )
 _BARE_NUMERIC_MOVEMENT_HEADLINE_RE = re.compile(
     r"^\d[\d,.]*\s*(?:원|달러|%|％|포인트)?(?:으로|로)\s+출발한\s+뒤\s+"
+)
+_ACTORLESS_MARKET_SESSION_HEADLINE_RE = re.compile(
+    r"^(?:전장|전일|직전\s+거래일)\s+대비\s+[^.!?。！？]{1,140}?"
+    r"(?:출발한\s+뒤|출발해)[^.!?。！？]{1,140}?(?:장(?:을)?\s+)?마감했다$"
 )
 _HEADLESS_ONGOING_ACTION_HEADLINE_RE = re.compile(
     r"^이제는\s+[^.!?。！？]{1,80}?"
@@ -539,6 +555,17 @@ def _headline_drops_bare_numeric_metric(*, headline: str, summary: str) -> bool:
     return metric_subject is not None and metric_subject.casefold() not in normalized_headline.casefold()
 
 
+def _headline_drops_market_session_actor(*, headline: str, summary: str) -> bool:
+    normalized_headline = " ".join(headline.split()).rstrip(".!?。！？").rstrip()
+    normalized_summary = " ".join(summary.split()).strip()
+    if _ACTORLESS_MARKET_SESSION_HEADLINE_RE.search(normalized_headline) is None:
+        return False
+    metric_subject = _leading_summary_subject_surface(normalized_summary)
+    if metric_subject is None or not re.search(r"(?:코스피|코스닥)(?:지수)?$", metric_subject):
+        return False
+    return metric_subject.casefold() not in normalized_headline.casefold()
+
+
 def _headline_drops_ordinary_action_actor(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
@@ -567,6 +594,8 @@ def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
     if _headline_drops_metric_scope(headline=normalized_headline, summary=normalized_summary):
         return True
     if _headline_drops_bare_numeric_metric(headline=normalized_headline, summary=normalized_summary):
+        return True
+    if _headline_drops_market_session_actor(headline=normalized_headline, summary=normalized_summary):
         return True
     if _headline_drops_ordinary_action_actor(headline=normalized_headline, summary=normalized_summary):
         return True
@@ -642,6 +671,7 @@ def _visible_extraction_chrome(value: str) -> bool:
         _LEADING_TIMESTAMP_CHROME_RE.search(normalized) is not None
         or _SQUARE_BRACKET_BYLINE_RE.search(normalized) is not None
         or _LEADING_SECTION_GLYPH_RE.search(normalized) is not None
+        or _LEADING_SOURCE_BULLET_RE.search(normalized) is not None
     )
 
 
@@ -746,6 +776,7 @@ def context_dependent_headline(value: str) -> bool:
         or _unidentified_kbo_result(normalized)
         or _actorless_multi_vote_ranking(normalized)
         or _unidentified_album_tracklist(normalized)
+        or _MATCHLESS_HANWHA_STARTER_PREVIEW_RE.search(normalized.rstrip(".!?。！？").rstrip()) is not None
         or _PARENTLESS_TASK_LEAD_RE.search(normalized) is not None
         or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
         or _CONNECTIVE_LED_HEADLINE_RE.search(normalized) is not None
@@ -833,6 +864,8 @@ def non_event_analytical_text(value: str) -> bool:
         or _ANONYMOUS_ABSTRACT_CHANGE_RE.search(primary) is not None
         or _RATIONALE_ONLY_PRIMARY_RE.search(primary) is not None
         or _ONGOING_BUSINESS_EXPANSION_RE.search(primary) is not None
+        or _SURVEY_METHOD_ONLY_RE.search(primary) is not None
+        or _ONGOING_STRATEGY_DESCRIPTION_RE.search(primary) is not None
         or _media_synopsis(primary)
         or _ATMOSPHERE_ONLY_SCENE_RE.search(primary) is not None
         or rolling_form_only

@@ -8,6 +8,7 @@ _DAY_RE = re.compile(r"(?<!\d)([0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
 _OUTCOME_CUES = ("승리", "이겼", "이기고", "꺾", "제압", "패배", "졌다", "패했다")
 _WIN_CUES = ("완파", "제압", "꺾", "이겼", "승리")
 _LOSS_CUES = ("패배", "패하며", "패했다", "패전", "졌다")
+_YIELDED_VICTORY_CUES = ("승리를 내줬", "승리를 내주었", "승리를 내주었다")
 _LINEUP_RE = re.compile(r"(?:선발\s+)?(?:라인업|타순|명단)")
 _LINEUP_EVENT_RE = re.compile(r"(?:발표|공개|확정|꾸렸|꾸렸다|구성|내놨|나선다)")
 _GAME_NUMBER_RE = re.compile(r"(?:더블헤더\s*)?([12])차전")
@@ -153,6 +154,9 @@ def _losing_team(text: str, teams: frozenset[str]) -> str | None:
 
 
 def _resolved_winner(text: str, teams: frozenset[str]) -> str | None:
+    yielded_loser = _outcome_subject_team(text, teams, _YIELDED_VICTORY_CUES)
+    if yielded_loser is not None:
+        return next((team for team in teams if team != yielded_loser), None)
     winner = _winning_team(text, teams)
     if winner is not None:
         return winner
