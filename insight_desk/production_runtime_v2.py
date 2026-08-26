@@ -7,6 +7,11 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
+import insight_desk.production_orchestrator_v2 as orchestration_module
+from insight_desk.event_understanding_v2 import (
+    EventUnderstandingSemanticPipeline,
+    PrimaryEventUnderstandingOwner,
+)
 from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
     install_production_orchestration,
@@ -39,6 +44,7 @@ _CORE_HOOKS = (
 )
 _MARKERS = (
     "_INSIGHT_DESK_V2_REGISTRY",
+    "_INSIGHT_DESK_V2_EVENT_UNDERSTANDING_OWNER",
     "_INSIGHT_DESK_V2_IDENTITY_OWNER",
     "_INSIGHT_DESK_V2_AUTHORITATIVE_OWNER",
 )
@@ -61,14 +67,28 @@ def production_v2_runtime(core_module: ModuleType):
     }
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
+    semantic_pipeline_snapshot = orchestration_module.LegacySemanticPipeline
 
     registry: ProductionV2Registry | None = None
+    event_understanding = PrimaryEventUnderstandingOwner()
     try:
+        # Event understanding must run before CanonicalEvent creation and authoritative enrichment.
+        # The compatibility orchestrator constructs its inner semantic pipeline lazily, so scoping
+        # this one dependency here preserves import-time purity and leaves historical helpers alone.
+        orchestration_module.LegacySemanticPipeline = lambda *args, **kwargs: (
+            EventUnderstandingSemanticPipeline(
+                *args,
+                owner=event_understanding,
+                **kwargs,
+            )
+        )
         registry = install_production_orchestration(core_module)
+        core_module._INSIGHT_DESK_V2_EVENT_UNDERSTANDING_OWNER = event_understanding
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         scope_phase7_story_readmission(core_module)
         yield registry
     finally:
+        orchestration_module.LegacySemanticPipeline = semantic_pipeline_snapshot
         for name, value in hook_snapshot.items():
             setattr(core_module, name, value)
         for name, value in marker_snapshot.items():
