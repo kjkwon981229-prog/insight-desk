@@ -11,7 +11,7 @@ from .facts import FactDraft, FactExtractionRequest, FactExtractorPort
 _TRAILING_PUNCTUATION = " \t\r\n.!?…"
 _SENTENCE_TERMINALS = frozenset(".!?…")
 _SIMPLE_SUBJECT_RE = re.compile(
-    r"^\s*(?P<subject>[0-9A-Za-z가-힣·&()（）.'\- ]{1,60}?)(?P<particle>은|는|이|가)\s*(?P<action>.+?)\s*$"
+    r"^\s*(?P<subject>[0-9A-Za-z가-힣·&()（）.'\- ]{1,60}?)(?P<particle>은|는|이|가)(?=\s)\s*(?P<action>.+?)\s*$"
 )
 _NESTED_SUBJECT_RE = re.compile(r"[0-9A-Za-z가-힣)）](?:은|는|이|가)(?=\s)")
 
