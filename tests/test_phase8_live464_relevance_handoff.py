@@ -185,6 +185,37 @@ class Live464EventRelevanceHandoffRegressions(unittest.TestCase):
                 )
             )
 
+    def test_topic_without_required_intent_does_not_gain_a_new_event_filter(self) -> None:
+        topic = _topic(
+            "economy",
+            anchors=("한국은행", "환율"),
+            required=(),
+        )
+        event_text = "시장금리가 장중 상승했다."
+        article = _article(
+            "economy-no-required",
+            title="한국은행 관련 금융시장 동향",
+            body=f"한국은행 관련 금융시장 동향이다. {event_text}",
+            topic_id=topic.topic_id,
+        )
+        with production_v2_runtime(production._core) as registry:
+            event, fact, evidence = _bind_event(
+                registry,
+                article=article,
+                topic_id=topic.topic_id,
+                evidence_text=event_text,
+                subject="시장금리",
+                action="장중 상승했다",
+            )
+            self.assertTrue(
+                production._core.event_topic_relevant(
+                    event=event,
+                    facts={fact.fact_id: fact},
+                    evidence={evidence.evidence_id: evidence},
+                    topic=topic,
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
