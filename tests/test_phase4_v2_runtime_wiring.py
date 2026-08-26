@@ -16,6 +16,7 @@ import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
 import insight_desk.production_phase7_v2 as phase7_scope
 import scripts.phase11_daily_production as production
+import scripts.validate_feed_artifact as feed_validator
 
 
 NOW = datetime(2026, 8, 27, 0, 0, tzinfo=timezone.utc)
@@ -62,6 +63,38 @@ def event_fact(
         article_ids=(article_id,),
     )
     return event, fact
+
+
+def v2_html(*, source_url: str = "https://example.com/20200101/source") -> str:
+    return (
+        '<!doctype html><html><body>'
+        '<article class="story-row" data-event-id="event:v2">'
+        '<div class="story-main">'
+        '<div class="story-meta"><span class="story-topic">경제·투자</span></div>'
+        '<h3>이번 결정</h3>'
+        '<p class="story-summary">이는 시장에 영향을 준다.</p>'
+        f'<a class="story-source" href="{source_url}">원문 보기</a>'
+        '</div></article></body></html>'
+    )
+
+
+def v2_audit(*, validated: bool = True, source_url: str = "https://example.com/20200101/source") -> dict[str, object]:
+    return {
+        "publication_contract_version": 2,
+        "canonical_contract": {"validated": validated},
+        "runtime_authority": {
+            "story_admission_semantic_gate": False,
+            "visible_identity_semantic_gate": False,
+        },
+        "rendered_sources": [
+            {
+                "event_id": "event:v2",
+                "source_group_key": "source-group:v2",
+                "content_sha256": "a" * 64,
+                "source_url": source_url,
+            }
+        ],
+    }
 
 
 class ProductionAuthorityWiringTests(unittest.TestCase):
@@ -211,6 +244,27 @@ class CanonicalIdentityOwnerTests(unittest.TestCase):
         self.assertIsNotNone(left.parent_event_id)
         self.assertEqual(left.parent_event_id, right.parent_event_id)
         self.assertIn(left.parent_event_id, registry.parent_events_by_id)
+
+
+class V2ArtifactContractTests(unittest.TestCase):
+    def test_v2_artifact_validator_does_not_rejudge_visible_news_semantics(self) -> None:
+        report = feed_validator.validate_html(v2_html(), source_audit=v2_audit())
+        self.assertEqual(report["publication_contract_version"], 2)
+        self.assertFalse(report["semantic_revalidation"])
+        self.assertEqual(report["context_dependent_headlines"], 0)
+        self.assertEqual(report["context_dependent_summaries"], 0)
+        self.assertEqual(report["stale_source_urls"], 0)
+
+    def test_v2_artifact_requires_a_validated_canonical_bundle(self) -> None:
+        with self.assertRaisesRegex(ValueError, "CANONICAL_CONTRACT_UNVALIDATED"):
+            feed_validator.validate_html(
+                v2_html(),
+                source_audit=v2_audit(validated=False),
+            )
+
+    def test_legacy_artifact_without_v2_audit_keeps_historical_semantic_regressions(self) -> None:
+        with self.assertRaises(ValueError):
+            feed_validator.validate_html(v2_html())
 
 
 if __name__ == "__main__":
