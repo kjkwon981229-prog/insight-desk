@@ -214,6 +214,29 @@ _SAME_DAY_PAST_CUE_RE = re.compile(
     r"지난\s+(?:(?P<month>1[0-2]|0?[1-9])월\s*)?"
     r"(?P<day>3[01]|[12]\d|0?[1-9])일"
 )
+_RATIONALE_ONLY_PRIMARY_RE = re.compile(
+    r"^[^.!?。！？]{1,140}?(?:강화|확대|개선|고도화)에\s+나선\s+것은\s+"
+    r"[^.!?。！？]{1,220}?때문이다$"
+)
+_ORPHANED_REPORTED_TREND_RE = re.compile(
+    r"^[^.!?。！？]{1,100}?(?:늘어남에\s+따라|증가함에\s+따라|확대됨에\s+따라|"
+    r"늘면서|증가하면서|확대되면서)\s+"
+    r"[^.!?。！？]{1,220}?다고\s+전했다$"
+)
+_ONGOING_BUSINESS_EXPANSION_RE = re.compile(
+    r"^[가-힣A-Za-z0-9·&()/_+-]{2,40}(?:은|는|이|가)\s+"
+    r"[^.!?。！？]{1,180}?분야로\s+사업\s+영역을\s+확장하고\s+있다$"
+)
+_BARE_NUMERIC_MOVEMENT_HEADLINE_RE = re.compile(
+    r"^\d[\d,.]*\s*(?:원|달러|%|％|포인트)?(?:으로|로)\s+출발한\s+뒤\s+"
+)
+_HEADLESS_ONGOING_ACTION_HEADLINE_RE = re.compile(
+    r"^이제는\s+[^.!?。！？]{1,80}?"
+    r"(?:내리고|줄이고|올리고|늘리고)\s+있(?:습니다|다)$"
+)
+_INSTITUTIONAL_SUMMARY_ACTOR_RE = re.compile(
+    r"(?:저축은행|시중은행|은행|증권사|기업|업체)(?:들)?(?:은|는|이|가)"
+)
 _ANONYMOUS_GENERALIZATION_END_RE = re.compile(
     r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
     r"(?:에만\s+)?머물지\s+않는다)$"
@@ -456,12 +479,34 @@ def _headline_drops_metric_scope(*, headline: str, summary: str) -> bool:
     )
 
 
+def _headline_drops_bare_numeric_metric(*, headline: str, summary: str) -> bool:
+    normalized_headline = " ".join(headline.split()).strip()
+    normalized_summary = " ".join(summary.split()).strip()
+    if _BARE_NUMERIC_MOVEMENT_HEADLINE_RE.search(normalized_headline) is None:
+        return False
+    metric_subject = _leading_summary_subject_surface(normalized_summary)
+    return metric_subject is not None and metric_subject.casefold() not in normalized_headline.casefold()
+
+
+def _headline_drops_ordinary_action_actor(*, headline: str, summary: str) -> bool:
+    normalized_headline = " ".join(headline.split()).strip()
+    normalized_summary = " ".join(summary.split()).strip()
+    return (
+        _HEADLESS_ONGOING_ACTION_HEADLINE_RE.search(normalized_headline) is not None
+        and _INSTITUTIONAL_SUMMARY_ACTOR_RE.search(normalized_summary) is not None
+    )
+
+
 def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
     if _LEADING_STARTING_PITCHER_ROLE_RE.search(normalized_summary) is not None:
         return "선발" not in normalized_headline and "투수" not in normalized_headline
     if _headline_drops_metric_scope(headline=normalized_headline, summary=normalized_summary):
+        return True
+    if _headline_drops_bare_numeric_metric(headline=normalized_headline, summary=normalized_summary):
+        return True
+    if _headline_drops_ordinary_action_actor(headline=normalized_headline, summary=normalized_summary):
         return True
     reporting_actor = _leading_summary_subject_surface(summary)
     if reporting_actor is not None and _REPORTING_PREDICATE_END_RE.search(normalized_headline):
@@ -649,6 +694,7 @@ def context_dependent_summary(value: str) -> bool:
         or _unidentified_album_tracklist(normalized)
         or _PARENTLESS_TASK_LEAD_RE.search(normalized) is not None
         or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
+        or _ORPHANED_REPORTED_TREND_RE.search(normalized.rstrip(".!?。！？").rstrip()) is not None
     )
 
 
@@ -709,6 +755,8 @@ def non_event_analytical_text(value: str) -> bool:
         or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
         or _ANONYMOUS_SECTOR_STATE_RE.search(primary) is not None
         or _ANONYMOUS_ABSTRACT_CHANGE_RE.search(primary) is not None
+        or _RATIONALE_ONLY_PRIMARY_RE.search(primary) is not None
+        or _ONGOING_BUSINESS_EXPANSION_RE.search(primary) is not None
         or _media_synopsis(primary)
         or rolling_form_only
         or _component_feature_state(primary)
