@@ -84,6 +84,7 @@ class PublishedCandidate:
     source_group_key: str
     content_sha256: str
     identity_text: str
+    source_identity_text: str
     source_url: str
 
 
@@ -461,6 +462,8 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             prior_summary=prior_draft.summary,
                             candidate_headline=visible_headline,
                             candidate_summary=visible_summary,
+                            prior_source_text=prior.source_identity_text,
+                            candidate_source_text=article.body,
                         ):
                             identity_stats["same_event"] += 1
                             attempts.append(_attempt(
@@ -515,6 +518,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             source_group_key=source_group_key,
                             content_sha256=content_sha256,
                             identity_text=identity_text,
+                            source_identity_text=article.body,
                             source_url=article.provenance.url,
                         )
                     )

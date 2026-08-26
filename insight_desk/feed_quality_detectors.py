@@ -51,6 +51,18 @@ _ABSTRACT_EMERGENCE_ATTENTION_RE = re.compile(
     r"(?:새로\s+)?(?:등장|나타나|확산)(?:해|하며|하면서|하고|했다|하고\s+있)[^.!?。！？]{0,140}?"
     r"(?:이목|관심|주목)(?:을|이)?\s*(?:모으|끌)"
 )
+_CONDITIONAL_EXPECTED_BENEFIT_RE = re.compile(
+    r"(?:하면|할\s+경우|한다면)\s*[^.!?。！？]{0,180}?"
+    r"(?:도움(?:이|을)?\s+될|기여할|활성화(?:에|를)?\s+도움|효과(?:가|를)?\s+(?:있|낼))"
+    r"[^.!?。！？]{0,100}?(?:것으로\s+)?"
+    r"(?:기대됐|기대된다|기대됩니다|전망됐|전망된다|전망됩니다)"
+)
+_ROLLING_SPORTS_FORM_RE = re.compile(
+    r"최근\s+\d+\s*경기(?:에서|는|동안)?[^.!?。！？]{0,70}?\d+\s*승\s*\d+\s*패"
+)
+_ROLLING_SPORTS_FORM_END_RE = re.compile(
+    r"(?:기록했다|기록하였다|기록했습니다|그쳤다|그쳤습니다)$"
+)
 _KBO_TEAM_RE = re.compile(
     r"(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
     r"두산(?:\s*베어스)?|롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|KT(?:\s*위즈)?|"
@@ -243,12 +255,19 @@ def stale_relative_past_event_text(value: str) -> bool:
 
 def non_event_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    rolling_form_only = (
+        _ROLLING_SPORTS_FORM_RE.search(primary) is not None
+        and _ROLLING_SPORTS_FORM_END_RE.search(primary) is not None
+    )
     return (
         _impl.non_event_analytical_text(normalized)
         or _INTERPRETIVE_BACKGROUND_END_RE.search(normalized) is not None
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
+        or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
+        or rolling_form_only
     )
 
 

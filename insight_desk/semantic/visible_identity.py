@@ -12,14 +12,16 @@ def visible_event_redundant(
     prior_summary: str,
     candidate_headline: str,
     candidate_summary: str,
+    prior_source_text: str = "",
+    candidate_source_text: str = "",
 ) -> bool:
-    """Recognize only high-precision visible duplicates before semantic identity calls.
+    """Recognize only high-precision publication duplicates before semantic identity calls.
 
-    This publication gate is intentionally narrower than general event identity. It handles measured
-    perspective-only duplicates whose visible surfaces already contain enough explicit evidence to
-    resolve one parent event: reciprocal KBO final results, one domestic market close described from
-    two subject perspectives, and sibling metrics from the same exact official statistical release.
-    It never performs fuzzy matching and does not alter the Phase 6 semantic-verification contract.
+    The gate remains narrower than general event identity. KBO results and market closes are resolved
+    from visible surfaces. Official statistical releases may additionally use exact source provenance
+    when generation erased the release label from one child fact. The source-backed path still requires
+    the same actor, reference month, and exact multi-token statistical release label; it never performs
+    fuzzy matching and does not alter the Phase 6 semantic-verification contract.
     """
 
     if topic_id == "kbo_hanwha":
@@ -33,9 +35,14 @@ def visible_event_redundant(
     if topic_id == "economy":
         prior = " ".join(f"{prior_headline} {prior_summary}".split())
         candidate = " ".join(f"{candidate_headline} {candidate_summary}".split())
-        return (
-            same_market_session_close_fingerprint(prior, candidate)
-            or same_statistical_release_fingerprint(prior, candidate)
+        if same_market_session_close_fingerprint(prior, candidate):
+            return True
+        if same_statistical_release_fingerprint(prior, candidate):
+            return True
+        return bool(
+            prior_source_text
+            and candidate_source_text
+            and same_statistical_release_fingerprint(prior_source_text, candidate_source_text)
         )
 
     return False
