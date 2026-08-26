@@ -40,11 +40,11 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
                 sort_keys=True,
             )
             self.assertTrue(result.state["publish"])
-            self.assertEqual(result.state["published_entries"], 2, diagnostic)
+            self.assertEqual(result.state["published_entries"], 3, diagnostic)
             self.assertEqual(result.report["status"], "PARTIAL")
             self.assertFalse(result.report["raw_article_body_complete"])
-            self.assertEqual(result.report["candidate_count"], 3)
-            self.assertEqual(result.report["published_entries"], 2)
+            self.assertEqual(result.report["candidate_count"], 4)
+            self.assertEqual(result.report["published_entries"], 3)
             self.assertEqual(result.report["network_calls"], 0)
             self.assertEqual(
                 result.report["provider_mode"],
@@ -57,9 +57,9 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
 
             manifest = result.publication_manifest
             self.assertEqual(manifest["version"], 2)
-            self.assertEqual(len(manifest["publications"]), 2)
+            self.assertEqual(len(manifest["publications"]), 3)
             by_topic = {item["topic"]: item for item in manifest["publications"]}
-            self.assertEqual(set(by_topic), {"economy", "kbo_hanwha"})
+            self.assertEqual(set(by_topic), {"economy", "kpop", "kbo_hanwha"})
 
             economy = by_topic["economy"]
             self.assertIsNotNone(economy["parent_event_id"])
@@ -70,6 +70,11 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
             self.assertEqual(
                 economy["primary_source_url"],
                 "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8647231&ref=A",
+            )
+            self.assertIsNone(by_topic["kpop"]["parent_event_id"])
+            self.assertEqual(
+                by_topic["kpop"]["primary_source_url"],
+                "https://sports.khan.co.kr/article/202608262257003?pt=nv",
             )
             self.assertIsNone(by_topic["kbo_hanwha"]["parent_event_id"])
             self.assertEqual(
@@ -108,6 +113,7 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
             {
                 "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8647231&ref=A",
                 "https://www.kmib.co.kr/article/view.asp?arcid=9000006575&cp=nv",
+                "https://sports.khan.co.kr/article/202608262257003?pt=nv",
                 "http://www.osen.co.kr/article/G1112864347",
             },
         )
