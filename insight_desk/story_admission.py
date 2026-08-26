@@ -295,7 +295,7 @@ def _freshness_codes(value: str, *, now: datetime) -> tuple[bool, tuple[str, ...
     if (
         detectors.stale_explicit_past_event_text(value, now=now)
         or detectors.stale_relative_past_event_text(value)
-        or detectors.stale_relative_period_event_text(value)
+        or detectors.stale_relative_period_event_text(value, now=now)
         or _stale_prior_policy_event(value)
     ):
         return True, (_FQ_STALE, _MATERIAL_STALE_EXPLICIT)
@@ -563,6 +563,8 @@ def evaluate_story_admission(
 
     visible_text = summary or source_text
     if detectors.context_dependent_headline(headline):
+        reject(StoryAdmissionReason.STANDALONE_COMPLETENESS, _FQ_CONTEXT_HEADLINE)
+    if detectors.headline_drops_summary_actor(headline=headline, summary=visible_text):
         reject(StoryAdmissionReason.STANDALONE_COMPLETENESS, _FQ_CONTEXT_HEADLINE)
     if detectors.context_dependent_summary(visible_text):
         reject(StoryAdmissionReason.STANDALONE_COMPLETENESS, _FQ_CONTEXT_SUMMARY)

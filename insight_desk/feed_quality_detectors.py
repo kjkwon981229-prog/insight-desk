@@ -8,6 +8,9 @@ import re
 # composition remains exclusively in story_admission.py.
 from insight_desk._feed_quality_detectors_impl import *  # noqa: F401,F403
 from insight_desk import _feed_quality_detectors_impl as _impl
+from insight_desk.feed_quality_detectors_core import (
+    _CONCRETE_EVENT_PREDICATE_CUES as _CORE_CONCRETE_EVENT_PREDICATE_CUES,
+)
 
 
 # A deictic event mention is standalone only when its visible text has already
@@ -156,6 +159,32 @@ _MEASURE_REFERENCE_HEAD_RE = re.compile(
 _VISIBLE_QUANTITY_RE = re.compile(
     r"(?<!\d)\d[\d,.]*(?:\.\d+)?\s*(?:%|％|배|원|달러|명|건|개|회|점|위)?"
 )
+_DEICTIC_ANALYTICAL_SOURCE_RE = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이|그)\s+"
+    r"(?P<head>모델|자료|보고서|분석|조사|통계|예측|전망)"
+    r"(?:은|는|이|가|을|를|의|에|에서|로|으로)?(?=\s|[,.!?。！？]|$)"
+)
+_ANONYMOUS_GENERALIZATION_END_RE = re.compile(
+    r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
+    r"(?:에만\s+)?머물지\s+않는다)$"
+)
+_MONTH_DAY_RE = re.compile(
+    r"(?<!\d)(?P<month>1[0-2]|0?[1-9])월\s*"
+    r"(?P<day>3[01]|[12]\d|0?[1-9])일"
+)
+_RELATIVE_PAST_MONTH_RE = re.compile(r"(?:지난\s+)(?:1[0-2]|[1-9])월")
+_CURRENT_DAY_RE_TEMPLATE = r"(?<!\d)(?:(?:{month})월\s*)?{day}일"
+_DATE_LED_HEADLINE_RE = re.compile(
+    r"^(?:지난\s+)?(?:(?:20\d{2})년\s*)?"
+    r"(?:(?:1[0-2]|0?[1-9])월\s*)?(?:3[01]|[12]\d|0?[1-9])일"
+    r"(?:\([^)]{1,20}\))?(?:\s+오(?:전|후)\s+\d{1,2}시(?:\s*\d{1,2}분)?)?(?=\s)"
+)
+_DATE_LED_DEPENDENT_EVENT_LEAD_RE = re.compile(
+    r"^(?:(?:발표|공개|발간|집계|조사|작성|공표)한(?:\s|$)|"
+    r"(?:각종|온라인|오프라인)\s+[^.!?。！？]{1,60}?(?:에서|를\s+통해)(?=\s))"
+)
+_LEADING_STARTING_PITCHER_ROLE_RE = re.compile(r"^선발\s+투수(?:는|은|이|가)(?=\s)")
+_LEADING_SUBJECT_PARTICLES = ("은", "는", "이", "가")
 
 _DATE_LED_SPORTS_STAT_RE = re.compile(
     r"^(?:지난\s+)?\d{1,2}일\s+"
@@ -257,6 +286,107 @@ def _orphaned_measure_reference(value: str) -> bool:
             continue
         return True
     return False
+
+
+def _orphaned_analytical_source_reference(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    for match in _DEICTIC_ANALYTICAL_SOURCE_RE.finditer(normalized):
+        head = match.group("head")
+        prefix = normalized[: match.start()].rstrip(" ,:;·")
+        if not prefix:
+            return True
+        if re.search(re.escape(head), prefix, flags=re.IGNORECASE) is None:
+            return True
+    return False
+
+
+def _primary_sentence(value: str) -> str:
+    normalized = " ".join(value.split()).strip()
+    return re.split(r"(?<!\d)[.!?。！？](?!\d)\s*", normalized, maxsplit=1)[0].strip()
+
+
+def _contains_concrete_event_predicate(value: str) -> bool:
+    return any(cue in value for cue in _CORE_CONCRETE_EVENT_PREDICATE_CUES)
+
+
+def _has_current_event_anchor(value: str, *, now: datetime) -> bool:
+    normalized = " ".join(value.split()).strip()
+    for cue in ("오늘", "현재"):
+        position = normalized.find(cue)
+        if position >= 0 and _contains_concrete_event_predicate(normalized[position:]):
+            return True
+    current_day = re.compile(
+        _CURRENT_DAY_RE_TEMPLATE.format(month=now.month, day=now.day)
+    )
+    return any(
+        _contains_concrete_event_predicate(normalized[match.end() :])
+        for match in current_day.finditer(normalized)
+    )
+
+
+def _stale_month_day_event(value: str, *, now: datetime | None = None) -> bool:
+    primary = _primary_sentence(value)
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if _has_current_event_anchor(primary, now=reference):
+        return False
+    for match in _MONTH_DAY_RE.finditer(primary):
+        try:
+            candidate = datetime(
+                reference.year,
+                int(match.group("month")),
+                int(match.group("day")),
+                tzinfo=timezone.utc,
+            )
+        except ValueError:
+            continue
+        if candidate > reference + timedelta(hours=6):
+            continue
+        if reference - candidate <= timedelta(hours=72):
+            continue
+        if _contains_concrete_event_predicate(primary[match.end() :]):
+            return True
+    return False
+
+
+def _stale_relative_month_event(value: str, *, now: datetime | None = None) -> bool:
+    primary = _primary_sentence(value)
+    match = _RELATIVE_PAST_MONTH_RE.search(primary)
+    if match is None:
+        return False
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if _has_current_event_anchor(primary, now=reference):
+        return False
+    return _contains_concrete_event_predicate(primary[match.end() :])
+
+
+def _has_leading_summary_subject(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    for raw in normalized.split()[:8]:
+        token = raw.strip(" \t,·()[]{}'\"“”‘’")
+        if not token:
+            continue
+        if any(
+            token.endswith(particle) and len(token) > len(particle)
+            for particle in _LEADING_SUBJECT_PARTICLES
+        ):
+            return True
+    return False
+
+
+def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
+    """Signal that a concrete leading summary subject vanished from the headline."""
+
+    normalized_headline = " ".join(headline.split()).strip()
+    normalized_summary = " ".join(summary.split()).strip()
+    if _LEADING_STARTING_PITCHER_ROLE_RE.search(normalized_summary) is not None:
+        return "선발" not in normalized_headline and "투수" not in normalized_headline
+    date_lead = _DATE_LED_HEADLINE_RE.search(normalized_headline)
+    if date_lead is None:
+        return False
+    if not _has_leading_summary_subject(summary):
+        return False
+    remainder = normalized_headline[date_lead.end() :].lstrip()
+    return _DATE_LED_DEPENDENT_EVENT_LEAD_RE.search(remainder) is not None
 
 
 def _date_led_subjectless_sports_stat(value: str) -> bool:
@@ -398,6 +528,7 @@ def context_dependent_headline(value: str) -> bool:
         or _orphaned_visible_actor(normalized)
         or _orphaned_test_reference(normalized)
         or _orphaned_measure_reference(normalized)
+        or _orphaned_analytical_source_reference(normalized)
         or _date_led_subjectless_sports_stat(normalized)
         or _unidentified_kbo_result(normalized)
         or _actorless_multi_vote_ranking(normalized)
@@ -414,6 +545,7 @@ def context_dependent_summary(value: str) -> bool:
         or _orphaned_visible_actor(normalized)
         or _orphaned_test_reference(normalized)
         or _orphaned_measure_reference(normalized)
+        or _orphaned_analytical_source_reference(normalized)
         or _unidentified_kbo_result(normalized)
         or _unidentified_album_tracklist(normalized)
     )
@@ -424,8 +556,10 @@ def stale_explicit_past_event_text(
     *,
     now: datetime | None = None,
 ) -> bool:
-    return _impl.stale_explicit_past_event_text(value, now=now) or _stale_explicit_research_release(
-        value, now=now
+    return (
+        _impl.stale_explicit_past_event_text(value, now=now)
+        or _stale_explicit_research_release(value, now=now)
+        or _stale_month_day_event(value, now=now)
     )
 
 
@@ -444,6 +578,17 @@ def stale_relative_past_event_text(value: str) -> bool:
     )
 
 
+def stale_relative_period_event_text(
+    value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    return _impl.stale_relative_period_event_text(value) or _stale_relative_month_event(
+        value,
+        now=now,
+    )
+
+
 def non_event_analytical_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
     primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
@@ -458,6 +603,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
+        or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
