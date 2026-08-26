@@ -147,7 +147,7 @@ _STATIC_COMPANY_IDENTITY_RE = re.compile(
 )
 _SURVEY_METHOD_ONLY_RE = re.compile(
     r"(?:국가|지역)(?:들)?(?:을|를)\s+[^.!?。！？]{0,100}?"
-    r"선정(?:하여|해)\s+[^.!?。！？]{0,100}?(?:조사|설문)(?:을)?\s+(?:진행|실시)했다$"
+    r"선정(?:하여|해)\s+[^.!?。！？]{0,100}?(?:조사|설문)(?:을|를)?\s+(?:진행|실시)했다$"
 )
 _ONGOING_STRATEGY_DESCRIPTION_RE = re.compile(
     r"^[가-힣A-Za-z0-9·&()/_+.-]{2,50}(?:은|는|이|가)\s+"
@@ -286,8 +286,8 @@ _BARE_NUMERIC_MOVEMENT_HEADLINE_RE = re.compile(
     r"^\d[\d,.]*\s*(?:원|달러|%|％|포인트)?(?:으로|로)\s+출발한\s+뒤\s+"
 )
 _ACTORLESS_MARKET_SESSION_HEADLINE_RE = re.compile(
-    r"^(?:전장|전일|직전\s+거래일)\s+대비\s+[^.!?。！？]{1,140}?"
-    r"(?:출발한\s+뒤|출발해)[^.!?。！？]{1,140}?(?:장(?:을)?\s+)?마감했다$"
+    r"^(?:전장|전일|직전\s+거래일)\s+대비\s+.{1,140}?"
+    r"(?:출발한\s+뒤|출발해).{1,140}?(?:장(?:을)?\s+)?마감했다$"
 )
 _HEADLESS_ONGOING_ACTION_HEADLINE_RE = re.compile(
     r"^이제는\s+[^.!?。！？]{1,80}?"
