@@ -14,7 +14,9 @@ import hashlib
 from types import ModuleType
 from typing import Mapping
 
+from insight_desk.authoritative_enrichment_v2 import AuthoritativeEnricher
 from insight_desk.core import (
+    AuthoritativeFact,
     CandidateEvent,
     CanonicalEvent,
     CanonicalPublicationBundle,
@@ -122,6 +124,7 @@ class ProductionV2Registry:
     sources_by_article: dict[str, SourceDocument] = field(default_factory=dict)
     events_by_id: dict[str, CanonicalEvent] = field(default_factory=dict)
     parent_events_by_id: dict[str, CanonicalEvent] = field(default_factory=dict)
+    authoritative_facts_by_id: dict[str, AuthoritativeFact] = field(default_factory=dict)
     publications_by_event: dict[str, VerifiedPublication] = field(default_factory=dict)
     current_identity_pair: tuple[str, str] | None = None
     current_identity_relation: str | None = None
@@ -153,6 +156,27 @@ class ProductionV2Registry:
             if source.source_id == source_id:
                 return source
         raise ContractError(f"canonical event missing SourceDocument: {event_id}:{source_id}")
+
+    def bind_authoritative_facts(
+        self,
+        event_id: str,
+        facts: tuple[AuthoritativeFact, ...],
+    ) -> None:
+        if not facts:
+            return
+        event = self.canonical_event(event_id)
+        for fact in facts:
+            existing = self.authoritative_facts_by_id.get(fact.fact_id)
+            if existing is not None and existing != fact:
+                raise ContractError(f"conflicting authoritative fact id: {fact.fact_id}")
+            self.authoritative_facts_by_id[fact.fact_id] = fact
+        fact_ids = _unique(
+            event.authoritative_fact_ids + tuple(fact.fact_id for fact in facts)
+        )
+        self.events_by_id[event_id] = replace(
+            event,
+            authoritative_fact_ids=fact_ids,
+        )
 
     def bind_policy_parent(self, left_id: str, right_id: str) -> None:
         left = self.canonical_event(left_id)
@@ -415,6 +439,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
 
     registry = ProductionV2Registry()
     identity = CanonicalIdentityEngine(registry)
+    authoritative = AuthoritativeEnricher.from_environment()
 
     legacy_topic_relevant = core_module.topic_relevant
     legacy_build_view = core_module.build_briefing_view_model
@@ -431,6 +456,11 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                 extractor=extractor,
             )
             registry.register_article_result(article, result)
+            for event in result.events:
+                canonical = registry.canonical_event(event.event_id)
+                source = registry.source_for_event(event.event_id)
+                official_facts = authoritative.enrich(canonical, source)
+                registry.bind_authoritative_facts(event.event_id, official_facts)
             return result
 
     class V2BoundContractBundle:
@@ -474,9 +504,19 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                 for source in registry.sources_by_article.values()
                 if source.source_id in source_ids
             )
+            authoritative_ids = {
+                fact_id
+                for event in parent_events + selected_events
+                for fact_id in event.authoritative_fact_ids
+            }
+            selected_authoritative = tuple(
+                fact
+                for fact_id, fact in registry.authoritative_facts_by_id.items()
+                if fact_id in authoritative_ids
+            )
             bundle = CanonicalPublicationBundle(
                 sources=selected_sources,
-                authoritative_facts=(),
+                authoritative_facts=selected_authoritative,
                 events=parent_events + selected_events,
                 publications=publications,
             )
@@ -545,12 +585,15 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                     "source_documents": len(registry.sources_by_article),
                     "canonical_events": len(registry.events_by_id),
                     "parent_events": len(registry.parent_events_by_id),
+                    "authoritative_facts": len(registry.authoritative_facts_by_id),
                     "verified_publications": len(registry.publications_by_event),
                     "validated": registry.v2_bundle_validated,
                 },
+                "authoritative_enrichment": authoritative.audit_stats,
                 "runtime_authority": {
                     "relevance": "relevance_engine",
                     "event_understanding": "canonical_event_builder",
+                    "authoritative_enrichment": "authoritative_enricher",
                     "event_identity": "canonical_identity_engine",
                     "generation": "publication_generator",
                     "verification": "claim_verification_engine",
@@ -589,4 +632,5 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
 
     core_module._INSIGHT_DESK_V2_REGISTRY = registry
     core_module._INSIGHT_DESK_V2_IDENTITY_OWNER = identity
+    core_module._INSIGHT_DESK_V2_AUTHORITATIVE_OWNER = authoritative
     return registry
