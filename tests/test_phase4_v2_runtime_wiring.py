@@ -12,6 +12,7 @@ from insight_desk.production_orchestrator_v2 import (
     canonical_event_from_candidate,
     source_document_from_article,
 )
+from insight_desk.production_runtime_v2 import production_v2_runtime
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
 import insight_desk.production_phase7_v2 as phase7_scope
@@ -98,15 +99,13 @@ def v2_audit(*, validated: bool = True, source_url: str = "https://example.com/2
 
 
 class ProductionAuthorityWiringTests(unittest.TestCase):
-    def test_entrypoint_no_longer_composes_story_admission_or_feed_quality_semantics(self) -> None:
+    def test_entrypoint_has_no_executable_story_admission_or_feed_quality_import(self) -> None:
         source = Path("scripts/phase11_daily_production.py").read_text(encoding="utf-8")
-        self.assertIn("install_production_orchestration", source)
-        self.assertIn("scope_phase7_story_readmission", source)
+        self.assertIn("production_v2_runtime", source)
         self.assertNotIn("from insight_desk.story_admission", source)
         self.assertNotIn("from insight_desk.feed_quality", source)
-        self.assertNotIn("evaluate_story_admission(", source)
 
-    def test_story_admission_is_suppressed_only_inside_production_phase7_call(self) -> None:
+    def test_importing_production_keeps_legacy_helpers_unmodified(self) -> None:
         self.assertIs(
             generation_module.validate_story_admission,
             phase7_scope._ORIGINAL_GENERATION_STORY_ADMISSION,
@@ -115,8 +114,31 @@ class ProductionAuthorityWiringTests(unittest.TestCase):
             generation_pipeline_module.validate_story_admission,
             phase7_scope._ORIGINAL_PIPELINE_STORY_ADMISSION,
         )
-        self.assertTrue(
+        self.assertFalse(
             getattr(production._core.produce_phase7_entry_candidate, "_insight_desk_v2_scoped", False)
+        )
+        self.assertFalse(hasattr(production._core, "_INSIGHT_DESK_V2_REGISTRY"))
+
+    def test_v2_authority_exists_only_inside_actual_runtime_scope(self) -> None:
+        original_relevance = production._core.event_topic_relevant
+        original_phase7 = production._core.produce_phase7_entry_candidate
+        with production_v2_runtime(production._core) as registry:
+            self.assertIsInstance(registry, ProductionV2Registry)
+            self.assertIsNot(production._core.event_topic_relevant, original_relevance)
+            self.assertTrue(
+                getattr(
+                    production._core.produce_phase7_entry_candidate,
+                    "_insight_desk_v2_scoped",
+                    False,
+                )
+            )
+            self.assertIs(production._core._INSIGHT_DESK_V2_REGISTRY, registry)
+        self.assertIs(production._core.event_topic_relevant, original_relevance)
+        self.assertIs(production._core.produce_phase7_entry_candidate, original_phase7)
+        self.assertFalse(hasattr(production._core, "_INSIGHT_DESK_V2_REGISTRY"))
+        self.assertIs(
+            generation_module.validate_story_admission,
+            phase7_scope._ORIGINAL_GENERATION_STORY_ADMISSION,
         )
 
     def test_source_document_is_bound_to_exact_article_body_bytes(self) -> None:
