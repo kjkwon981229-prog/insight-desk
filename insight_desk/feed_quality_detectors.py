@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 import re
 
 # Keep the accumulated low-level detector implementation byte-for-byte intact.
@@ -96,6 +97,10 @@ _STATIC_COMPANY_CAPABILITY_RE = re.compile(
 _STATIC_CAPABILITY_CURRENT_EVENT_RE = re.compile(
     r"(?:\d{1,2}일|계약|체결|출시|공개|발표|도입|신규|시작|확대했|추가했)"
 )
+_STATIC_PRODUCT_DEFINITION_RE = re.compile(
+    r"^[가-힣A-Za-z0-9·&()/_+-]{2,60}(?:은|는|이|가)\s+"
+    r"[^.!?。！？]{1,240}?(?:솔루션|플랫폼|서비스|제품)(?:이다|입니다)$"
+)
 _ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
     r"(?:이야기|서사|메시지)(?:가|를|은|는)?"
     r"[^.!?。！？]{0,80}?(?:앨범|음반)(?:에|에는)"
@@ -103,6 +108,27 @@ _ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
 )
 _ALBUM_CURRENT_EVENT_RE = re.compile(
     r"(?:\d{1,2}일|발매|출시|공개|컴백|활동\s+시작|계획을\s+공개|계획을\s+발표)"
+)
+_MULTI_VOTE_COUNT_RE = re.compile(r"(?<!\d)\d[\d,]*\s*표")
+_MULTI_CATEGORY_TOP_RESULT_RE = re.compile(
+    r"\d+\s*개\s*부문\s*TOP\s*\d+\s*에\s*들었다$",
+    flags=re.IGNORECASE,
+)
+_NAMED_HEADLINE_LEAD_RE = re.compile(r"^[가-힣A-Za-z0-9·&()/_+-]{2,40},\s")
+_EXPLICIT_VISIBLE_SUBJECT_RE = re.compile(
+    r"(?:^|\s)[가-힣A-Za-z0-9·&()/_+-]{2,40}(?:은|는|이|가)(?=\s)"
+)
+_GENERIC_ALBUM_TRACKLIST_HEADLINE_RE = re.compile(
+    r"^(?:앨범|음반)\s+(?:수록곡|트랙(?:리스트)?)\s+\d+\s*곡(?:\s+(?:공개|수록))?$"
+)
+_BARE_ALBUM_TRACKLIST_SUMMARY_RE = re.compile(
+    r"\d+\s*곡(?:이|은|을)?\s+(?:앨범|음반)에\s+수록(?:됐|되었|됐다|되었다|돼)"
+)
+_EXPLICIT_RESEARCH_RELEASE_DATE_RE = re.compile(
+    r"(?:(?P<year>20\d{2})년\s*)?(?:지난\s+)?"
+    r"(?P<month>1[0-2]|0?[1-9])월\s*(?P<day>3[01]|[12]\d|0?[1-9])일\s+"
+    r"[^.!?。！？]{0,80}?(?:공개한|발표한|발간한|출간한)\s+"
+    r"(?:보고서|조사|분석|연구|자료)"
 )
 _KBO_TEAM_RE = re.compile(
     r"(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
@@ -284,12 +310,72 @@ def _static_company_capability(value: str) -> bool:
     return _STATIC_CAPABILITY_CURRENT_EVENT_RE.search(primary) is None
 
 
+def _static_product_definition(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    if not primary or _STATIC_PRODUCT_DEFINITION_RE.search(primary) is None:
+        return False
+    return _STATIC_CAPABILITY_CURRENT_EVENT_RE.search(primary) is None
+
+
 def _context_free_album_synopsis(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
     primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
     if not primary or _ALBUM_NARRATIVE_SYNOPSIS_RE.search(primary) is None:
         return False
     return _ALBUM_CURRENT_EVENT_RE.search(primary) is None
+
+
+def _actorless_multi_vote_ranking(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    if len(_MULTI_VOTE_COUNT_RE.findall(normalized)) < 2:
+        return False
+    if _MULTI_CATEGORY_TOP_RESULT_RE.search(normalized) is None:
+        return False
+    first_vote = _MULTI_VOTE_COUNT_RE.search(normalized)
+    if first_vote is None:
+        return False
+    prefix = normalized[: first_vote.start()].strip()
+    if _NAMED_HEADLINE_LEAD_RE.search(normalized) is not None:
+        return False
+    return _EXPLICIT_VISIBLE_SUBJECT_RE.search(prefix) is None
+
+
+def _unidentified_album_tracklist(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    if _GENERIC_ALBUM_TRACKLIST_HEADLINE_RE.search(normalized) is not None:
+        return True
+    if not normalized.startswith(("‘", "'", "“", '"')):
+        return False
+    return _BARE_ALBUM_TRACKLIST_SUMMARY_RE.search(normalized) is not None
+
+
+def _stale_explicit_research_release(
+    value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    normalized = " ".join(value.split()).strip()
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    for match in _EXPLICIT_RESEARCH_RELEASE_DATE_RE.finditer(normalized):
+        year_text = match.group("year")
+        year = int(year_text) if year_text is not None else reference.year
+        month = int(match.group("month"))
+        day = int(match.group("day"))
+        try:
+            candidate = datetime(year, month, day, tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if year_text is None and candidate > reference + timedelta(hours=6):
+            try:
+                candidate = candidate.replace(year=year - 1)
+            except ValueError:
+                continue
+        if candidate > reference + timedelta(hours=6):
+            continue
+        if reference - candidate > timedelta(hours=72):
+            return True
+    return False
 
 
 def visible_metadata_text(value: str) -> bool:
@@ -314,6 +400,8 @@ def context_dependent_headline(value: str) -> bool:
         or _orphaned_measure_reference(normalized)
         or _date_led_subjectless_sports_stat(normalized)
         or _unidentified_kbo_result(normalized)
+        or _actorless_multi_vote_ranking(normalized)
+        or _unidentified_album_tracklist(normalized)
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
     )
 
@@ -327,6 +415,17 @@ def context_dependent_summary(value: str) -> bool:
         or _orphaned_test_reference(normalized)
         or _orphaned_measure_reference(normalized)
         or _unidentified_kbo_result(normalized)
+        or _unidentified_album_tracklist(normalized)
+    )
+
+
+def stale_explicit_past_event_text(
+    value: str,
+    *,
+    now: datetime | None = None,
+) -> bool:
+    return _impl.stale_explicit_past_event_text(value, now=now) or _stale_explicit_research_release(
+        value, now=now
     )
 
 
@@ -362,6 +461,7 @@ def non_event_analytical_text(value: str) -> bool:
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
+        or _static_product_definition(primary)
         or _context_free_album_synopsis(primary)
     )
 
