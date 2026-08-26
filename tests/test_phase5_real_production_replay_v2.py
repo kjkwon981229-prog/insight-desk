@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import tempfile
@@ -10,9 +11,14 @@ from insight_desk.production_replay_v2 import run_recorded_production_replay
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests" / "fixtures" / "phase5_real_source_replay_v1.json"
+_PRODUCTION_SEMANTIC_RUNTIME_AVAILABLE = importlib.util.find_spec("kiwipiepy") is not None
 
 
 class Phase5RealProductionReplayTests(unittest.TestCase):
+    @unittest.skipUnless(
+        _PRODUCTION_SEMANTIC_RUNTIME_AVAILABLE,
+        "production replay requires the same semantic-local runtime installed by production",
+    )
     def test_historical_exact_source_bytes_replay_through_actual_v2_production(self) -> None:
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual(fixture["phase5_status"], "PARTIAL")
