@@ -9,8 +9,13 @@ from insight_desk._feed_quality_detectors_impl import *  # noqa: F401,F403
 from insight_desk import _feed_quality_detectors_impl as _impl
 
 
-_ORPHANED_REFERENTIAL_EVENT_RE = re.compile(
-    r"^[가-힣A-Za-z0-9·&() ._-]{2,48}(?:은|는|,)?\s*이번\s+행사(?:에서|에는|에)(?:\s|$)"
+# A deictic event mention is standalone only when its visible text has already
+# introduced an event antecedent. Model the discourse relation, not one particle
+# surface: 이번/해당/이 행사 + subject/object/location/topic particles are the
+# same unresolved referent family.
+_DEICTIC_EVENT_REFERENCE_RE = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이)\s+(?P<head>행사)"
+    r"(?:은|는|이|가|을|를|의|에|에서|에는|로|으로)?(?=\s|$)"
 )
 _SUBJECTLESS_MARKET_HEADLINE_RE = re.compile(
     r"^장\s+(?:초반|중반|후반)\s+\d+(?:\.\d+)?%\s+(?:넘게\s+)?"
@@ -80,11 +85,36 @@ _SPORTS_PERFORMANCE_PREDICATE_RE = re.compile(
     r"(?:기록(?:했|하|해|하며|했고|하였다|해냈)|활약(?:했|하|하며)|이끌(?:었|며)|등판(?:했|하|해))"
 )
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?。！？]\s*")
+_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS = (
+    "꼽힌다",
+    "꼽힙니다",
+    "꼽히고 있다",
+    "꼽히고 있습니다",
+    "거론된다",
+    "거론됩니다",
+    "거론되고 있다",
+    "거론되고 있습니다",
+    "지목된다",
+    "지목됩니다",
+    "지목되고 있다",
+    "지목되고 있습니다",
+)
 
 
 def _orphaned_referential_event(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
-    return _ORPHANED_REFERENTIAL_EVENT_RE.search(normalized) is not None
+    for match in _DEICTIC_EVENT_REFERENCE_RE.finditer(normalized):
+        head = match.group("head")
+        prefix = normalized[: match.start()].rstrip(" ,:;·")
+        if not prefix:
+            return True
+        # The same visible event class must have been introduced before the deictic
+        # mention. This lets `반도체 행사를 개최했다. 이번 행사를...` resolve while
+        # rejecting `LG화학은 이번 행사를 계기로...` regardless of particle surface.
+        if re.search(rf"(?<![가-힣A-Za-z0-9]){re.escape(head)}(?![가-힣A-Za-z0-9])", prefix):
+            continue
+        return True
+    return False
 
 
 def _orphaned_visible_actor(value: str) -> bool:
@@ -194,6 +224,7 @@ def non_event_analytical_text(value: str) -> bool:
     return (
         _impl.non_event_analytical_text(normalized)
         or _INTERPRETIVE_BACKGROUND_END_RE.search(normalized) is not None
+        or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
     )
 
 
