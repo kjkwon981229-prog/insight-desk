@@ -531,9 +531,39 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
         return legacy_topic_relevant(title=title, body=body, topic=topic)
 
     def event_relevant(*, event, facts, evidence, topic) -> bool:
-        del facts, evidence
         canonical = registry.canonical_event(event.event_id)
-        return canonical.topic == topic.topic_id
+        if canonical.topic != topic.topic_id:
+            return False
+
+        # Article-level relevance has already established the broad topic. Only topics with an
+        # explicit required-intent contract need event-level ownership proof. This avoids turning
+        # the handoff into a second broad relevance classifier and preserves recall for topics such
+        # as economy that deliberately have no required-intent terms.
+        if not topic.required_intent_terms:
+            return True
+
+        cited: list[str] = []
+        for fact_id in event.fact_ids:
+            fact = facts.get(fact_id)
+            if fact is None:
+                return False
+            for evidence_id in fact.evidence_ids:
+                span = evidence.get(evidence_id)
+                if span is None or span.article_id not in event.article_ids:
+                    return False
+                cited.append(span.text)
+        if not cited:
+            return False
+
+        # Reuse the one configured-literal relevance semantics rather than introducing a new
+        # detector. Replacing the broad anchors with the required-intent set makes this check mean
+        # exactly: the cited event evidence itself must own at least one required topic intent.
+        event_topic = replace(topic, intent_anchors=topic.required_intent_terms)
+        return legacy_topic_relevant(
+            title="",
+            body="\n".join(cited),
+            topic=event_topic,
+        )
 
     def build_rendered_briefing_v2(*, briefing_id: str, generated_at, candidates):
         publications = tuple(
