@@ -11,8 +11,14 @@ continue to pass an explicit ``now`` to the shared admission APIs.
 
 import datetime as datetime_module
 from datetime import datetime as RealDateTime, timezone
+from pathlib import Path
+import sys
 import unittest
 
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 TEST_REFERENCE_NOW = RealDateTime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
 
