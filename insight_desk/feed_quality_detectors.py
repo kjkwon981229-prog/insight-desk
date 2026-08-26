@@ -260,7 +260,7 @@ _INSTITUTIONAL_SUMMARY_ACTOR_RE = re.compile(
 )
 _RETROSPECTIVE_CONTINUITY_SUMMARY_RE = re.compile(
     r"(?:선보이며|소개하며|공개하며)[^.!?。！？]{0,140}?"
-    r"팬들과\s+소통(?:을)?\s+(?:이어왔|해\s*왔)(?:다|습니다)$"
+    r"팬들과\s+소통(?:을\s+)?(?:이어왔|해\s*왔)(?:다|습니다)$"
 )
 _RELEASE_PROMOTION_HEADLINE_RE = re.compile(
     r"(?:영상|브이로그|뮤직비디오|비하인드|콘텐츠)[^.!?。！？]{0,80}?공개$"
