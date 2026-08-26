@@ -113,8 +113,8 @@ class Live376RetrospectivePromotionRegressions(unittest.TestCase):
                 "슬기는 개인 유튜브 채널을 통해 레드벨벳 'Velvet Summer' 컴백 준비 과정을 소개하는 브이로그를 선보이며 팬들과 소통해 왔다.",
             ),
             (
-                "아티스트 A, 투어 비하인드 영상 공개",
-                "아티스트 A는 개인 채널에서 투어 준비 과정을 담은 영상을 선보이며 팬들과 소통을 이어왔다.",
+                "가수 A, 투어 비하인드 영상 공개",
+                "가수 A는 개인 채널에서 투어 준비 과정을 담은 영상을 선보이며 팬들과 소통을 이어왔다.",
             ),
         )
         for headline, summary in cases:
@@ -167,8 +167,8 @@ class Live376ParentlessFeatureRegressions(unittest.TestCase):
                 "K-POP 팝업 전시에서 관람객은 가상 아이돌 데뷔 과정을 체험하는 AI 몰입형 콘텐츠를 이용할 수 있으며, 영어·중국어·일본어 다국어 안내가 제공된다.",
             ),
             (
-                "AI 체험관, 가상 아바타 제작 기능 제공",
-                "AI 체험관에서 방문객은 가상 아바타를 제작하는 콘텐츠를 이용할 수 있으며 다국어 안내가 제공된다.",
+                "K-POP AI 체험관, 가상 아바타 제작 기능 제공",
+                "K-POP AI 체험관에서 방문객은 가상 아바타를 제작하는 콘텐츠를 이용할 수 있으며 다국어 안내가 제공된다.",
             ),
         )
         for headline, summary in cases:
@@ -180,7 +180,7 @@ class Live376ParentlessFeatureRegressions(unittest.TestCase):
     def test_named_current_parent_event_can_include_feature_detail(self) -> None:
         decision = visible(
             topic="엔터·음악·K-POP",
-            headline="천안시, 2026 K-컬처박람회 9월 2일 개막",
+            headline="천안시, 2026 K-컬처박람회 K-POP 전시 9월 2일 개막",
             summary=(
                 "천안시는 26일 2026 K-컬처박람회를 9월 2일부터 6일까지 개최한다고 밝혔다. "
                 "K-POP 팝업 전시에서는 AI 가상 아이돌 데뷔 체험을 제공한다."
