@@ -72,6 +72,7 @@
         "headline": "한국은행 금융통화위원회, 27일 기준금리 결정",
         "summary": "한국은행 금융통화위원회는 27일 회의를 열어 기준금리를 결정한다."
       },
+      "expected_outcome": "publish",
       "expected_relation": "policy_meeting_parent_representative"
     },
     {
@@ -92,6 +93,7 @@
         "headline": "한국은행, 27일 기준금리 결정·수정 경제전망 공개",
         "summary": "한국은행은 27일 금융통화위원회에서 기준금리를 결정하고 수정 경제전망과 향후 6개월 점도표를 공개한다."
       },
+      "expected_outcome": "suppress_same_event",
       "expected_relation": "same_policy_meeting_child_suppressed"
     },
     {
@@ -112,6 +114,7 @@
         "headline": "알파드라이브원, 27일 ‘엠카운트다운’서 신곡 무대 최초 공개",
         "summary": "알파드라이브원은 오는 27일 방송되는 Mnet ‘엠카운트다운’에서 ‘BORN DIRE’와 ‘Diamond Hour’의 음악방송 무대를 최초 공개한다."
       },
+      "expected_outcome": "publish",
       "expected_relation": "independent_kpop_actor_preserved_publication"
     },
     {
@@ -132,11 +135,14 @@
         "headline": "SSG 랜더스, 26일 한화 이글스 6-1 제압",
         "summary": "SSG 랜더스는 26일 인천 SSG랜더스필드에서 열린 KBO리그 경기에서 한화 이글스를 6-1로 제압해 이틀 연속 승리했다."
       },
+      "expected_outcome": "publish",
       "expected_relation": "independent_kbo_publication"
     }
   ],
   "expected": {
     "candidate_count": 4,
+    "expected_publishable_events": 3,
+    "expected_suppressed_same_event": 1,
     "published_entries": 3,
     "canonical_parent_events_min": 1,
     "identity_same_event_min": 1,
