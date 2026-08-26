@@ -27,6 +27,10 @@ _SUBJECTLESS_MARKET_HEADLINE_RE = re.compile(
     r"^장\s+(?:초반|중반|후반)\s+\d+(?:\.\d+)?%\s+(?:넘게\s+)?"
     r"(?:떨어지|오르|하락|상승)"
 )
+_UNSCOPED_COMPARATIVE_MOVEMENT_HEADLINE_RE = re.compile(
+    r"^(?:하락폭|상승폭|낙폭|오름폭|내림폭)(?:은|는|이|가)\s+"
+    r"(?:축소|확대)(?:됐다|되었다|됐습니다|되었습니다)$"
+)
 _MALFORMED_KBO_LEAGUE_YEAR_RE = re.compile(
     r"(?<!\d)\d{3}\s+신한(?:은행)?\s+(?:SOL(?:\s+Bank)?\s+)?KBO리그"
 )
@@ -57,6 +61,11 @@ _GENERIC_MARKET_COGNITION_RE = re.compile(
     r"판단한다|판단하고\s+있다|해석한다|해석하고\s+있다|"
     r"주목하고\s+있다|주목하고\s+있습니다|기대하고\s+있다|기대하고\s+있습니다|"
     r"관심(?:을)?\s+(?:쏟고|집중하고)\s+있다|관심(?:을)?\s+(?:쏟고|집중하고)\s+있습니다)$"
+)
+_GENERIC_MARKET_ATTENTION_STATE_RE = re.compile(
+    r"^(?:시장|증시|투자자(?:들)?|시장\s+참여자(?:들)?)의\s+관심(?:은|이)\s+"
+    r"[^.!?。！？]{0,260}?"
+    r"(?:향하고|쏠리고|모이고|집중되고)\s+있(?:다|습니다)$"
 )
 _ROLLING_MARKET_STATE_RE = re.compile(
     r"^(?:코스피|코스닥|원달러\s*환율|원·달러\s*환율|환율|증시|주가지수)"
@@ -127,6 +136,10 @@ _STATIC_PRODUCT_DEFINITION_RE = re.compile(
     r"^[가-힣A-Za-z0-9·&()/_+.-]{1,30}"
     r"(?:\s+[가-힣A-Za-z0-9·&()/_+.-]{1,30}){0,5}(?:은|는|이|가)\s+"
     r"[^.!?。！？]{1,240}?(?:솔루션|플랫폼|서비스|제품)(?:이다|입니다)$"
+)
+_STATIC_COMPANY_IDENTITY_RE = re.compile(
+    r"^[가-힣A-Za-z0-9·&()/_+.-]{2,40}(?:은|는|이|가)\s+"
+    r"[^.!?。！？]{1,260}?(?:제조|개발|공급|운영|제공)하는\s+기업(?:이다|입니다)$"
 )
 _ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
     r"(?:이야기|서사|메시지)(?:가|를|은|는)?"
@@ -231,6 +244,12 @@ _MEDIA_SYNOPSIS_RE = re.compile(
     r"(?:만남|이별|성장|우정|이야기|서사)[^.!?。！？]{0,100}?"
     r"(?:그린다|다룬다|담는다)$"
 )
+_ATMOSPHERE_ONLY_SCENE_RE = re.compile(
+    r"^(?=[^.!?。！？]{0,300}?(?:K-POP|콘서트|공연장))"
+    r"[^.!?。！？]{0,180}?(?:강당|현장|객석)(?:은|는|이|가)\s+"
+    r"[^.!?。！？]{0,220}?방불케[^.!?。！？]{0,160}?"
+    r"(?:열기|분위기)로\s+가득\s+찼다$"
+)
 _SAME_DAY_PAST_CUE_RE = re.compile(
     r"지난\s+(?:(?P<month>1[0-2]|0?[1-9])월\s*)?"
     r"(?P<day>3[01]|[12]\d|0?[1-9])일"
@@ -260,7 +279,7 @@ _INSTITUTIONAL_SUMMARY_ACTOR_RE = re.compile(
 )
 _RETROSPECTIVE_CONTINUITY_SUMMARY_RE = re.compile(
     r"(?:선보이며|소개하며|공개하며)[^.!?。！？]{0,140}?"
-    r"팬들과\s+소통(?:을\s+)?(?:이어왔|해\s*왔)(?:다|습니다)$"
+    r"팬들과\s+소통(?:을\s+)?(?:(?:이어왔|해\s*왔)(?:다|습니다)|했(?:다|습니다))$"
 )
 _RELEASE_PROMOTION_HEADLINE_RE = re.compile(
     r"(?:영상|브이로그|뮤직비디오|비하인드|콘텐츠)[^.!?。！？]{0,80}?공개$"
@@ -528,6 +547,8 @@ def _headline_drops_ordinary_action_actor(*, headline: str, summary: str) -> boo
 def _headline_promotes_retrospective_continuity(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).rstrip(".!?。！？").rstrip()
     normalized_summary = " ".join(summary.split()).rstrip(".!?。！？").rstrip()
+    if re.search(r"(?<!\d)\d{1,2}일", normalized_summary) is not None:
+        return False
     return (
         _RELEASE_PROMOTION_HEADLINE_RE.search(normalized_headline) is not None
         and _RETROSPECTIVE_CONTINUITY_SUMMARY_RE.search(normalized_summary) is not None
@@ -725,6 +746,7 @@ def context_dependent_headline(value: str) -> bool:
         or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
         or _CONNECTIVE_LED_HEADLINE_RE.search(normalized) is not None
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
+        or _UNSCOPED_COMPARATIVE_MOVEMENT_HEADLINE_RE.search(normalized) is not None
         or _ORPHANED_REPORTING_ADNOMINAL_HEADLINE_RE.search(normalized) is not None
     )
 
@@ -798,6 +820,7 @@ def non_event_analytical_text(value: str) -> bool:
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
         or _unattributed_passive_interpretation(primary)
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
+        or _GENERIC_MARKET_ATTENTION_STATE_RE.search(normalized) is not None
         or _ROLLING_MARKET_STATE_RE.search(primary) is not None
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
@@ -807,10 +830,12 @@ def non_event_analytical_text(value: str) -> bool:
         or _RATIONALE_ONLY_PRIMARY_RE.search(primary) is not None
         or _ONGOING_BUSINESS_EXPANSION_RE.search(primary) is not None
         or _media_synopsis(primary)
+        or _ATMOSPHERE_ONLY_SCENE_RE.search(primary) is not None
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
         or _static_product_definition(primary)
+        or _STATIC_COMPANY_IDENTITY_RE.search(primary) is not None
         or _context_free_album_synopsis(primary)
     )
 
