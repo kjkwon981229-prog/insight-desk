@@ -12,10 +12,13 @@ try:
 except ImportError:  # direct `python scripts/phase11_daily_production.py`
     import phase11_daily_production_core as _core  # type: ignore
 
+# Import the scope helper before installation so it captures the ordinary module contracts.
+from insight_desk.production_phase7_v2 import scope_phase7_story_readmission
 from insight_desk.production_orchestrator_v2 import install_production_orchestration
 
 
 V2_REGISTRY = install_production_orchestration(_core)
+scope_phase7_story_readmission(_core)
 
 
 # Preserve the script's existing runtime/test API while the mechanical loop is migrated.
@@ -33,6 +36,7 @@ def __getattr__(name: str):
 # V2 authority seam; they are deliberately non-executable and contain no policy.
 _SOURCE_CONTRACT_SENTINELS = """
 install_production_orchestration
+scope_phase7_story_readmission
 CanonicalEvent
 VerifiedPublication
 publication_contract_version
