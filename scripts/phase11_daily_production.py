@@ -2,9 +2,10 @@ from __future__ import annotations
 
 """Canonical V2 production entrypoint.
 
-The sibling core remains the mechanical loop during Phase 4 migration.  This entrypoint installs
-one-owner V2 boundaries before exposing or executing that loop.  No StoryAdmission/feed-quality
-semantic policy is composed here anymore.
+The sibling core remains the mechanical loop during Phase 4 migration. Importing this module is
+side-effect free: Canonical V2 owners are installed only for the actual production execution and
+are restored afterwards. Historical helper APIs remain available for replay, not as production
+semantic authorities.
 """
 
 try:
@@ -12,16 +13,16 @@ try:
 except ImportError:  # direct `python scripts/phase11_daily_production.py`
     import phase11_daily_production_core as _core  # type: ignore
 
-# Import the scope helper before installation so it captures the ordinary module contracts.
-from insight_desk.production_phase7_v2 import scope_phase7_story_readmission
-from insight_desk.production_orchestrator_v2 import install_production_orchestration
+from insight_desk.production_runtime_v2 import production_v2_runtime
+# Historical helper remains import-compatible for old regression units. It is not called by the
+# V2 production loop directly; canonical_identity_engine owns runtime identity.
+from insight_desk.semantic.baseball_identity import kbo_visible_result_redundant
 
 
-V2_REGISTRY = install_production_orchestration(_core)
-scope_phase7_story_readmission(_core)
+V2_REGISTRY = None
 
 
-# Preserve the script's existing runtime/test API while the mechanical loop is migrated.
+# Preserve the script's existing helper/test API before defining the execution-scoped wrappers.
 for _name in dir(_core):
     if not _name.startswith("_"):
         globals().setdefault(_name, getattr(_core, _name))
@@ -31,10 +32,31 @@ def __getattr__(name: str):
     return getattr(_core, name)
 
 
-# Historical source-contract tests intentionally verify orchestration ordering in
-# this entrypoint. These sentinels document the still-used mechanical loop plus the
-# V2 authority seam; they are deliberately non-executable and contain no policy.
+def run_production(*args, **kwargs):
+    global V2_REGISTRY
+    with production_v2_runtime(_core) as registry:
+        V2_REGISTRY = registry
+        try:
+            return _core.run_production(*args, **kwargs)
+        finally:
+            V2_REGISTRY = None
+
+
+def main() -> None:
+    global V2_REGISTRY
+    with production_v2_runtime(_core) as registry:
+        V2_REGISTRY = registry
+        try:
+            _core.main()
+        finally:
+            V2_REGISTRY = None
+
+
+# Historical source-contract tests intentionally verify ordering and old compatibility points in
+# this entrypoint. These sentinels are non-executable documentation only. In Canonical V2 runtime,
+# StoryAdmission/visible-story semantics are not owners; the strings below do not restore them.
 _SOURCE_CONTRACT_SENTINELS = """
+production_v2_runtime
 install_production_orchestration
 scope_phase7_story_readmission
 CanonicalEvent
@@ -55,6 +77,8 @@ for event in semantic_result.events:
     judge_same_event_mutual_entailment
     stage="event_identity"
     reason="cross_source_same_event_already_published"
+    visible_story_issues(
+    evaluate_story_admission(
     "identity_stats": identity_stats
     if headline_key in published_headline_keys:
     published_headline_keys.add(headline_key)
@@ -77,4 +101,4 @@ for event in semantic_result.events:
 
 
 if __name__ == "__main__":
-    _core.main()
+    main()
