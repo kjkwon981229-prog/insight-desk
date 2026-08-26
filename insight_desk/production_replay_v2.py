@@ -111,7 +111,7 @@ class _RecordedAcquisition:
         self.fetcher = SimpleNamespace(method_id="recorded-source")
         self.primary_extractor = SimpleNamespace(method_id="exact-source-excerpt")
         self.fallback_extractor = SimpleNamespace(method_id="unused-fallback")
-        self.fallback_renderer = None
+        self.fallback_renderer = SimpleNamespace(method_id="unused-renderer")
 
     def acquire(self, candidate: ArticleCandidate) -> AcquisitionResult:
         case = self._by_candidate[candidate.candidate_id]
