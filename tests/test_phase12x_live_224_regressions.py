@@ -76,16 +76,16 @@ def _issue_values(*, topic: str, headline: str, summary: str) -> set[str]:
 
 
 class Live224RetrospectiveStrategyRegressions(unittest.TestCase):
-    _LIVE_HEADLINE = "문 사장, ‘고수익 사업 포트폴리오’ 핵심으로 반도체 기판 지목"
+    _LIVE_HEADLINE = "문혁수 사장, ‘고수익 사업 포트폴리오’ 핵심으로 반도체 기판 지목"
     _LIVE_SUMMARY = (
-        "문 사장은 ‘고수익 사업 포트폴리오’를 이끌 핵심 사업으로 ‘수익성’과 "
+        "문혁수 사장은 ‘고수익 사업 포트폴리오’를 이끌 핵심 사업으로 ‘수익성’과 "
         "‘성장성’이라는 두 가지 키워드를 모두 충족하는 반도체 기판을 지목했다."
     )
 
     def test_live_undated_strategy_background_is_not_material_event(self) -> None:
         assessment = _material(
             self._LIVE_SUMMARY,
-            subject="문 사장",
+            subject="문혁수 사장",
             action=(
                 "‘고수익 사업 포트폴리오’를 이끌 핵심 사업으로 ‘수익성’과 "
                 "‘성장성’이라는 두 가지 키워드를 모두 충족하는 반도체 기판을 지목했다"

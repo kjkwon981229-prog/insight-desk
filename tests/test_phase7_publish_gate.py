@@ -181,7 +181,7 @@ class Phase7PublishGateTests(unittest.TestCase):
         self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
 
-    def test_identity_rejected_indeterminate_fallback_keeps_initial_result_item_locally(self) -> None:
+    def test_identity_preserving_indeterminate_fallback_recovers_to_exact_source(self) -> None:
         first = primary(None, None)
         second = secondary(True, True)
         result = produce_phase7_entry_candidate(
@@ -192,9 +192,19 @@ class Phase7PublishGateTests(unittest.TestCase):
         )
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertFalse(result.publishable)
-        self.assertIs(result.initial_generation, result.final_generation)
-        self.assertIsNone(result.verification_recovery_reason)
+        self.assertTrue(result.publishable)
+        self.assertEqual(
+            result.final_generation.draft.headline,
+            "PCE 물가는 0.2% 올라 6월 0.1% 하락에서 상승으로 전환했다",
+        )
+        self.assertEqual(
+            result.final_generation.draft.summary,
+            "전월 대비 PCE 물가는 0.2% 올라 6월 0.1% 하락에서 상승으로 전환했다.",
+        )
+        self.assertIs(
+            result.verification_recovery_reason,
+            VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE,
+        )
         self.assertEqual(first.calls, 2)
         self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
