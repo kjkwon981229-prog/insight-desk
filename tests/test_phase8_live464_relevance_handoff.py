@@ -185,10 +185,10 @@ class Live464EventRelevanceHandoffRegressions(unittest.TestCase):
                 )
             )
 
-    def test_topic_without_required_intent_does_not_gain_a_new_event_filter(self) -> None:
+    def test_topic_without_required_intent_preserves_core_owned_event(self) -> None:
         topic = _topic(
             "economy",
-            anchors=("한국은행", "환율"),
+            anchors=("한국은행", "환율", "시장금리"),
             required=(),
         )
         event_text = "시장금리가 장중 상승했다."
