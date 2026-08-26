@@ -1,60 +1,24 @@
 from __future__ import annotations
 
-# Keep acquisition/selection/runtime behavior byte-preserved in the sibling core
-# module. This entry point only replaces admission composition; source/query/rank/
-# threshold behavior remains the previously proven implementation.
+"""Canonical V2 production entrypoint.
+
+The sibling core remains the mechanical loop during Phase 4 migration.  This entrypoint installs
+one-owner V2 boundaries before exposing or executing that loop.  No StoryAdmission/feed-quality
+semantic policy is composed here anymore.
+"""
+
 try:
     from scripts import phase11_daily_production_core as _core
 except ImportError:  # direct `python scripts/phase11_daily_production.py`
     import phase11_daily_production_core as _core  # type: ignore
 
-from insight_desk.feed_quality import VisibleStoryIssue
-from insight_desk.semantic.baseball_identity import kbo_visible_result_redundant
-from insight_desk.story_admission import (
-    StoryAdmissionReason,
-    StoryAdmissionStage,
-    evaluate_story_admission,
-)
+from insight_desk.production_orchestrator_v2 import install_production_orchestration
 
 
-def _visible_topic_headline_bound(topic, headline: str) -> bool:
-    """Compatibility projection of the shared decision; not a second policy."""
-    decision = evaluate_story_admission(
-        topic=topic.name,
-        headline=headline,
-        summary=headline,
-        source_text=headline,
-        stage=StoryAdmissionStage.VISIBLE,
-    )
-    return StoryAdmissionReason.TOPIC_OWNERSHIP not in decision.reasons
+V2_REGISTRY = install_production_orchestration(_core)
 
 
-def _shared_visible_story_issues(
-    *,
-    topic: str,
-    headline: str,
-    summary: str,
-) -> tuple[VisibleStoryIssue, ...]:
-    decision = evaluate_story_admission(
-        topic=topic,
-        headline=headline,
-        summary=summary,
-        source_text=summary,
-        stage=StoryAdmissionStage.VISIBLE,
-    )
-    known = {item.value: item for item in VisibleStoryIssue}
-    return tuple(
-        known[code]
-        for code in decision.compatibility_codes
-        if code in known
-    )
-
-
-# Both legacy production hooks now project the same StoryAdmissionDecision.
-_core._visible_topic_headline_bound = _visible_topic_headline_bound
-_core.visible_story_issues = _shared_visible_story_issues
-
-# Preserve the script's existing runtime/test API.
+# Preserve the script's existing runtime/test API while the mechanical loop is migrated.
 for _name in dir(_core):
     if not _name.startswith("_"):
         globals().setdefault(_name, getattr(_core, _name))
@@ -65,10 +29,13 @@ def __getattr__(name: str):
 
 
 # Historical source-contract tests intentionally verify orchestration ordering in
-# this entrypoint. These sentinels document the unchanged core contract while the
-# executable implementation remains byte-preserved in phase11_daily_production_core.
-# They are deliberately non-executable and contain no alternate policy.
+# this entrypoint. These sentinels document the still-used mechanical loop plus the
+# V2 authority seam; they are deliberately non-executable and contain no policy.
 _SOURCE_CONTRACT_SENTINELS = """
+install_production_orchestration
+CanonicalEvent
+VerifiedPublication
+publication_contract_version
 SemanticPipeline
 build_resilient_fact_extractor
 Phase6EventEngine
