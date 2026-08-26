@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 
 from insight_desk.acquisition.discovery import DiscoveryError, SequentialNewsDiscovery
+from insight_desk.acquisition.models import ArticleCandidate
 from insight_desk.core import FailureKind
 from insight_desk.semantic.facts import FactDraft, FactExtractionRequest
 from insight_desk.semantic.fallback_extractors import SequentialFactExtractor
@@ -13,10 +15,16 @@ from insight_desk.semantic.fallback_extractors import SequentialFactExtractor
 @dataclass
 class DiscoveryRoute:
     route_id: str
-    result: tuple = ()
+    result: tuple[ArticleCandidate, ...] = ()
     error: bool = False
 
-    def search(self, query: str, *, topic_id: str, limit: int = 10):
+    def search(
+        self,
+        query: str,
+        *,
+        topic_id: str,
+        limit: int = 10,
+    ) -> tuple[ArticleCandidate, ...]:
         del query, topic_id, limit
         if self.error:
             raise DiscoveryError(FailureKind.TRANSIENT_PROVIDER, "synthetic")
@@ -37,7 +45,16 @@ class ToolObservabilityTests(unittest.TestCase):
     def test_discovery_composite_exposes_route_calls_errors_empty_and_selected(self) -> None:
         first = DiscoveryRoute("naver_search", error=True)
         second = DiscoveryRoute("bing_news_rss", result=())
-        sentinel = object()
+        sentinel = ArticleCandidate(
+            candidate_id="article:obs",
+            url="https://example.com/obs",
+            search_title="한화 관측 테스트",
+            source_name="example.com",
+            published_at=datetime(2026, 8, 27, 0, 0, tzinfo=timezone.utc),
+            topic_ids=("kbo_hanwha",),
+            query="한화",
+            retrieved_via="gdelt_doc",
+        )
         third = DiscoveryRoute("gdelt_doc", result=(sentinel,))
         discovery = SequentialNewsDiscovery((first, second, third))
 
@@ -50,6 +67,7 @@ class ToolObservabilityTests(unittest.TestCase):
         self.assertEqual(stats["gdelt_doc"]["calls"], 1)
         self.assertEqual(stats["gdelt_doc"]["selected"], 1)
         self.assertEqual(stats["gdelt_doc"]["candidates"], 1)
+        self.assertEqual(stats["gdelt_doc"]["contributed"], 1)
 
     def test_fact_composite_exposes_route_calls_empty_and_selected(self) -> None:
         draft = FactDraft(
