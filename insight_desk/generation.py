@@ -62,6 +62,13 @@ _INCOMPLETE_IDENTITY_ROLE_RE = re.compile(
 _ACTION_PROJECTION_TOKEN_RE = re.compile(
     r"\d+(?:\.\d+)?(?:[⅛¼⅜½⅝¾⅞⅓⅔])?(?:%|％)?[가-힣A-Za-z]*|[가-힣A-Za-z·]{2,}"
 )
+_DATE_LED_DIRECT_PROSPECTIVE_ACTION_RE = re.compile(
+    r"^(?:오는\s+|내일\s+)?"
+    r"(?:(?:20\d{2})년\s*)?"
+    r"(?:(?:1[0-2]|0?[1-9])월\s*)?"
+    r"(?:3[01]|[12]\d|0?[1-9])일(?:부터)?(?=\s)"
+    r"[^.!?。！？]{1,300}?(?:한다|합니다|된다|됩니다|예정이다|예정입니다)$"
+)
 _PROSPECTIVE_TEMPORAL_STATES = frozenset({"planned", "announced_prospective", "resuming"})
 
 
@@ -190,6 +197,38 @@ def _headline_projects_primary_action(*, headline: str, action: str) -> bool:
     return len(shared) >= 2 and sum(len(token) for token in shared) >= 5
 
 
+def _headline_is_literal_primary_action(*, headline: str, action: str) -> bool:
+    def normalized(value: str) -> str:
+        return " ".join(value.split()).rstrip(".!?。！？").rstrip().casefold()
+
+    return normalized(headline) == normalized(action)
+
+
+def _literal_primary_action_may_omit_subject(
+    *,
+    headline: str,
+    action: str,
+    summary: str,
+    subject: str,
+) -> bool:
+    """Preserve exact-source recovery except for actorless direct prospective event clauses.
+
+    A literal action remains a valid compact exact-source headline when the paired summary carries
+    the evidence-bound subject. The exception is a calendar-led clause that directly asserts a
+    prospective action (for example ``28일 ... 발표한다``): without its actor that headline is not
+    standalone. Reporting clauses such as ``9월 3일부터 ... 시행한다고 밝혔다`` keep the existing
+    exact-source recovery contract because the visible action is the report itself, not an anonymous
+    future event assertion.
+    """
+
+    normalized_headline = " ".join(headline.split()).rstrip(".!?。！？").rstrip()
+    return (
+        _headline_is_literal_primary_action(headline=headline, action=action)
+        and _DATE_LED_DIRECT_PROSPECTIVE_ACTION_RE.search(normalized_headline) is None
+        and _normalized_surface_present(summary, subject)
+    )
+
+
 def _publication_identity_issues(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -199,8 +238,9 @@ def _publication_identity_issues(
     Phase 6A emits one fact per production candidate. Publication may paraphrase that fact, but it
     may not publish an already-incomplete named actor, erase a concrete evidence-bound primary
     subject from a headline that demonstrably projects that fact's action, or strip the
-    date/counterparty that identifies a planned event. Exact-source recovery follows the same rule:
-    literal source bytes do not make an actorless action headline standalone publication text.
+    date/counterparty that identifies a planned event. Literal exact-source recovery remains valid
+    under its existing compact-headline contract except when the literal action is a calendar-led
+    direct prospective event clause whose actor would otherwise disappear from the headline.
     """
 
     fact = _primary_event_fact(request)
@@ -223,6 +263,12 @@ def _publication_identity_issues(
         and subject not in _GENERIC_PRIMARY_SUBJECTS
         and _normalized_surface_present(cited, subject)
         and _headline_projects_primary_action(headline=draft.headline, action=fact.action)
+        and not _literal_primary_action_may_omit_subject(
+            headline=draft.headline,
+            action=fact.action,
+            summary=draft.summary,
+            subject=subject,
+        )
         and not _normalized_surface_present(draft.headline, subject)
     ):
         issues.append(
