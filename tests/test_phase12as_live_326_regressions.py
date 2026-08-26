@@ -4,14 +4,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 
-from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
+from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact, RenderMode
 from insight_desk.generation import (
     GeneratedDraft,
     GenerationContractError,
     GenerationRequest,
     validate_generated_actor_preservation,
 )
-from insight_desk.generation_pipeline import ExtractiveFallbackUnavailable, _bounded_source_excerpt
+from insight_desk.generation_pipeline import (
+    ExtractiveFallbackUnavailable,
+    GenerationAttemptKind,
+    GenerationAttemptStatus,
+    _bounded_source_excerpt,
+    generate_with_recovery,
+)
 from insight_desk.story_admission import (
     StoryAdmissionReason,
     StoryAdmissionStage,
@@ -70,6 +76,15 @@ def generated(*, headline: str, summary: str) -> GeneratedDraft:
     )
 
 
+class _FixedGenerator:
+    def __init__(self, draft: GeneratedDraft):
+        self.draft = draft
+
+    def generate(self, request: GenerationRequest) -> GeneratedDraft:
+        del request
+        return self.draft
+
+
 class Live326DiscourseCompletenessRegressions(unittest.TestCase):
     def test_live_orphan_metric_demonstrative_is_not_standalone(self) -> None:
         decision = visible(
@@ -114,15 +129,17 @@ class Live326GeneratedActorPreservationRegressions(unittest.TestCase):
         "엔비디아는 데이터센터 매출이 두 배 이상 증가한 데 힘입어 "
         "7개 분기 만에 가장 빠른 성장 속도를 기록했다."
     )
+    ACTORLESS_HEADLINE = "데이터센터 매출 급증에 따른 7개 분기 만의 최대 성장"
+    ACTORLESS_SUMMARY = (
+        "데이터센터 매출이 두 배 이상 증가한 것에 힘입어 "
+        "7개 분기 만에 가장 빠른 성장 속도를 기록했다."
+    )
 
     def test_provider_rewrite_cannot_drop_all_evidence_bound_event_actors(self) -> None:
         request = generation_request(subject="엔비디아", evidence_text=self.EVIDENCE)
         draft = generated(
-            headline="데이터센터 매출 급증에 따른 7개 분기 만의 최대 성장",
-            summary=(
-                "데이터센터 매출이 두 배 이상 증가한 것에 힘입어 "
-                "7개 분기 만에 가장 빠른 성장 속도를 기록했다."
-            ),
+            headline=self.ACTORLESS_HEADLINE,
+            summary=self.ACTORLESS_SUMMARY,
         )
         with self.assertRaises(GenerationContractError):
             validate_generated_actor_preservation(request, draft)
@@ -137,6 +154,22 @@ class Live326GeneratedActorPreservationRegressions(unittest.TestCase):
             ),
         )
         validate_generated_actor_preservation(request, draft)
+
+    def test_recovery_boundary_rejects_actorless_alternate_before_publish(self) -> None:
+        request = generation_request(subject="엔비디아", evidence_text=self.EVIDENCE)
+        actorless = generated(
+            headline=self.ACTORLESS_HEADLINE,
+            summary=self.ACTORLESS_SUMMARY,
+        )
+        result = generate_with_recovery(
+            request,
+            primary=None,
+            alternate=_FixedGenerator(actorless),
+        )
+        self.assertIs(result.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
+        self.assertIs(result.attempts[0].kind, GenerationAttemptKind.ALTERNATE)
+        self.assertIs(result.attempts[0].status, GenerationAttemptStatus.OUTPUT_CONTRACT_REJECTED)
+        self.assertIn("엔비디아", result.draft.combined_text)
 
 
 class Live326HeadlineAndTemporalRegressions(unittest.TestCase):
