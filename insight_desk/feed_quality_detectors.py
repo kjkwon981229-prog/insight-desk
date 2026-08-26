@@ -79,6 +79,31 @@ _COMPONENT_FEATURE_END_RE = re.compile(
 _COMPONENT_CURRENT_EVENT_RE = re.compile(
     r"(?:개막|개최|오픈|문을\s+열|출시|공개|발표|도입|신설|시작|선보였|선보인다)"
 )
+_LEADING_TIMESTAMP_CHROME_RE = re.compile(
+    r"^\s*[-–—]?\s*(?:입력|기사입력|등록|수정|업데이트)\s+"
+    r"20\d{2}[./-]\d{1,2}[./-]\d{1,2}(?:\s+\d{1,2}:\d{2})?(?=\s|$)",
+    flags=re.IGNORECASE,
+)
+_SQUARE_BRACKET_BYLINE_RE = re.compile(
+    r"\[[^\]\n=]{1,50}=[^\]\n]{1,50}\s+(?:기자|특파원)\]"
+)
+_STATIC_COMPANY_CAPABILITY_RE = re.compile(
+    r"(?:\d[\d,.]*(?:만|천|백)?\s*점\s+이상|\d[\d,.]*\s*개(?:의)?)"
+    r"\s*(?:의\s+)?(?:제품|의료기기|품목)"
+    r"[^.!?。！？]{0,90}?(?:취급|보유|운영)"
+    r"[^.!?。！？]{0,50}?(?:한다|하고\s+있|덧붙였)"
+)
+_STATIC_CAPABILITY_CURRENT_EVENT_RE = re.compile(
+    r"(?:\d{1,2}일|계약|체결|출시|공개|발표|도입|신규|시작|확대했|추가했)"
+)
+_ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
+    r"(?:이야기|서사|메시지)(?:가|를|은|는)?"
+    r"[^.!?。！？]{0,80}?(?:앨범|음반)(?:에|에는)"
+    r"[^.!?。！？]{0,30}?(?:담겼|담았|담아냈)"
+)
+_ALBUM_CURRENT_EVENT_RE = re.compile(
+    r"(?:\d{1,2}일|발매|출시|공개|컴백|활동\s+시작|계획을\s+공개|계획을\s+발표)"
+)
 _KBO_TEAM_RE = re.compile(
     r"(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
     r"두산(?:\s*베어스)?|롯데(?:\s*자이언츠)?|삼성(?:\s*라이온즈)?|KT(?:\s*위즈)?|"
@@ -243,8 +268,36 @@ def _component_feature_state(value: str) -> bool:
     return _COMPONENT_FEATURE_END_RE.search(primary) is not None
 
 
+def _visible_extraction_chrome(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    return (
+        _LEADING_TIMESTAMP_CHROME_RE.search(normalized) is not None
+        or _SQUARE_BRACKET_BYLINE_RE.search(normalized) is not None
+    )
+
+
+def _static_company_capability(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    if not primary or _STATIC_COMPANY_CAPABILITY_RE.search(primary) is None:
+        return False
+    return _STATIC_CAPABILITY_CURRENT_EVENT_RE.search(primary) is None
+
+
+def _context_free_album_synopsis(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    if not primary or _ALBUM_NARRATIVE_SYNOPSIS_RE.search(primary) is None:
+        return False
+    return _ALBUM_CURRENT_EVENT_RE.search(primary) is None
+
+
 def visible_metadata_text(value: str) -> bool:
-    return _impl.visible_metadata_text(value) or _publisher_ai_preview_notice(value)
+    return (
+        _impl.visible_metadata_text(value)
+        or _publisher_ai_preview_notice(value)
+        or _visible_extraction_chrome(value)
+    )
 
 
 def publisher_notice_boilerplate(value: str) -> bool:
@@ -308,6 +361,8 @@ def non_event_analytical_text(value: str) -> bool:
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or rolling_form_only
         or _component_feature_state(primary)
+        or _static_company_capability(primary)
+        or _context_free_album_synopsis(primary)
     )
 
 
