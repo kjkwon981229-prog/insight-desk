@@ -328,16 +328,23 @@ def run_recorded_production_replay(
     )
 
     with _recorded_edges(cases=cases, replay_clock=replay_clock):
-        state = production.run_production(
+        runtime_state = production.run_production(
             topics_path=topics_path,
             output_dir=output_dir,
             state_path=state_path,
             audit_path=audit_path,
         )
 
-    if state.get("publish") is not True:
+    if runtime_state.get("publish") is not True:
         raise AssertionError("recorded production replay produced no publishable briefing")
+
+    # Publication identity is intentionally attached at the production persistence boundary.
+    # Replay therefore consumes the same persisted run-state bytes that deploy/push consume rather
+    # than treating the pre-write in-memory return object as the publication contract.
+    state = json.loads(state_path.read_text(encoding="utf-8"))
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    if state.get("publish") is not True:
+        raise AssertionError("persisted production replay state lost publishability")
     identity = validate_paths(
         html_path=output_dir / "index.html",
         state_path=state_path,
