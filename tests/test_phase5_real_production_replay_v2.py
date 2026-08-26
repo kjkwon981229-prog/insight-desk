@@ -29,8 +29,18 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
                 work_dir=Path(tmp),
             )
 
+            diagnostic = json.dumps(
+                {
+                    "topic_stats": result.audit.get("topic_stats", {}),
+                    "attempts": result.audit.get("attempts", []),
+                    "identity_stats": result.audit.get("identity_stats", {}),
+                    "rendered_sources": result.audit.get("rendered_sources", []),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             self.assertTrue(result.state["publish"])
-            self.assertEqual(result.state["published_entries"], 2)
+            self.assertEqual(result.state["published_entries"], 2, diagnostic)
             self.assertEqual(result.report["status"], "PARTIAL")
             self.assertFalse(result.report["raw_article_body_complete"])
             self.assertEqual(result.report["candidate_count"], 3)
