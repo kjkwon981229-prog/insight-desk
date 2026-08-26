@@ -168,9 +168,19 @@ _VISIBLE_QUANTITY_RE = re.compile(
     r"(?<!\d)\d[\d,.]*(?:\.\d+)?\s*(?:%|％|배|원|달러|명|건|개|회|점|위)?"
 )
 _DEICTIC_ANALYTICAL_SOURCE_RE = re.compile(
-    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이|그)\s+"
+    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이|그|이날)\s+"
     r"(?P<head>모델|자료|보고서|분석|조사|통계|예측|전망)"
     r"(?:은|는|이|가|을|를|의|에|에서|로|으로)?(?=\s|[,.!?。！？]|$)"
+)
+_CONNECTIVE_LED_HEADLINE_RE = re.compile(r"^[가-힣]{2,30}(?:으)?면서(?=\s)")
+_ANONYMOUS_ABSTRACT_CHANGE_RE = re.compile(
+    r"(?:기업(?:의)?|업계(?:의)?|산업(?:의)?|시장(?:의)?|보안\s+환경|운영\s+방식|인프라)"
+    r"[^.!?。！？]{0,180}?"
+    r"(?:급변|빠르게\s+바뀌|변화하|달라지|재편되)"
+    r"[^.!?。！？]{0,30}?(?:고\s+있다|고\s+있습니다)$"
+)
+_REPORTING_PREDICATE_END_RE = re.compile(
+    r"(?:분석|평가|진단|전망|예상|관측)(?:했다|하였다)$"
 )
 _ANONYMOUS_GENERALIZATION_END_RE = re.compile(
     r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
@@ -251,9 +261,6 @@ def _orphaned_referential_event(value: str) -> bool:
         prefix = normalized[: match.start()].rstrip(" ,:;·")
         if not prefix:
             return True
-        # Resolve a prior visible event noun even when Korean case/topic particles
-        # are attached to it (`행사를`, `행사에서`, ...). This is lexical antecedent
-        # resolution, not acceptance of a bare deictic reference.
         antecedent = re.compile(
             rf"(?<![가-힣A-Za-z0-9]){re.escape(head)}"
             r"(?:에서|에는|으로|은|는|이|가|을|를|의|에|로)?"
@@ -283,8 +290,6 @@ def _orphaned_test_reference(value: str) -> bool:
     if match is None:
         return False
     prefix = normalized[: match.start()].rstrip(" ,:;·")
-    # A demonstrative test phrase is self-contained only when the preceding visible
-    # clause has already named a concrete test/benchmark rather than merely a speaker.
     return re.search(r"(?:테스트|시험|벤치마크|평가)", prefix, flags=re.IGNORECASE) is None
 
 
@@ -297,9 +302,6 @@ def _orphaned_measure_reference(value: str) -> bool:
         prefix = normalized[: match.start()].rstrip(" ,:;·")
         if not prefix:
             return True
-        # A preceding lexical mention resolves the same metric concept; an explicit
-        # visible quantity also resolves a deictic "수치/값/비율" without requiring
-        # the exact same head noun. This is discourse resolution, not a phrase ban.
         if re.search(re.escape(head), prefix, flags=re.IGNORECASE) is not None:
             continue
         if _VISIBLE_QUANTITY_RE.search(prefix) is not None:
@@ -385,31 +387,34 @@ def _stale_relative_month_event(value: str, *, now: datetime | None = None) -> b
     )
 
 
-def _has_leading_summary_subject(value: str) -> bool:
+def _leading_summary_subject_surface(value: str) -> str | None:
     normalized = " ".join(value.split()).strip()
     for raw in normalized.split()[:8]:
         token = raw.strip(" \t,·()[]{}'\"“”‘’")
         if not token:
             continue
-        if any(
-            token.endswith(particle) and len(token) > len(particle)
-            for particle in _LEADING_SUBJECT_PARTICLES
-        ):
-            return True
-    return False
+        for particle in _LEADING_SUBJECT_PARTICLES:
+            if token.endswith(particle) and len(token) > len(particle):
+                return token[: -len(particle)]
+    return None
+
+
+def _has_leading_summary_subject(value: str) -> bool:
+    return _leading_summary_subject_surface(value) is not None
 
 
 def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
-    """Signal that a concrete leading summary subject vanished from the headline."""
-
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
     if _LEADING_STARTING_PITCHER_ROLE_RE.search(normalized_summary) is not None:
         return "선발" not in normalized_headline and "투수" not in normalized_headline
+    reporting_actor = _leading_summary_subject_surface(summary)
+    if reporting_actor is not None and _REPORTING_PREDICATE_END_RE.search(normalized_headline):
+        return reporting_actor.casefold() not in normalized_headline.casefold()
     date_lead = _DATE_LED_HEADLINE_RE.search(normalized_headline)
     if date_lead is None:
         return False
-    if not _has_leading_summary_subject(summary):
+    if reporting_actor is None:
         return False
     remainder = normalized_headline[date_lead.end() :].lstrip()
     return _DATE_LED_DEPENDENT_EVENT_LEAD_RE.search(remainder) is not None
@@ -420,8 +425,6 @@ def _date_led_subjectless_sports_stat(value: str) -> bool:
     match = _DATE_LED_SPORTS_STAT_RE.search(normalized)
     if match is None:
         return False
-    # A date-led statline is allowed when it still names an explicit grammatical
-    # performer after the date. The live failure had only venue/league/opponent context.
     return _EXPLICIT_POST_DATE_SUBJECT_RE.search(match.group("context")) is None
 
 
@@ -559,6 +562,7 @@ def context_dependent_headline(value: str) -> bool:
         or _unidentified_kbo_result(normalized)
         or _actorless_multi_vote_ranking(normalized)
         or _unidentified_album_tracklist(normalized)
+        or _CONNECTIVE_LED_HEADLINE_RE.search(normalized) is not None
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
     )
 
@@ -631,6 +635,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
         or _ANONYMOUS_SECTOR_STATE_RE.search(primary) is not None
+        or _ANONYMOUS_ABSTRACT_CHANGE_RE.search(primary) is not None
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
