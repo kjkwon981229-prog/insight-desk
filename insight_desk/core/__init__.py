@@ -1,5 +1,12 @@
 """Clean-room core contracts for the rebuilt Insight Desk engine."""
 
+from .canonical_v2 import (
+    AuthoritativeFact,
+    CanonicalEvent,
+    CanonicalPublicationBundle,
+    SourceDocument,
+    VerifiedPublication,
+)
 from .contracts import (
     CandidateEvent,
     Certainty,
@@ -28,6 +35,13 @@ from .identity import (
     finalize_identity,
     precheck_identity,
 )
+from .orchestration_v2 import (
+    OWNER_BOUNDARIES,
+    OwnerBoundary,
+    PipelineResponsibility,
+    owner_for,
+    validate_owner_boundaries,
+)
 from .selection import (
     SelectionDecision,
     SelectionReason,
@@ -38,7 +52,10 @@ from .selection import (
 from .verification import VerificationPolicy, aggregate_verdict
 
 __all__ = [
+    "AuthoritativeFact",
     "CandidateEvent",
+    "CanonicalEvent",
+    "CanonicalPublicationBundle",
     "Certainty",
     "ContractBundle",
     "ContractError",
@@ -50,7 +67,10 @@ __all__ = [
     "IdentityKey",
     "IdentityPrecheck",
     "IdentityPrecheckVerdict",
+    "OWNER_BOUNDARIES",
     "OutcomePolarity",
+    "OwnerBoundary",
+    "PipelineResponsibility",
     "PipelineStage",
     "RawArticle",
     "RecoveryAction",
@@ -61,15 +81,19 @@ __all__ = [
     "SelectionReason",
     "SelectionSignals",
     "SelectionVerdict",
+    "SourceDocument",
     "SourceProvenance",
     "TemporalState",
     "VerificationCheck",
     "VerificationPolicy",
     "VerificationVerdict",
     "VerifiedClaim",
+    "VerifiedPublication",
     "aggregate_verdict",
     "decide_selection",
     "finalize_identity",
+    "owner_for",
     "precheck_identity",
     "recovery_action",
+    "validate_owner_boundaries",
 ]
