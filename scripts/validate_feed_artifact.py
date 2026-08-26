@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse
 
+# Legacy replay without a V2 production audit still exercises the historical semantic
+# validator. Canonical V2 production must not let publication re-judge news meaning.
 from insight_desk.feed_quality import VisibleStoryIssue
 from insight_desk.story_admission import StoryAdmissionStage, evaluate_story_admission
 
@@ -46,6 +48,27 @@ def _stale_source_url(value: str) -> bool:
         if (today - candidate).days > 3:
             return True
     return False
+
+
+def _is_v2_audit(source_audit: dict[str, object] | None) -> bool:
+    return bool(source_audit and source_audit.get("publication_contract_version") == 2)
+
+
+def _require_valid_v2_contract(source_audit: dict[str, object] | None) -> bool:
+    if not _is_v2_audit(source_audit):
+        return False
+    assert source_audit is not None
+    canonical = source_audit.get("canonical_contract")
+    if not isinstance(canonical, dict) or canonical.get("validated") is not True:
+        raise ValueError("FEED_QUALITY_CANONICAL_CONTRACT_UNVALIDATED")
+    runtime_authority = source_audit.get("runtime_authority")
+    if not isinstance(runtime_authority, dict):
+        raise ValueError("FEED_QUALITY_RUNTIME_AUTHORITY_MISSING")
+    if runtime_authority.get("story_admission_semantic_gate") is not False:
+        raise ValueError("FEED_QUALITY_RUNTIME_AUTHORITY_STORY_ADMISSION")
+    if runtime_authority.get("visible_identity_semantic_gate") is not False:
+        raise ValueError("FEED_QUALITY_RUNTIME_AUTHORITY_VISIBLE_IDENTITY")
+    return True
 
 
 class FeedParser(HTMLParser):
@@ -110,6 +133,8 @@ class FeedParser(HTMLParser):
 def _validate_source_audit(
     stories: list[dict[str, str]],
     source_audit: dict[str, object],
+    *,
+    canonical_v2: bool,
 ) -> tuple[int, int, int]:
     rendered_sources = source_audit.get("rendered_sources")
     if not isinstance(rendered_sources, list):
@@ -141,7 +166,9 @@ def _validate_source_audit(
             raise ValueError(f"FEED_QUALITY_SOURCE_AUDIT_INVALID:{index}")
         if not source_url_valid:
             invalid_source_url_indices.append(index)
-        elif _stale_source_url(source_url):
+        elif not canonical_v2 and _stale_source_url(source_url):
+            # V2 source freshness is already owned upstream and bound into CanonicalEvent.
+            # URL-shape inference is retained only for historical artifact replay.
             stale_source_url_indices.append(index)
         audit_event_ids.append(event_id)
         audit_source_urls.append(source_url)
@@ -185,6 +212,8 @@ def validate_html(
     if not stories:
         raise ValueError("FEED_QUALITY_NO_STORIES")
 
+    canonical_v2 = _require_valid_v2_contract(source_audit)
+
     seen_headlines: set[str] = set()
     seen_summaries: set[str] = set()
     seen_content: set[tuple[str, str]] = set()
@@ -222,40 +251,43 @@ def validate_html(
         if len(summary) > MAX_SUMMARY_CHARS:
             raise ValueError(f"FEED_QUALITY_SUMMARY_TOO_LONG:{index}:{len(summary)}")
 
-        decision = evaluate_story_admission(
-            topic=topic,
-            headline=headline,
-            summary=summary,
-            source_text=summary,
-            stage=StoryAdmissionStage.VISIBLE,
-        )
-        codes = set(decision.compatibility_codes)
-        topic_violation = VisibleStoryIssue.TOPIC_BINDING.value in codes
-        if VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION.value in codes:
-            headline_summary_collisions += 1
-        if (
-            VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE.value in codes
-            and not topic_violation
-        ):
-            context_dependent_headlines += 1
-        if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY.value in codes:
-            context_dependent_summaries += 1
-        if VisibleStoryIssue.VISIBLE_METADATA.value in codes:
-            visible_metadata_issues += 1
-        if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY.value in codes:
-            non_event_analytical_summaries += 1
-        if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY.value in codes:
-            conditional_analytical_summaries += 1
-        if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT.value in codes:
-            malformed_visible_texts += 1
-        if VisibleStoryIssue.MIXED_EVENT_SUMMARY.value in codes:
-            mixed_event_summaries += 1
-        if _FQ_STALE_SPORTS in codes:
-            stale_sports_retrospectives += 1
-        elif VisibleStoryIssue.STALE_DATED_CONTEXT.value in codes:
-            stale_dated_contexts += 1
-        if topic_violation:
-            topic_binding_violations += 1
+        if not canonical_v2:
+            decision = evaluate_story_admission(
+                topic=topic,
+                headline=headline,
+                summary=summary,
+                source_text=summary,
+                stage=StoryAdmissionStage.VISIBLE,
+            )
+            codes = set(decision.compatibility_codes)
+            topic_violation = VisibleStoryIssue.TOPIC_BINDING.value in codes
+            if VisibleStoryIssue.HEADLINE_SUMMARY_COLLISION.value in codes:
+                headline_summary_collisions += 1
+            if (
+                VisibleStoryIssue.CONTEXT_DEPENDENT_HEADLINE.value in codes
+                and not topic_violation
+            ):
+                context_dependent_headlines += 1
+            if VisibleStoryIssue.CONTEXT_DEPENDENT_SUMMARY.value in codes:
+                context_dependent_summaries += 1
+            if VisibleStoryIssue.VISIBLE_METADATA.value in codes:
+                visible_metadata_issues += 1
+            if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY.value in codes:
+                non_event_analytical_summaries += 1
+            if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY.value in codes:
+                conditional_analytical_summaries += 1
+            if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT.value in codes:
+                malformed_visible_texts += 1
+            if VisibleStoryIssue.MIXED_EVENT_SUMMARY.value in codes:
+                mixed_event_summaries += 1
+            if _FQ_STALE_SPORTS in codes:
+                stale_sports_retrospectives += 1
+            elif VisibleStoryIssue.STALE_DATED_CONTEXT.value in codes:
+                stale_dated_contexts += 1
+            if topic_violation:
+                topic_binding_violations += 1
+            if not decision.accepted and not (codes & issue_values) and _FQ_STALE_SPORTS not in codes:
+                context_dependent_summaries += 1
 
         headline_key = _normalize(headline)
         summary_key = _normalize(summary)
@@ -273,16 +305,13 @@ def validate_html(
         else:
             seen_content.add(content_key)
 
-        if topic == PSAT_TOPIC:
+        # This historical false-positive heuristic is a semantic product decision, not a
+        # publication-structure invariant. Keep it for legacy replay only.
+        if not canonical_v2 and topic == PSAT_TOPIC:
             combined = f"{headline}\n{summary}".casefold()
             for forbidden in PSAT_FORBIDDEN:
                 if forbidden.casefold() in combined:
                     psat_forbidden_hits.append(forbidden)
-
-        # Guard against a shared decision rejection that lacks a legacy public
-        # FEED_QUALITY code. Production must fail closed rather than silently pass.
-        if not decision.accepted and not (codes & issue_values) and _FQ_STALE_SPORTS not in codes:
-            context_dependent_summaries += 1
 
     if headline_summary_collisions:
         raise ValueError(
@@ -335,12 +364,16 @@ def validate_html(
     stale_source_urls = 0
     if source_audit is not None:
         duplicate_sources, duplicate_source_content, stale_source_urls = _validate_source_audit(
-            stories, source_audit
+            stories,
+            source_audit,
+            canonical_v2=canonical_v2,
         )
 
     return {
         "status": "PASS",
         "story_count": len(stories),
+        "publication_contract_version": 2 if canonical_v2 else 1,
+        "semantic_revalidation": not canonical_v2,
         "max_headline_chars": max_headline,
         "max_summary_chars": max_summary,
         "headline_summary_collisions": headline_summary_collisions,
