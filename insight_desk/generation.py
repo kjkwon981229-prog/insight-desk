@@ -190,15 +190,6 @@ def _headline_projects_primary_action(*, headline: str, action: str) -> bool:
     return len(shared) >= 2 and sum(len(token) for token in shared) >= 5
 
 
-def _headline_is_literal_primary_action(*, headline: str, action: str) -> bool:
-    """Keep a source-literal action headline distinct from a rewritten action projection."""
-
-    def normalized(value: str) -> str:
-        return " ".join(value.split()).rstrip(".!?。！？").rstrip().casefold()
-
-    return normalized(headline) == normalized(action)
-
-
 def _publication_identity_issues(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -208,9 +199,8 @@ def _publication_identity_issues(
     Phase 6A emits one fact per production candidate. Publication may paraphrase that fact, but it
     may not publish an already-incomplete named actor, erase a concrete evidence-bound primary
     subject from a headline that demonstrably projects that fact's action, or strip the
-    date/counterparty that identifies a planned event. A literal fact-action headline remains valid
-    when its paired summary still carries the evidence-bound subject; this preserves the deterministic
-    exact-source recovery contract without granting the same exemption to rewritten projections.
+    date/counterparty that identifies a planned event. Exact-source recovery follows the same rule:
+    literal source bytes do not make an actorless action headline standalone publication text.
     """
 
     fact = _primary_event_fact(request)
@@ -233,10 +223,6 @@ def _publication_identity_issues(
         and subject not in _GENERIC_PRIMARY_SUBJECTS
         and _normalized_surface_present(cited, subject)
         and _headline_projects_primary_action(headline=draft.headline, action=fact.action)
-        and not (
-            _headline_is_literal_primary_action(headline=draft.headline, action=fact.action)
-            and _normalized_surface_present(draft.summary, subject)
-        )
         and not _normalized_surface_present(draft.headline, subject)
     ):
         issues.append(

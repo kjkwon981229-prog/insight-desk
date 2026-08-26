@@ -71,6 +71,9 @@ _GENERIC_MARKET_ATTENTION_STATE_RE = re.compile(
     r"[^.!?。！？]{0,260}?"
     r"(?:향하고|쏠리고|모이고|집중되고|쏠려|모여)\s+있(?:다|습니다)$"
 )
+_NOMINAL_FORECAST_STATE_RE = re.compile(
+    r"(?:전망(?:이다|입니다)|전망(?:은|이)\s+(?:엇갈린다|엇갈립니다|갈린다|갈립니다))$"
+)
 _ROLLING_MARKET_STATE_RE = re.compile(
     r"^(?:코스피|코스닥|원달러\s*환율|원·달러\s*환율|환율|증시|주가지수)"
     r"(?:은|는|이|가)\s+[^.!?。！？]{0,180}?"
@@ -655,6 +658,13 @@ def _unattributed_passive_interpretation(value: str) -> bool:
     return _ATTRIBUTION_CUE_RE.search(normalized) is None
 
 
+def _unattributed_nominal_forecast_state(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    if _NOMINAL_FORECAST_STATE_RE.search(normalized) is None:
+        return False
+    return _ATTRIBUTION_CUE_RE.search(normalized) is None
+
+
 def _media_synopsis(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
     return _MEDIA_SYNOPSIS_RE.search(normalized) is not None
@@ -868,6 +878,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _INTERPRETIVE_BACKGROUND_END_RE.search(normalized) is not None
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
         or _unattributed_passive_interpretation(primary)
+        or _unattributed_nominal_forecast_state(primary)
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
         or _GENERIC_MARKET_ATTENTION_STATE_RE.search(normalized) is not None
         or _ROLLING_MARKET_STATE_RE.search(primary) is not None
