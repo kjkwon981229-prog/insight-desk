@@ -24,7 +24,7 @@ from insight_desk.providers.transport import ProviderTransportError
 FALLBACK_HEADLINE_MAX_CHARS = MAX_GENERATED_HEADLINE_CHARS
 FALLBACK_SUMMARY_MAX_CHARS = MAX_GENERATED_SUMMARY_CHARS
 _SENTENCE_END_RE = re.compile(r"[.!?。！？](?=\s|$)")
-_CLAUSE_MARKS = ("…", "·", ":", ";", ",", "，")
+_CLAUSE_MARKS = ("…", ":", ";", ",", "，")
 _GENERIC_FALLBACK_HEADLINE_RE = re.compile(
     r"^(?:팀은|이 팀은|세 팀(?:은)?|그는|그가|그의|그녀는|그녀가|이들은|이들이)(?:\s|$)"
 )

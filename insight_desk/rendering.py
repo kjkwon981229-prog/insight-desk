@@ -4,7 +4,6 @@ from datetime import datetime
 
 from insight_desk.core import RenderedBriefing, RenderedEntry, VerificationVerdict
 from insight_desk.phase7 import Phase7EntryCandidate
-from insight_desk.semantic.baseball_identity import kbo_visible_result_redundant
 from insight_desk.verification_pipeline import ClaimRole
 
 
@@ -41,15 +40,6 @@ def _content_key(entry: RenderedEntry) -> tuple[str, str]:
     return (
         _normalize_visible_text(entry.headline),
         _normalize_visible_text(entry.summary),
-    )
-
-
-def _kbo_result_redundant(prior: RenderedEntry, candidate: RenderedEntry) -> bool:
-    return kbo_visible_result_redundant(
-        prior_headline=prior.headline,
-        prior_summary=prior.summary,
-        candidate_headline=candidate.headline,
-        candidate_summary=candidate.summary,
     )
 
 
@@ -100,7 +90,12 @@ def build_rendered_briefing(
     generated_at: datetime,
     candidates: tuple[Phase7EntryCandidate, ...],
 ) -> RenderedBriefing:
-    """Build a briefing without global-aborting on rejected, oversized, or duplicate-visible items."""
+    """Build a briefing without global-aborting on rejected, oversized, or exact-duplicate items.
+
+    Domain event identity is decided before Phase 8. Rendering may enforce only structural output
+    invariants that are knowable from already-approved entries: event-id uniqueness and normalized
+    exact visible duplicates. It must not re-run baseball, market, or other semantic event policy.
+    """
 
     entries: list[RenderedEntry] = []
     seen_event_ids: set[str] = set()
@@ -114,23 +109,6 @@ def build_rendered_briefing(
         if entry.event_id in seen_event_ids:
             raise RenderingContractError(f"duplicate rendered event: {entry.event_id}")
         seen_event_ids.add(entry.event_id)
-
-        redundant = False
-        superseded_index: int | None = None
-        for index, prior in enumerate(entries):
-            if _kbo_result_redundant(prior, entry):
-                redundant = True
-                break
-            if _kbo_result_redundant(entry, prior):
-                superseded_index = index
-                break
-        if redundant:
-            continue
-        if superseded_index is not None:
-            superseded = entries.pop(superseded_index)
-            seen_headlines.discard(_headline_key(superseded))
-            seen_summaries.discard(_summary_key(superseded))
-            seen_content.discard(_content_key(superseded))
 
         headline_key = _headline_key(entry)
         if headline_key in seen_headlines:

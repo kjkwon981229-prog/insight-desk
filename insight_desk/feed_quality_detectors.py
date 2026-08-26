@@ -42,6 +42,45 @@ _KBO_GENERIC_RESULT_RE = re.compile(
 _KBO_SCORE_RE = re.compile(r"(?<!\d)\d{1,2}\s*(?:대|[-:])\s*\d{1,2}(?!\d)")
 _KBO_DAY_RE = re.compile(r"(?<!\d)(?:[0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
 
+# Discourse references are handled as a syntactic family instead of extending one
+# live-specific noun blacklist. Measure-like heads still form a semantic class because
+# a bare "이/그/해당 + measure" requires a visible value or prior lexical antecedent.
+_DEICTIC_MEASURE_REFERENCE_RE = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?:이|그|해당)\s+"
+    r"(?P<head>[가-힣A-Za-z0-9·_-]{1,20})"
+    r"(?:은|는|이|가|을|를|로|에|에서|의)(?=\s|$)"
+)
+_MEASURE_REFERENCE_HEAD_RE = re.compile(
+    r"(?:수치|비율|지표|지수|값|수준|규모|금액|가격|점수|증가율|성장률|감소율|점유율|율|률)$"
+)
+_VISIBLE_QUANTITY_RE = re.compile(
+    r"(?<!\d)\d[\d,.]*(?:\.\d+)?\s*(?:%|％|배|원|달러|명|건|개|회|점|위)?"
+)
+
+_DATE_LED_SPORTS_STAT_RE = re.compile(
+    r"^(?:지난\s+)?\d{1,2}일\s+"
+    r"(?P<context>.{0,220}?)"
+    r"(?:경기|전)(?:에|에서)\s+"
+    r".{0,100}?\d+\s*(?:타수|이닝|경기)\b"
+)
+_EXPLICIT_POST_DATE_SUBJECT_RE = re.compile(
+    r"(?:^|\s)(?P<subject>[가-힣A-Za-z·_-]{2,24})(?:은|는|이|가)(?=\s)"
+)
+
+_RELATIVE_PAST_SPORTS_PERIOD_RE = re.compile(
+    r"(?:지난해|작년|전년도|지난\s+시즌|직전\s+시즌)"
+)
+_RELATIVE_PAST_COMPARISON_RE = re.compile(
+    r"(?:지난해|작년|전년도|지난\s+시즌|직전\s+시즌)\s*(?:보다|대비|이후|이래)"
+)
+_SPORTS_PERFORMANCE_RE = re.compile(
+    r"(?:\d[\d,.]*\s*(?:경기|이닝|승|패|세이브|홀드|홈런|안타|타점)|평균자책점)"
+)
+_SPORTS_PERFORMANCE_PREDICATE_RE = re.compile(
+    r"(?:기록(?:했|하|해|하며|했고|하였다|해냈)|활약(?:했|하|하며)|이끌(?:었|며)|등판(?:했|하|해))"
+)
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?。！？]\s*")
+
 
 def _orphaned_referential_event(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
@@ -69,6 +108,36 @@ def _orphaned_test_reference(value: str) -> bool:
     return re.search(r"(?:테스트|시험|벤치마크|평가)", prefix, flags=re.IGNORECASE) is None
 
 
+def _orphaned_measure_reference(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    for match in _DEICTIC_MEASURE_REFERENCE_RE.finditer(normalized):
+        head = match.group("head")
+        if _MEASURE_REFERENCE_HEAD_RE.search(head) is None:
+            continue
+        prefix = normalized[: match.start()].rstrip(" ,:;·")
+        if not prefix:
+            return True
+        # A preceding lexical mention resolves the same metric concept; an explicit
+        # visible quantity also resolves a deictic "수치/값/비율" without requiring
+        # the exact same head noun. This is discourse resolution, not a phrase ban.
+        if re.search(re.escape(head), prefix, flags=re.IGNORECASE) is not None:
+            continue
+        if _VISIBLE_QUANTITY_RE.search(prefix) is not None:
+            continue
+        return True
+    return False
+
+
+def _date_led_subjectless_sports_stat(value: str) -> bool:
+    normalized = " ".join(value.split()).strip()
+    match = _DATE_LED_SPORTS_STAT_RE.search(normalized)
+    if match is None:
+        return False
+    # A date-led statline is allowed when it still names an explicit grammatical
+    # performer after the date. The live failure had only venue/league/opponent context.
+    return _EXPLICIT_POST_DATE_SUBJECT_RE.search(match.group("context")) is None
+
+
 def _unidentified_kbo_result(value: str) -> bool:
     normalized = " ".join(value.split()).strip()
     if _KBO_GENERIC_RESULT_RE.search(normalized) is None:
@@ -86,6 +155,8 @@ def context_dependent_headline(value: str) -> bool:
         or _orphaned_referential_event(normalized)
         or _orphaned_visible_actor(normalized)
         or _orphaned_test_reference(normalized)
+        or _orphaned_measure_reference(normalized)
+        or _date_led_subjectless_sports_stat(normalized)
         or _unidentified_kbo_result(normalized)
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
     )
@@ -98,7 +169,23 @@ def context_dependent_summary(value: str) -> bool:
         or _orphaned_referential_event(normalized)
         or _orphaned_visible_actor(normalized)
         or _orphaned_test_reference(normalized)
+        or _orphaned_measure_reference(normalized)
         or _unidentified_kbo_result(normalized)
+    )
+
+
+def stale_relative_past_event_text(value: str) -> bool:
+    if _impl.stale_relative_past_event_text(value):
+        return True
+    normalized = " ".join(value.split()).strip()
+    primary = _SENTENCE_SPLIT_RE.split(normalized, maxsplit=1)[0].strip()
+    if not primary or _RELATIVE_PAST_SPORTS_PERIOD_RE.search(primary) is None:
+        return False
+    if _RELATIVE_PAST_COMPARISON_RE.search(primary) is not None:
+        return False
+    return (
+        _SPORTS_PERFORMANCE_RE.search(primary) is not None
+        and _SPORTS_PERFORMANCE_PREDICATE_RE.search(primary) is not None
     )
 
 
@@ -115,4 +202,5 @@ def malformed_visible_text(value: str) -> bool:
     return (
         _impl.malformed_visible_text(normalized)
         or _MALFORMED_KBO_LEAGUE_YEAR_RE.search(normalized) is not None
+        or normalized.endswith("·")
     )

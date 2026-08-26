@@ -22,9 +22,59 @@ _TOPIC_NAMES = {
     "ai_tech": "AI·테크",
     "economy": "경제·투자",
 }
+_GENERIC_PRIMARY_SUBJECTS = frozenset(
+    {
+        "회사",
+        "기업",
+        "업체",
+        "관계자",
+        "당국",
+        "그",
+        "그가",
+        "그는",
+        "그녀",
+        "그녀가",
+        "그녀는",
+        "이들",
+        "이들이",
+        "이들은",
+    }
+)
+
+
+def _primary_fact_subject(request: GenerationRequest) -> str | None:
+    first_fact_id = request.event.fact_ids[0]
+    subject = request.facts[first_fact_id].subject.strip()
+    if not subject or subject in _GENERIC_PRIMARY_SUBJECTS:
+        return None
+    return subject
+
+
+def _validate_primary_actor_preservation(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> None:
+    """Keep the event's primary semantic subject somewhere in the visible card.
+
+    Verification can prove that actorless prose is entailed by source evidence; it cannot prove
+    standalone discourse completeness. The first EventFact is the ordered primary fact supplied to
+    generation, and NEWS_REWRITE_POLICY_V1 already requires its who/what in the lead. Preserve that
+    exact evidence-bound subject in headline or summary rather than trying to recover it later from
+    a list of company/player names.
+    """
+
+    subject = _primary_fact_subject(request)
+    if subject is None:
+        return
+    if subject.casefold() not in draft.combined_text.casefold():
+        raise GenerationContractError(
+            f"generated draft drops primary event actor: {subject}"
+        )
 
 
 def validate_story_admission(request: GenerationRequest, draft: GeneratedDraft) -> None:
+    _validate_primary_actor_preservation(request, draft)
+
     topic = _TOPIC_NAMES.get(request.event.topic_id, request.event.topic_id)
     visible_decision = evaluate_story_admission(
         topic=topic,
