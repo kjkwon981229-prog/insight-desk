@@ -30,7 +30,7 @@ jobs:
       - name: Validate clean-room benchmark integrity
         run: python benchmarks/validate.py
       - name: Run clean core contract regressions
-        run: python -m unittest discover -s tests -p 'test_*.py'
+        run: python scripts/run_tests.py
       - name: Verify preserved API and new core import boundaries
         run: |
           python - <<'PY'
