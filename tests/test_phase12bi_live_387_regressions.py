@@ -4,12 +4,7 @@ from datetime import datetime, timezone
 import unittest
 
 from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
-from insight_desk.generation import (
-    GeneratedDraft,
-    GenerationRequest,
-    PreservationIssueCode,
-    validate_preservation,
-)
+from insight_desk.generation import GeneratedDraft, GenerationRequest, validate_preservation
 from insight_desk.story_admission import (
     StoryAdmissionReason,
     StoryAdmissionStage,
@@ -136,7 +131,7 @@ class Live387InheritedEventDatePreservationRegressions(unittest.TestCase):
         )
         report = validate_preservation(item, draft)
         self.assertFalse(report.accepted)
-        self.assertIn(PreservationIssueCode.MISSING_EVENT_DATE, {issue.code for issue in report.issues})
+        self.assertIn("missing_event_date", {issue.code.value for issue in report.issues})
 
     def test_generalized_inherited_event_date_cannot_be_erased(self) -> None:
         item = dated_request(
@@ -154,7 +149,7 @@ class Live387InheritedEventDatePreservationRegressions(unittest.TestCase):
         )
         report = validate_preservation(item, draft)
         self.assertFalse(report.accepted)
-        self.assertIn(PreservationIssueCode.MISSING_EVENT_DATE, {issue.code for issue in report.issues})
+        self.assertIn("missing_event_date", {issue.code.value for issue in report.issues})
 
     def test_explicit_source_event_date_preserved_remains_accepted(self) -> None:
         item = dated_request(
