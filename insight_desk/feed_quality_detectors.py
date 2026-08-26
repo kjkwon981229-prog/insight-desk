@@ -41,7 +41,8 @@ _BARE_ROLE_LEAD_RE = re.compile(
     r"^(?:책임자|관계자|당국자|담당자|실무자|전문가)(?:들)?(?:은|는|이|가)(?=\s|$)"
 )
 _SURNAME_ONLY_LEGISLATOR_RE = re.compile(
-    r"^[가-힣]\s+(?:국회의원|의원)(?:은|는|이|가)?(?=[,，]?\s|$)"
+    r"^[가-힣]\s+(?:국회의원|의원|회장|부회장|대표이사|대표|사장|부사장|위원장|"
+    r"장관|차관|총재|감독|코치|교수|박사)(?:은|는|이|가)?(?=[,，]?\s|$)"
 )
 _GENERIC_FACILITY_ACTOR_RE = re.compile(
     r"^(?:국내|현지|지역|해외)\s+"
@@ -144,6 +145,12 @@ _STATIC_PRODUCT_DEFINITION_RE = re.compile(
 _STATIC_COMPANY_IDENTITY_RE = re.compile(
     r"^[가-힣A-Za-z0-9·&()/_+.-]{2,40}(?:은|는|이|가)\s+"
     r"[^.!?。！？]{1,260}?(?:제조|개발|공급|운영|제공)하는\s+기업(?:이다|입니다)$"
+)
+_STATIC_FANCLUB_HISTORY_RE = re.compile(
+    r"^공식\s+팬클럽명(?:은|는|이|가)\s+[^.!?。！？]{1,80}?(?:로|이며|이고)[,，]?\s+"
+    r"(?:K-POP\s+)?팬(?:들)?(?:은|는|이|가)\s+[^.!?。！？]{1,220}?"
+    r"(?:응원봉|응원법)[^.!?。！？]{0,120}?"
+    r"(?:함께해\s+왔|응원해\s+왔|소통해\s+왔|이어왔)(?:다|습니다)$"
 )
 _SURVEY_METHOD_ONLY_RE = re.compile(
     r"(?:국가|지역)(?:들)?(?:을|를)\s+[^.!?。！？]{0,100}?"
@@ -284,6 +291,10 @@ _ONGOING_BUSINESS_EXPANSION_RE = re.compile(
 )
 _BARE_NUMERIC_MOVEMENT_HEADLINE_RE = re.compile(
     r"^\d[\d,.]*\s*(?:원|달러|%|％|포인트)?(?:으로|로)\s+출발한\s+뒤\s+"
+)
+_BARE_STATISTICAL_MOVEMENT_HEADLINE_RE = re.compile(
+    r"^\d[\d,.]*\s*(?:%|％|포인트|p|bp)\s+(?:올라|내려|상승|하락)(?:\s|$)",
+    flags=re.IGNORECASE,
 )
 _ACTORLESS_MARKET_SESSION_HEADLINE_RE = re.compile(
     r"^(?:전장|전일|직전\s+거래일)\s+대비\s+.{1,140}?"
@@ -549,7 +560,10 @@ def _headline_drops_metric_scope(*, headline: str, summary: str) -> bool:
 def _headline_drops_bare_numeric_metric(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
-    if _BARE_NUMERIC_MOVEMENT_HEADLINE_RE.search(normalized_headline) is None:
+    if (
+        _BARE_NUMERIC_MOVEMENT_HEADLINE_RE.search(normalized_headline) is None
+        and _BARE_STATISTICAL_MOVEMENT_HEADLINE_RE.search(normalized_headline) is None
+    ):
         return False
     metric_subject = _leading_summary_subject_surface(normalized_summary)
     return metric_subject is not None and metric_subject.casefold() not in normalized_headline.casefold()
@@ -873,6 +887,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _static_company_capability(primary)
         or _static_product_definition(primary)
         or _STATIC_COMPANY_IDENTITY_RE.search(primary) is not None
+        or _STATIC_FANCLUB_HISTORY_RE.search(primary) is not None
         or _context_free_album_synopsis(primary)
     )
 
