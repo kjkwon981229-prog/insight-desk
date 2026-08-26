@@ -100,7 +100,7 @@ class Live464EventRelevanceHandoffRegressions(unittest.TestCase):
         cases = (
             (
                 _topic("kpop", anchors=("K-POP", "아이돌"), required=("아이돌", "앨범")),
-                "K-POP 산업 동향과 함께 방송사 신규 프로그램도 소개했다.",
+                "아이돌 K-POP 산업 동향과 함께 방송사 신규 프로그램도 소개했다.",
                 "방송사는 새로운 연애 예능을 공개했다.",
                 "방송사",
                 "새로운 연애 예능을 공개했다",
