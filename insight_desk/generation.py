@@ -42,39 +42,46 @@ _GENERIC_PRIMARY_SUBJECTS = frozenset(
 )
 
 
-def _primary_fact_subject(request: GenerationRequest) -> str | None:
-    first_fact_id = request.event.fact_ids[0]
-    subject = request.facts[first_fact_id].subject.strip()
-    if not subject or subject in _GENERIC_PRIMARY_SUBJECTS:
-        return None
-    return subject
+def _evidence_bound_actor_subjects(request: GenerationRequest) -> tuple[str, ...]:
+    """Return concrete EventFact subjects literally present in their cited evidence bytes."""
+
+    subjects: list[str] = []
+    seen: set[str] = set()
+    for fact_id in request.event.fact_ids:
+        fact = request.facts[fact_id]
+        subject = fact.subject.strip()
+        if not subject or subject in _GENERIC_PRIMARY_SUBJECTS:
+            continue
+        cited = "\n".join(request.evidence[eid].text for eid in fact.evidence_ids)
+        if subject not in cited or subject in seen:
+            continue
+        seen.add(subject)
+        subjects.append(subject)
+    return tuple(subjects)
 
 
-def _validate_primary_actor_preservation(
+def validate_generated_actor_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> None:
-    """Keep the event's primary semantic subject somewhere in the visible card.
+    """Reject provider rewrites that erase every concrete evidence-bound event actor.
 
-    Verification can prove that actorless prose is entailed by source evidence; it cannot prove
-    standalone discourse completeness. The first EventFact is the ordered primary fact supplied to
-    generation, and NEWS_REWRITE_POLICY_V1 already requires its who/what in the lead. Preserve that
-    exact evidence-bound subject in headline or summary rather than trying to recover it later from
-    a list of company/player names.
+    This is generation preservation, not general visible admission. Exact-source fallback is exempt:
+    it is already constrained to immutable source bytes and the shared standalone story contract.
+    Provider prose, however, may remain entailed after dropping who the event is about; requiring at
+    least one concrete EventFact actor in the visible card closes that discourse-loss path without
+    assuming that the first fact is always the one selected for the rewrite.
     """
 
-    subject = _primary_fact_subject(request)
-    if subject is None:
+    subjects = _evidence_bound_actor_subjects(request)
+    if not subjects:
         return
-    if subject.casefold() not in draft.combined_text.casefold():
-        raise GenerationContractError(
-            f"generated draft drops primary event actor: {subject}"
-        )
+    combined = draft.combined_text.casefold()
+    if not any(subject.casefold() in combined for subject in subjects):
+        raise GenerationContractError("generated draft drops all evidence-bound event actors")
 
 
 def validate_story_admission(request: GenerationRequest, draft: GeneratedDraft) -> None:
-    _validate_primary_actor_preservation(request, draft)
-
     topic = _TOPIC_NAMES.get(request.event.topic_id, request.event.topic_id)
     visible_decision = evaluate_story_admission(
         topic=topic,
@@ -110,4 +117,5 @@ class Groq20BBriefingGenerator(_CoreGroq20BBriefingGenerator):
     def generate(self, request: GenerationRequest):
         draft = super().generate(request)
         validate_story_admission(request, draft)
+        validate_generated_actor_preservation(request, draft)
         return draft

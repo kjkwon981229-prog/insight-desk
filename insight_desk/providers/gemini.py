@@ -12,6 +12,7 @@ from insight_desk.generation import (
     GenerationContractError,
     GenerationRequest,
     build_generation_prompt,
+    validate_generated_actor_preservation,
 )
 
 from .transport import JsonHttpTransport, ProviderTransportError, require_secret
@@ -124,12 +125,14 @@ class GeminiBriefingGenerator:
             raise GenerationContractError(
                 "Gemini generation output is outside headline/summary contract"
             )
-        return GeneratedDraft(
+        draft = GeneratedDraft(
             event_id=request.event.event_id,
             headline=headline,
             summary=summary,
             evidence_ids=request.evidence_ids,
         )
+        validate_generated_actor_preservation(request, draft)
+        return draft
 
 
 @dataclass(slots=True)

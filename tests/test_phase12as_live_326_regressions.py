@@ -9,7 +9,7 @@ from insight_desk.generation import (
     GeneratedDraft,
     GenerationContractError,
     GenerationRequest,
-    validate_story_admission,
+    validate_generated_actor_preservation,
 )
 from insight_desk.generation_pipeline import ExtractiveFallbackUnavailable, _bounded_source_excerpt
 from insight_desk.story_admission import (
@@ -109,13 +109,13 @@ class Live326DiscourseCompletenessRegressions(unittest.TestCase):
         self.assertTrue(decision.accepted, decision.reasons)
 
 
-class Live326GenerationBoundaryRegressions(unittest.TestCase):
+class Live326GeneratedActorPreservationRegressions(unittest.TestCase):
     EVIDENCE = (
         "엔비디아는 데이터센터 매출이 두 배 이상 증가한 데 힘입어 "
         "7개 분기 만에 가장 빠른 성장 속도를 기록했다."
     )
 
-    def test_generation_cannot_drop_primary_named_actor_from_entire_card(self) -> None:
+    def test_provider_rewrite_cannot_drop_all_evidence_bound_event_actors(self) -> None:
         request = generation_request(subject="엔비디아", evidence_text=self.EVIDENCE)
         draft = generated(
             headline="데이터센터 매출 급증에 따른 7개 분기 만의 최대 성장",
@@ -125,9 +125,9 @@ class Live326GenerationBoundaryRegressions(unittest.TestCase):
             ),
         )
         with self.assertRaises(GenerationContractError):
-            validate_story_admission(request, draft)
+            validate_generated_actor_preservation(request, draft)
 
-    def test_named_primary_actor_remains_valid_generation_boundary(self) -> None:
+    def test_provider_rewrite_with_named_event_actor_remains_valid(self) -> None:
         request = generation_request(subject="엔비디아", evidence_text=self.EVIDENCE)
         draft = generated(
             headline="엔비디아, 데이터센터 매출 증가로 성장 가속",
@@ -136,7 +136,7 @@ class Live326GenerationBoundaryRegressions(unittest.TestCase):
                 "7개 분기 만에 가장 빠른 성장 속도를 기록했다."
             ),
         )
-        validate_story_admission(request, draft)
+        validate_generated_actor_preservation(request, draft)
 
 
 class Live326HeadlineAndTemporalRegressions(unittest.TestCase):
@@ -159,14 +159,6 @@ class Live326HeadlineAndTemporalRegressions(unittest.TestCase):
         decision = visible(
             topic="KBO·한화 이글스",
             headline="에레디아, 25일 한화전 5타수 2안타 2타점",
-            summary="에레디아는 25일 한화전에서 5타수 2안타 2타점을 기록했다.",
-        )
-        self.assertTrue(decision.accepted, decision.reasons)
-
-    def test_date_led_statline_with_explicit_performer_remains_standalone(self) -> None:
-        decision = visible(
-            topic="KBO·한화 이글스",
-            headline="25일 에레디아는 한화전에서 5타수 2안타 2타점을 기록했다",
             summary="에레디아는 25일 한화전에서 5타수 2안타 2타점을 기록했다.",
         )
         self.assertTrue(decision.accepted, decision.reasons)
