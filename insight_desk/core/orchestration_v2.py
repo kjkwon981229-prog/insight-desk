@@ -83,28 +83,41 @@ OWNER_BOUNDARIES: tuple[OwnerBoundary, ...] = (
     ),
     OwnerBoundary(
         responsibility=PipelineResponsibility.EVENT_UNDERSTANDING,
-        owner_id="canonical_event_builder",
+        owner_id="event_understanding_engine",
         input_contract="RelevantSourceSet",
-        output_contract="CanonicalEventDraft",
-        allowed_decisions=("extract_event_meaning", "structure_event_facts", "identify_attribution"),
-        forbidden_decisions=("select_publication_card", "resolve_event_identity", "generate_copy", "verify_claims"),
+        output_contract="ArticleUnderstanding",
+        allowed_decisions=(
+            "extract_event_meaning",
+            "structure_event_facts",
+            "identify_primary_and_context_events",
+            "identify_topic_relation",
+            "identify_attribution",
+            "report_semantic_uncertainty",
+        ),
+        forbidden_decisions=(
+            "judge_user_relevance",
+            "select_publication_card",
+            "resolve_event_identity",
+            "generate_copy",
+            "verify_claims",
+        ),
         semantic_authority=True,
     ),
     OwnerBoundary(
         responsibility=PipelineResponsibility.AUTHORITATIVE_ENRICHMENT,
         owner_id="authoritative_enricher",
-        input_contract="CanonicalEventDraft",
-        output_contract="EnrichedEventFacts",
+        input_contract="ArticleUnderstanding",
+        output_contract="EnrichedEventDraftSet",
         allowed_decisions=("query_authoritative_source", "attach_authoritative_fact"),
-        forbidden_decisions=("judge_relevance", "resolve_event_identity", "generate_copy", "verify_claims"),
+        forbidden_decisions=("judge_relevance", "understand_event", "resolve_event_identity", "generate_copy", "verify_claims"),
     ),
     OwnerBoundary(
         responsibility=PipelineResponsibility.EVENT_IDENTITY,
         owner_id="canonical_identity_engine",
-        input_contract="CanonicalEventDraftSet",
-        output_contract="CanonicalEvent",
+        input_contract="EnrichedEventDraftSet",
+        output_contract="CanonicalEventSet",
         allowed_decisions=("resolve_same_event", "resolve_distinct_event", "resolve_parent_child"),
-        forbidden_decisions=("judge_relevance", "judge_story_quality", "generate_copy", "verify_claims"),
+        forbidden_decisions=("judge_relevance", "understand_event", "judge_story_quality", "generate_copy", "verify_claims"),
         semantic_authority=True,
     ),
     OwnerBoundary(
@@ -113,7 +126,7 @@ OWNER_BOUNDARIES: tuple[OwnerBoundary, ...] = (
         input_contract="CanonicalEvent",
         output_contract="PublicationDraft",
         allowed_decisions=("express_headline", "express_summary"),
-        forbidden_decisions=("judge_relevance", "resolve_event_identity", "invent_authoritative_fact", "verify_claims"),
+        forbidden_decisions=("judge_relevance", "understand_event", "resolve_event_identity", "invent_authoritative_fact", "verify_claims"),
         semantic_authority=True,
     ),
     OwnerBoundary(
@@ -122,7 +135,7 @@ OWNER_BOUNDARIES: tuple[OwnerBoundary, ...] = (
         input_contract="PublicationDraft+CanonicalEvent",
         output_contract="VerifiedClaims",
         allowed_decisions=("verify_claim_support", "mark_verification_indeterminate"),
-        forbidden_decisions=("judge_relevance", "resolve_event_identity", "deduplicate_events", "generate_copy"),
+        forbidden_decisions=("judge_relevance", "understand_event", "resolve_event_identity", "deduplicate_events", "generate_copy"),
         semantic_authority=True,
     ),
     OwnerBoundary(
@@ -191,6 +204,13 @@ def validate_owner_boundaries() -> None:
     owner_ids = tuple(item.owner_id for item in OWNER_BOUNDARIES)
     if len(owner_ids) != len(set(owner_ids)):
         raise RuntimeError("one owner_id is reused across responsibilities")
+
+    understanding = owner_for(PipelineResponsibility.EVENT_UNDERSTANDING)
+    if understanding.output_contract != "ArticleUnderstanding":
+        raise RuntimeError("event understanding must hand off ArticleUnderstanding")
+    identity = owner_for(PipelineResponsibility.EVENT_IDENTITY)
+    if identity.input_contract != "EnrichedEventDraftSet":
+        raise RuntimeError("identity must consume enriched event drafts, not source text")
 
     publication = owner_for(PipelineResponsibility.PUBLICATION_CONTRACT)
     if not publication.mechanical_only:

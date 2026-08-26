@@ -26,6 +26,13 @@ from .contracts import (
     VerificationVerdict,
     VerifiedClaim,
 )
+from .event_understanding_v2 import (
+    ArticleEventRole,
+    ArticleUnderstanding,
+    CanonicalEventDraft,
+    TopicRelation,
+    UnderstandingStatus,
+)
 from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
 from .identity import (
     IdentityDecision,
@@ -52,9 +59,12 @@ from .selection import (
 from .verification import VerificationPolicy, aggregate_verdict
 
 __all__ = [
+    "ArticleEventRole",
+    "ArticleUnderstanding",
     "AuthoritativeFact",
     "CandidateEvent",
     "CanonicalEvent",
+    "CanonicalEventDraft",
     "CanonicalPublicationBundle",
     "Certainty",
     "ContractBundle",
@@ -84,6 +94,8 @@ __all__ = [
     "SourceDocument",
     "SourceProvenance",
     "TemporalState",
+    "TopicRelation",
+    "UnderstandingStatus",
     "VerificationCheck",
     "VerificationPolicy",
     "VerificationVerdict",
