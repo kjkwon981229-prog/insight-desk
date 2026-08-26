@@ -15,10 +15,12 @@ from insight_desk.feed_quality_detectors_core import (
 
 # A deictic event mention is standalone only when its visible text has already
 # introduced an event antecedent. Model the discourse relation, not one particle
-# surface: 이번/해당/이 행사 + subject/object/location/topic particles are the
-# same unresolved referent family.
+# surface: 이번/해당/이 + a generic event class and its case particle are the
+# same unresolved referent family.  The visible text must name that event before
+# referring back to it; an ordinal ("17회째") is not an identity antecedent.
 _DEICTIC_EVENT_REFERENCE_RE = re.compile(
-    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이)\s+(?P<head>행사)"
+    r"(?<![가-힣A-Za-z0-9])(?:이번|해당|이)\s+"
+    r"(?P<head>행사|대회|박람회|축제|공연|콘서트|캠페인|시상식|포럼|토론회)"
     r"(?:은|는|이|가|을|를|의|에|에서|에는|로|으로)?(?=\s|$)"
 )
 _SUBJECTLESS_MARKET_HEADLINE_RE = re.compile(

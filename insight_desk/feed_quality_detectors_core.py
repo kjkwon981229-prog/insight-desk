@@ -157,10 +157,15 @@ _VISIBLE_BYLINE_RE = re.compile(
     r"[가-힣]{2,4}\s+(?:기자|특파원)(?:가|이)?\s+(?:전했다|보도했다)(?:[.!?。！？]|$)"
     r")"
 )
+_LEADING_PUBLISHER_BYLINE_RE = re.compile(
+    r"^[^=|｜.!?。！？]{2,40}\s*=\s*"
+    r"(?:[가-힣]{2,10}\s+)?[가-힣]{2,4}\s+(?:기자|특파원)\s*[|｜]\s*"
+)
 _STANDALONE_SOURCE_CREDIT_RE = re.compile(
     r"^[\[\(（]?(?:(?:사진|자료|영상)\s*[:：]\s*)?"
     r"[^.!?。！？]{0,60}?"
-    r"(?:사무국|구단|협회|연맹|위원회|공사|재단|은행|청|부|처|뉴스|일보|신문|통신|방송)"
+    r"(?:사무국|구단|협회|연맹|위원회|공사|재단|은행|청|부|처|"
+    r"특별자치도|특별자치시|광역시|특별시|도|시|군|구|뉴스|일보|신문|통신|방송)"
     r"\s+제공[\]\)）]?$"
 )
 _SUBJECTLESS_FUNDING_MAIN_CLAUSE_RE = re.compile(
@@ -808,6 +813,7 @@ def metadata_or_caption_text(value: str) -> bool:
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     return (
         _VISIBLE_BYLINE_RE.search(normalized) is not None
+        or _LEADING_PUBLISHER_BYLINE_RE.search(normalized) is not None
         or _STANDALONE_SOURCE_CREDIT_RE.search(normalized) is not None
     )
 

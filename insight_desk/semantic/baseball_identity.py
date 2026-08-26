@@ -8,6 +8,9 @@ _DAY_RE = re.compile(r"(?<!\d)([0-3]?\d)일(?!\s*(?:간|동안|후|뒤|째))")
 _OUTCOME_CUES = ("승리", "이겼", "이기고", "꺾", "제압", "패배", "졌다", "패했다")
 _WIN_CUES = ("완파", "제압", "꺾", "이겼", "승리")
 _LOSS_CUES = ("패배", "패하며", "패했다", "패전", "졌다")
+_LINEUP_RE = re.compile(r"(?:선발\s+)?(?:라인업|타순|명단)")
+_LINEUP_EVENT_RE = re.compile(r"(?:발표|공개|확정|꾸렸|꾸렸다|구성|내놨|나선다)")
+_GAME_NUMBER_RE = re.compile(r"(?:더블헤더\s*)?([12])차전")
 _KBO_TEAM_ALIASES = {
     "한화": ("한화 이글스", "한화"),
     "SSG": ("SSG 랜더스", "SSG랜더스", "SSG"),
@@ -192,6 +195,53 @@ def same_game_result_fingerprint(left_text: str, right_text: str) -> bool:
         return False
 
     return any(cue in left for cue in _OUTCOME_CUES) and any(cue in right for cue in _OUTCOME_CUES)
+
+
+def kbo_visible_lineup_redundant(
+    *,
+    prior_headline: str,
+    prior_summary: str,
+    candidate_headline: str,
+    candidate_summary: str,
+) -> bool:
+    """Recognize two visible reports of one Hanwha starting-lineup event.
+
+    One KBO club's lineup on one explicit day is a single publication event.
+    Opponent omission is allowed because compact generation commonly removes it,
+    while conflicting named opponents, days, or doubleheader game numbers keep
+    the reports separate.
+    """
+
+    prior = " ".join(f"{prior_headline} {prior_summary}".split())
+    candidate = " ".join(f"{candidate_headline} {candidate_summary}".split())
+    if not all(
+        _LINEUP_RE.search(text) and _LINEUP_EVENT_RE.search(text)
+        for text in (prior, candidate)
+    ):
+        return False
+
+    prior_teams = _team_set(prior)
+    candidate_teams = _team_set(candidate)
+    if "한화" not in prior_teams or "한화" not in candidate_teams:
+        return False
+
+    prior_day = _day(prior)
+    candidate_day = _day(candidate)
+    if prior_day is None or prior_day != candidate_day:
+        return False
+
+    prior_opponents = prior_teams - {"한화"}
+    candidate_opponents = candidate_teams - {"한화"}
+    if prior_opponents and candidate_opponents and prior_opponents != candidate_opponents:
+        return False
+
+    prior_game = _GAME_NUMBER_RE.search(prior)
+    candidate_game = _GAME_NUMBER_RE.search(candidate)
+    if (prior_game is None) != (candidate_game is None):
+        return False
+    if prior_game is not None and prior_game.group(1) != candidate_game.group(1):
+        return False
+    return True
 
 
 def kbo_visible_result_redundant(
