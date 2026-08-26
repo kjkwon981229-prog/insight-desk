@@ -62,7 +62,11 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
             self.assertEqual(set(by_topic), {"economy", "kbo_hanwha"})
 
             economy = by_topic["economy"]
-            self.assertTrue(str(economy["parent_event_id"]).startswith("canonical-parent:bok_mpc:"))
+            self.assertIsNotNone(economy["parent_event_id"])
+            self.assertTrue(
+                str(economy["parent_event_id"]).startswith("canonical-parent:bok_mpc"),
+                economy["parent_event_id"],
+            )
             self.assertEqual(
                 economy["primary_source_url"],
                 "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8647231&ref=A",
