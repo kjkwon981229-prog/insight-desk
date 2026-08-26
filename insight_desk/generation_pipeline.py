@@ -5,6 +5,7 @@ from enum import StrEnum
 import re
 from typing import Protocol
 
+from insight_desk import feed_quality_detectors as detectors
 from insight_desk.core import EvidenceField, RenderMode
 from insight_desk.generation import (
     GeneratedDraft,
@@ -115,6 +116,23 @@ def _bounded_source_excerpt(text: str, *, max_chars: int) -> str:
     raise ExtractiveFallbackUnavailable("no safe exact-source boundary within feed ceiling")
 
 
+def _without_leading_metadata_lines(text: str) -> str:
+    """Drop only complete leading lines already classified as presentation metadata."""
+
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        line_end = offset + len(line)
+        if not stripped:
+            offset = line_end
+            continue
+        if detectors.visible_metadata_text(stripped):
+            offset = line_end
+            continue
+        break
+    return text[offset:].strip()
+
+
 def _first_nonempty_line(text: str) -> tuple[str, int] | None:
     offset = 0
     for line in text.splitlines(keepends=True):
@@ -202,7 +220,7 @@ class ExtractiveFallbackGenerator:
         body_spans = [span for span in spans if span.field is EvidenceField.BODY]
 
         summary_source = body_spans[0] if body_spans else spans[0]
-        summary_text = summary_source.text.strip()
+        summary_text = _without_leading_metadata_lines(summary_source.text)
 
         if title_spans:
             headline = _bounded_source_excerpt(
