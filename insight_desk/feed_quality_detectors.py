@@ -108,10 +108,15 @@ def _orphaned_referential_event(value: str) -> bool:
         prefix = normalized[: match.start()].rstrip(" ,:;·")
         if not prefix:
             return True
-        # The same visible event class must have been introduced before the deictic
-        # mention. This lets `반도체 행사를 개최했다. 이번 행사를...` resolve while
-        # rejecting `LG화학은 이번 행사를 계기로...` regardless of particle surface.
-        if re.search(rf"(?<![가-힣A-Za-z0-9]){re.escape(head)}(?![가-힣A-Za-z0-9])", prefix):
+        # Resolve a prior visible event noun even when Korean case/topic particles
+        # are attached to it (`행사를`, `행사에서`, ...). This is lexical antecedent
+        # resolution, not acceptance of a bare deictic reference.
+        antecedent = re.compile(
+            rf"(?<![가-힣A-Za-z0-9]){re.escape(head)}"
+            r"(?:에서|에는|으로|은|는|이|가|을|를|의|에|로)?"
+            r"(?=\s|[,.!?。！？]|$)"
+        )
+        if antecedent.search(prefix) is not None:
             continue
         return True
     return False

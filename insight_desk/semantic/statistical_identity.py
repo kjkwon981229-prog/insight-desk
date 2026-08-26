@@ -9,6 +9,9 @@ _STATISTICAL_RELEASE_ACTOR_RE = re.compile(
     r"(?P<actor>[가-힣A-Za-z][가-힣A-Za-z0-9·]{1,29})(?:은|는|이|가|의)\s+"
     r"[^.!?。！？]{0,100}?통계"
 )
+_STATISTICAL_RELEASE_TOKEN_RE = re.compile(
+    r"통계(?:에서|에는|으로|은|는|이|가|을|를|의|에|로)?$"
+)
 _MIN_SHARED_RELEASE_TOKENS = 4
 _MAX_RELEASE_PREFIX_TOKENS = 8
 
@@ -34,10 +37,12 @@ def _release_token_sequences(value: str) -> tuple[tuple[str, ...], ...]:
     tokens = tuple(_TOKEN_RE.findall(_normalized(value)))
     sequences: list[tuple[str, ...]] = []
     for index, token in enumerate(tokens):
-        if token != "통계":
+        if _STATISTICAL_RELEASE_TOKEN_RE.fullmatch(token) is None:
             continue
         start = max(0, index - _MAX_RELEASE_PREFIX_TOKENS + 1)
-        sequences.append(tokens[start : index + 1])
+        sequence = list(tokens[start : index + 1])
+        sequence[-1] = "통계"
+        sequences.append(tuple(sequence))
     return tuple(sequences)
 
 
@@ -55,8 +60,9 @@ def same_statistical_release_fingerprint(left_text: str, right_text: str) -> boo
 
     This is a high-precision parent-event fingerprint, not fuzzy text similarity. Both visible cards
     must name the same grammatical release actor, contain exactly one compatible reference month,
-    and share an exact multi-token release label ending in ``통계``. Metric names and values may
-    differ because those are child facts of the same publication event.
+    and share an exact multi-token release label ending in ``통계``. Korean particles attached to
+    ``통계`` are normalized only at that terminal token. Metric names and values may differ because
+    those are child facts of the same publication event.
     """
 
     left_month = _single_reference_month(left_text)
