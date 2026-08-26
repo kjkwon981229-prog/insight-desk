@@ -72,7 +72,9 @@ def _exact_fallback_result(request: GenerationRequest) -> GenerationRecoveryResu
     draft = ExtractiveFallbackGenerator().generate(request)
     preservation = validate_preservation(request, draft)
     if not preservation.accepted:
-        raise ValueError("exact extractive fallback failed deterministic preservation")
+        raise ExtractiveFallbackUnavailable(
+            "exact extractive fallback failed deterministic preservation"
+        )
     return GenerationRecoveryResult(
         event_id=request.event.event_id,
         draft=draft,
