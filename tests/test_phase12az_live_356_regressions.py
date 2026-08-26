@@ -136,8 +136,8 @@ class Live356RankingHeadlineRegressions(unittest.TestCase):
     def test_named_vote_ranking_headline_remains_standalone(self) -> None:
         decision = visible(
             topic="엔터·음악·K-POP",
-            headline="장민호, 6개 투표 부문 TOP3",
-            summary="장민호는 26일 집계된 팬 투표에서 6개 부문 TOP3에 들었다.",
+            headline="K-POP 가수 장민호, 6개 투표 부문 TOP3",
+            summary="K-POP 가수 장민호는 26일 집계된 팬 투표에서 6개 부문 TOP3에 들었다.",
         )
         self.assertTrue(decision.accepted, decision.reasons)
 
@@ -158,9 +158,9 @@ class Live356AlbumIdentityRegressions(unittest.TestCase):
     def test_named_current_album_release_with_tracklist_remains_event(self) -> None:
         decision = visible(
             topic="엔터·음악·K-POP",
-            headline="엔하이픈, 미니 8집 THE SIN : BLISS 발매",
+            headline="K-POP 그룹 엔하이픈, 미니 8집 THE SIN : BLISS 발매",
             summary=(
-                "엔하이픈은 26일 미니 8집 'THE SIN : BLISS'를 발매했다. "
+                "K-POP 그룹 엔하이픈은 26일 미니 8집 'THE SIN : BLISS'를 발매했다. "
                 "앨범에는 ‘Two Fools’, ‘Stuck’ 등 6곡이 수록됐다."
             ),
         )
@@ -169,10 +169,10 @@ class Live356AlbumIdentityRegressions(unittest.TestCase):
     def test_named_current_tracklist_announcement_remains_event(self) -> None:
         decision = visible(
             topic="엔터·음악·K-POP",
-            headline="엔하이픈, THE SIN : BLISS 트랙리스트 공개",
+            headline="K-POP 그룹 엔하이픈, THE SIN : BLISS 트랙리스트 공개",
             summary=(
-                "엔하이픈은 26일 미니 8집 'THE SIN : BLISS'의 트랙리스트를 공개하고 "
-                "수록곡 6곡을 소개했다."
+                "K-POP 그룹 엔하이픈은 26일 미니 8집 'THE SIN : BLISS'의 "
+                "트랙리스트를 공개하고 수록곡 6곡을 소개했다."
             ),
         )
         self.assertTrue(decision.accepted, decision.reasons)
