@@ -27,6 +27,9 @@ _MALFORMED_KBO_LEAGUE_YEAR_RE = re.compile(
 _GENERIC_LABOR_MANAGEMENT_RE = re.compile(r"^노사(?:는|가|의|,|\s)")
 _REFERENTIAL_REPORT_LEAD_RE = re.compile(r"^(?:같은\s+)?보도(?:는|가)(?:\s|$)")
 _GENERIC_COMPANY_LEAD_RE = re.compile(r"^(?:(?:이|해당|그)\s+)?회사(?:는|가|의)(?:\s|$)")
+_BARE_ROLE_LEAD_RE = re.compile(
+    r"^(?:책임자|관계자|당국자|담당자|실무자|전문가)(?:들)?(?:은|는|이|가)(?=\s|$)"
+)
 _SUBJECTLESS_STOCK_TO_COMPANY_RE = re.compile(
     r"^주가(?:는|가)?[^.!?。！？,，]{0,100}(?:가운데|상황에서|속에서)?\s*[,，]\s*"
     r"(?:(?:이|해당|그)\s+)?회사(?:는|가|의)(?:\s|$)"
@@ -34,6 +37,19 @@ _SUBJECTLESS_STOCK_TO_COMPANY_RE = re.compile(
 _ORPHANED_TEST_REFERENCE_RE = re.compile(r"(?:^|\s)해당\s+테스트(?:에|에서|를|는|가|의|\s)")
 _INTERPRETIVE_BACKGROUND_END_RE = re.compile(
     r"(?:상징적으로\s+)?(?:드러낸|보여주는)\s+(?:표현|사례|대목)(?:이다|입니다)$"
+)
+_GENERIC_MARKET_COGNITION_RE = re.compile(
+    r"^(?:시장(?:은|이|에서는)|증시(?:는|가|에서는)|"
+    r"투자자(?:들)?(?:은|는|이|가)|시장\s+참여자(?:들)?(?:은|는|이|가))\s+"
+    r"[^.!?。！？]{0,260}?"
+    r"(?:보고\s+있다|보고\s+있습니다|평가한다|평가하고\s+있다|평가하고\s+있습니다|"
+    r"판단한다|판단하고\s+있다|해석한다|해석하고\s+있다|"
+    r"주목하고\s+있다|주목하고\s+있습니다|기대하고\s+있다|기대하고\s+있습니다)$"
+)
+_ABSTRACT_EMERGENCE_ATTENTION_RE = re.compile(
+    r"(?:모델|방식|전략|흐름|움직임)(?:이|가)\s+"
+    r"(?:새로\s+)?(?:등장|나타나|확산)(?:해|하며|하면서|하고|했다|하고\s+있)[^.!?。！？]{0,140}?"
+    r"(?:이목|관심|주목)(?:을|이)?\s*(?:모으|끌)"
 )
 _KBO_TEAM_RE = re.compile(
     r"(?:한화(?:\s+이글스)?|SSG(?:\s*랜더스)?|KIA(?:\s*타이거즈)?|LG(?:\s*트윈스)?|"
@@ -128,6 +144,7 @@ def _orphaned_visible_actor(value: str) -> bool:
         _GENERIC_LABOR_MANAGEMENT_RE.search(normalized) is not None
         or _REFERENTIAL_REPORT_LEAD_RE.search(normalized) is not None
         or _GENERIC_COMPANY_LEAD_RE.search(normalized) is not None
+        or _BARE_ROLE_LEAD_RE.search(normalized) is not None
         or _SUBJECTLESS_STOCK_TO_COMPANY_RE.search(normalized) is not None
     )
 
@@ -230,6 +247,8 @@ def non_event_analytical_text(value: str) -> bool:
         _impl.non_event_analytical_text(normalized)
         or _INTERPRETIVE_BACKGROUND_END_RE.search(normalized) is not None
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
+        or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
+        or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
     )
 
 
