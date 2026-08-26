@@ -39,6 +39,31 @@ def request(text: str = TEXT) -> GenerationRequest:
     return GenerationRequest(event=event, facts={fact.fact_id: fact}, evidence={span.evidence_id: span})
 
 
+def identity_sensitive_request() -> GenerationRequest:
+    text = "전월 대비 PCE 물가는 0.2% 올라 6월 0.1% 하락에서 상승으로 전환했다."
+    span = EvidenceSpan(
+        evidence_id="ev:phase7-identity-recovery",
+        article_id="article:phase7-identity-recovery",
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(text),
+        text=text,
+    )
+    fact = EventFact(
+        fact_id="fact:phase7-identity-recovery",
+        subject="PCE 물가",
+        action="0.2% 올라 6월 0.1% 하락에서 상승으로 전환했다",
+        evidence_ids=(span.evidence_id,),
+    )
+    event = CandidateEvent(
+        event_id="event:phase7-identity-recovery",
+        topic_id="economy",
+        fact_ids=(fact.fact_id,),
+        article_ids=(span.article_id,),
+    )
+    return GenerationRequest(event=event, facts={fact.fact_id: fact}, evidence={span.evidence_id: span})
+
+
 @dataclass
 class Generator:
     draft: GeneratedDraft | None = None
@@ -80,6 +105,15 @@ def generated() -> GeneratedDraft:
         headline="AI 공장 15억달러 수주",
         summary="네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다.",
         evidence_ids=("ev:phase7-final",),
+    )
+
+
+def identity_sensitive_generated() -> GeneratedDraft:
+    return GeneratedDraft(
+        event_id="event:phase7-identity-recovery",
+        headline="PCE 물가, 0.2% 올라 전월 하락에서 상승 전환",
+        summary="전월 대비 PCE 물가는 0.2% 올라 6월 0.1% 하락에서 상승으로 전환했다.",
+        evidence_ids=("ev:phase7-identity-recovery",),
     )
 
 
@@ -143,6 +177,24 @@ class Phase7PublishGateTests(unittest.TestCase):
             result.verification_recovery_reason,
             VerificationRecoveryReason.GENERATED_VERIFICATION_UNAVAILABLE,
         )
+        self.assertEqual(first.calls, 2)
+        self.assertEqual(second.calls, 0)
+        self.assertTrue(result.event_retained)
+
+    def test_identity_rejected_indeterminate_fallback_keeps_initial_result_item_locally(self) -> None:
+        first = primary(None, None)
+        second = secondary(True, True)
+        result = produce_phase7_entry_candidate(
+            identity_sensitive_request(),
+            primary_generator=Generator(draft=identity_sensitive_generated()),
+            primary_verifier=first,
+            secondary_verifier=second,
+        )
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertFalse(result.publishable)
+        self.assertIs(result.initial_generation, result.final_generation)
+        self.assertIsNone(result.verification_recovery_reason)
         self.assertEqual(first.calls, 2)
         self.assertEqual(second.calls, 0)
         self.assertTrue(result.event_retained)
