@@ -13,6 +13,7 @@ from insight_desk.generation import (
     MAX_GENERATED_HEADLINE_CHARS,
     MAX_GENERATED_SUMMARY_CHARS,
     PreservationReport,
+    validate_generated_actor_preservation,
     validate_preservation,
     validate_story_admission,
 )
@@ -279,8 +280,9 @@ def _attempt_generated(
     try:
         draft = generator.generate(request)
         # Every provider route, including independently implemented alternates,
-        # consumes the same final story-admission decision before preservation.
+        # consumes the same final visible and actor-preservation boundary before preservation.
         validate_story_admission(request, draft)
+        validate_generated_actor_preservation(request, draft)
     except GenerationContractError as exc:
         return (
             None,

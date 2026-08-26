@@ -117,5 +117,4 @@ class Groq20BBriefingGenerator(_CoreGroq20BBriefingGenerator):
     def generate(self, request: GenerationRequest):
         draft = super().generate(request)
         validate_story_admission(request, draft)
-        validate_generated_actor_preservation(request, draft)
         return draft
