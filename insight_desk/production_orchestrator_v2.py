@@ -2,13 +2,14 @@ from __future__ import annotations
 
 """Production compatibility orchestrator for the CanonicalEvent V2 migration.
 
-This module changes ownership, not news meaning.  The legacy production loop remains the
+This module changes ownership, not news meaning. The legacy production loop remains the
 mechanical iterator while its semantic decision hooks are replaced by one-owner V2 boundaries.
 The compatibility layer is intentionally removable after the loop itself is rewritten around the
 V2 contracts.
 """
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 import hashlib
 from types import ModuleType
 from typing import Mapping
@@ -50,6 +51,18 @@ def _stable_id(prefix: str, *parts: str) -> str:
     return f"{prefix}-" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:20]
 
 
+def _canonical_event_time(value: str | None) -> str | None:
+    """Carry only already-resolved ISO dates into CanonicalEvent; never guess a date."""
+
+    if value is None:
+        return None
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return None
+    return value
+
+
 def source_document_from_article(article) -> SourceDocument:
     """Bind one acquired article to exact body bytes before semantic processing continues."""
 
@@ -75,7 +88,7 @@ def canonical_event_from_candidate(
 ) -> CanonicalEvent:
     """Lift the current evidence-bound one-fact candidate into the V2 event contract.
 
-    Phase 4 does not invent a new model role.  Existing evidence extraction remains an auxiliary
+    Phase 4 does not invent a new model role. Existing evidence extraction remains an auxiliary
     input, while this builder becomes the only runtime component allowed to create CanonicalEvent.
     A richer semantic event type can replace ``news_event`` later without changing downstream
     contracts.
@@ -94,7 +107,7 @@ def canonical_event_from_candidate(
         object=fact.object,
         event_type="news_event",
         source_ids=(source.source_id,),
-        event_time=fact.event_date,
+        event_time=_canonical_event_time(fact.event_date),
         publication_time=source.publication_time,
         participants=fact.participants,
     )
@@ -241,7 +254,7 @@ class CanonicalIdentityEngine:
                 )
 
             # Retain only already-proven source fingerprints as an auxiliary inside the
-            # canonical identity owner.  Visible generated text is deliberately blanked.
+            # canonical identity owner. Visible generated text is deliberately blanked.
             if legacy_visible_event_redundant(
                 topic_id=left_event.topic,
                 prior_headline="",
@@ -454,6 +467,8 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                 for publication in publications
                 for source_id in publication.source_ids
             }
+            for event in parent_events + selected_events:
+                source_ids.update(event.source_ids)
             selected_sources = tuple(
                 source
                 for source in registry.sources_by_article.values()
@@ -469,7 +484,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             registry.v2_bundle_validated = True
 
     def source_relevant(*, title: str, body: str, topic) -> bool:
-        # This is the one relevance owner for the current migration.  The existing configured
+        # This is the one relevance owner for the current migration. The existing configured
         # literal query filter is retained only here; later event stages cannot re-judge relevance.
         return legacy_topic_relevant(title=title, body=body, topic=topic)
 
@@ -546,7 +561,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             }
         legacy_write_json(path, payload)
 
-    # Install one owner per semantic responsibility onto the old loop.  The old implementations
+    # Install one owner per semantic responsibility onto the old loop. The old implementations
     # stay importable for historical replay, but are no longer runtime authorities here.
     core_module.SemanticPipeline = CanonicalSemanticPipeline
     core_module.topic_relevant = source_relevant
@@ -563,8 +578,9 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
     core_module.ContractBundle = V2BoundContractBundle
     core_module._write_json = write_json_v2
 
-    # Generation/fallback modules imported StoryAdmission by value.  Remove its runtime semantic
-    # authority at both lookup sites; source/fact preservation and claim verification remain active.
+    # The entrypoint immediately scopes these two assignments to the actual production Phase7 call.
+    # They are set here first so an accidental direct use of the core module still cannot silently
+    # reactivate semantic re-admission after a CanonicalEvent already exists.
     import insight_desk.generation as generation_module
     import insight_desk.generation_pipeline as generation_pipeline_module
 
