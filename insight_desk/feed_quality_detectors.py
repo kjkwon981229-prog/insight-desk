@@ -40,6 +40,9 @@ _GENERIC_COMPANY_LEAD_RE = re.compile(r"^(?:(?:이|해당|그)\s+)?회사(?:는|
 _BARE_ROLE_LEAD_RE = re.compile(
     r"^(?:책임자|관계자|당국자|담당자|실무자|전문가)(?:들)?(?:은|는|이|가)(?=\s|$)"
 )
+_SURNAME_ONLY_LEGISLATOR_RE = re.compile(
+    r"^[가-힣]\s+(?:국회의원|의원)(?:은|는|이|가)?(?=[,，]?\s|$)"
+)
 _GENERIC_FACILITY_ACTOR_RE = re.compile(
     r"^(?:국내|현지|지역|해외)\s+"
     r"[가-힣A-Za-z0-9·&()/_+-]{2,24}(?:공장|사업장|생산기지|연구소|센터)"
@@ -321,7 +324,7 @@ _DATE_LED_SPORTS_STAT_RE = re.compile(
     r"^(?:지난\s+)?\d{1,2}일\s+"
     r"(?P<context>.{0,220}?)"
     r"(?:경기|전)(?:에|에서)\s+"
-    r".{0,100}?\d+\s*(?:타수|이닝|경기)\b"
+    r".{0,100}?\d+(?:[⅛¼⅜½⅝¾⅞⅓⅔])?\s*(?:타수|이닝|경기)\b"
 )
 _EXPLICIT_POST_DATE_SUBJECT_RE = re.compile(
     r"(?:^|\s)(?P<subject>[가-힣A-Za-z·_-]{2,24})(?:은|는|이|가)(?=\s)"
@@ -381,6 +384,7 @@ def _orphaned_visible_actor(value: str) -> bool:
         or _REFERENTIAL_REPORT_LEAD_RE.search(normalized) is not None
         or _GENERIC_COMPANY_LEAD_RE.search(normalized) is not None
         or _BARE_ROLE_LEAD_RE.search(normalized) is not None
+        or _SURNAME_ONLY_LEGISLATOR_RE.search(normalized) is not None
         or _SUBJECTLESS_STOCK_TO_COMPANY_RE.search(normalized) is not None
         or _GENERIC_FACILITY_ACTOR_RE.search(normalized) is not None
     )

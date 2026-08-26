@@ -51,6 +51,10 @@ _ISO_EVENT_DATE_RE = re.compile(
     r"^(?P<year>20\d{2})-(?P<month>0[1-9]|1[0-2])-(?P<day>0[1-9]|[12]\d|3[01])$"
 )
 _DURATION_AFTER_DAY_RE = r"(?:동안|간|후|뒤|째|만에|내에|이내)"
+_REPORTING_SIDE_ACTOR_RE = re.compile(
+    r"(?P<actor>[가-힣A-Za-z0-9·&()/_+-]{1,40}\s+측)"
+    r"(?:은|는|이|가)\s+(?:밝혔다|전했다|설명했다|발표했다)"
+)
 
 
 class _FacadePreservationIssueCode(StrEnum):
@@ -117,26 +121,35 @@ def _event_date_number_aliases(event_date: str) -> frozenset[str]:
     )
 
 
+def _novel_reporting_side_actors(source: str, generated: str) -> tuple[str, ...]:
+    source_normalized = " ".join(source.split())
+    generated_normalized = " ".join(generated.split())
+    actors = {
+        " ".join(match.group("actor").split())
+        for match in _REPORTING_SIDE_ACTOR_RE.finditer(generated_normalized)
+    }
+    return tuple(sorted(actor for actor in actors if actor not in source_normalized))
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
-    """Extend the frozen core preservation report with inherited event-date retention.
+    """Extend the frozen core preservation report with measured visible retention contracts.
 
     Semantic extraction can bind a date from the immediately preceding source sentence onto an
     EventFact while its sentence-sized evidence remains date-less. That bound date is trusted fact
     context, so every generation route—including exact-source fallback—must keep it visible instead
-    of promoting the old event as undated current news.
+    of promoting the old event as undated current news. A generated reporting-side actor is likewise
+    rejected when the cited evidence never contains that actor; observed events cannot be promoted
+    into a statement by an invented ``... 측`` source.
     """
 
     core_report = _core_validate_preservation(request, draft)
-    inherited_dates = _inherited_event_dates(request)
-    if not inherited_dates:
-        return core_report
-
     issues = list(core_report.issues)
     generated = draft.combined_text
-    for event_date in inherited_dates:
+
+    for event_date in _inherited_event_dates(request):
         if _event_date_is_visible(generated, event_date):
             allowed_values = _event_date_number_aliases(event_date)
             issues = [
@@ -158,6 +171,14 @@ def validate_preservation(
                 event_date,
             )
         )
+
+    existing = {(issue.code, issue.value) for issue in issues}
+    for actor in _novel_reporting_side_actors(request.evidence_text, generated):
+        key = (PreservationIssueCode.NOVEL_ATTRIBUTION, actor)
+        if key not in existing:
+            issues.append(PreservationIssue(*key))
+            existing.add(key)
+
     return PreservationReport(accepted=not issues, issues=tuple(issues))
 
 
