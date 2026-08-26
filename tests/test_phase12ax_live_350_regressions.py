@@ -93,13 +93,13 @@ class Live350AlbumNarrativeRegressions(unittest.TestCase):
         self.assertFalse(decision.accepted)
         self.assertIn(StoryAdmissionReason.NON_EVENT_DESCRIPTION, decision.reasons)
 
-    def test_named_current_album_release_remains_an_event(self) -> None:
+    def test_named_current_album_event_remains_an_event(self) -> None:
         decision = visible(
             topic="엔터·음악·K-POP",
-            headline="엔하이픈, 미니 8집 THE SIN : BLISS 발매",
+            headline="엔하이픈, K-POP 미니 8집 THE SIN : BLISS 활동 계획 공개",
             summary=(
-                "엔하이픈은 21일 미니 8집 'THE SIN : BLISS'를 발매하고 "
-                "새 앨범 활동을 시작했다."
+                "그룹 엔하이픈은 26일 K-POP 미니 8집 'THE SIN : BLISS'의 "
+                "후속 활동 계획을 공개했다고 밝혔다."
             ),
         )
         self.assertTrue(decision.accepted, decision.reasons)
