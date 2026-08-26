@@ -435,7 +435,9 @@ def generate_with_recovery(
     draft = ExtractiveFallbackGenerator().generate(request)
     preservation = validate_preservation(request, draft)
     if not preservation.accepted:
-        raise ValueError("extractive fallback violated deterministic preservation contract")
+        raise ExtractiveFallbackUnavailable(
+            "extractive fallback violated deterministic preservation contract"
+        )
     attempts.append(
         GenerationAttempt(
             kind=GenerationAttemptKind.EXTRACTIVE_FALLBACK,
