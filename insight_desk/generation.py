@@ -55,10 +55,18 @@ _REPORTING_SIDE_ACTOR_RE = re.compile(
     r"(?P<actor>[가-힣A-Za-z0-9·&()/_+-]{1,40}\s+측)"
     r"(?:은|는|이|가)\s+(?:밝혔다|전했다|설명했다|발표했다)"
 )
+_INCOMPLETE_IDENTITY_ROLE_RE = re.compile(
+    r"^[가-힣]\s+(?:국회의원|의원|회장|부회장|대표이사|대표|사장|부사장|"
+    r"위원장|장관|차관|총재|감독|코치|교수|박사)$"
+)
+_PROSPECTIVE_TEMPORAL_STATES = frozenset({"planned", "announced_prospective", "resuming"})
 
 
 class _FacadePreservationIssueCode(StrEnum):
+    INVALID_EVENT_SUBJECT = "invalid_event_subject"
+    MISSING_HEADLINE_SUBJECT = "missing_headline_subject"
     MISSING_EVENT_DATE = "missing_event_date"
+    MISSING_EVENT_PARTICIPANT = "missing_event_participant"
 
 
 def _event_date_parts(event_date: str) -> tuple[int, int, int] | None:
@@ -131,18 +139,119 @@ def _novel_reporting_side_actors(source: str, generated: str) -> tuple[str, ...]
     return tuple(sorted(actor for actor in actors if actor not in source_normalized))
 
 
+def _primary_event_fact(request: GenerationRequest):
+    """Return the production primary fact only when event identity is structurally singular."""
+
+    if len(request.event.fact_ids) != 1:
+        return None
+    return request.facts[request.event.fact_ids[0]]
+
+
+def _fact_cited_text(request: GenerationRequest, fact) -> str:
+    return "\n".join(
+        request.evidence[evidence_id].text
+        for evidence_id in fact.evidence_ids
+        if evidence_id in request.evidence
+    )
+
+
+def _normalized_surface_present(text: str, surface: str) -> bool:
+    normalized_text = " ".join(text.split()).casefold()
+    normalized_surface = " ".join(surface.split()).casefold()
+    return bool(normalized_surface) and normalized_surface in normalized_text
+
+
+def _incomplete_event_subject(subject: str) -> bool:
+    return _INCOMPLETE_IDENTITY_ROLE_RE.fullmatch(" ".join(subject.split()).strip()) is not None
+
+
+def _publication_identity_issues(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> tuple[PreservationIssue, ...]:
+    """Enforce identity-bearing source slots at the common publication boundary.
+
+    Phase 6A emits one fact per production candidate. Publication may paraphrase that fact, but it
+    may not publish an already-incomplete named actor, erase a concrete evidence-bound primary
+    subject from the standalone headline, or strip the date/counterparty that identifies a planned
+    event. This is deliberately narrower than exact action-string preservation.
+    """
+
+    fact = _primary_event_fact(request)
+    if fact is None:
+        return ()
+
+    issues: list[PreservationIssue] = []
+    subject = fact.subject.strip()
+    cited = _fact_cited_text(request, fact)
+
+    if subject and _incomplete_event_subject(subject):
+        issues.append(
+            PreservationIssue(
+                _FacadePreservationIssueCode.INVALID_EVENT_SUBJECT,
+                subject,
+            )
+        )
+    elif (
+        subject
+        and subject not in _GENERIC_PRIMARY_SUBJECTS
+        and _normalized_surface_present(cited, subject)
+        and not _normalized_surface_present(draft.headline, subject)
+    ):
+        issues.append(
+            PreservationIssue(
+                _FacadePreservationIssueCode.MISSING_HEADLINE_SUBJECT,
+                subject,
+            )
+        )
+
+    temporal_state = getattr(fact.temporal_state, "value", fact.temporal_state)
+    if temporal_state in _PROSPECTIVE_TEMPORAL_STATES:
+        event_date = (fact.event_date or "").strip()
+        if event_date and not _event_date_is_visible(draft.combined_text, event_date):
+            issues.append(
+                PreservationIssue(
+                    _FacadePreservationIssueCode.MISSING_EVENT_DATE,
+                    event_date,
+                )
+            )
+
+        participants = tuple(
+            participant.strip()
+            for participant in fact.participants
+            if participant.strip()
+            and participant.strip() != subject
+            and _normalized_surface_present(cited, participant)
+        )
+        if participants and not any(
+            _normalized_surface_present(draft.combined_text, participant)
+            for participant in participants
+        ):
+            issues.append(
+                PreservationIssue(
+                    _FacadePreservationIssueCode.MISSING_EVENT_PARTICIPANT,
+                    participants[0],
+                )
+            )
+
+    return tuple(issues)
+
+
+def _issue_key(issue: PreservationIssue) -> tuple[str, str]:
+    code = getattr(issue.code, "value", str(issue.code))
+    return str(code), issue.value
+
+
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
-    """Extend the frozen core preservation report with measured visible retention contracts.
+    """Extend the frozen core report with source-to-publication identity preservation.
 
-    Semantic extraction can bind a date from the immediately preceding source sentence onto an
-    EventFact while its sentence-sized evidence remains date-less. That bound date is trusted fact
-    context, so every generation route—including exact-source fallback—must keep it visible instead
-    of promoting the old event as undated current news. A generated reporting-side actor is likewise
-    rejected when the cited evidence never contains that actor; observed events cannot be promoted
-    into a statement by an invented ``... 측`` source.
+    In addition to the measured date/attribution protections, every generation route—including
+    exact-source fallback—must preserve the identity-bearing slots of the primary EventFact. Exact
+    source bytes are not automatically publication-safe when a fallback selects only a clause and
+    drops who/what-date/counterparty context.
     """
 
     core_report = _core_validate_preservation(request, draft)
@@ -172,11 +281,18 @@ def validate_preservation(
             )
         )
 
-    existing = {(issue.code, issue.value) for issue in issues}
+    existing = {_issue_key(issue) for issue in issues}
     for actor in _novel_reporting_side_actors(request.evidence_text, generated):
-        key = (PreservationIssueCode.NOVEL_ATTRIBUTION, actor)
+        issue = PreservationIssue(PreservationIssueCode.NOVEL_ATTRIBUTION, actor)
+        key = _issue_key(issue)
         if key not in existing:
-            issues.append(PreservationIssue(*key))
+            issues.append(issue)
+            existing.add(key)
+
+    for issue in _publication_identity_issues(request, draft):
+        key = _issue_key(issue)
+        if key not in existing:
+            issues.append(issue)
             existing.add(key)
 
     return PreservationReport(accepted=not issues, issues=tuple(issues))
@@ -206,11 +322,9 @@ def validate_generated_actor_preservation(
 ) -> None:
     """Reject provider rewrites that erase every concrete evidence-bound event actor.
 
-    This is generation preservation, not general visible admission. Exact-source fallback is exempt:
-    it is already constrained to immutable source bytes and the shared standalone story contract.
-    Provider prose, however, may remain entailed after dropping who the event is about; requiring at
-    least one concrete EventFact actor in the visible card closes that discourse-loss path without
-    assuming that the first fact is always the one selected for the rewrite.
+    This remains an early provider-specific boundary. Exact-source fallback does not call this helper,
+    but it now consumes the same common ``validate_preservation`` identity invariant before it can be
+    accepted. Provider prose keeps this additional early failure classification for route telemetry.
     """
 
     subjects = _evidence_bound_actor_subjects(request)
