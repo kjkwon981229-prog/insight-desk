@@ -36,6 +36,11 @@ _GENERIC_COMPANY_LEAD_RE = re.compile(r"^(?:(?:이|해당|그)\s+)?회사(?:는|
 _BARE_ROLE_LEAD_RE = re.compile(
     r"^(?:책임자|관계자|당국자|담당자|실무자|전문가)(?:들)?(?:은|는|이|가)(?=\s|$)"
 )
+_GENERIC_FACILITY_ACTOR_RE = re.compile(
+    r"^(?:국내|현지|지역|해외)\s+"
+    r"[가-힣A-Za-z0-9·&()/_+-]{2,24}(?:공장|사업장|생산기지|연구소|센터)"
+    r"(?:은|는|이|가)(?=\s|$)"
+)
 _SUBJECTLESS_STOCK_TO_COMPANY_RE = re.compile(
     r"^주가(?:는|가)?[^.!?。！？,，]{0,100}(?:가운데|상황에서|속에서)?\s*[,，]\s*"
     r"(?:(?:이|해당|그)\s+)?회사(?:는|가|의)(?:\s|$)"
@@ -103,7 +108,8 @@ _STATIC_CAPABILITY_CURRENT_EVENT_RE = re.compile(
     r"(?:\d{1,2}일|계약|체결|출시|공개|발표|도입|신규|시작|확대했|추가했)"
 )
 _STATIC_PRODUCT_DEFINITION_RE = re.compile(
-    r"^[가-힣A-Za-z0-9·&()/_+-]{2,60}(?:은|는|이|가)\s+"
+    r"^[가-힣A-Za-z0-9·&()/_+.-]{1,30}"
+    r"(?:\s+[가-힣A-Za-z0-9·&()/_+.-]{1,30}){0,5}(?:은|는|이|가)\s+"
     r"[^.!?。！？]{1,240}?(?:솔루션|플랫폼|서비스|제품)(?:이다|입니다)$"
 )
 _ALBUM_NARRATIVE_SYNOPSIS_RE = re.compile(
@@ -170,11 +176,22 @@ _ANONYMOUS_GENERALIZATION_END_RE = re.compile(
     r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
     r"(?:에만\s+)?머물지\s+않는다)$"
 )
+_ANONYMOUS_SECTOR_STATE_RE = re.compile(
+    r"(?:^|[,，]\s*)(?:관련\s+)?(?:산업계|업계|기업들?|업체들?)"
+    r"(?:은|는|이|가)\s+[^.!?。！？]{1,180}?"
+    r"(?:구체화|강화|확대|본격화|가속)(?:하고|되고|시키고)\s+있다$"
+)
 _MONTH_DAY_RE = re.compile(
     r"(?<!\d)(?P<month>1[0-2]|0?[1-9])월\s*"
     r"(?P<day>3[01]|[12]\d|0?[1-9])일"
 )
-_RELATIVE_PAST_MONTH_RE = re.compile(r"(?:지난\s+)(?:1[0-2]|[1-9])월")
+_RELATIVE_PAST_MONTH_RE = re.compile(r"지난\s*(?:달|(?:1[0-2]|[1-9])월)")
+_RELATIVE_MONTH_COMPARISON_LEAD_RE = re.compile(
+    r"^(?:보다|대비|수준|이후|이래|과\s+비교)"
+)
+_PAST_STATEMENT_PREDICATE_RE = re.compile(
+    r"(?:제시|강조|언급|설명|발언)(?:했다|하였다)|말했다"
+)
 _CURRENT_DAY_RE_TEMPLATE = r"(?<!\d)(?:(?:{month})월\s*)?{day}일"
 _DATE_LED_HEADLINE_RE = re.compile(
     r"^(?:지난\s+)?(?:(?:20\d{2})년\s*)?"
@@ -256,6 +273,7 @@ def _orphaned_visible_actor(value: str) -> bool:
         or _GENERIC_COMPANY_LEAD_RE.search(normalized) is not None
         or _BARE_ROLE_LEAD_RE.search(normalized) is not None
         or _SUBJECTLESS_STOCK_TO_COMPANY_RE.search(normalized) is not None
+        or _GENERIC_FACILITY_ACTOR_RE.search(normalized) is not None
     )
 
 
@@ -358,7 +376,13 @@ def _stale_relative_month_event(value: str, *, now: datetime | None = None) -> b
     reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if _has_current_event_anchor(primary, now=reference):
         return False
-    return _contains_concrete_event_predicate(primary[match.end() :])
+    following = primary[match.end() :].lstrip()
+    if _RELATIVE_MONTH_COMPARISON_LEAD_RE.search(following) is not None:
+        return False
+    return (
+        _contains_concrete_event_predicate(following)
+        or _PAST_STATEMENT_PREDICATE_RE.search(following) is not None
+    )
 
 
 def _has_leading_summary_subject(value: str) -> bool:
@@ -606,6 +630,7 @@ def non_event_analytical_text(value: str) -> bool:
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
+        or _ANONYMOUS_SECTOR_STATE_RE.search(primary) is not None
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
