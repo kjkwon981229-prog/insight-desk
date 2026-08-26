@@ -182,6 +182,38 @@ _ANONYMOUS_ABSTRACT_CHANGE_RE = re.compile(
 _REPORTING_PREDICATE_END_RE = re.compile(
     r"(?:분석|평가|진단|전망|예상|관측)(?:했다|하였다)$"
 )
+_PARENTLESS_TASK_LEAD_RE = re.compile(
+    r"^(?:지정|선정)\s+과제(?:는|가|를|은|의)?(?=\s|$)"
+)
+_SUBJECTLESS_CAUSAL_REMAINDER_RE = re.compile(
+    r"^[^.!?。！？,，]{1,80}?(?:을|를)\s+"
+    r"(?:끌어올리|끌어내리|높이|낮추|늘리|줄이)"
+    r"[^.!?。！？]{0,60}?(?:고|며)[,，]?\s+"
+    r"[^.!?。！？]{0,140}?부담(?:을|이)?\s+(?:주|준|준다|된다)"
+)
+_GENERIC_RATE_HEADLINE_RE = re.compile(r"^(?:상품\s+)?금리(?:는|가)?(?=\s)")
+_SCOPED_RATE_SUMMARY_RE = re.compile(
+    r"(?:주담대|주택담보대출|신용대출|일반신용대출|기업대출|가계대출|예금은행)"
+    r"(?:\s+(?:중|고정형|변동형|일반신용대출|신용대출|상품)){0,4}\s+"
+    r"(?:상품\s+)?금리"
+)
+_UNATTRIBUTED_PASSIVE_INTERPRETATION_RE = re.compile(
+    r"(?:반영된\s+것으로\s+)?(?:해석|풀이)된다$"
+)
+_ATTRIBUTION_CUE_RE = re.compile(
+    r"(?:에\s+따르면|보고서(?:는|에서|에\s+따르면)|분석(?:은|에\s+따르면)|"
+    r"연구진(?:은|이)|증권사(?:는|가)|은행(?:은|이))"
+)
+_MEDIA_SYNOPSIS_RE = re.compile(
+    r"(?:작품|영화|애니메이션)(?:은|는)?[^.!?。！？]{0,220}?"
+    r"(?:배경으로|배경에)[^.!?。！？]{0,180}?"
+    r"(?:만남|이별|성장|우정|이야기|서사)[^.!?。！？]{0,100}?"
+    r"(?:그린다|다룬다|담는다)$"
+)
+_SAME_DAY_PAST_CUE_RE = re.compile(
+    r"지난\s+(?:(?P<month>1[0-2]|0?[1-9])월\s*)?"
+    r"(?P<day>3[01]|[12]\d|0?[1-9])일"
+)
 _ANONYMOUS_GENERALIZATION_END_RE = re.compile(
     r"(?:가능성(?:이|은)\s+(?:커지|높아지|확대되|증가하)고\s+있다|"
     r"(?:에만\s+)?머물지\s+않는다)$"
@@ -370,6 +402,18 @@ def _stale_month_day_event(value: str, *, now: datetime | None = None) -> bool:
     return False
 
 
+def _same_day_past_cue(value: str, *, now: datetime | None = None) -> bool:
+    normalized = " ".join(value.split()).strip()
+    reference = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    for match in _SAME_DAY_PAST_CUE_RE.finditer(normalized):
+        month_text = match.group("month")
+        month = int(month_text) if month_text is not None else reference.month
+        day = int(match.group("day"))
+        if month == reference.month and day == reference.day:
+            return True
+    return False
+
+
 def _stale_relative_month_event(value: str, *, now: datetime | None = None) -> bool:
     primary = _primary_sentence(value)
     match = _RELATIVE_PAST_MONTH_RE.search(primary)
@@ -403,11 +447,22 @@ def _has_leading_summary_subject(value: str) -> bool:
     return _leading_summary_subject_surface(value) is not None
 
 
+def _headline_drops_metric_scope(*, headline: str, summary: str) -> bool:
+    normalized_headline = " ".join(headline.split()).strip()
+    normalized_summary = " ".join(summary.split()).strip()
+    return (
+        _GENERIC_RATE_HEADLINE_RE.search(normalized_headline) is not None
+        and _SCOPED_RATE_SUMMARY_RE.search(normalized_summary) is not None
+    )
+
+
 def headline_drops_summary_actor(*, headline: str, summary: str) -> bool:
     normalized_headline = " ".join(headline.split()).strip()
     normalized_summary = " ".join(summary.split()).strip()
     if _LEADING_STARTING_PITCHER_ROLE_RE.search(normalized_summary) is not None:
         return "선발" not in normalized_headline and "투수" not in normalized_headline
+    if _headline_drops_metric_scope(headline=normalized_headline, summary=normalized_summary):
+        return True
     reporting_actor = _leading_summary_subject_surface(summary)
     if reporting_actor is not None and _REPORTING_PREDICATE_END_RE.search(normalized_headline):
         return reporting_actor.casefold() not in normalized_headline.casefold()
@@ -436,6 +491,18 @@ def _unidentified_kbo_result(value: str) -> bool:
     if len(teams) != 1:
         return False
     return _KBO_SCORE_RE.search(normalized) is None and _KBO_DAY_RE.search(normalized) is None
+
+
+def _unattributed_passive_interpretation(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    if _UNATTRIBUTED_PASSIVE_INTERPRETATION_RE.search(normalized) is None:
+        return False
+    return _ATTRIBUTION_CUE_RE.search(normalized) is None
+
+
+def _media_synopsis(value: str) -> bool:
+    normalized = " ".join(value.split()).rstrip(".!?。！？").rstrip()
+    return _MEDIA_SYNOPSIS_RE.search(normalized) is not None
 
 
 def _publisher_ai_preview_notice(value: str) -> bool:
@@ -562,6 +629,8 @@ def context_dependent_headline(value: str) -> bool:
         or _unidentified_kbo_result(normalized)
         or _actorless_multi_vote_ranking(normalized)
         or _unidentified_album_tracklist(normalized)
+        or _PARENTLESS_TASK_LEAD_RE.search(normalized) is not None
+        or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
         or _CONNECTIVE_LED_HEADLINE_RE.search(normalized) is not None
         or _SUBJECTLESS_MARKET_HEADLINE_RE.search(normalized) is not None
     )
@@ -578,6 +647,8 @@ def context_dependent_summary(value: str) -> bool:
         or _orphaned_analytical_source_reference(normalized)
         or _unidentified_kbo_result(normalized)
         or _unidentified_album_tracklist(normalized)
+        or _PARENTLESS_TASK_LEAD_RE.search(normalized) is not None
+        or _SUBJECTLESS_CAUSAL_REMAINDER_RE.search(normalized) is not None
     )
 
 
@@ -590,6 +661,7 @@ def stale_explicit_past_event_text(
         _impl.stale_explicit_past_event_text(value, now=now)
         or _stale_explicit_research_release(value, now=now)
         or _stale_month_day_event(value, now=now)
+        or _same_day_past_cue(value, now=now)
     )
 
 
@@ -630,12 +702,14 @@ def non_event_analytical_text(value: str) -> bool:
         _impl.non_event_analytical_text(normalized)
         or _INTERPRETIVE_BACKGROUND_END_RE.search(normalized) is not None
         or normalized.endswith(_UNATTRIBUTED_EVALUATIVE_STATE_ENDINGS)
+        or _unattributed_passive_interpretation(primary)
         or _GENERIC_MARKET_COGNITION_RE.search(normalized) is not None
         or _ABSTRACT_EMERGENCE_ATTENTION_RE.search(normalized) is not None
         or _CONDITIONAL_EXPECTED_BENEFIT_RE.search(primary) is not None
         or _ANONYMOUS_GENERALIZATION_END_RE.search(primary) is not None
         or _ANONYMOUS_SECTOR_STATE_RE.search(primary) is not None
         or _ANONYMOUS_ABSTRACT_CHANGE_RE.search(primary) is not None
+        or _media_synopsis(primary)
         or rolling_form_only
         or _component_feature_state(primary)
         or _static_company_capability(primary)
