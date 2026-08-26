@@ -17,7 +17,10 @@ CURRENT_EVENT = "제조사는 8월 27일 신규 AI 광통신 투자 계획을 �
 class OrderedExtractor:
     extractor_id = "phase8-primary-event-fixture"
 
-    def __init__(self, drafts: tuple[tuple[str, str, str, str], ...]) -> None:
+    def __init__(
+        self,
+        drafts: tuple[tuple[str, str, str, str | None], ...],
+    ) -> None:
         self._drafts = drafts
 
     def extract(self, request):
@@ -62,7 +65,10 @@ def article(article_id: str, body: str) -> RawArticle:
     )
 
 
-def extract(raw: RawArticle, drafts: tuple[tuple[str, str, str, str], ...]):
+def extract(
+    raw: RawArticle,
+    drafts: tuple[tuple[str, str, str, str | None], ...],
+):
     with production_v2_runtime(production._core):
         semantic = production._core.SemanticPipeline(
             segmenter=EvidenceSegmenter(max_chars=1800)
@@ -119,8 +125,8 @@ class Live464PrimaryEventUnderstandingRegressions(unittest.TestCase):
         result = extract(
             raw,
             (
-                ("first", first, "제조사", ""),
-                ("second", second, "제조사", ""),
+                ("first", first, "제조사", None),
+                ("second", second, "제조사", None),
             ),
         )
         self.assertEqual(len(result.events), 2)
