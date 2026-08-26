@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Protocol
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit, urlunsplit
 
 from insight_desk.api import NaverApiClient
 from insight_desk.api.naver import NaverCredentials
@@ -66,6 +66,28 @@ def _validated_http_url(value: str) -> str | None:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return url
+
+
+def _mechanical_url_key(value: str) -> str:
+    """Normalize only transport-level URL syntax for cross-provider duplicate suppression.
+
+    Discovery is not allowed to infer event identity. We therefore keep path/query bytes intact,
+    remove only a fragment that is never sent to the publisher, and normalize scheme/host casing
+    plus default ports. Tracking-parameter heuristics and headline similarity are intentionally
+    absent.
+    """
+
+    parsed = urlsplit(value.strip())
+    scheme = parsed.scheme.casefold()
+    host = (parsed.hostname or "").casefold()
+    port = parsed.port
+    if port is not None and not (
+        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    ):
+        netloc = f"{host}:{port}"
+    else:
+        netloc = host
+    return urlunsplit((scheme, netloc, parsed.path or "/", parsed.query, ""))
 
 
 @dataclass(slots=True)
@@ -235,7 +257,15 @@ class GdeltDocDiscovery:
 
 
 @dataclass(slots=True)
-class SequentialNewsDiscovery:
+class AggregatedNewsDiscovery:
+    """Collect candidates from every healthy route, then mechanically merge them.
+
+    Route order is priority order, not failover order. Naver therefore remains the first discovery
+    source when configured, while Bing and GDELT still contribute candidates on the same query.
+    The final queue is round-robin across routes so one provider cannot monopolize the production
+    acquisition budget merely because it returned first.
+    """
+
     routes: tuple[DiscoveryRoute, ...]
     _route_stats: dict[str, dict[str, int]] = field(init=False, repr=False)
 
@@ -246,7 +276,14 @@ class SequentialNewsDiscovery:
         if len(ids) != len(set(ids)):
             raise ValueError("discovery route ids must be unique")
         self._route_stats = {
-            route_id: {"calls": 0, "errors": 0, "empty": 0, "selected": 0, "candidates": 0}
+            route_id: {
+                "calls": 0,
+                "errors": 0,
+                "empty": 0,
+                "selected": 0,
+                "candidates": 0,
+                "contributed": 0,
+            }
             for route_id in ids
         }
 
@@ -255,6 +292,10 @@ class SequentialNewsDiscovery:
         return {route_id: dict(stats) for route_id, stats in self._route_stats.items()}
 
     def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]:
+        if limit < 1:
+            raise ValueError("discovery limit must be positive")
+
+        route_results: list[tuple[DiscoveryRoute, tuple[ArticleCandidate, ...]]] = []
         last_error: DiscoveryError | None = None
         for route in self.routes:
             stats = self._route_stats[route.route_id]
@@ -264,18 +305,52 @@ class SequentialNewsDiscovery:
             except DiscoveryError as exc:
                 stats["errors"] += 1
                 last_error = exc
+                route_results.append((route, ()))
                 continue
-            if candidates:
+            stats["candidates"] += len(candidates)
+            if not candidates:
+                stats["empty"] += 1
+            route_results.append((route, candidates))
+
+        output: list[ArticleCandidate] = []
+        seen_urls: set[str] = set()
+        contributed: dict[str, int] = {route.route_id: 0 for route in self.routes}
+        max_depth = max((len(candidates) for _, candidates in route_results), default=0)
+        for index in range(max_depth):
+            for route, candidates in route_results:
+                if index >= len(candidates):
+                    continue
+                candidate = candidates[index]
+                url_key = _mechanical_url_key(candidate.url)
+                if url_key in seen_urls:
+                    continue
+                seen_urls.add(url_key)
+                output.append(candidate)
+                contributed[route.route_id] += 1
+                if len(output) >= limit:
+                    break
+            if len(output) >= limit:
+                break
+
+        for route_id, count in contributed.items():
+            if count:
+                stats = self._route_stats[route_id]
                 stats["selected"] += 1
-                stats["candidates"] += len(candidates)
-                return candidates
-            stats["empty"] += 1
+                stats["contributed"] += count
+
+        if output:
+            return tuple(output)
         if last_error is not None:
             raise last_error
         return ()
 
 
-def default_news_discovery(*, env: dict[str, str] | None = None) -> SequentialNewsDiscovery:
+# Compatibility name retained for historical imports. The production semantics are aggregation,
+# not first-success failover.
+SequentialNewsDiscovery = AggregatedNewsDiscovery
+
+
+def default_news_discovery(*, env: dict[str, str] | None = None) -> AggregatedNewsDiscovery:
     source = dict(os.environ) if env is None else env
     client_id = str(source.get("NCP_CLIENT_ID", "")).strip()
     client_secret = str(source.get("NCP_CLIENT_SECRET", "")).strip()
@@ -292,4 +367,4 @@ def default_news_discovery(*, env: dict[str, str] | None = None) -> SequentialNe
             )
         )
     routes.extend((BingNewsRssDiscovery(), GdeltDocDiscovery()))
-    return SequentialNewsDiscovery(tuple(routes))
+    return AggregatedNewsDiscovery(tuple(routes))
