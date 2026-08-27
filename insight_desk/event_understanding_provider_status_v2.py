@@ -3,7 +3,8 @@ from __future__ import annotations
 """Mechanical status contract for Event Understanding provider selection.
 
 This module does not qualify providers and does not wire production. It only prevents an
-unqualified or explicitly excluded provider from being selected as the Event Understanding owner.
+unqualified, explicitly excluded, or inventory-blocked provider from being selected as the Event
+Understanding owner.
 """
 
 import json
@@ -16,7 +17,12 @@ from insight_desk.core.contracts import ContractError
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
 EXCLUDED = "EXCLUDED"
+NO_ELIGIBLE_EXISTING_PROVIDER = "NO_ELIGIBLE_EXISTING_PROVIDER"
+ELIGIBLE_CANDIDATE_AVAILABLE = "ELIGIBLE_CANDIDATE_AVAILABLE"
 _ALLOWED_STATUSES = frozenset({MINIMUM_COMPATIBILITY_PASS, NOT_QUALIFIED, EXCLUDED})
+_ALLOWED_INVENTORY_STATUSES = frozenset(
+    {NO_ELIGIBLE_EXISTING_PROVIDER, ELIGIBLE_CANDIDATE_AVAILABLE}
+)
 
 
 def validate_provider_status(payload: Mapping[str, Any]) -> None:
@@ -26,6 +32,10 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
         raise ContractError("provider status contract must be event_understanding_v1")
     if payload.get("full_production_correctness_claimed") is not False:
         raise ContractError("bounded qualification must not claim full production correctness")
+
+    inventory_status = payload.get("provider_inventory_status")
+    if inventory_status not in _ALLOWED_INVENTORY_STATUSES:
+        raise ContractError("provider inventory status is unsupported")
 
     providers = payload.get("providers")
     if not isinstance(providers, Mapping) or not providers:
@@ -43,6 +53,11 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
             raise ContractError(f"{provider_id}: provider name must be non-empty")
         if not isinstance(raw.get("model"), str) or not str(raw.get("model")).strip():
             raise ContractError(f"{provider_id}: model must be non-empty")
+        responsibility = raw.get("existing_responsibility")
+        if responsibility is not None and (
+            not isinstance(responsibility, str) or not responsibility.strip()
+        ):
+            raise ContractError(f"{provider_id}: existing responsibility must be non-empty")
 
     selected = payload.get("selected_event_understanding_provider")
     production_wired = payload.get("production_wired")
@@ -56,6 +71,8 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
 
     if not isinstance(selected, str) or not selected.strip():
         raise ContractError("selected provider must be null or non-empty string")
+    if inventory_status == NO_ELIGIBLE_EXISTING_PROVIDER:
+        raise ContractError("provider inventory declares no eligible Event Understanding provider")
     selected_record = providers.get(selected)
     if not isinstance(selected_record, Mapping):
         raise ContractError("selected provider is absent from provider status")

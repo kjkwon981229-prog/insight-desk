@@ -4,6 +4,7 @@
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
+  "provider_inventory_status": "NO_ELIGIBLE_EXISTING_PROVIDER",
   "selected_event_understanding_provider": null,
   "production_wired": false,
   "providers": {
@@ -11,6 +12,7 @@
       "provider": "groq",
       "model": "openai/gpt-oss-20b",
       "status": "NOT_QUALIFIED",
+      "existing_responsibility": "generation",
       "run_id": 33026646693,
       "head_sha": "254df8817f49f51393c2ddad6de98911ad0ca060",
       "evaluated_cases": 4,
@@ -23,6 +25,7 @@
       "provider": "gemini",
       "model": "gemini-3.1-flash-lite",
       "status": "NOT_QUALIFIED",
+      "existing_responsibility": "verification_failover",
       "run_id": 33026927524,
       "head_sha": "9fda2cca7aa9cb6cef5cbb410602f45c35e58d2e",
       "evaluated_cases": 4,
@@ -35,7 +38,22 @@
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
       "status": "EXCLUDED",
+      "existing_responsibility": "temporal_auxiliary",
       "reason": "frozen_temporal_auxiliary_role"
+    },
+    "cloudflare_llama_70b": {
+      "provider": "cloudflare",
+      "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "status": "EXCLUDED",
+      "existing_responsibility": "verification_primary",
+      "reason": "single_owner_boundary_preserves_verification_role"
+    },
+    "local_nli": {
+      "provider": "local-nli",
+      "model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+      "status": "EXCLUDED",
+      "existing_responsibility": "verification_secondary",
+      "reason": "single_owner_boundary_preserves_verification_role_and_model_is_entailment_classifier"
     }
   }
 }
