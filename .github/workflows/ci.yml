@@ -85,7 +85,7 @@ jobs:
         with:
           python-version: "3.12.10"
       - name: Run one-shot Cerebras GLM 4.7 Event Understanding V3 qualification
-        run: python -m scripts.qualify_event_understanding_provider --provider cerebras_glm_4_7
+        run: python -m scripts.qualify_event_understanding_provider --provider cerebras_glm_47
       - name: Upload bounded V3 qualification report
         if: always()
         uses: actions/upload-artifact@v4
