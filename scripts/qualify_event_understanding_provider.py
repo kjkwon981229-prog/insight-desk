@@ -38,6 +38,10 @@ from insight_desk.providers.cohere import (
 )
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
+from insight_desk.providers.groq_qwen38 import (
+    GROQ_QWEN_38_27B,
+    GroqQwen38StructuredClient,
+)
 from insight_desk.providers.mistral import MISTRAL_LARGE_3, MistralStructuredClient
 from insight_desk.providers.openrouter import (
     OPENROUTER_NEMOTRON_3_SUPER_FREE,
@@ -57,6 +61,7 @@ PROVIDER_CHOICES = (
     "openrouter_nemotron",
     "cohere_command_a_plus",
     "cerebras_glm_47",
+    "groq_qwen38_27b",
 )
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
@@ -256,6 +261,8 @@ def _provider_model(provider: str) -> str:
         return COHERE_COMMAND_A_PLUS
     if provider == "cerebras_glm_47":
         return CEREBRAS_GLM_47
+    if provider == "groq_qwen38_27b":
+        return GROQ_QWEN_38_27B
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -272,6 +279,8 @@ def _provider_configured(provider: str) -> bool:
         return CohereCommandAPlusStructuredClient.configured()
     if provider == "cerebras_glm_47":
         return CerebrasGlm47StructuredClient.configured()
+    if provider == "groq_qwen38_27b":
+        return GroqQwen38StructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -291,6 +300,8 @@ def _provider_client(provider: str):
         return CohereCommandAPlusStructuredClient.from_env(), COHERE_COMMAND_A_PLUS
     if provider == "cerebras_glm_47":
         return CerebrasGlm47StructuredClient.from_env(), CEREBRAS_GLM_47
+    if provider == "groq_qwen38_27b":
+        return GroqQwen38StructuredClient.from_env(), GROQ_QWEN_38_27B
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
