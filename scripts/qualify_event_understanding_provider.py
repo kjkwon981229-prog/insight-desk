@@ -35,7 +35,7 @@ from insight_desk.providers.transport import ProviderTransportError
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v2.json"
+DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v3.json"
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
 PROVIDER_CHOICES = ("groq", "gemini", "mistral", "openrouter_nemotron")
@@ -265,6 +265,14 @@ def _transport_failures(exc: ProviderTransportError) -> list[str]:
     return failures
 
 
+def _qualification_contract_metadata(qualification: dict[str, object]) -> dict[str, object]:
+    return {
+        "qualification_protocol": qualification.get("schema_version"),
+        "core_contract": qualification.get("core_contract"),
+        "structured_output_schema": qualification.get("structured_output_schema"),
+    }
+
+
 def qualify(
     *,
     provider: str,
@@ -291,7 +299,7 @@ def qualify(
             "status": "NOT_CONFIGURED",
             "provider": provider,
             "model": _provider_model(provider),
-            "qualification_protocol": qualification.get("schema_version"),
+            **_qualification_contract_metadata(qualification),
             "evaluated_cases": 0,
             "passed_cases": 0,
             "source_mode": "historical_exact_source_excerpt_only",
@@ -350,7 +358,7 @@ def qualify(
         "status": "MINIMUM_COMPATIBILITY_PASS" if all_pass else "NOT_QUALIFIED",
         "provider": provider,
         "model": model,
-        "qualification_protocol": qualification.get("schema_version"),
+        **_qualification_contract_metadata(qualification),
         "evaluated_cases": len(case_reports),
         "passed_cases": passed_cases,
         "source_mode": "historical_exact_source_excerpt_only",

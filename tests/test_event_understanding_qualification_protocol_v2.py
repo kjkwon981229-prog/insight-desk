@@ -20,10 +20,11 @@ from scripts import qualify_event_understanding_provider as qualification
 
 
 ROOT = Path(__file__).resolve().parents[1]
+V2_PATH = ROOT / "tests/fixtures/event_understanding_qualification_v2.json"
 
 
 def _payload() -> dict[str, object]:
-    return json.loads(qualification.DEFAULT_QUALIFICATION.read_text(encoding="utf-8"))
+    return json.loads(V2_PATH.read_text(encoding="utf-8"))
 
 
 def _source_case(case_id: str) -> tuple[dict[str, object], object]:
@@ -91,11 +92,8 @@ def _request(source, *, topic: str) -> EventUnderstandingRequest:
 
 
 class EventUnderstandingQualificationProtocolV2Tests(unittest.TestCase):
-    def test_active_protocol_is_v2_and_does_not_score_free_text_by_literal_reproduction(self) -> None:
-        self.assertEqual(
-            qualification.DEFAULT_QUALIFICATION.name,
-            "event_understanding_qualification_v2.json",
-        )
+    def test_historical_protocol_v2_does_not_score_free_text_by_literal_reproduction(self) -> None:
+        self.assertEqual(V2_PATH.name, "event_understanding_qualification_v2.json")
         payload = _payload()
         self.assertEqual(payload["schema_version"], 2)
         self.assertFalse(payload["scoring_policy"]["free_text_literal_scoring"])
