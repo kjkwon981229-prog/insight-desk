@@ -75,6 +75,7 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
                 "groq_qwen38_27b",
                 "gemini_37_flash",
                 "openrouter_glm52_free",
+                "openrouter_gpt54mini",
             ),
         )
         self.assertNotIn("groq_120b", PROVIDER_CHOICES)
