@@ -1,33 +1,21 @@
 # PHASE 4 — OpenRouter Nemotron Event Understanding Candidate
 
-Status: `QUALIFICATION_PREPARED / CREDENTIAL_NOT_CONFIGURED / NO PRODUCTION WIRING`
+Status: `NOT_QUALIFIED / NO PRODUCTION WIRING`
 
 Candidate provider: OpenRouter
 Candidate model: `nvidia/nemotron-3-super-120b-a12b:free`
 
 ## Candidate boundary
 
-This is a new qualification-only Event Understanding candidate. It is not exported through the production provider package surface and is not wired into production.
+This was a qualification-only Event Understanding candidate. It was never exported through the production provider package surface and was never wired into production.
 
-The model id is frozen to the explicit `:free` variant. The random `openrouter/free` router is forbidden for this qualification, and the paid model variant without `:free` is also forbidden.
+The model id was frozen to the explicit `:free` variant. The random `openrouter/free` router was forbidden, and the paid model variant without `:free` was also forbidden.
 
-The request sets `provider.require_parameters = true`, so OpenRouter may only use an endpoint that supports the requested structured-output parameters. There is no cross-model fallback.
+The request used `provider.require_parameters = true`, so OpenRouter could only use an endpoint supporting the requested structured-output parameters. There was no cross-model fallback.
 
-## Why this candidate is eligible for qualification
+## Qualification contract
 
-Current OpenRouter documentation provides a Free plan with free-model API access and a base limit of 50 requests/day. The selected Nemotron 3 Super free model is listed at zero token price and supports structured outputs via JSON Schema in `response_format`.
-
-Current references:
-
-- OpenRouter pricing: https://openrouter.ai/pricing
-- Nemotron 3 Super free model: https://openrouter.ai/nvidia/nemotron-3-super-120b-a12b:free
-- OpenRouter provider routing: https://openrouter.ai/docs/guides/routing/provider-selection
-
-The 50-request/day ceiling is not yet accepted as a production capacity claim. If this model first passes semantic qualification, source-backed replay must prove the Event Understanding call budget fits the free-plan limit before production wiring can be accepted.
-
-## Frozen qualification contract
-
-The candidate reuses, without modification:
+The candidate reused, without modification:
 
 - `tests/fixtures/event_understanding_qualification_v1.json`
 - `config/semantic_topics_v2.json`
@@ -35,16 +23,49 @@ The candidate reuses, without modification:
 - the existing source-range evidence binding
 - the existing scorer and all four historical exact-source excerpt cases
 
-No fresh news, production marker, PWA build, deploy, or Push is involved.
+No fresh news, production marker, PWA build, deploy, or Push was involved.
 
-Missing `OPENROUTER_API_KEY` is a preflight state only: `NOT_CONFIGURED`, zero evaluated cases, and no provider call. A missing credential must not be recorded as `NOT_QUALIFIED`.
+## Valid one-shot qualification result
 
-## Current execution state
+After `OPENROUTER_API_KEY` was deliberately configured, exact-head push run `33057003750` evaluated the frozen candidate at head `7b1230ea9ae5d0b5da3dc5725df55b2bb9fea1bf`.
 
-No one-shot GitHub Actions candidate lane is installed by this preparation commit. This prevents an automatic zero-call qualification attempt before the repository owner deliberately configures `OPENROUTER_API_KEY`.
+Both prerequisite jobs completed successfully before qualification began:
 
-`config/event_understanding_provider_status_v2.json` is intentionally unchanged. The machine selection truth remains `NO_ELIGIBLE_EXISTING_PROVIDER`, selected provider null, and `production_wired = false` until a real one-shot qualification result exists.
+- infrastructure: SUCCESS
+- historical-production-replay: SUCCESS
 
-After the credential is deliberately configured, exactly one explicit `[semantic-candidate:openrouter-nemotron]` commit may enable the bounded qualification. A semantic or contract failure is frozen as `NOT_QUALIFIED`; it does not authorize per-case prompt/schema/gold tuning or retry loops.
+The provider credential was present and masked by GitHub Actions, so this was not a credential-preflight failure. The real qualification result was:
 
-Even a `MINIMUM_COMPATIBILITY_PASS` does not by itself authorize production wiring. The separate PHASE 4 migration gate must still remove the three legacy semantic bypasses before the qualified owner can be wired.
+```text
+status = NOT_QUALIFIED
+evaluated_cases = 4
+passed_cases = 1
+```
+
+Per-case result:
+
+- `run413-bok-kbs-rate-decision`: FAIL — `required_structured_literal`
+- `run413-bok-kmib-outlook-child`: FAIL — `provider_transport:invalid_output`
+- `run413-kpop-alphadriveone-actor-preserved`: FAIL — `provider_transport:invalid_output`
+- `run413-kbo-osen-same-game-source`: PASS
+
+Evidence artifact:
+
+- artifact id: `9640144162`
+- digest: `sha256:20a5a412407d5d1e80e4f14b1a23622872f3932cdf8f882debed6c0e85d90b61`
+
+This is a valid bounded qualification failure. It does not authorize per-case prompt/schema/gold tuning, model-alias substitution, random free-router fallback, or retrying the same frozen candidate.
+
+## Frozen consequence
+
+`OpenRouter + nvidia/nemotron-3-super-120b-a12b:free` is frozen as `NOT_QUALIFIED` for `event_understanding_v1`.
+
+The machine provider inventory remains `NO_ELIGIBLE_EXISTING_PROVIDER`, `selected_event_understanding_provider` remains null, and `production_wired` remains false.
+
+The one-shot candidate workflow is removed after this result is frozen so the same candidate cannot retry automatically.
+
+No production marker, fresh discovery, PWA build, deploy, or Push is authorized by this qualification result.
+
+A future Event Understanding provider must be a deliberately selected independent candidate and must use the same frozen bounded qualification contract. Existing verification/generation/temporal owners may not be silently repurposed.
+
+Independently, even a future `MINIMUM_COMPATIBILITY_PASS` does not by itself authorize production wiring. The PHASE 4 migration gate must still remove the three legacy semantic bypasses and preserve source-range-bound Event Understanding output before production rewiring can open.

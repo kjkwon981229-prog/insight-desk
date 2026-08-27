@@ -47,6 +47,31 @@
       "artifact_id": 9637447266,
       "artifact_digest": "sha256:a84835d17ad5b9dae372ba381e4809c682b74cee63c7b661a15bdd0b051475fa"
     },
+    "openrouter_nemotron_free": {
+      "provider": "openrouter",
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "run_id": 33057003750,
+      "head_sha": "7b1230ea9ae5d0b5da3dc5725df55b2bb9fea1bf",
+      "evaluated_cases": 4,
+      "passed_cases": 1,
+      "failure_classification": "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": [
+          "required_structured_literal"
+        ],
+        "run413-bok-kmib-outlook-child": [
+          "provider_transport:invalid_output"
+        ],
+        "run413-kpop-alphadriveone-actor-preserved": [
+          "provider_transport:invalid_output"
+        ],
+        "run413-kbo-osen-same-game-source": []
+      },
+      "artifact_id": 9640144162,
+      "artifact_digest": "sha256:20a5a412407d5d1e80e4f14b1a23622872f3932cdf8f882debed6c0e85d90b61"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",

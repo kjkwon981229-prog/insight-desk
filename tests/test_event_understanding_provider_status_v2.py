@@ -37,6 +37,30 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
         self.assertEqual(mistral["failure_classification"], "ContractError")
+        openrouter = payload["providers"]["openrouter_nemotron_free"]
+        self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
+        self.assertEqual(openrouter["evaluated_cases"], 4)
+        self.assertEqual(openrouter["passed_cases"], 1)
+        self.assertEqual(
+            openrouter["failure_classification"],
+            "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
+        )
+        self.assertEqual(
+            openrouter["case_failures"]["run413-bok-kbs-rate-decision"],
+            ["required_structured_literal"],
+        )
+        self.assertEqual(
+            openrouter["case_failures"]["run413-bok-kmib-outlook-child"],
+            ["provider_transport:invalid_output"],
+        )
+        self.assertEqual(
+            openrouter["case_failures"]["run413-kpop-alphadriveone-actor-preserved"],
+            ["provider_transport:invalid_output"],
+        )
+        self.assertEqual(
+            openrouter["case_failures"]["run413-kbo-osen-same-game-source"],
+            [],
+        )
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(
             payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"],
@@ -52,6 +76,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         mutated = deepcopy(payload)
         mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
         mutated["selected_event_understanding_provider"] = "groq_20b"
+        with self.assertRaisesRegex(ContractError, "not qualified"):
+            validate_provider_status(mutated)
+
+    def test_openrouter_unqualified_provider_cannot_be_selected(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
+        mutated["selected_event_understanding_provider"] = "openrouter_nemotron_free"
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
