@@ -4,7 +4,8 @@ from __future__ import annotations
 
 This is not production and does not fetch fresh news. It uses only the bounded historical exact-
 source excerpt fixture. A failure marks the tested provider/model contract NOT_QUALIFIED; this
-script is not a prompt-tuning loop.
+script is not a prompt-tuning loop. Missing credentials stop before any provider call and are
+reported as NOT_CONFIGURED rather than as a semantic qualification failure.
 """
 
 import argparse
@@ -24,6 +25,7 @@ from insight_desk.core import (
 from insight_desk.event_understanding_adapter_v2 import StructuredJsonEventUnderstandingAdapter
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
+from insight_desk.providers.mistral import MISTRAL_LARGE_3, MistralStructuredClient
 from insight_desk.providers.transport import ProviderTransportError
 
 
@@ -31,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v1.json"
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
-PROVIDER_CHOICES = ("groq", "gemini")
+PROVIDER_CHOICES = ("groq", "gemini", "mistral")
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -119,11 +121,23 @@ def _score(result, expected: dict[str, object]) -> tuple[bool, list[str]]:
     return not failures, failures
 
 
+def _provider_model(provider: str) -> str:
+    if provider == "groq":
+        return GROQ_20B
+    if provider == "gemini":
+        return GEMINI_FLASH_LITE
+    if provider == "mistral":
+        return MISTRAL_LARGE_3
+    raise ValueError(f"unsupported qualification provider: {provider}")
+
+
 def _provider_configured(provider: str) -> bool:
     if provider == "groq":
         return GroqFreeClient.configured(model_id=GROQ_20B)
     if provider == "gemini":
         return GeminiStructuredClient.configured()
+    if provider == "mistral":
+        return MistralStructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -132,6 +146,8 @@ def _provider_client(provider: str):
         return GroqFreeClient.from_env(GROQ_20B), GROQ_20B
     if provider == "gemini":
         return GeminiStructuredClient.from_env(), GEMINI_FLASH_LITE
+    if provider == "mistral":
+        return MistralStructuredClient.from_env(), MISTRAL_LARGE_3
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -164,11 +180,10 @@ def qualify(
     replay_clock = datetime.fromisoformat(str(source_fixture["replay_clock"]))
 
     if not _provider_configured(provider):
-        model = GROQ_20B if provider == "groq" else GEMINI_FLASH_LITE
         report = {
             "status": "NOT_CONFIGURED",
             "provider": provider,
-            "model": model,
+            "model": _provider_model(provider),
             "evaluated_cases": 0,
             "passed_cases": 0,
             "source_mode": "historical_exact_source_excerpt_only",
