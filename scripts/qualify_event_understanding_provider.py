@@ -28,6 +28,10 @@ from insight_desk.event_understanding_adapter_v2 import (
     EventUnderstandingAdapterError,
     StructuredJsonEventUnderstandingAdapter,
 )
+from insight_desk.providers.cerebras import (
+    CEREBRAS_GLM_47,
+    CerebrasGlm47StructuredClient,
+)
 from insight_desk.providers.cohere import (
     COHERE_COMMAND_A_PLUS,
     CohereCommandAPlusStructuredClient,
@@ -52,6 +56,7 @@ PROVIDER_CHOICES = (
     "mistral",
     "openrouter_nemotron",
     "cohere_command_a_plus",
+    "cerebras_glm_47",
 )
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
@@ -248,6 +253,8 @@ def _provider_model(provider: str) -> str:
         return OPENROUTER_NEMOTRON_3_SUPER_FREE
     if provider == "cohere_command_a_plus":
         return COHERE_COMMAND_A_PLUS
+    if provider == "cerebras_glm_47":
+        return CEREBRAS_GLM_47
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -262,6 +269,8 @@ def _provider_configured(provider: str) -> bool:
         return OpenRouterNemotronStructuredClient.configured()
     if provider == "cohere_command_a_plus":
         return CohereCommandAPlusStructuredClient.configured()
+    if provider == "cerebras_glm_47":
+        return CerebrasGlm47StructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -279,6 +288,8 @@ def _provider_client(provider: str):
         )
     if provider == "cohere_command_a_plus":
         return CohereCommandAPlusStructuredClient.from_env(), COHERE_COMMAND_A_PLUS
+    if provider == "cerebras_glm_47":
+        return CerebrasGlm47StructuredClient.from_env(), CEREBRAS_GLM_47
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
