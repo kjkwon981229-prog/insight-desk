@@ -143,10 +143,14 @@ def _stable_draft_id(topic: str, index: int, actor: str, action: str, source_ids
 def _source_block(request: EventUnderstandingRequest) -> str:
     parts: list[str] = []
     for source in request.sources:
+        publication_time = source.publication_time.isoformat() if source.publication_time else ""
         parts.append(
             "\n".join(
                 (
                     f"SOURCE_ID: {source.source_id}",
+                    f"SOURCE_PUBLISHER: {source.publisher}",
+                    f"SOURCE_URL: {source.url}",
+                    f"PUBLICATION_TIME: {publication_time}",
                     "TITLE:",
                     source.title,
                     "BODY:",
@@ -170,9 +174,12 @@ def build_event_understanding_prompt(request: EventUnderstandingRequest) -> str:
         "guessing.\n"
         "For every event, evidence.text must be copied verbatim as an exact contiguous substring "
         "from the specified SOURCE_ID and title/body field. Do not paraphrase evidence.\n"
-        "Use empty strings for optional scalar fields that are not stated. Do not infer a missing "
-        "calendar year or authoritative value. parent_event_hint is only a semantic grouping hint, "
-        "never a canonical event ID.\n\n"
+        "Use PUBLICATION_TIME only as the temporal anchor for relative or partial dates stated in "
+        "that source. If the event date still cannot be resolved, leave event_time empty rather "
+        "than guessing.\n"
+        "Use empty strings for optional scalar fields that are not stated. Do not infer an "
+        "authoritative value. parent_event_hint is only a semantic grouping hint, never a "
+        "canonical event ID.\n\n"
         f"TOPIC_ID: {request.topic}\n"
         f"TOPIC_SCOPE: {request.semantic_scope}\n\n"
         "SOURCES:\n"
