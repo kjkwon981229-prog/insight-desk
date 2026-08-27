@@ -1,6 +1,6 @@
 # Insight Desk — Orchestration Contract V2
 
-Status: `PHASE_2_SINGLE_OWNER_FROZEN / PHASE_3_DATA_CONTRACT_FROZEN`
+Status: `PHASE_2_SINGLE_OWNER_FROZEN / PHASE_3_DATA_CONTRACT_FROZEN / PHASE_4_PROVIDER_AND_MIGRATION_GATED`
 Date: 2026-08-27
 
 This contract supersedes Architecture Freeze V1 only for the next production migration. V1 remains historical evidence of the previous clean-room architecture. This V2 freeze does not rewire the active Phase 11 production path by itself.
@@ -159,7 +159,23 @@ After Phase 4 rewiring, the only acceptance hierarchy is:
 
 Historic visible-card regression fixtures remain useful evidence but are not sufficient production replay because they do not contain the original complete source/fact state for every card.
 
-## 11. Migration boundary
+## 11. PHASE 4 migration gate
+
+Provider qualification is necessary but not sufficient for production rewiring.
+
+`config/event_understanding_migration_gate_v2.json` mechanically freezes the currently reachable legacy bypasses. Production rewiring remains closed while any of these are active:
+
+1. `CandidateEvent -> CanonicalEvent` direct compatibility lift via `canonical_event_from_candidate()`;
+2. canonical identity reading `SourceDocument.body` and reinterpreting raw source after event understanding;
+3. legacy `CandidateEvent` identity comparison remaining an authority inside the compatibility identity path.
+
+The gate additionally requires a selected Event Understanding provider with `MINIMUM_COMPATIBILITY_PASS`, source-range-bound Event Understanding output, and an identity path that consumes canonical event drafts without raw-source reinterpretation.
+
+Current provider state is separately frozen in `config/event_understanding_provider_status_v2.json`. Mistral Large 3 is only a qualification candidate and is currently `QUALIFICATION_BLOCKED_CREDENTIAL` because GitHub Actions has no configured `MISTRAL_API_KEY`. It is not selected and production is not wired.
+
+A future provider PASS must not silently open production. The migration blockers must first be removed and the migration gate explicitly opened.
+
+## 12. Migration boundary
 
 During PHASE 2 and PHASE 3:
 
@@ -169,4 +185,11 @@ During PHASE 2 and PHASE 3:
 - active production behavior is intentionally unchanged;
 - V2 contracts are introduced in parallel and tested independently.
 
-PHASE 4 may begin only from this frozen owner map and data contract. Its job is removal of bypass semantic authorities and rewiring of the active production path, not further detector accumulation.
+PHASE 4 may proceed only from the frozen owner map and data contract. Its job is removal of bypass semantic authorities and rewiring of the active production path, not further detector accumulation.
+
+While the provider inventory is blocked or the PHASE 4 migration gate is closed:
+
+- no production Event Understanding rewiring is authorized;
+- no production marker or fresh canonical live is authorized;
+- no deploy or Push acceptance is authorized;
+- compatibility replay success must not be represented as new-architecture Phase 5/6 completion.
