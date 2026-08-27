@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "contract": "event_understanding_v1",
+  "active_qualification_protocol": 2,
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
@@ -52,25 +53,38 @@
       "model": "nvidia/nemotron-3-super-120b-a12b:free",
       "status": "NOT_QUALIFIED",
       "existing_responsibility": "event_understanding_candidate",
-      "run_id": 33057003750,
-      "head_sha": "7b1230ea9ae5d0b5da3dc5725df55b2bb9fea1bf",
+      "qualification_protocol": 2,
+      "run_id": 33069019702,
+      "head_sha": "f6e379f0bb1ca8d092e2d69f905c223bbc0a5f6a",
       "evaluated_cases": 4,
-      "passed_cases": 1,
-      "failure_classification": "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
+      "passed_cases": 0,
+      "failure_classification": "MIXED_CONTRACT_AND_INVALID_OUTPUT",
       "case_failures": {
         "run413-bok-kbs-rate-decision": [
-          "required_structured_literal"
+          "provider_or_contract_error:ContractError"
         ],
         "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output"
+          "provider_or_contract_error:ContractError"
         ],
         "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output"
+          "provider_or_contract_error:ContractError"
         ],
-        "run413-kbo-osen-same-game-source": []
+        "run413-kbo-osen-same-game-source": [
+          "provider_transport:invalid_output"
+        ]
       },
-      "artifact_id": 9640144162,
-      "artifact_digest": "sha256:20a5a412407d5d1e80e4f14b1a23622872f3932cdf8f882debed6c0e85d90b61"
+      "artifact_id": 9644987975,
+      "artifact_digest": "sha256:d01c86cb1c372faa678fb038bda4edc169dfd3ed05313d35b815d40ff3d32008",
+      "previous_v1_evidence": {
+        "qualification_protocol": 1,
+        "run_id": 33057003750,
+        "head_sha": "7b1230ea9ae5d0b5da3dc5725df55b2bb9fea1bf",
+        "evaluated_cases": 4,
+        "passed_cases": 1,
+        "failure_classification": "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
+        "artifact_id": 9640144162,
+        "artifact_digest": "sha256:20a5a412407d5d1e80e4f14b1a23622872f3932cdf8f882debed6c0e85d90b61"
+      }
     },
     "groq_120b": {
       "provider": "groq",
