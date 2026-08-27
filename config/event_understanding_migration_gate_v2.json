@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "contract": "event_understanding_phase4_migration_gate_v1",
+  "production_rewire_allowed": false,
+  "runtime_blockers": {
+    "candidate_event_direct_canonical_lift": {
+      "active": true,
+      "path": "insight_desk/production_orchestrator_v2.py",
+      "evidence": "canonical_event_from_candidate("
+    },
+    "identity_reads_source_body": {
+      "active": true,
+      "path": "insight_desk/production_orchestrator_v2.py",
+      "evidence": "self.registry.source_for_event(pair[0]).body"
+    },
+    "legacy_candidate_identity_authority": {
+      "active": true,
+      "path": "insight_desk/production_orchestrator_v2.py",
+      "evidence": "legacy_compare_candidate_identity("
+    }
+  },
+  "required_before_rewire": [
+    "selected_event_understanding_provider_has_MINIMUM_COMPATIBILITY_PASS",
+    "all_runtime_blockers_inactive",
+    "event_understanding_output_is_source_range_bound",
+    "identity_consumes_canonical_event_drafts_without_raw_source_reinterpretation"
+  ]
+}
