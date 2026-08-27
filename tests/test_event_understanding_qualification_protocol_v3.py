@@ -51,7 +51,6 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
         historical_protocols = {
             "groq_20b": 1,
             "gemini_flash_lite": 1,
-            "mistral_large_3": 1,
         }
         for provider_id, expected_protocol in historical_protocols.items():
             with self.subTest(provider_id=provider_id):
@@ -62,6 +61,17 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
                     record["qualification_protocol"],
                     status["active_qualification_protocol"],
                 )
+
+        mistral = status["providers"]["mistral_large_3"]
+        self.assertEqual(mistral["status"], "NOT_QUALIFIED")
+        self.assertEqual(
+            mistral["qualification_protocol"],
+            status["active_qualification_protocol"],
+        )
+        self.assertEqual(mistral["evaluated_cases"], 4)
+        self.assertEqual(mistral["passed_cases"], 0)
+        self.assertEqual(mistral["failure_classification"], "PROVIDER_TRANSIENT_FAILURE")
+        self.assertEqual(mistral["previous_v1_evidence"]["qualification_protocol"], 1)
 
         openrouter = status["providers"]["openrouter_nemotron_free"]
         self.assertEqual(openrouter["status"], "NOT_QUALIFIED")

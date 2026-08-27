@@ -44,14 +44,38 @@
       "model": "mistral-large-2512",
       "status": "NOT_QUALIFIED",
       "existing_responsibility": "event_understanding_candidate",
-      "qualification_protocol": 1,
-      "run_id": 33050426588,
-      "head_sha": "71d4c88731ae86a0084ef34862ac1c2d7bc30bbd",
+      "qualification_protocol": 3,
+      "run_id": 33094503683,
+      "head_sha": "a417ac291031358e547b00d59bccce2412fb9044",
       "evaluated_cases": 4,
       "passed_cases": 0,
-      "failure_classification": "ContractError",
-      "artifact_id": 9637447266,
-      "artifact_digest": "sha256:a84835d17ad5b9dae372ba381e4809c682b74cee63c7b661a15bdd0b051475fa"
+      "failure_classification": "PROVIDER_TRANSIENT_FAILURE",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": [
+          "provider_transport:transient_provider"
+        ],
+        "run413-bok-kmib-outlook-child": [
+          "provider_transport:transient_provider"
+        ],
+        "run413-kpop-alphadriveone-actor-preserved": [
+          "provider_transport:transient_provider"
+        ],
+        "run413-kbo-osen-same-game-source": [
+          "provider_transport:transient_provider"
+        ]
+      },
+      "artifact_id": 9656236318,
+      "artifact_digest": "sha256:5d469827740b3a08c7367fde230beccdd8e82f422491113cebd33a86b51dc666",
+      "previous_v1_evidence": {
+        "qualification_protocol": 1,
+        "run_id": 33050426588,
+        "head_sha": "71d4c88731ae86a0084ef34862ac1c2d7bc30bbd",
+        "evaluated_cases": 4,
+        "passed_cases": 0,
+        "failure_classification": "ContractError",
+        "artifact_id": 9637447266,
+        "artifact_digest": "sha256:a84835d17ad5b9dae372ba381e4809c682b74cee63c7b661a15bdd0b051475fa"
+      }
     },
     "openrouter_nemotron_free": {
       "provider": "openrouter",

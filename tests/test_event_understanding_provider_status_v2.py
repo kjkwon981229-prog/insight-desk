@@ -43,12 +43,39 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         gemini = payload["providers"]["gemini_flash_lite"]
         self.assertEqual(gemini["status"], "NOT_QUALIFIED")
         self.assertEqual(gemini["qualification_protocol"], 1)
+
         mistral = payload["providers"]["mistral_large_3"]
         self.assertEqual(mistral["status"], "NOT_QUALIFIED")
-        self.assertEqual(mistral["qualification_protocol"], 1)
+        self.assertEqual(mistral["qualification_protocol"], 3)
+        self.assertEqual(mistral["run_id"], 33094503683)
+        self.assertEqual(
+            mistral["head_sha"],
+            "a417ac291031358e547b00d59bccce2412fb9044",
+        )
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
-        self.assertEqual(mistral["failure_classification"], "ContractError")
+        self.assertEqual(
+            mistral["failure_classification"],
+            "PROVIDER_TRANSIENT_FAILURE",
+        )
+        for case_id in (
+            "run413-bok-kbs-rate-decision",
+            "run413-bok-kmib-outlook-child",
+            "run413-kpop-alphadriveone-actor-preserved",
+            "run413-kbo-osen-same-game-source",
+        ):
+            self.assertEqual(
+                mistral["case_failures"][case_id],
+                ["provider_transport:transient_provider"],
+            )
+        self.assertEqual(mistral["artifact_id"], 9656236318)
+        self.assertEqual(
+            mistral["artifact_digest"],
+            "sha256:5d469827740b3a08c7367fde230beccdd8e82f422491113cebd33a86b51dc666",
+        )
+        self.assertEqual(mistral["previous_v1_evidence"]["qualification_protocol"], 1)
+        self.assertEqual(mistral["previous_v1_evidence"]["run_id"], 33050426588)
+
         openrouter = payload["providers"]["openrouter_nemotron_free"]
         self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
         self.assertEqual(openrouter["qualification_protocol"], 3)
@@ -101,6 +128,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         mutated = deepcopy(payload)
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "groq_20b"
+        with self.assertRaisesRegex(ContractError, "not qualified"):
+            validate_provider_status(mutated)
+
+    def test_mistral_transient_v3_outcome_cannot_be_selected(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        self._mark_selection_state(mutated)
+        mutated["selected_event_understanding_provider"] = "mistral_large_3"
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
