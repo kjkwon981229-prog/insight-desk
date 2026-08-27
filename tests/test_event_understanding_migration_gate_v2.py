@@ -44,7 +44,10 @@ class EventUnderstandingMigrationGateV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": "MINIMUM_COMPATIBILITY_PASS",
+            "qualification_protocol": 3,
+            "evaluated_cases": 4,
         }
+        provider_status["qualification_contract_status"] = "QUALIFIED_PROVIDER_SELECTED"
         provider_status["provider_inventory_status"] = "ELIGIBLE_CANDIDATE_AVAILABLE"
         provider_status["selected_event_understanding_provider"] = "qualified_fixture"
         provider_status["production_wired"] = False

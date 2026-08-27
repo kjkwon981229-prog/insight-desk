@@ -7,12 +7,12 @@ from scripts import qualify_event_understanding_provider as qualification
 
 
 class EventUnderstandingMistralQualificationHarnessTests(unittest.TestCase):
-    def test_mistral_candidate_remains_registered_under_active_v2_protocol(self) -> None:
+    def test_mistral_candidate_remains_registered_under_active_v3_protocol(self) -> None:
         self.assertIn("mistral", qualification.PROVIDER_CHOICES)
         self.assertEqual(qualification._provider_model("mistral"), MISTRAL_LARGE_3)
         self.assertEqual(
             qualification.DEFAULT_QUALIFICATION.name,
-            "event_understanding_qualification_v2.json",
+            "event_understanding_qualification_v3.json",
         )
         self.assertEqual(qualification.DEFAULT_SCOPES.name, "semantic_topics_v2.json")
 
