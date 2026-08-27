@@ -36,6 +36,10 @@ from insight_desk.providers.cohere import (
     COHERE_COMMAND_A_PLUS,
     CohereCommandAPlusStructuredClient,
 )
+from insight_desk.providers.fireworks_kimi_k2p6 import (
+    FIREWORKS_KIMI_K2P6,
+    FireworksKimiK2P6StructuredClient,
+)
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.gemini37 import (
     GEMINI_37_FLASH,
@@ -82,6 +86,7 @@ PROVIDER_CHOICES = (
     "openrouter_glm52_free",
     "openrouter_gpt54mini",
     "openrouter_qwen235b2507_free",
+    "fireworks_kimi_k2p6",
 )
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
@@ -291,6 +296,8 @@ def _provider_model(provider: str) -> str:
         return OPENROUTER_GPT_54_MINI
     if provider == "openrouter_qwen235b2507_free":
         return OPENROUTER_QWEN3_235B_2507_FREE
+    if provider == "fireworks_kimi_k2p6":
+        return FIREWORKS_KIMI_K2P6
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -317,6 +324,8 @@ def _provider_configured(provider: str) -> bool:
         return OpenRouterGpt54MiniStructuredClient.configured()
     if provider == "openrouter_qwen235b2507_free":
         return OpenRouterQwen235B2507StructuredClient.configured()
+    if provider == "fireworks_kimi_k2p6":
+        return FireworksKimiK2P6StructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -349,6 +358,8 @@ def _provider_client(provider: str):
             OpenRouterQwen235B2507StructuredClient.from_env(),
             OPENROUTER_QWEN3_235B_2507_FREE,
         )
+    if provider == "fireworks_kimi_k2p6":
+        return FireworksKimiK2P6StructuredClient.from_env(), FIREWORKS_KIMI_K2P6
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
