@@ -37,6 +37,10 @@ from insight_desk.providers.cohere import (
     CohereCommandAPlusStructuredClient,
 )
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
+from insight_desk.providers.gemini37 import (
+    GEMINI_37_FLASH,
+    Gemini37FlashStructuredClient,
+)
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.groq_qwen38 import (
     GROQ_QWEN_38_27B,
@@ -62,6 +66,7 @@ PROVIDER_CHOICES = (
     "cohere_command_a_plus",
     "cerebras_glm_47",
     "groq_qwen38_27b",
+    "gemini_37_flash",
 )
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
@@ -263,6 +268,8 @@ def _provider_model(provider: str) -> str:
         return CEREBRAS_GLM_47
     if provider == "groq_qwen38_27b":
         return GROQ_QWEN_38_27B
+    if provider == "gemini_37_flash":
+        return GEMINI_37_FLASH
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -281,6 +288,8 @@ def _provider_configured(provider: str) -> bool:
         return CerebrasGlm47StructuredClient.configured()
     if provider == "groq_qwen38_27b":
         return GroqQwen38StructuredClient.configured()
+    if provider == "gemini_37_flash":
+        return Gemini37FlashStructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -302,6 +311,8 @@ def _provider_client(provider: str):
         return CerebrasGlm47StructuredClient.from_env(), CEREBRAS_GLM_47
     if provider == "groq_qwen38_27b":
         return GroqQwen38StructuredClient.from_env(), GROQ_QWEN_38_27B
+    if provider == "gemini_37_flash":
+        return Gemini37FlashStructuredClient.from_env(), GEMINI_37_FLASH
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
