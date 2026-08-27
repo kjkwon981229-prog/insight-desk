@@ -6,9 +6,10 @@ import unittest
 
 from insight_desk.core.contracts import ContractError
 from insight_desk.event_understanding_provider_status_v2 import (
+    CANDIDATE_QUALIFICATION_BLOCKED,
     ELIGIBLE_CANDIDATE_AVAILABLE,
     MINIMUM_COMPATIBILITY_PASS,
-    NO_ELIGIBLE_EXISTING_PROVIDER,
+    QUALIFICATION_BLOCKED_CREDENTIAL,
     load_provider_status,
     selected_provider,
     validate_provider_status,
@@ -20,17 +21,21 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_frozen_status_has_no_selected_or_wired_provider(self) -> None:
+    def test_current_frozen_status_has_credential_blocked_candidate_and_no_wiring(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
         self.assertEqual(
-            payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER
+            payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED
         )
         self.assertEqual(payload["providers"]["groq_20b"]["status"], "NOT_QUALIFIED")
         self.assertEqual(
             payload["providers"]["gemini_flash_lite"]["status"], "NOT_QUALIFIED"
         )
+        mistral = payload["providers"]["mistral_large_3"]
+        self.assertEqual(mistral["status"], QUALIFICATION_BLOCKED_CREDENTIAL)
+        self.assertEqual(mistral["evaluated_cases"], 0)
+        self.assertEqual(mistral["preflight_result"], "NOT_CONFIGURED")
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(
             payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"],
@@ -57,7 +62,15 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_provider_inventory_block_prevents_selection_even_for_synthetic_pass(self) -> None:
+    def test_credential_blocked_candidate_cannot_be_selected(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
+        mutated["selected_event_understanding_provider"] = "mistral_large_3"
+        with self.assertRaisesRegex(ContractError, "not qualified"):
+            validate_provider_status(mutated)
+
+    def test_blocked_inventory_prevents_selection_even_for_synthetic_pass(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["future_candidate"] = {
@@ -66,7 +79,18 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "status": MINIMUM_COMPATIBILITY_PASS,
         }
         mutated["selected_event_understanding_provider"] = "future_candidate"
-        with self.assertRaisesRegex(ContractError, "no eligible"):
+        with self.assertRaisesRegex(ContractError, "not eligible"):
+            validate_provider_status(mutated)
+
+    def test_credential_block_requires_zero_cases_and_not_configured_preflight(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        mutated["providers"]["mistral_large_3"]["evaluated_cases"] = 1
+        with self.assertRaisesRegex(ContractError, "zero cases"):
+            validate_provider_status(mutated)
+        mutated = deepcopy(payload)
+        mutated["providers"]["mistral_large_3"]["preflight_result"] = "NOT_QUALIFIED"
+        with self.assertRaisesRegex(ContractError, "NOT_CONFIGURED"):
             validate_provider_status(mutated)
 
     def test_production_wiring_requires_selected_qualified_provider(self) -> None:

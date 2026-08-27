@@ -70,27 +70,3 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
-
-  semantic-provider-candidate-mistral:
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, '[semantic-candidate:mistral]')
-    needs: infrastructure
-    runs-on: ubuntu-24.04
-    env:
-      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-    steps:
-      - name: Checkout exact candidate head
-        uses: actions/checkout@v6
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12.10"
-      - name: Run one-shot Mistral Large 3 Event Understanding qualification
-        run: python -m scripts.qualify_event_understanding_provider --provider mistral
-      - name: Upload bounded qualification report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: event-understanding-mistral-candidate-${{ github.run_id }}
-          path: event-understanding-qualification.json
-          if-no-files-found: ignore
-          retention-days: 7

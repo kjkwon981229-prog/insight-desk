@@ -3,8 +3,8 @@ from __future__ import annotations
 """Mechanical status contract for Event Understanding provider selection.
 
 This module does not qualify providers and does not wire production. It only prevents an
-unqualified, explicitly excluded, or inventory-blocked provider from being selected as the Event
-Understanding owner.
+unqualified, explicitly excluded, credential-blocked, or inventory-blocked provider from being
+selected as the Event Understanding owner.
 """
 
 import json
@@ -17,11 +17,24 @@ from insight_desk.core.contracts import ContractError
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
 EXCLUDED = "EXCLUDED"
+QUALIFICATION_BLOCKED_CREDENTIAL = "QUALIFICATION_BLOCKED_CREDENTIAL"
 NO_ELIGIBLE_EXISTING_PROVIDER = "NO_ELIGIBLE_EXISTING_PROVIDER"
+CANDIDATE_QUALIFICATION_BLOCKED = "CANDIDATE_QUALIFICATION_BLOCKED"
 ELIGIBLE_CANDIDATE_AVAILABLE = "ELIGIBLE_CANDIDATE_AVAILABLE"
-_ALLOWED_STATUSES = frozenset({MINIMUM_COMPATIBILITY_PASS, NOT_QUALIFIED, EXCLUDED})
+_ALLOWED_STATUSES = frozenset(
+    {
+        MINIMUM_COMPATIBILITY_PASS,
+        NOT_QUALIFIED,
+        EXCLUDED,
+        QUALIFICATION_BLOCKED_CREDENTIAL,
+    }
+)
 _ALLOWED_INVENTORY_STATUSES = frozenset(
-    {NO_ELIGIBLE_EXISTING_PROVIDER, ELIGIBLE_CANDIDATE_AVAILABLE}
+    {
+        NO_ELIGIBLE_EXISTING_PROVIDER,
+        CANDIDATE_QUALIFICATION_BLOCKED,
+        ELIGIBLE_CANDIDATE_AVAILABLE,
+    }
 )
 
 
@@ -58,6 +71,15 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
             not isinstance(responsibility, str) or not responsibility.strip()
         ):
             raise ContractError(f"{provider_id}: existing responsibility must be non-empty")
+        if status == QUALIFICATION_BLOCKED_CREDENTIAL:
+            if raw.get("evaluated_cases") != 0:
+                raise ContractError(
+                    f"{provider_id}: credential-blocked qualification must evaluate zero cases"
+                )
+            if raw.get("preflight_result") != "NOT_CONFIGURED":
+                raise ContractError(
+                    f"{provider_id}: credential-blocked qualification must be NOT_CONFIGURED"
+                )
 
     selected = payload.get("selected_event_understanding_provider")
     production_wired = payload.get("production_wired")
@@ -71,8 +93,8 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
 
     if not isinstance(selected, str) or not selected.strip():
         raise ContractError("selected provider must be null or non-empty string")
-    if inventory_status == NO_ELIGIBLE_EXISTING_PROVIDER:
-        raise ContractError("provider inventory declares no eligible Event Understanding provider")
+    if inventory_status != ELIGIBLE_CANDIDATE_AVAILABLE:
+        raise ContractError("provider inventory is not eligible for Event Understanding selection")
     selected_record = providers.get(selected)
     if not isinstance(selected_record, Mapping):
         raise ContractError("selected provider is absent from provider status")

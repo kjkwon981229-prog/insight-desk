@@ -4,7 +4,7 @@
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
-  "provider_inventory_status": "NO_ELIGIBLE_EXISTING_PROVIDER",
+  "provider_inventory_status": "CANDIDATE_QUALIFICATION_BLOCKED",
   "selected_event_understanding_provider": null,
   "production_wired": false,
   "providers": {
@@ -33,6 +33,20 @@
       "failure_classification": "ContractError",
       "artifact_id": 9628767572,
       "artifact_digest": "sha256:3acf7f79e040a09ef7a3e2c5b0c98d60c81bbd2d7945b9dc70682be39ab19f5b"
+    },
+    "mistral_large_3": {
+      "provider": "mistral",
+      "model": "mistral-large-2512",
+      "status": "QUALIFICATION_BLOCKED_CREDENTIAL",
+      "existing_responsibility": "event_understanding_candidate",
+      "run_id": 33047255995,
+      "head_sha": "fadb04ae40160fea6ca8b56fc1149487a74509c6",
+      "evaluated_cases": 0,
+      "passed_cases": 0,
+      "preflight_result": "NOT_CONFIGURED",
+      "reason": "MISTRAL_API_KEY_missing_from_github_actions",
+      "artifact_id": 9636139336,
+      "artifact_digest": "sha256:bad5a540efefefd7700682bc20360f4040809c9d7f18a1085531239f4dda23f3"
     },
     "groq_120b": {
       "provider": "groq",
