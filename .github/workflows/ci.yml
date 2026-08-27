@@ -84,7 +84,7 @@ jobs:
         with:
           python-version: "3.12.10"
       - name: Run one-shot Groq 20B Event Understanding qualification
-        run: python scripts/qualify_event_understanding_provider.py
+        run: python -m scripts.qualify_event_understanding_provider
       - name: Upload bounded qualification report
         if: always()
         uses: actions/upload-artifact@v4
