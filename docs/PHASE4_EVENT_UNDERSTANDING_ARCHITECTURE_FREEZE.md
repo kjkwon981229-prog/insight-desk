@@ -1,6 +1,6 @@
 # PHASE 4 — Event Understanding Architecture Freeze
 
-Status: ARCHITECTURE AUDIT / NO FRESH LIVE
+Status: ARCHITECTURE AUDIT / PROVIDER QUALIFICATION FROZEN / NO FRESH LIVE
 
 This document supersedes the post-#464 live-derived patch direction. The branch was restored to the pre-live orchestration baseline. No new detector, regex gate, production marker, or fresh production run is authorized by this document.
 
@@ -91,16 +91,62 @@ EventUnderstandingRequest(topic, semantic_scope, SourceDocument[])
 No model is selected by this contract. A provider adapter must prove suitability separately before production wiring.
 
 - Groq 120B remains frozen to its existing temporal auxiliary role.
-- Groq 20B remains the existing briefing generator unless a separate bounded Event Understanding qualification demonstrates minimum compatibility.
+- Groq 20B remains the existing briefing generator; Event Understanding qualification did not grant it another role.
 - Strict JSON-schema capability alone is not semantic-quality evidence.
 
 ## 6. Bounded provider qualification
 
-The only currently recoverable source-backed set contains four historical exact-source excerpts. A one-shot qualification may use those four records to test minimum semantic-contract compatibility. It must explicitly report that full raw bodies are unavailable and must not claim full production correctness or recall.
+The only currently recoverable source-backed set contains four historical exact-source excerpts. Qualification uses those four records only to test minimum semantic-contract compatibility. Full raw bodies are unavailable, so neither PASS nor FAIL may be represented as full production correctness or recall evidence.
 
 A failed provider/model qualification is a terminal `NOT_QUALIFIED` result for that tested contract. Do not tune the prompt against individual failures and rerun a patch loop.
 
 No fresh article discovery, production PWA generation, deploy, or Push is part of provider qualification.
+
+### Frozen qualification results
+
+#### Groq GPT-OSS 20B
+
+- model: `openai/gpt-oss-20b`
+- valid one-shot run: `33026646693`
+- exact head: `254df8817f49f51393c2ddad6de98911ad0ca060`
+- result: `NOT_QUALIFIED`
+- evaluated/passed: `4 / 0`
+- failure classification: all four cases ended in `ProviderTransportError`
+- artifact: `9628656145`
+- artifact digest: `sha256:16d77017bf112c4c5fd6c9cc3bcd1526105ccf0152349e0b8da0a137dc04a66d`
+
+The earlier import-path failure was a harness failure and was not counted as a provider qualification. The valid run above was not retried or prompt-tuned.
+
+#### Gemini Flash Lite
+
+- model: `gemini-3.1-flash-lite`
+- valid one-shot run: `33026927524`
+- exact head: `9fda2cca7aa9cb6cef5cbb410602f45c35e58d2e`
+- result: `NOT_QUALIFIED`
+- evaluated/passed: `4 / 0`
+- failure classification: all four cases ended in frozen-contract `ContractError`
+- artifact: `9628767572`
+- artifact digest: `sha256:3acf7f79e040a09ef7a3e2c5b0c98d60c81bbd2d7945b9dc70682be39ab19f5b`
+
+Gemini was not retried or prompt-tuned after this result.
+
+### Selection consequence
+
+`config/event_understanding_provider_status_v2.json` is the machine-readable provider-status authority for this architecture phase.
+
+Current state:
+
+```text
+selected_event_understanding_provider = null
+production_wired = false
+Groq 20B = NOT_QUALIFIED
+Gemini Flash Lite = NOT_QUALIFIED
+Groq 120B = EXCLUDED (temporal auxiliary only)
+```
+
+Production must not wire an Event Understanding provider until a separately qualified candidate has status `MINIMUM_COMPATIBILITY_PASS`. The frozen selection validator rejects selecting an unqualified or excluded provider.
+
+The completed one-shot workflow lane is removed after freezing these results, preventing accidental reruns of failed candidates. The harness and fixtures remain as audit evidence.
 
 ## 7. Uncertainty contract
 
@@ -130,4 +176,4 @@ Allowed before runtime rewiring:
 - bounded provider qualification over preserved real source excerpts,
 - production replay only where real source material is actually preserved.
 
-Fresh canary remains blocked until the runtime implements this handoff and replay evidence is sufficient to assess both correctness and recall.
+Fresh canary remains blocked until a provider is qualified, the runtime implements this handoff, and replay evidence is sufficient to assess both correctness and recall.

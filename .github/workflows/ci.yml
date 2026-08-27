@@ -27,6 +27,7 @@ jobs:
           for name in (
               "config/topics.json",
               "config/semantic_topics_v2.json",
+              "config/event_understanding_provider_status_v2.json",
               "config/authoritative_sources.json",
               "manifest.webmanifest",
           ):
@@ -69,28 +70,3 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
-
-  semantic-provider-qualification:
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, '[semantic-qualification]')
-    needs: infrastructure
-    runs-on: ubuntu-24.04
-    env:
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-    steps:
-      - name: Checkout exact qualification head
-        uses: actions/checkout@v6
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12.10"
-      - name: Run one-shot Gemini Flash Lite Event Understanding qualification
-        run: python -m scripts.qualify_event_understanding_provider --provider gemini
-      - name: Upload bounded qualification report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: event-understanding-qualification-${{ github.run_id }}
-          path: event-understanding-qualification.json
-          if-no-files-found: ignore
-          retention-days: 7

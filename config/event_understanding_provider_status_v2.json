@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "contract": "event_understanding_v1",
+  "source_mode": "historical_exact_source_excerpt_only",
+  "qualification_set_size": 4,
+  "full_production_correctness_claimed": false,
+  "selected_event_understanding_provider": null,
+  "production_wired": false,
+  "providers": {
+    "groq_20b": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-20b",
+      "status": "NOT_QUALIFIED",
+      "run_id": 33026646693,
+      "head_sha": "254df8817f49f51393c2ddad6de98911ad0ca060",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "ProviderTransportError",
+      "artifact_id": 9628656145,
+      "artifact_digest": "sha256:16d77017bf112c4c5fd6c9cc3bcd1526105ccf0152349e0b8da0a137dc04a66d"
+    },
+    "gemini_flash_lite": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "status": "NOT_QUALIFIED",
+      "run_id": 33026927524,
+      "head_sha": "9fda2cca7aa9cb6cef5cbb410602f45c35e58d2e",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "ContractError",
+      "artifact_id": 9628767572,
+      "artifact_digest": "sha256:3acf7f79e040a09ef7a3e2c5b0c98d60c81bbd2d7945b9dc70682be39ab19f5b"
+    },
+    "groq_120b": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "status": "EXCLUDED",
+      "reason": "frozen_temporal_auxiliary_role"
+    }
+  }
+}
