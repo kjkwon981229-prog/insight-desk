@@ -72,6 +72,7 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
                 "openrouter_nemotron",
                 "cohere_command_a_plus",
                 "cerebras_glm_47",
+                "groq_qwen38_27b",
             ),
         )
         self.assertNotIn("groq_120b", PROVIDER_CHOICES)
