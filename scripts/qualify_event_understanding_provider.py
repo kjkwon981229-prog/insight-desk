@@ -59,6 +59,10 @@ from insight_desk.providers.openrouter_gpt54mini import (
     OPENROUTER_GPT_54_MINI,
     OpenRouterGpt54MiniStructuredClient,
 )
+from insight_desk.providers.openrouter_qwen235b2507 import (
+    OPENROUTER_QWEN3_235B_2507_FREE,
+    OpenRouterQwen235B2507StructuredClient,
+)
 from insight_desk.providers.transport import ProviderTransportError
 
 
@@ -77,6 +81,7 @@ PROVIDER_CHOICES = (
     "gemini_37_flash",
     "openrouter_glm52_free",
     "openrouter_gpt54mini",
+    "openrouter_qwen235b2507_free",
 )
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
@@ -284,6 +289,8 @@ def _provider_model(provider: str) -> str:
         return OPENROUTER_GLM_52_FREE
     if provider == "openrouter_gpt54mini":
         return OPENROUTER_GPT_54_MINI
+    if provider == "openrouter_qwen235b2507_free":
+        return OPENROUTER_QWEN3_235B_2507_FREE
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -308,6 +315,8 @@ def _provider_configured(provider: str) -> bool:
         return OpenRouterGlm52StructuredClient.configured()
     if provider == "openrouter_gpt54mini":
         return OpenRouterGpt54MiniStructuredClient.configured()
+    if provider == "openrouter_qwen235b2507_free":
+        return OpenRouterQwen235B2507StructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -335,6 +344,11 @@ def _provider_client(provider: str):
         return OpenRouterGlm52StructuredClient.from_env(), OPENROUTER_GLM_52_FREE
     if provider == "openrouter_gpt54mini":
         return OpenRouterGpt54MiniStructuredClient.from_env(), OPENROUTER_GPT_54_MINI
+    if provider == "openrouter_qwen235b2507_free":
+        return (
+            OpenRouterQwen235B2507StructuredClient.from_env(),
+            OPENROUTER_QWEN3_235B_2507_FREE,
+        )
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
