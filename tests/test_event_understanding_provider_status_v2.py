@@ -6,9 +6,9 @@ import unittest
 
 from insight_desk.core.contracts import ContractError
 from insight_desk.event_understanding_provider_status_v2 import (
-    CANDIDATE_QUALIFICATION_BLOCKED,
     ELIGIBLE_CANDIDATE_AVAILABLE,
     MINIMUM_COMPATIBILITY_PASS,
+    NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_CREDENTIAL,
     load_provider_status,
     selected_provider,
@@ -21,21 +21,22 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_frozen_status_has_credential_blocked_candidate_and_no_wiring(self) -> None:
+    def test_current_frozen_status_has_no_eligible_provider_and_no_wiring(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
         self.assertEqual(
-            payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED
+            payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER
         )
         self.assertEqual(payload["providers"]["groq_20b"]["status"], "NOT_QUALIFIED")
         self.assertEqual(
             payload["providers"]["gemini_flash_lite"]["status"], "NOT_QUALIFIED"
         )
         mistral = payload["providers"]["mistral_large_3"]
-        self.assertEqual(mistral["status"], QUALIFICATION_BLOCKED_CREDENTIAL)
-        self.assertEqual(mistral["evaluated_cases"], 0)
-        self.assertEqual(mistral["preflight_result"], "NOT_CONFIGURED")
+        self.assertEqual(mistral["status"], "NOT_QUALIFIED")
+        self.assertEqual(mistral["evaluated_cases"], 4)
+        self.assertEqual(mistral["passed_cases"], 0)
+        self.assertEqual(mistral["failure_classification"], "ContractError")
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(
             payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"],
@@ -65,8 +66,15 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     def test_credential_blocked_candidate_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
+        mutated["providers"]["credential_blocked"] = {
+            "provider": "fixture",
+            "model": "fixture-model",
+            "status": QUALIFICATION_BLOCKED_CREDENTIAL,
+            "evaluated_cases": 0,
+            "preflight_result": "NOT_CONFIGURED",
+        }
         mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
-        mutated["selected_event_understanding_provider"] = "mistral_large_3"
+        mutated["selected_event_understanding_provider"] = "credential_blocked"
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
@@ -85,11 +93,23 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     def test_credential_block_requires_zero_cases_and_not_configured_preflight(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
-        mutated["providers"]["mistral_large_3"]["evaluated_cases"] = 1
+        mutated["providers"]["credential_blocked"] = {
+            "provider": "fixture",
+            "model": "fixture-model",
+            "status": QUALIFICATION_BLOCKED_CREDENTIAL,
+            "evaluated_cases": 1,
+            "preflight_result": "NOT_CONFIGURED",
+        }
         with self.assertRaisesRegex(ContractError, "zero cases"):
             validate_provider_status(mutated)
         mutated = deepcopy(payload)
-        mutated["providers"]["mistral_large_3"]["preflight_result"] = "NOT_QUALIFIED"
+        mutated["providers"]["credential_blocked"] = {
+            "provider": "fixture",
+            "model": "fixture-model",
+            "status": QUALIFICATION_BLOCKED_CREDENTIAL,
+            "evaluated_cases": 0,
+            "preflight_result": "NOT_QUALIFIED",
+        }
         with self.assertRaisesRegex(ContractError, "NOT_CONFIGURED"):
             validate_provider_status(mutated)
 
