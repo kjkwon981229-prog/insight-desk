@@ -28,6 +28,10 @@ from insight_desk.event_understanding_adapter_v2 import (
     EventUnderstandingAdapterError,
     StructuredJsonEventUnderstandingAdapter,
 )
+from insight_desk.providers.cohere import (
+    COHERE_COMMAND_A_PLUS,
+    CohereCommandAPlusStructuredClient,
+)
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.mistral import MISTRAL_LARGE_3, MistralStructuredClient
@@ -42,7 +46,13 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v3.json"
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
-PROVIDER_CHOICES = ("groq", "gemini", "mistral", "openrouter_nemotron")
+PROVIDER_CHOICES = (
+    "groq",
+    "gemini",
+    "mistral",
+    "openrouter_nemotron",
+    "cohere_command_a_plus",
+)
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
 QUALIFICATION_BLOCKED_TRANSIENT = "QUALIFICATION_BLOCKED_TRANSIENT"
@@ -236,6 +246,8 @@ def _provider_model(provider: str) -> str:
         return MISTRAL_LARGE_3
     if provider == "openrouter_nemotron":
         return OPENROUTER_NEMOTRON_3_SUPER_FREE
+    if provider == "cohere_command_a_plus":
+        return COHERE_COMMAND_A_PLUS
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -248,6 +260,8 @@ def _provider_configured(provider: str) -> bool:
         return MistralStructuredClient.configured()
     if provider == "openrouter_nemotron":
         return OpenRouterNemotronStructuredClient.configured()
+    if provider == "cohere_command_a_plus":
+        return CohereCommandAPlusStructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -263,6 +277,8 @@ def _provider_client(provider: str):
             OpenRouterNemotronStructuredClient.from_env(),
             OPENROUTER_NEMOTRON_3_SUPER_FREE,
         )
+    if provider == "cohere_command_a_plus":
+        return CohereCommandAPlusStructuredClient.from_env(), COHERE_COMMAND_A_PLUS
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
