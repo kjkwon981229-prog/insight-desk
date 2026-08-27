@@ -21,6 +21,7 @@ from insight_desk.core import (
 
 NOW = datetime(2026, 8, 27, 1, 0, tzinfo=timezone.utc)
 BODY = "한국은행 금융통화위원회는 기준금리를 유지했다."
+SCOPE = "Current monetary-policy and financial-market events."
 
 
 def source(source_id: str = "source:1", body: str = BODY) -> SourceDocument:
@@ -80,9 +81,14 @@ class _FakeUnderstandingEngine:
 
 
 class EventUnderstandingPortV2Tests(unittest.TestCase):
+    def test_request_requires_semantic_scope_not_keyword_contract(self) -> None:
+        src = source()
+        with self.assertRaisesRegex(ContractError, "semantic_scope"):
+            EventUnderstandingRequest(topic="economy", semantic_scope="", sources=(src,))
+
     def test_fake_engine_result_is_mechanically_bound_to_request_sources(self) -> None:
         src = source()
-        request = EventUnderstandingRequest(topic="economy", sources=(src,))
+        request = EventUnderstandingRequest(topic="economy", semantic_scope=SCOPE, sources=(src,))
         engine = _FakeUnderstandingEngine(resolved_result(src))
         result = engine.understand(request)
         validate_understanding_result(request, result)
@@ -92,13 +98,15 @@ class EventUnderstandingPortV2Tests(unittest.TestCase):
     def test_result_cannot_reference_source_outside_request(self) -> None:
         requested = source("source:requested")
         outsider = source("source:outsider")
-        request = EventUnderstandingRequest(topic="economy", sources=(requested,))
+        request = EventUnderstandingRequest(
+            topic="economy", semantic_scope=SCOPE, sources=(requested,)
+        )
         with self.assertRaisesRegex(ContractError, "outside the request"):
             validate_understanding_result(request, resolved_result(outsider))
 
     def test_result_cannot_change_request_topic(self) -> None:
         src = source()
-        request = EventUnderstandingRequest(topic="ai_tech", sources=(src,))
+        request = EventUnderstandingRequest(topic="ai_tech", semantic_scope=SCOPE, sources=(src,))
         with self.assertRaisesRegex(ContractError, "topic differs"):
             validate_understanding_result(request, resolved_result(src))
 
@@ -134,13 +142,13 @@ class EventUnderstandingPortV2Tests(unittest.TestCase):
             event_drafts=(bad_draft,),
             status=result.status,
         )
-        request = EventUnderstandingRequest(topic="economy", sources=(src,))
+        request = EventUnderstandingRequest(topic="economy", semantic_scope=SCOPE, sources=(src,))
         with self.assertRaisesRegex(ContractError, "digest differs"):
             validate_understanding_result(request, bad_result)
 
     def test_unresolved_result_is_valid_port_output_and_not_boolean_drop(self) -> None:
         src = source()
-        request = EventUnderstandingRequest(topic="economy", sources=(src,))
+        request = EventUnderstandingRequest(topic="economy", semantic_scope=SCOPE, sources=(src,))
         result = ArticleUnderstanding(
             understanding_id="understanding:unresolved",
             topic="economy",

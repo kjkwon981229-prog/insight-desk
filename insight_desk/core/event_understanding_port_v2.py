@@ -18,11 +18,14 @@ from .event_understanding_v2 import ArticleUnderstanding
 @dataclass(frozen=True, slots=True)
 class EventUnderstandingRequest:
     topic: str
+    semantic_scope: str
     sources: tuple[SourceDocument, ...]
 
     def __post_init__(self) -> None:
         if not self.topic.strip():
             raise ContractError("event-understanding topic must be non-empty")
+        if not self.semantic_scope.strip():
+            raise ContractError("event-understanding semantic_scope must be non-empty")
         if not self.sources:
             raise ContractError("event understanding requires at least one SourceDocument")
         source_ids = tuple(source.source_id for source in self.sources)

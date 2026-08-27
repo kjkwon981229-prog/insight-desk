@@ -2,7 +2,7 @@
 
 Status: ARCHITECTURE AUDIT / NO FRESH LIVE
 
-This document supersedes the post-#464 live-derived patch direction. The branch was restored to the pre-live orchestration baseline. No new detector, regex gate, marker, or fresh production run is authorized by this document.
+This document supersedes the post-#464 live-derived patch direction. The branch was restored to the pre-live orchestration baseline. No new detector, regex gate, production marker, or fresh production run is authorized by this document.
 
 ## 1. Product invariant
 
@@ -47,7 +47,7 @@ The engine is not a bad-sentence detector.
 ArticleCandidate
     -> SourceDocument
     -> RelevanceDecision
-    -> EventUnderstandingRequest
+    -> EventUnderstandingRequest(topic, semantic_scope, SourceDocument[])
     -> ArticleUnderstanding
          -> CanonicalEventDraft[]
     -> EnrichedEventDraftSet
@@ -58,6 +58,8 @@ ArticleCandidate
     -> PWA
     -> Push
 ```
+
+`semantic_scope` is a natural-language statement of the user's topic interest. It is deliberately separate from discovery/relevance keyword lists; `intent_anchors`, `required_intent_terms`, and `event_terms` are not Event Understanding inputs.
 
 `CanonicalEventDraft` is not a final event identity. `draft_id` is provisional and source-scoped. Only the identity owner may merge drafts, split them, or assign canonical parent/child event identities.
 
@@ -73,7 +75,7 @@ Every event draft cites one or more `UnderstandingEvidenceRef` values:
 - `end`
 - SHA-256 of the exact referenced substring
 
-The provider chooses the source range. Deterministic code validates only source membership, range bounds, and digest equality against immutable `SourceDocument` bytes. It does not judge the meaning of the cited text.
+The provider chooses an exact verbatim source substring. The adapter locates that substring and deterministic code validates source membership, range bounds, and digest equality against immutable `SourceDocument` bytes. It does not judge the meaning of the cited text.
 
 Legacy `EvidenceSpan` IDs are not the semantic handoff contract and cannot be used to make `SemanticPipeline` the Event Understanding authority.
 
@@ -82,17 +84,25 @@ Legacy `EvidenceSpan` IDs are not the semantic handoff contract and cannot be us
 `EventUnderstandingPort` exposes only:
 
 ```text
-EventUnderstandingRequest(topic, SourceDocument[])
+EventUnderstandingRequest(topic, semantic_scope, SourceDocument[])
     -> ArticleUnderstanding
 ```
 
 No model is selected by this contract. A provider adapter must prove suitability separately before production wiring.
 
 - Groq 120B remains frozen to its existing temporal auxiliary role.
-- Groq 20B remains the existing briefing generator until an independent Event Understanding suitability evaluation proves otherwise.
+- Groq 20B remains the existing briefing generator unless a separate bounded Event Understanding qualification demonstrates minimum compatibility.
 - Strict JSON-schema capability alone is not semantic-quality evidence.
 
-## 6. Uncertainty contract
+## 6. Bounded provider qualification
+
+The only currently recoverable source-backed set contains four historical exact-source excerpts. A one-shot qualification may use those four records to test minimum semantic-contract compatibility. It must explicitly report that full raw bodies are unavailable and must not claim full production correctness or recall.
+
+A failed provider/model qualification is a terminal `NOT_QUALIFIED` result for that tested contract. Do not tune the prompt against individual failures and rerun a patch loop.
+
+No fresh article discovery, production PWA generation, deploy, or Push is part of provider qualification.
+
+## 7. Uncertainty contract
 
 `UNRESOLVED` is a first-class semantic result. It must not be converted to DROP by a boolean relevance helper.
 
@@ -106,7 +116,7 @@ Resolution order remains:
 
 Recall must not be purchased by silently discarding unresolved events.
 
-## 7. Test policy
+## 8. Test policy
 
 No new live-derived sentence detector regressions.
 
@@ -117,6 +127,7 @@ Allowed before runtime rewiring:
 - provider-port conformance with fake adapters,
 - single-owner input/output/forbidden-decision contracts,
 - structural tests proving downstream owners do not reopen source text,
+- bounded provider qualification over preserved real source excerpts,
 - production replay only where real source material is actually preserved.
 
 Fresh canary remains blocked until the runtime implements this handoff and replay evidence is sufficient to assess both correctness and recall.
