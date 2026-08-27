@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 import unittest
 
+from insight_desk.core import FailureKind
+from insight_desk.providers.transport import ProviderTransportError
+from scripts.qualify_event_understanding_provider import PROVIDER_CHOICES, _transport_failures
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -55,6 +59,19 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
         self.assertGreaterEqual(case["parent_hint_min"], 2)
         self.assertIn("수정 경제전망", case["required_structured_literals"])
         self.assertIn("점도표", case["required_structured_literals"])
+
+    def test_candidate_provider_set_is_explicit_and_does_not_include_groq_120b(self) -> None:
+        self.assertEqual(PROVIDER_CHOICES, ("groq", "gemini"))
+
+    def test_transport_failure_report_uses_only_safe_classification_metadata(self) -> None:
+        exc = ProviderTransportError(
+            failure_kind=FailureKind.RATE_LIMITED,
+            status_code=429,
+            detail="do not serialize provider body",
+        )
+        failures = _transport_failures(exc)
+        self.assertEqual(failures, ["provider_transport:rate_limited", "http_status:429"])
+        self.assertNotIn("provider body", "\n".join(failures))
 
 
 if __name__ == "__main__":
