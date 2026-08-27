@@ -17,13 +17,17 @@ import sys
 
 from insight_desk.core import (
     ArticleEventRole,
+    ContractError,
     EventUnderstandingRequest,
     SourceDocument,
     TopicRelation,
     UnderstandingEvidenceField,
     UnderstandingStatus,
 )
-from insight_desk.event_understanding_adapter_v2 import StructuredJsonEventUnderstandingAdapter
+from insight_desk.event_understanding_adapter_v2 import (
+    EventUnderstandingAdapterError,
+    StructuredJsonEventUnderstandingAdapter,
+)
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.mistral import MISTRAL_LARGE_3, MistralStructuredClient
@@ -265,6 +269,16 @@ def _transport_failures(exc: ProviderTransportError) -> list[str]:
     return failures
 
 
+def _qualification_failure_codes(exc: Exception) -> list[str]:
+    """Return bounded diagnostics without exception text, source bytes, or provider payloads."""
+
+    if isinstance(exc, EventUnderstandingAdapterError):
+        return [f"adapter_contract:{exc.failure_code}"]
+    if isinstance(exc, ContractError):
+        return ["core_contract:unwrapped_contract_error"]
+    return [f"provider_or_contract_error:{type(exc).__name__}"]
+
+
 def _qualification_contract_metadata(qualification: dict[str, object]) -> dict[str, object]:
     return {
         "qualification_protocol": qualification.get("schema_version"),
@@ -341,9 +355,9 @@ def qualify(
         except ProviderTransportError as exc:
             passed = False
             failures = _transport_failures(exc)
-        except Exception as exc:  # contract/output failure is qualification failure; no fallback.
+        except Exception as exc:  # bounded diagnostic only; no raw exception text is emitted.
             passed = False
-            failures = [f"provider_or_contract_error:{type(exc).__name__}"]
+            failures = _qualification_failure_codes(exc)
         case_reports.append(
             {
                 "case_id": case_id,

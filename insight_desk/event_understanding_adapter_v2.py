@@ -39,7 +39,9 @@ class StructuredJsonSemanticClient(Protocol):
 
 
 class EventUnderstandingAdapterError(ValueError):
-    pass
+    def __init__(self, message: str, *, failure_code: str = "adapter_output_contract") -> None:
+        super().__init__(message)
+        self.failure_code = failure_code
 
 
 _EVENT_SCHEMA: dict[str, object] = {
@@ -205,31 +207,46 @@ class StructuredJsonEventUnderstandingAdapter:
         raw: object,
     ) -> UnderstandingEvidenceRef:
         if not isinstance(raw, dict):
-            raise EventUnderstandingAdapterError("evidence item must be an object")
+            raise EventUnderstandingAdapterError(
+                "evidence item must be an object", failure_code="evidence_contract"
+            )
         source_id = raw.get("source_id")
         field_raw = raw.get("field")
         exact_text = raw.get("text")
         start = raw.get("start")
         end = raw.get("end")
         if not isinstance(source_id, str) or not source_id.strip():
-            raise EventUnderstandingAdapterError("evidence source_id must be non-empty")
+            raise EventUnderstandingAdapterError(
+                "evidence source_id must be non-empty", failure_code="evidence_contract"
+            )
         if not isinstance(field_raw, str) or not isinstance(exact_text, str) or not exact_text:
-            raise EventUnderstandingAdapterError("evidence field/text is invalid")
+            raise EventUnderstandingAdapterError(
+                "evidence field/text is invalid", failure_code="evidence_contract"
+            )
         if type(start) is not int or type(end) is not int:
-            raise EventUnderstandingAdapterError("evidence start/end must be integers")
+            raise EventUnderstandingAdapterError(
+                "evidence start/end must be integers", failure_code="evidence_contract"
+            )
         try:
             field = UnderstandingEvidenceField(field_raw)
         except ValueError as exc:
-            raise EventUnderstandingAdapterError("evidence field is outside contract") from exc
+            raise EventUnderstandingAdapterError(
+                "evidence field is outside contract", failure_code="evidence_contract"
+            ) from exc
         source = next((item for item in request.sources if item.source_id == source_id), None)
         if source is None:
-            raise EventUnderstandingAdapterError("evidence source is outside request")
+            raise EventUnderstandingAdapterError(
+                "evidence source is outside request", failure_code="evidence_contract"
+            )
         source_text = source.title if field is UnderstandingEvidenceField.TITLE else source.body
         if start < 0 or end <= start or end > len(source_text):
-            raise EventUnderstandingAdapterError("evidence range is outside source field")
+            raise EventUnderstandingAdapterError(
+                "evidence range is outside source field", failure_code="evidence_contract"
+            )
         if source_text[start:end] != exact_text:
             raise EventUnderstandingAdapterError(
-                "evidence text is not the exact source substring at submitted range"
+                "evidence text is not the exact source substring at submitted range",
+                failure_code="evidence_contract",
             )
         return UnderstandingEvidenceRef.from_source(
             source,
@@ -287,46 +304,60 @@ class StructuredJsonEventUnderstandingAdapter:
             event_reasons = _strings(
                 event_raw.get("uncertainty_reasons"), name="event uncertainty_reasons"
             )
-            draft = CanonicalEventDraft(
-                draft_id=_stable_draft_id(request.topic, index, actor.strip(), action.strip(), source_ids),
-                topic=request.topic,
-                actor=actor.strip(),
-                action=action.strip(),
-                object=_optional(event_raw.get("object"), name="object"),
-                event_type=event_type.strip(),
-                source_ids=source_ids,
-                evidence_refs=evidence_refs,
-                article_role=article_role,
-                topic_relation=topic_relation,
-                understanding_status=event_status,
-                event_time=_optional(event_raw.get("event_time"), name="event_time"),
-                participants=participants,
-                metric=_optional(event_raw.get("metric"), name="metric"),
-                unit=_optional(event_raw.get("unit"), name="unit"),
-                value=_optional(event_raw.get("value"), name="value"),
-                attribution=_optional(event_raw.get("attribution"), name="attribution"),
-                parent_event_hint=_optional(
-                    event_raw.get("parent_event_hint"), name="parent_event_hint"
-                ),
-                uncertainty_reasons=event_reasons,
-            )
+            try:
+                draft = CanonicalEventDraft(
+                    draft_id=_stable_draft_id(
+                        request.topic, index, actor.strip(), action.strip(), source_ids
+                    ),
+                    topic=request.topic,
+                    actor=actor.strip(),
+                    action=action.strip(),
+                    object=_optional(event_raw.get("object"), name="object"),
+                    event_type=event_type.strip(),
+                    source_ids=source_ids,
+                    evidence_refs=evidence_refs,
+                    article_role=article_role,
+                    topic_relation=topic_relation,
+                    understanding_status=event_status,
+                    event_time=_optional(event_raw.get("event_time"), name="event_time"),
+                    participants=participants,
+                    metric=_optional(event_raw.get("metric"), name="metric"),
+                    unit=_optional(event_raw.get("unit"), name="unit"),
+                    value=_optional(event_raw.get("value"), name="value"),
+                    attribution=_optional(event_raw.get("attribution"), name="attribution"),
+                    parent_event_hint=_optional(
+                        event_raw.get("parent_event_hint"), name="parent_event_hint"
+                    ),
+                    uncertainty_reasons=event_reasons,
+                )
+            except ContractError as exc:
+                raise EventUnderstandingAdapterError(
+                    str(exc), failure_code="event_draft_contract"
+                ) from exc
             drafts.append(draft)
 
-        result = ArticleUnderstanding(
-            understanding_id=(
-                "article-understanding:"
-                + hashlib.sha256(
-                    "\x1f".join((request.topic, self.engine_id, *request.source_ids)).encode("utf-8")
-                ).hexdigest()[:20]
-            ),
-            topic=request.topic,
-            source_ids=request.source_ids,
-            event_drafts=tuple(drafts),
-            status=status,
-            uncertainty_reasons=uncertainty_reasons,
-        )
+        try:
+            result = ArticleUnderstanding(
+                understanding_id=(
+                    "article-understanding:"
+                    + hashlib.sha256(
+                        "\x1f".join((request.topic, self.engine_id, *request.source_ids)).encode(
+                            "utf-8"
+                        )
+                    ).hexdigest()[:20]
+                ),
+                topic=request.topic,
+                source_ids=request.source_ids,
+                event_drafts=tuple(drafts),
+                status=status,
+                uncertainty_reasons=uncertainty_reasons,
+            )
+        except ContractError as exc:
+            raise EventUnderstandingAdapterError(
+                str(exc), failure_code="article_understanding_contract"
+            ) from exc
         try:
             validate_understanding_result(request, result)
         except ContractError as exc:
-            raise EventUnderstandingAdapterError(str(exc)) from exc
+            raise EventUnderstandingAdapterError(str(exc), failure_code="lineage_contract") from exc
         return result
