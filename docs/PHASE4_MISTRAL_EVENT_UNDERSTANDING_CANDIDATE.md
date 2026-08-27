@@ -1,6 +1,6 @@
 # PHASE 4 — Dedicated Mistral Event Understanding Candidate
 
-Status: `NOT_QUALIFIED UNDER ACTIVE QUALIFICATION V3 / PROVIDER TRANSIENT FAILURE / NO PRODUCTION WIRING`
+Status: `QUALIFICATION_BLOCKED_TRANSIENT UNDER ACTIVE V3 / NO PRODUCTION WIRING`
 
 Candidate provider: Mistral API  
 Candidate model: `mistral-large-2512` (Mistral Large 3)
@@ -28,9 +28,9 @@ This record remains historical evidence only. It cannot be reused as an active V
 
 Before any V3 provider call, the corrected adapter/source contract and bounded failure observability were independently GREEN. Qualification diagnostics expose stage or transport codes only; article body text, date strings, raw exception text, and provider payloads are not written into the qualification artifact.
 
-Mistral was eligible for one V3 qualification because it was already the dedicated `event_understanding_candidate`, while the earlier result belonged to protocol 1 before the corrected V3 source/evidence contract. Groq, Gemini, Cloudflare, local NLI, and Groq 120B were not repurposed because they retain separate generation, verification, or temporal responsibilities.
+Mistral was eligible for one V3 qualification because it was already the dedicated `event_understanding_candidate`, while the earlier result belonged to protocol 1 before the corrected V3 source/evidence contract. Existing generation, verification, and temporal owners were not repurposed.
 
-## Final V3 one-shot outcome
+## V3 run evidence
 
 Exact push run `33094503683`, head `a417ac291031358e547b00d59bccce2412fb9044`:
 
@@ -40,8 +40,7 @@ Exact push run `33094503683`, head `a417ac291031358e547b00d59bccce2412fb9044`:
 - qualification protocol: 3
 - evaluated: 4
 - passed: 0
-- status: `NOT_QUALIFIED`
-- outcome classification: `PROVIDER_TRANSIENT_FAILURE`
+- raw harness status at that head: `NOT_QUALIFIED`
 
 All four fixed cases ended with the same bounded transport code:
 
@@ -55,22 +54,29 @@ Evidence artifact:
 - artifact id: `9656236318`
 - digest: `sha256:5d469827740b3a08c7367fde230beccdd8e82f422491113cebd33a86b51dc666`
 
-The artifact contains only bounded qualification metadata and failure codes. It does not expose source article text, raw provider responses, raw exception messages, or credentials.
+The artifact is immutable evidence of what the V3 harness emitted at that head. It is not rewritten after the lifecycle correction.
 
-## Interpretation boundary
+## Lifecycle correction
 
-This V3 outcome does **not** prove that Mistral Large 3 is semantically incapable of Event Understanding. The provider never produced a qualification result that could be scored for semantic compatibility in these four cases. What is proven is narrower: under the fixed V3 one-shot run, Mistral did not achieve `MINIMUM_COMPATIBILITY_PASS` because every case ended in provider transient transport failure.
+Independent review found that the V3 harness collapsed every non-PASS outcome into `NOT_QUALIFIED`, even when no semantic, schema, adapter, or scoring result had been obtained because the provider was transiently unavailable. That conflated operational unavailability with definitive incompatibility.
 
-The result must therefore not be converted into a semantic defect, prompt problem, schema problem, or evidence-contract problem. It also must not be used to justify candidate-specific prompt/schema/gold/scorer changes followed by retry.
+The qualification lifecycle therefore distinguishes:
 
-## Frozen consequence
+- `MINIMUM_COMPATIBILITY_PASS` — every fixed case passed;
+- `NOT_QUALIFIED` — at least one definitive semantic, adapter, contract, scoring, or non-transient output failure exists;
+- `QUALIFICATION_BLOCKED_TRANSIENT` — all unresolved cases are blocked only by transient provider transport or rate limiting;
+- `NOT_CONFIGURED` — credential preflight stopped before provider evaluation.
 
-Mistral Large 3 is frozen in machine state as `NOT_QUALIFIED` under active qualification protocol V3 with `PROVIDER_TRANSIENT_FAILURE` classification. The historical protocol 1 evidence remains nested as prior evidence rather than being rewritten.
+Under that corrected lifecycle, run `33094503683` is normalized in machine state to `QUALIFICATION_BLOCKED_TRANSIENT`. The original artifact field `status=NOT_QUALIFIED` remains preserved as `raw_run_status` evidence rather than being silently rewritten.
 
-The provider inventory remains `NO_ELIGIBLE_EXISTING_PROVIDER`, `selected_event_understanding_provider` remains null, and `production_wired` remains false. The temporary Mistral V3 qualification workflow is removed after freezing this outcome, so ordinary branch activity cannot silently re-run the candidate.
+This correction does **not** claim Mistral passed qualification and does **not** prove Mistral failed semantic compatibility. It says only that the active V3 qualification remains incomplete because the provider was operationally unavailable during every fixed case.
 
-No production marker, fresh discovery, fresh canonical live, PWA build, deploy, Push, or merge is authorized by this result.
+## Current consequence
 
-A future Event Understanding candidate must be deliberately chosen as a new independent provider/model contract under the single-owner architecture and use protocol V3 unchanged. Existing generation, verification, identity, or temporal owners may not be silently repurposed.
+Machine state is `CANDIDATE_QUALIFICATION_BLOCKED`; `selected_event_understanding_provider` remains null and `production_wired` remains false. A transiently blocked provider is mechanically ineligible for selection.
 
-Even a future `MINIMUM_COMPATIBILITY_PASS` would not itself authorize production wiring. The PHASE 4 migration gate remains closed until its legacy semantic bypasses are removed and identity consumes source-range-bound CanonicalEvent drafts without raw-source reinterpretation.
+No automatic retry is enabled. Any later continuation of Mistral qualification must be separately authorized after the lifecycle correction itself is GREEN and must use exactly the same V3 provider/model/prompt/schema/gold/scorer contract. A transient continuation is not permission to tune the candidate or enter a patch/retry loop.
+
+No production marker, fresh discovery, fresh canonical live, PWA build, deploy, Push, or merge is authorized.
+
+Even a later `MINIMUM_COMPATIBILITY_PASS` would not itself authorize production wiring. The PHASE 4 migration gate remains closed until the legacy semantic bypasses are removed and identity consumes source-range-bound CanonicalEvent drafts without raw-source reinterpretation.

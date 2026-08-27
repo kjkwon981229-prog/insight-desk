@@ -7,10 +7,11 @@ import unittest
 from insight_desk.core.contracts import ContractError
 from insight_desk.event_understanding_provider_status_v2 import (
     AWAITING_PROVIDER_QUALIFICATION,
+    CANDIDATE_QUALIFICATION_BLOCKED,
     ELIGIBLE_CANDIDATE_AVAILABLE,
     MINIMUM_COMPATIBILITY_PASS,
-    NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_CREDENTIAL,
+    QUALIFICATION_BLOCKED_TRANSIENT,
     QUALIFIED_PROVIDER_SELECTED,
     load_provider_status,
     selected_provider,
@@ -23,7 +24,7 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_frozen_status_has_no_eligible_provider_and_no_wiring(self) -> None:
+    def test_current_frozen_status_has_blocked_candidate_and_no_wiring(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
@@ -35,7 +36,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION
         )
         self.assertEqual(
-            payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER
+            payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED
         )
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -45,13 +46,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(gemini["qualification_protocol"], 1)
 
         mistral = payload["providers"]["mistral_large_3"]
-        self.assertEqual(mistral["status"], "NOT_QUALIFIED")
+        self.assertEqual(mistral["status"], QUALIFICATION_BLOCKED_TRANSIENT)
         self.assertEqual(mistral["qualification_protocol"], 3)
         self.assertEqual(mistral["run_id"], 33094503683)
         self.assertEqual(
             mistral["head_sha"],
             "a417ac291031358e547b00d59bccce2412fb9044",
         )
+        self.assertEqual(mistral["raw_run_status"], "NOT_QUALIFIED")
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
         self.assertEqual(
@@ -131,12 +133,28 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_mistral_transient_v3_outcome_cannot_be_selected(self) -> None:
+    def test_mistral_transient_block_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "mistral_large_3"
         with self.assertRaisesRegex(ContractError, "not qualified"):
+            validate_provider_status(mutated)
+
+    def test_transient_block_requires_blocked_inventory(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        mutated["provider_inventory_status"] = "NO_ELIGIBLE_EXISTING_PROVIDER"
+        with self.assertRaisesRegex(ContractError, "CANDIDATE_QUALIFICATION_BLOCKED"):
+            validate_provider_status(mutated)
+
+    def test_transient_block_rejects_semantic_failure_codes(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        mutated["providers"]["mistral_large_3"]["case_failures"][
+            "run413-bok-kbs-rate-decision"
+        ] = ["expected_event_match"]
+        with self.assertRaisesRegex(ContractError, "definitive failure"):
             validate_provider_status(mutated)
 
     def test_openrouter_unqualified_provider_cannot_be_selected(self) -> None:

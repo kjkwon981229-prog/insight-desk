@@ -4,8 +4,8 @@ from __future__ import annotations
 
 This is not production and does not fetch fresh news. It uses only the bounded historical exact-
 source excerpt fixture. A provider/model contract is evaluated once against the active provider-
-neutral qualification protocol. Missing credentials stop before any provider call and are reported
-as NOT_CONFIGURED rather than as a semantic qualification failure.
+neutral qualification protocol. Missing credentials and transient provider unavailability are kept
+separate from definitive semantic/contract qualification failures.
 """
 
 import argparse
@@ -43,6 +43,15 @@ DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
 PROVIDER_CHOICES = ("groq", "gemini", "mistral", "openrouter_nemotron")
+MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
+NOT_QUALIFIED = "NOT_QUALIFIED"
+QUALIFICATION_BLOCKED_TRANSIENT = "QUALIFICATION_BLOCKED_TRANSIENT"
+_TRANSIENT_TRANSPORT_FAILURES = frozenset(
+    {
+        "provider_transport:transient_provider",
+        "provider_transport:rate_limited",
+    }
+)
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -183,12 +192,7 @@ def _score(
     result,
     expected: dict[str, object],
 ) -> tuple[bool, list[str]]:
-    """Score semantic structure without lexical matching on free-form semantic fields.
-
-    Entity preservation is checked only on actor/object/participants. Source facts are checked only
-    through the exact source ranges already bound by the Event Understanding contract. Free-form
-    action, event_type, attribution, and parent hints are never compared to gold wording.
-    """
+    """Score semantic structure without lexical matching on free-form semantic fields."""
 
     failures: list[str] = []
     if result.status.value != str(expected["expected_status"]):
@@ -279,6 +283,32 @@ def _qualification_failure_codes(exc: Exception) -> list[str]:
     return [f"provider_or_contract_error:{type(exc).__name__}"]
 
 
+def _case_is_transiently_blocked(item: dict[str, object]) -> bool:
+    if item.get("passed") is True:
+        return False
+    failures = item.get("failures")
+    if not isinstance(failures, list) or not failures or any(
+        not isinstance(failure, str) for failure in failures
+    ):
+        return False
+    transport_codes = [failure for failure in failures if failure.startswith("provider_transport:")]
+    if len(transport_codes) != 1 or transport_codes[0] not in _TRANSIENT_TRANSPORT_FAILURES:
+        return False
+    return all(
+        failure == transport_codes[0] or failure.startswith("http_status:")
+        for failure in failures
+    )
+
+
+def _qualification_outcome(case_reports: list[dict[str, object]]) -> str:
+    if case_reports and all(item.get("passed") is True for item in case_reports):
+        return MINIMUM_COMPATIBILITY_PASS
+    failed = [item for item in case_reports if item.get("passed") is not True]
+    if failed and all(_case_is_transiently_blocked(item) for item in failed):
+        return QUALIFICATION_BLOCKED_TRANSIENT
+    return NOT_QUALIFIED
+
+
 def _qualification_contract_metadata(qualification: dict[str, object]) -> dict[str, object]:
     return {
         "qualification_protocol": qualification.get("schema_version"),
@@ -367,9 +397,9 @@ def qualify(
         )
 
     passed_cases = sum(1 for item in case_reports if item["passed"] is True)
-    all_pass = bool(case_reports) and passed_cases == len(case_reports)
+    outcome = _qualification_outcome(case_reports)
     report = {
-        "status": "MINIMUM_COMPATIBILITY_PASS" if all_pass else "NOT_QUALIFIED",
+        "status": outcome,
         "provider": provider,
         "model": model,
         **_qualification_contract_metadata(qualification),
@@ -381,7 +411,11 @@ def qualify(
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if all_pass else 1
+    if outcome == MINIMUM_COMPATIBILITY_PASS:
+        return 0
+    if outcome == QUALIFICATION_BLOCKED_TRANSIENT:
+        return 3
+    return 1
 
 
 def main() -> int:

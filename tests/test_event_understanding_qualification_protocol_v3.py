@@ -45,6 +45,7 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
         self.assertEqual(status["structured_output_schema"], "event_understanding_schema_v2")
         self.assertEqual(status["active_qualification_protocol"], 3)
         self.assertEqual(status["qualification_contract_status"], "AWAITING_PROVIDER_QUALIFICATION")
+        self.assertEqual(status["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
@@ -63,11 +64,12 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
                 )
 
         mistral = status["providers"]["mistral_large_3"]
-        self.assertEqual(mistral["status"], "NOT_QUALIFIED")
+        self.assertEqual(mistral["status"], "QUALIFICATION_BLOCKED_TRANSIENT")
         self.assertEqual(
             mistral["qualification_protocol"],
             status["active_qualification_protocol"],
         )
+        self.assertEqual(mistral["raw_run_status"], "NOT_QUALIFIED")
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
         self.assertEqual(mistral["failure_classification"], "PROVIDER_TRANSIENT_FAILURE")
