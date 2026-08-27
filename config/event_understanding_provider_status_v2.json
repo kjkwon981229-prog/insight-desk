@@ -216,6 +216,26 @@
       "artifact_id": 9663362476,
       "artifact_digest": "sha256:4e47046aba32c8d045ac63a259eaf0f18b786c9845c6b0eb4a6686cdf12b289e"
     },
+    "openrouter_gpt54mini": {
+      "provider": "openrouter",
+      "model": "openai/gpt-5.4-mini",
+      "status": "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 3,
+      "run_id": 33114677609,
+      "head_sha": "8a2cab78ef9451f81f7e3b1103664c532e1aaef1",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
+      },
+      "artifact_id": 9664008294,
+      "artifact_digest": "sha256:628cfc8eafea59c4cfd779b250b4839d300a87913be4f06a7beb8f6bab6c91f6"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
