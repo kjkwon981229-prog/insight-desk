@@ -26,6 +26,10 @@ from insight_desk.event_understanding_adapter_v2 import StructuredJsonEventUnder
 from insight_desk.providers.gemini import GEMINI_FLASH_LITE, GeminiStructuredClient
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.mistral import MISTRAL_LARGE_3, MistralStructuredClient
+from insight_desk.providers.openrouter import (
+    OPENROUTER_NEMOTRON_3_SUPER_FREE,
+    OpenRouterNemotronStructuredClient,
+)
 from insight_desk.providers.transport import ProviderTransportError
 
 
@@ -33,7 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v1.json"
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
-PROVIDER_CHOICES = ("groq", "gemini", "mistral")
+PROVIDER_CHOICES = ("groq", "gemini", "mistral", "openrouter_nemotron")
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -128,6 +132,8 @@ def _provider_model(provider: str) -> str:
         return GEMINI_FLASH_LITE
     if provider == "mistral":
         return MISTRAL_LARGE_3
+    if provider == "openrouter_nemotron":
+        return OPENROUTER_NEMOTRON_3_SUPER_FREE
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -138,6 +144,8 @@ def _provider_configured(provider: str) -> bool:
         return GeminiStructuredClient.configured()
     if provider == "mistral":
         return MistralStructuredClient.configured()
+    if provider == "openrouter_nemotron":
+        return OpenRouterNemotronStructuredClient.configured()
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 
@@ -148,6 +156,11 @@ def _provider_client(provider: str):
         return GeminiStructuredClient.from_env(), GEMINI_FLASH_LITE
     if provider == "mistral":
         return MistralStructuredClient.from_env(), MISTRAL_LARGE_3
+    if provider == "openrouter_nemotron":
+        return (
+            OpenRouterNemotronStructuredClient.from_env(),
+            OPENROUTER_NEMOTRON_3_SUPER_FREE,
+        )
     raise ValueError(f"unsupported qualification provider: {provider}")
 
 

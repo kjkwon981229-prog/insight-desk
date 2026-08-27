@@ -6,6 +6,7 @@ import unittest
 
 from insight_desk.core import FailureKind
 from insight_desk.providers.mistral import MISTRAL_LARGE_3
+from insight_desk.providers.openrouter import OPENROUTER_NEMOTRON_3_SUPER_FREE
 from insight_desk.providers.transport import ProviderTransportError
 from scripts.qualify_event_understanding_provider import PROVIDER_CHOICES, _transport_failures
 
@@ -62,9 +63,16 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
         self.assertIn("점도표", case["required_structured_literals"])
 
     def test_candidate_provider_set_is_explicit_and_does_not_include_groq_120b(self) -> None:
-        self.assertEqual(PROVIDER_CHOICES, ("groq", "gemini", "mistral"))
+        self.assertEqual(
+            PROVIDER_CHOICES,
+            ("groq", "gemini", "mistral", "openrouter_nemotron"),
+        )
         self.assertNotIn("groq_120b", PROVIDER_CHOICES)
         self.assertEqual(MISTRAL_LARGE_3, "mistral-large-2512")
+        self.assertEqual(
+            OPENROUTER_NEMOTRON_3_SUPER_FREE,
+            "nvidia/nemotron-3-super-120b-a12b:free",
+        )
 
     def test_transport_failure_report_uses_only_safe_classification_metadata(self) -> None:
         exc = ProviderTransportError(
