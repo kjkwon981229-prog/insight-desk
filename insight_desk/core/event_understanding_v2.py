@@ -3,16 +3,22 @@ from __future__ import annotations
 """Semantic handoff contracts for the Canonical V2 event-understanding stage.
 
 These types define what the semantic owner must produce before authoritative enrichment and
-canonical identity run. They deliberately contain no provider implementation and no keyword
-heuristics. Evidence/fact extraction may assist the owner, but cannot itself become the semantic
-answer simply by being wrapped in a CanonicalEvent.
+canonical identity run. They contain no provider implementation and no keyword heuristics.
+Evidence/fact extraction may assist the owner, but cannot itself become the semantic answer simply
+by being wrapped in a CanonicalEvent.
 """
 
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
+import hashlib
+import re
 
+from .canonical_v2 import SourceDocument
 from .contracts import ContractError
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ArticleEventRole(StrEnum):
@@ -33,6 +39,11 @@ class TopicRelation(StrEnum):
 class UnderstandingStatus(StrEnum):
     RESOLVED = "resolved"
     UNRESOLVED = "unresolved"
+
+
+class UnderstandingEvidenceField(StrEnum):
+    TITLE = "title"
+    BODY = "body"
 
 
 def _require_text(name: str, value: str) -> str:
@@ -67,6 +78,61 @@ def _require_event_time(value: str | None) -> None:
 
 
 @dataclass(frozen=True, slots=True)
+class UnderstandingEvidenceRef:
+    """Exact source-range lineage for one semantic assertion.
+
+    The semantic owner chooses the relevant range, but deterministic validation alone proves that
+    the submitted offsets and digest point to immutable SourceDocument text. No generated quote is
+    trusted as provenance.
+    """
+
+    source_id: str
+    field: UnderstandingEvidenceField
+    start: int
+    end: int
+    text_sha256: str
+
+    def __post_init__(self) -> None:
+        _require_text("source_id", self.source_id)
+        if self.start < 0:
+            raise ContractError("evidence start must be >= 0")
+        if self.end <= self.start:
+            raise ContractError("evidence end must be greater than start")
+        if not _SHA256_RE.fullmatch(self.text_sha256):
+            raise ContractError("evidence text_sha256 must be a lowercase SHA-256 hex digest")
+
+    @classmethod
+    def from_source(
+        cls,
+        source: SourceDocument,
+        *,
+        field: UnderstandingEvidenceField,
+        start: int,
+        end: int,
+    ) -> "UnderstandingEvidenceRef":
+        text = source.title if field is UnderstandingEvidenceField.TITLE else source.body
+        if start < 0 or end <= start or end > len(text):
+            raise ContractError("evidence range is outside source field")
+        return cls(
+            source_id=source.source_id,
+            field=field,
+            start=start,
+            end=end,
+            text_sha256=hashlib.sha256(text[start:end].encode("utf-8")).hexdigest(),
+        )
+
+    def validate_against(self, source: SourceDocument) -> None:
+        if source.source_id != self.source_id:
+            raise ContractError("evidence source_id differs from SourceDocument")
+        text = source.title if self.field is UnderstandingEvidenceField.TITLE else source.body
+        if self.end > len(text):
+            raise ContractError("evidence range is outside SourceDocument field")
+        digest = hashlib.sha256(text[self.start : self.end].encode("utf-8")).hexdigest()
+        if digest != self.text_sha256:
+            raise ContractError("evidence range digest differs from SourceDocument bytes")
+
+
+@dataclass(frozen=True, slots=True)
 class CanonicalEventDraft:
     """One semantically understood event before canonical identity is assigned.
 
@@ -81,7 +147,7 @@ class CanonicalEventDraft:
     action: str
     event_type: str
     source_ids: tuple[str, ...]
-    evidence_ids: tuple[str, ...]
+    evidence_refs: tuple[UnderstandingEvidenceRef, ...]
     article_role: ArticleEventRole
     topic_relation: TopicRelation
     understanding_status: UnderstandingStatus
@@ -106,7 +172,12 @@ class CanonicalEventDraft:
         ):
             _require_text(name, value)
         _require_unique("source_ids", self.source_ids)
-        _require_unique("evidence_ids", self.evidence_ids)
+        if not self.evidence_refs:
+            raise ContractError("event draft requires at least one evidence ref")
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ContractError("event draft evidence refs must be unique")
+        if any(ref.source_id not in self.source_ids for ref in self.evidence_refs):
+            raise ContractError("event draft evidence source is outside draft sources")
         _require_unique("participants", self.participants, allow_empty=True)
         _require_unique("authoritative_fact_ids", self.authoritative_fact_ids, allow_empty=True)
         _require_unique("uncertainty_reasons", self.uncertainty_reasons, allow_empty=True)

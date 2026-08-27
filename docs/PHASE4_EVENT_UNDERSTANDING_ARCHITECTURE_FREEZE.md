@@ -2,7 +2,7 @@
 
 Status: ARCHITECTURE AUDIT / NO FRESH LIVE
 
-This document supersedes the post-#464 live-derived patch direction. The branch has been restored to the pre-live orchestration baseline. No new detector, regex gate, marker, or fresh production run is authorized by this document.
+This document supersedes the post-#464 live-derived patch direction. The branch was restored to the pre-live orchestration baseline. No new detector, regex gate, marker, or fresh production run is authorized by this document.
 
 ## 1. Product invariant
 
@@ -47,6 +47,7 @@ The engine is not a bad-sentence detector.
 ArticleCandidate
     -> SourceDocument
     -> RelevanceDecision
+    -> EventUnderstandingRequest
     -> ArticleUnderstanding
          -> CanonicalEventDraft[]
     -> EnrichedEventDraftSet
@@ -60,7 +61,38 @@ ArticleCandidate
 
 `CanonicalEventDraft` is not a final event identity. `draft_id` is provisional and source-scoped. Only the identity owner may merge drafts, split them, or assign canonical parent/child event identities.
 
-## 4. Uncertainty contract
+## 4. Evidence-lineage contract
+
+The Event Understanding provider may interpret meaning, but it may not invent provenance.
+
+Every event draft cites one or more `UnderstandingEvidenceRef` values:
+
+- `source_id`
+- `field` (`title` or `body`)
+- `start`
+- `end`
+- SHA-256 of the exact referenced substring
+
+The provider chooses the source range. Deterministic code validates only source membership, range bounds, and digest equality against immutable `SourceDocument` bytes. It does not judge the meaning of the cited text.
+
+Legacy `EvidenceSpan` IDs are not the semantic handoff contract and cannot be used to make `SemanticPipeline` the Event Understanding authority.
+
+## 5. Provider-agnostic port
+
+`EventUnderstandingPort` exposes only:
+
+```text
+EventUnderstandingRequest(topic, SourceDocument[])
+    -> ArticleUnderstanding
+```
+
+No model is selected by this contract. A provider adapter must prove suitability separately before production wiring.
+
+- Groq 120B remains frozen to its existing temporal auxiliary role.
+- Groq 20B remains the existing briefing generator until an independent Event Understanding suitability evaluation proves otherwise.
+- Strict JSON-schema capability alone is not semantic-quality evidence.
+
+## 6. Uncertainty contract
 
 `UNRESOLVED` is a first-class semantic result. It must not be converted to DROP by a boolean relevance helper.
 
@@ -74,17 +106,15 @@ Resolution order remains:
 
 Recall must not be purchased by silently discarding unresolved events.
 
-## 5. Provider freeze
-
-This phase does not assign a new role to Groq 120B or any other provider. Provider selection for Event Understanding is a separate wiring decision and must be justified by existing provider capability/evidence before implementation.
-
-## 6. Test policy
+## 7. Test policy
 
 No new live-derived sentence detector regressions.
 
-Allowed tests before runtime rewiring:
+Allowed before runtime rewiring:
 
 - contract invariants for `ArticleUnderstanding` / `CanonicalEventDraft`,
+- exact source-range/digest provenance validation,
+- provider-port conformance with fake adapters,
 - single-owner input/output/forbidden-decision contracts,
 - structural tests proving downstream owners do not reopen source text,
 - production replay only where real source material is actually preserved.

@@ -26,11 +26,18 @@ from .contracts import (
     VerificationVerdict,
     VerifiedClaim,
 )
+from .event_understanding_port_v2 import (
+    EventUnderstandingPort,
+    EventUnderstandingRequest,
+    validate_understanding_result,
+)
 from .event_understanding_v2 import (
     ArticleEventRole,
     ArticleUnderstanding,
     CanonicalEventDraft,
     TopicRelation,
+    UnderstandingEvidenceField,
+    UnderstandingEvidenceRef,
     UnderstandingStatus,
 )
 from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
@@ -69,6 +76,8 @@ __all__ = [
     "Certainty",
     "ContractBundle",
     "ContractError",
+    "EventUnderstandingPort",
+    "EventUnderstandingRequest",
     "EvidenceField",
     "EvidenceSpan",
     "EventFact",
@@ -95,6 +104,8 @@ __all__ = [
     "SourceProvenance",
     "TemporalState",
     "TopicRelation",
+    "UnderstandingEvidenceField",
+    "UnderstandingEvidenceRef",
     "UnderstandingStatus",
     "VerificationCheck",
     "VerificationPolicy",
@@ -108,4 +119,5 @@ __all__ = [
     "precheck_identity",
     "recovery_action",
     "validate_owner_boundaries",
+    "validate_understanding_result",
 ]
