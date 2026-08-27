@@ -3,8 +3,8 @@ from __future__ import annotations
 """Mechanical status contract for Event Understanding provider selection.
 
 This module does not qualify providers and does not wire production. It only prevents an
-unqualified, excluded, credential-blocked, transiently blocked, stale-protocol, or inventory-blocked
-provider from being selected as the Event Understanding owner.
+unqualified, excluded, credential-blocked, transiently blocked, provider-unavailable,
+stale-protocol, or inventory-blocked provider from being selected as the Event Understanding owner.
 """
 
 import json
@@ -19,6 +19,7 @@ NOT_QUALIFIED = "NOT_QUALIFIED"
 EXCLUDED = "EXCLUDED"
 QUALIFICATION_BLOCKED_CREDENTIAL = "QUALIFICATION_BLOCKED_CREDENTIAL"
 QUALIFICATION_BLOCKED_TRANSIENT = "QUALIFICATION_BLOCKED_TRANSIENT"
+QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE = "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE"
 NO_ELIGIBLE_EXISTING_PROVIDER = "NO_ELIGIBLE_EXISTING_PROVIDER"
 CANDIDATE_QUALIFICATION_BLOCKED = "CANDIDATE_QUALIFICATION_BLOCKED"
 ELIGIBLE_CANDIDATE_AVAILABLE = "ELIGIBLE_CANDIDATE_AVAILABLE"
@@ -31,6 +32,7 @@ _ALLOWED_STATUSES = frozenset(
         EXCLUDED,
         QUALIFICATION_BLOCKED_CREDENTIAL,
         QUALIFICATION_BLOCKED_TRANSIENT,
+        QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE,
     }
 )
 _ALLOWED_INVENTORY_STATUSES = frozenset(
@@ -48,6 +50,9 @@ _TRANSIENT_TRANSPORT_CODES = frozenset(
         "provider_transport:transient_provider",
         "provider_transport:rate_limited",
     }
+)
+_PROVIDER_UNAVAILABLE_FAILURE_SET = frozenset(
+    {"provider_transport:invalid_output", "http_status:404"}
 )
 
 
@@ -99,6 +104,45 @@ def _validate_transient_block(raw: Mapping[str, Any], *, provider_id: str, activ
             )
 
 
+def _validate_provider_unavailable_block(
+    raw: Mapping[str, Any], *, provider_id: str, active: int
+) -> None:
+    evaluated_cases = raw.get("evaluated_cases")
+    if type(evaluated_cases) is not int or evaluated_cases <= 0:
+        raise ContractError(
+            f"{provider_id}: provider-unavailable qualification must evaluate cases"
+        )
+    if _qualification_protocol(raw, provider_id=provider_id, active=active) != active:
+        raise ContractError(
+            f"{provider_id}: provider-unavailable qualification must target active protocol"
+        )
+    passed_cases = raw.get("passed_cases")
+    if type(passed_cases) is not int or passed_cases < 0 or passed_cases >= evaluated_cases:
+        raise ContractError(
+            f"{provider_id}: provider-unavailable qualification must remain incomplete"
+        )
+    case_failures = raw.get("case_failures")
+    if not isinstance(case_failures, Mapping) or not case_failures:
+        raise ContractError(
+            f"{provider_id}: provider-unavailable qualification requires bounded case failures"
+        )
+    for case_id, failures in case_failures.items():
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ContractError(
+                f"{provider_id}: provider-unavailable failure case id must be non-empty"
+            )
+        if not isinstance(failures, list) or any(
+            not isinstance(failure, str) for failure in failures
+        ):
+            raise ContractError(
+                f"{provider_id}: provider-unavailable failure codes must be a string array"
+            )
+        if frozenset(failures) != _PROVIDER_UNAVAILABLE_FAILURE_SET or len(failures) != 2:
+            raise ContractError(
+                f"{provider_id}: provider-unavailable qualification contains definitive or non-404 failure"
+            )
+
+
 def validate_provider_status(payload: Mapping[str, Any]) -> None:
     if payload.get("schema_version") != 2:
         raise ContractError("provider status schema_version must be 2")
@@ -123,7 +167,7 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
     if not isinstance(providers, Mapping) or not providers:
         raise ContractError("provider status requires providers mapping")
 
-    transient_blocked_provider_ids: list[str] = []
+    blocked_provider_ids: list[str] = []
     active_pass_provider_ids: list[str] = []
     for provider_id, raw in providers.items():
         if not isinstance(provider_id, str) or not provider_id.strip():
@@ -168,17 +212,22 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
                 )
         if status == QUALIFICATION_BLOCKED_TRANSIENT:
             _validate_transient_block(raw, provider_id=provider_id, active=active_protocol)
-            transient_blocked_provider_ids.append(provider_id)
+            blocked_provider_ids.append(provider_id)
+        if status == QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE:
+            _validate_provider_unavailable_block(
+                raw, provider_id=provider_id, active=active_protocol
+            )
+            blocked_provider_ids.append(provider_id)
 
     selected = payload.get("selected_event_understanding_provider")
     if (
         selected is None
-        and transient_blocked_provider_ids
+        and blocked_provider_ids
         and not active_pass_provider_ids
         and inventory_status != CANDIDATE_QUALIFICATION_BLOCKED
     ):
         raise ContractError(
-            "transiently blocked candidate requires CANDIDATE_QUALIFICATION_BLOCKED inventory"
+            "blocked candidate requires CANDIDATE_QUALIFICATION_BLOCKED inventory"
         )
 
     production_wired = payload.get("production_wired")
