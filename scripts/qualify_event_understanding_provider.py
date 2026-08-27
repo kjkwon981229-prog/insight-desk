@@ -4,7 +4,7 @@ from __future__ import annotations
 
 This is not production and does not fetch fresh news. It uses only the bounded historical exact-
 source excerpt fixture. A provider/model contract is evaluated once against the active provider-
-neutral qualification protocol. Missing credentials and transient provider unavailability are kept
+neutral qualification protocol. Missing credentials and provider availability failures are kept
 separate from definitive semantic/contract qualification failures.
 """
 
@@ -61,6 +61,7 @@ PROVIDER_CHOICES = (
 MINIMUM_COMPATIBILITY_PASS = "MINIMUM_COMPATIBILITY_PASS"
 NOT_QUALIFIED = "NOT_QUALIFIED"
 QUALIFICATION_BLOCKED_TRANSIENT = "QUALIFICATION_BLOCKED_TRANSIENT"
+QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE = "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE"
 _TRANSIENT_TRANSPORT_FAILURES = frozenset(
     {
         "provider_transport:transient_provider",
@@ -327,12 +328,25 @@ def _case_is_transiently_blocked(item: dict[str, object]) -> bool:
     )
 
 
+def _case_is_provider_unavailable(item: dict[str, object]) -> bool:
+    if item.get("passed") is True:
+        return False
+    failures = item.get("failures")
+    if not isinstance(failures, list) or len(failures) != 2 or any(
+        not isinstance(failure, str) for failure in failures
+    ):
+        return False
+    return set(failures) == {"provider_transport:invalid_output", "http_status:404"}
+
+
 def _qualification_outcome(case_reports: list[dict[str, object]]) -> str:
     if case_reports and all(item.get("passed") is True for item in case_reports):
         return MINIMUM_COMPATIBILITY_PASS
     failed = [item for item in case_reports if item.get("passed") is not True]
     if failed and all(_case_is_transiently_blocked(item) for item in failed):
         return QUALIFICATION_BLOCKED_TRANSIENT
+    if failed and all(_case_is_provider_unavailable(item) for item in failed):
+        return QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE
     return NOT_QUALIFIED
 
 
@@ -442,6 +456,8 @@ def qualify(
         return 0
     if outcome == QUALIFICATION_BLOCKED_TRANSIENT:
         return 3
+    if outcome == QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE:
+        return 4
     return 1
 
 
