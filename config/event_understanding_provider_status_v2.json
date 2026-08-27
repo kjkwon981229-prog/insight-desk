@@ -196,6 +196,26 @@
       "artifact_id": 9662688106,
       "artifact_digest": "sha256:7c464425cf1ddaede9458905664f4b1038e81b1d7a10c5e1f0c72cc01e8d1371"
     },
+    "openrouter_glm52_free": {
+      "provider": "openrouter",
+      "model": "z-ai/glm-5.2:free",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 3,
+      "run_id": 33113044704,
+      "head_sha": "33fb4969807387fc1ea4662300397da7a6bf34d9",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "MIXED_ADAPTER_AND_RATE_LIMIT_FAILURE",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": ["provider_transport:rate_limited", "http_status:429"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:event_draft_contract"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:evidence_contract"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:rate_limited", "http_status:429"]
+      },
+      "artifact_id": 9663362476,
+      "artifact_digest": "sha256:4e47046aba32c8d045ac63a259eaf0f18b786c9845c6b0eb4a6686cdf12b289e"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
