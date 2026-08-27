@@ -65,7 +65,13 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
     def test_candidate_provider_set_is_explicit_and_does_not_include_groq_120b(self) -> None:
         self.assertEqual(
             PROVIDER_CHOICES,
-            ("groq", "gemini", "mistral", "openrouter_nemotron"),
+            (
+                "groq",
+                "gemini",
+                "mistral",
+                "openrouter_nemotron",
+                "cohere_command_a_plus",
+            ),
         )
         self.assertNotIn("groq_120b", PROVIDER_CHOICES)
         self.assertEqual(MISTRAL_LARGE_3, "mistral-large-2512")
