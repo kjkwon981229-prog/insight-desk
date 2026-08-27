@@ -73,6 +73,7 @@ class EventUnderstandingQualificationV1Tests(unittest.TestCase):
                 "cohere_command_a_plus",
                 "cerebras_glm_47",
                 "groq_qwen38_27b",
+                "gemini_37_flash",
             ),
         )
         self.assertNotIn("groq_120b", PROVIDER_CHOICES)
