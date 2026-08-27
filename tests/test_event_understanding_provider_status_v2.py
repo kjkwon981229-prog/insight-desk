@@ -110,6 +110,45 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(openrouter["previous_v2_evidence"]["run_id"], 33069019702)
         self.assertEqual(openrouter["previous_v1_evidence"]["passed_cases"], 1)
         self.assertEqual(openrouter["previous_v1_evidence"]["run_id"], 33057003750)
+
+        qwen = payload["providers"]["groq_qwen38_27b"]
+        self.assertEqual(qwen["provider"], "groq")
+        self.assertEqual(qwen["model"], "qwen/qwen3.8-27b")
+        self.assertEqual(qwen["status"], "NOT_QUALIFIED")
+        self.assertEqual(qwen["qualification_protocol"], 3)
+        self.assertEqual(qwen["run_id"], 33109809796)
+        self.assertEqual(
+            qwen["head_sha"],
+            "b24c9961ba64c6250e819fe26198739f66960596",
+        )
+        self.assertEqual(qwen["evaluated_cases"], 4)
+        self.assertEqual(qwen["passed_cases"], 0)
+        self.assertEqual(
+            qwen["failure_classification"],
+            "MIXED_ADAPTER_AND_SEMANTIC_FAILURE",
+        )
+        self.assertEqual(
+            qwen["case_failures"]["run413-bok-kbs-rate-decision"],
+            ["adapter_contract:event_draft_contract"],
+        )
+        self.assertEqual(
+            qwen["case_failures"]["run413-bok-kmib-outlook-child"],
+            ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        )
+        self.assertEqual(
+            qwen["case_failures"]["run413-kpop-alphadriveone-actor-preserved"],
+            ["adapter_contract:evidence_contract"],
+        )
+        self.assertEqual(
+            qwen["case_failures"]["run413-kbo-osen-same-game-source"],
+            ["adapter_contract:evidence_contract"],
+        )
+        self.assertEqual(qwen["artifact_id"], 9662058073)
+        self.assertEqual(
+            qwen["artifact_digest"],
+            "sha256:f8295c8c0e81c04334ef7ec2a221cd09b8e675decaa5e7b35dbd209a0cb8cb11",
+        )
+
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(
             payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"],
@@ -162,6 +201,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         mutated = deepcopy(payload)
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "openrouter_nemotron_free"
+        with self.assertRaisesRegex(ContractError, "not qualified"):
+            validate_provider_status(mutated)
+
+    def test_qwen_unqualified_provider_cannot_be_selected(self) -> None:
+        payload = load_provider_status(STATUS_PATH)
+        mutated = deepcopy(payload)
+        self._mark_selection_state(mutated)
+        mutated["selected_event_understanding_provider"] = "groq_qwen38_27b"
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
