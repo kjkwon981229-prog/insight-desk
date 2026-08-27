@@ -53,7 +53,13 @@ def response(*, evidence_text: str = BODY) -> dict[str, object]:
                 "parent_event_hint": "금융통화위원회 회의",
                 "uncertainty_reasons": [],
                 "evidence": [
-                    {"source_id": "source:1", "field": "body", "text": evidence_text}
+                    {
+                        "source_id": "source:1",
+                        "field": "body",
+                        "text": evidence_text,
+                        "start": 0,
+                        "end": len(BODY),
+                    }
                 ],
             }
         ],

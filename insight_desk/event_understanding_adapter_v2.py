@@ -80,8 +80,10 @@ _EVENT_SCHEMA: dict[str, object] = {
                         "enum": [field.value for field in UnderstandingEvidenceField],
                     },
                     "text": {"type": "string"},
+                    "start": {"type": "integer", "minimum": 0},
+                    "end": {"type": "integer", "minimum": 1},
                 },
-                "required": ["source_id", "field", "text"],
+                "required": ["source_id", "field", "text", "start", "end"],
                 "additionalProperties": False,
             },
         },
@@ -172,8 +174,9 @@ def build_event_understanding_prompt(request: EventUnderstandingRequest) -> str:
         "scope. A background or incidental reference must not be upgraded to DIRECT.\n"
         "If the meaning is not supportable from the supplied source, return UNRESOLVED rather than "
         "guessing.\n"
-        "For every event, evidence.text must be copied verbatim as an exact contiguous substring "
-        "from the specified SOURCE_ID and title/body field. Do not paraphrase evidence.\n"
+        "For every event, evidence.text must be copied verbatim from the specified SOURCE_ID and "
+        "title/body field. evidence.start is the inclusive character offset and evidence.end is "
+        "the exclusive character offset selecting that exact text. Do not paraphrase evidence.\n"
         "Use PUBLICATION_TIME only as the temporal anchor for relative or partial dates stated in "
         "that source. If the event date still cannot be resolved, leave event_time empty rather "
         "than guessing.\n"
@@ -206,10 +209,14 @@ class StructuredJsonEventUnderstandingAdapter:
         source_id = raw.get("source_id")
         field_raw = raw.get("field")
         exact_text = raw.get("text")
+        start = raw.get("start")
+        end = raw.get("end")
         if not isinstance(source_id, str) or not source_id.strip():
             raise EventUnderstandingAdapterError("evidence source_id must be non-empty")
         if not isinstance(field_raw, str) or not isinstance(exact_text, str) or not exact_text:
             raise EventUnderstandingAdapterError("evidence field/text is invalid")
+        if type(start) is not int or type(end) is not int:
+            raise EventUnderstandingAdapterError("evidence start/end must be integers")
         try:
             field = UnderstandingEvidenceField(field_raw)
         except ValueError as exc:
@@ -218,16 +225,17 @@ class StructuredJsonEventUnderstandingAdapter:
         if source is None:
             raise EventUnderstandingAdapterError("evidence source is outside request")
         source_text = source.title if field is UnderstandingEvidenceField.TITLE else source.body
-        start = source_text.find(exact_text)
-        if start < 0:
-            raise EventUnderstandingAdapterError("evidence text is not an exact source substring")
-        if source_text.find(exact_text, start + 1) >= 0:
-            raise EventUnderstandingAdapterError("evidence text is ambiguous within source field")
+        if start < 0 or end <= start or end > len(source_text):
+            raise EventUnderstandingAdapterError("evidence range is outside source field")
+        if source_text[start:end] != exact_text:
+            raise EventUnderstandingAdapterError(
+                "evidence text is not the exact source substring at submitted range"
+            )
         return UnderstandingEvidenceRef.from_source(
             source,
             field=field,
             start=start,
-            end=start + len(exact_text),
+            end=end,
         )
 
     def understand(self, request: EventUnderstandingRequest) -> ArticleUnderstanding:
