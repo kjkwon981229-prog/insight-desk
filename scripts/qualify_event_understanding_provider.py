@@ -3,9 +3,9 @@ from __future__ import annotations
 """One-shot minimum qualification for an Event Understanding provider.
 
 This is not production and does not fetch fresh news. It uses only the bounded historical exact-
-source excerpt fixture. A failure marks the tested provider/model contract NOT_QUALIFIED; this
-script is not a prompt-tuning loop. Missing credentials stop before any provider call and are
-reported as NOT_CONFIGURED rather than as a semantic qualification failure.
+source excerpt fixture. A provider/model contract is evaluated once against the active provider-
+neutral qualification protocol. Missing credentials stop before any provider call and are reported
+as NOT_CONFIGURED rather than as a semantic qualification failure.
 """
 
 import argparse
@@ -20,6 +20,7 @@ from insight_desk.core import (
     EventUnderstandingRequest,
     SourceDocument,
     TopicRelation,
+    UnderstandingEvidenceField,
     UnderstandingStatus,
 )
 from insight_desk.event_understanding_adapter_v2 import StructuredJsonEventUnderstandingAdapter
@@ -34,7 +35,7 @@ from insight_desk.providers.transport import ProviderTransportError
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v1.json"
+DEFAULT_QUALIFICATION = ROOT / "tests/fixtures/event_understanding_qualification_v2.json"
 DEFAULT_SCOPES = ROOT / "config/semantic_topics_v2.json"
 DEFAULT_REPORT = ROOT / "event-understanding-qualification.json"
 PROVIDER_CHOICES = ("groq", "gemini", "mistral", "openrouter_nemotron")
@@ -77,31 +78,120 @@ def _source_from_case(case: dict[str, object], replay_clock: datetime) -> Source
     )
 
 
-def _structured_text(result) -> str:
-    values: list[str] = []
-    for draft in result.event_drafts:
-        values.extend((draft.actor, draft.action, draft.event_type))
-        for optional in (
-            draft.object,
-            draft.event_time,
-            draft.metric,
-            draft.unit,
-            draft.value,
-            draft.attribution,
-            draft.parent_event_hint,
-        ):
-            if optional:
-                values.append(optional)
-        values.extend(draft.participants)
+def _expected_strings(value: object, *, name: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"{name} must be a string array")
+    values = tuple(item.strip() for item in value if item.strip())
+    if not values:
+        raise ValueError(f"{name} must contain at least one value")
+    return values
+
+
+def _draft_entity_text(draft) -> str:
+    values = [draft.actor]
+    if draft.object:
+        values.append(draft.object)
+    values.extend(draft.participants)
     return "\n".join(values)
 
 
-def _score(result, expected: dict[str, object]) -> tuple[bool, list[str]]:
+def _draft_evidence_text(request: EventUnderstandingRequest, draft) -> str:
+    sources = {source.source_id: source for source in request.sources}
+    values: list[str] = []
+    for ref in draft.evidence_refs:
+        source = sources.get(ref.source_id)
+        if source is None:
+            continue
+        text = source.title if ref.field is UnderstandingEvidenceField.TITLE else source.body
+        values.append(text[ref.start : ref.end])
+    return "\n".join(values)
+
+
+def _draft_matches_expected_event(
+    request: EventUnderstandingRequest,
+    draft,
+    expected_event: dict[str, object],
+) -> bool:
+    roles = _expected_strings(expected_event.get("allowed_article_roles"), name="allowed_article_roles")
+    relations = _expected_strings(
+        expected_event.get("allowed_topic_relations"), name="allowed_topic_relations"
+    )
+    status = str(expected_event.get("understanding_status", ""))
+    if draft.article_role.value not in roles:
+        return False
+    if draft.topic_relation.value not in relations:
+        return False
+    if draft.understanding_status.value != status:
+        return False
+
+    entity_text = _draft_entity_text(draft)
+    entity_literals = expected_event.get("required_entity_literals", [])
+    if not isinstance(entity_literals, list) or any(not isinstance(item, str) for item in entity_literals):
+        raise ValueError("required_entity_literals must be a string array")
+    if any(literal and literal not in entity_text for literal in entity_literals):
+        return False
+
+    evidence_text = _draft_evidence_text(request, draft)
+    evidence_literals = _expected_strings(
+        expected_event.get("required_evidence_literals"), name="required_evidence_literals"
+    )
+    if any(literal not in evidence_text for literal in evidence_literals):
+        return False
+    return True
+
+
+def _distinct_expected_events_match(
+    request: EventUnderstandingRequest,
+    drafts: tuple[object, ...],
+    expected_events: list[dict[str, object]],
+) -> bool:
+    options: list[tuple[int, ...]] = []
+    for expected_event in expected_events:
+        matches = tuple(
+            index
+            for index, draft in enumerate(drafts)
+            if _draft_matches_expected_event(request, draft, expected_event)
+        )
+        if not matches:
+            return False
+        options.append(matches)
+
+    order = sorted(range(len(options)), key=lambda index: len(options[index]))
+
+    def assign(position: int, used: set[int]) -> bool:
+        if position == len(order):
+            return True
+        expected_index = order[position]
+        for draft_index in options[expected_index]:
+            if draft_index in used:
+                continue
+            used.add(draft_index)
+            if assign(position + 1, used):
+                return True
+            used.remove(draft_index)
+        return False
+
+    return assign(0, set())
+
+
+def _score(
+    request: EventUnderstandingRequest,
+    result,
+    expected: dict[str, object],
+) -> tuple[bool, list[str]]:
+    """Score semantic structure without lexical matching on free-form semantic fields.
+
+    Entity preservation is checked only on actor/object/participants. Source facts are checked only
+    through the exact source ranges already bound by the Event Understanding contract. Free-form
+    action, event_type, attribution, and parent hints are never compared to gold wording.
+    """
+
     failures: list[str] = []
     if result.status.value != str(expected["expected_status"]):
         failures.append("status")
     if len(result.event_drafts) < int(expected["event_drafts_min"]):
         failures.append("event_drafts_min")
+
     primary_direct = sum(
         1
         for draft in result.event_drafts
@@ -111,14 +201,18 @@ def _score(result, expected: dict[str, object]) -> tuple[bool, list[str]]:
     )
     if primary_direct < int(expected["primary_direct_min"]):
         failures.append("primary_direct_min")
-    structured = _structured_text(result)
-    required_literals = expected.get("required_structured_literals", [])
-    if not isinstance(required_literals, list):
-        raise ValueError("required_structured_literals must be an array")
-    for literal in required_literals:
-        if not isinstance(literal, str) or literal not in structured:
-            failures.append("required_structured_literal")
-            break
+
+    expected_events_raw = expected.get("expected_events")
+    if not isinstance(expected_events_raw, list) or not expected_events_raw:
+        raise ValueError("expected_events must be a non-empty array")
+    expected_events: list[dict[str, object]] = []
+    for raw in expected_events_raw:
+        if not isinstance(raw, dict):
+            raise ValueError("expected event must be an object")
+        expected_events.append(raw)
+    if not _distinct_expected_events_match(request, result.event_drafts, expected_events):
+        failures.append("expected_event_match")
+
     parent_hint_count = sum(1 for draft in result.event_drafts if draft.parent_event_hint)
     if parent_hint_count < int(expected.get("parent_hint_min", 0)):
         failures.append("parent_hint_min")
@@ -197,6 +291,7 @@ def qualify(
             "status": "NOT_CONFIGURED",
             "provider": provider,
             "model": _provider_model(provider),
+            "qualification_protocol": qualification.get("schema_version"),
             "evaluated_cases": 0,
             "passed_cases": 0,
             "source_mode": "historical_exact_source_excerpt_only",
@@ -234,7 +329,7 @@ def qualify(
         )
         try:
             result = adapter.understand(request)
-            passed, failures = _score(result, expected)
+            passed, failures = _score(request, result, expected)
         except ProviderTransportError as exc:
             passed = False
             failures = _transport_failures(exc)
@@ -255,6 +350,7 @@ def qualify(
         "status": "MINIMUM_COMPATIBILITY_PASS" if all_pass else "NOT_QUALIFIED",
         "provider": provider,
         "model": model,
+        "qualification_protocol": qualification.get("schema_version"),
         "evaluated_cases": len(case_reports),
         "passed_cases": passed_cases,
         "source_mode": "historical_exact_source_excerpt_only",
