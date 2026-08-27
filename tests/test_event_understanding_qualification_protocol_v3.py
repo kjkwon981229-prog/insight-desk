@@ -48,12 +48,31 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
-        for provider_id, record in status["providers"].items():
-            if record["status"] != "NOT_QUALIFIED" or record.get("evaluated_cases", 0) == 0:
-                continue
+        historical_protocols = {
+            "groq_20b": 1,
+            "gemini_flash_lite": 1,
+            "mistral_large_3": 1,
+        }
+        for provider_id, expected_protocol in historical_protocols.items():
             with self.subTest(provider_id=provider_id):
-                self.assertIn(record["qualification_protocol"], (1, 2))
-                self.assertLess(record["qualification_protocol"], status["active_qualification_protocol"])
+                record = status["providers"][provider_id]
+                self.assertEqual(record["status"], "NOT_QUALIFIED")
+                self.assertEqual(record["qualification_protocol"], expected_protocol)
+                self.assertLess(
+                    record["qualification_protocol"],
+                    status["active_qualification_protocol"],
+                )
+
+        openrouter = status["providers"]["openrouter_nemotron_free"]
+        self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
+        self.assertEqual(
+            openrouter["qualification_protocol"],
+            status["active_qualification_protocol"],
+        )
+        self.assertEqual(openrouter["evaluated_cases"], 4)
+        self.assertEqual(openrouter["passed_cases"], 0)
+        self.assertEqual(openrouter["previous_v2_evidence"]["qualification_protocol"], 2)
+        self.assertEqual(openrouter["previous_v1_evidence"]["qualification_protocol"], 1)
 
 
 if __name__ == "__main__":

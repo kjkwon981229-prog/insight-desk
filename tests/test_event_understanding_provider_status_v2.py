@@ -51,14 +51,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(mistral["failure_classification"], "ContractError")
         openrouter = payload["providers"]["openrouter_nemotron_free"]
         self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
-        self.assertEqual(openrouter["qualification_protocol"], 2)
-        self.assertEqual(openrouter["run_id"], 33069019702)
+        self.assertEqual(openrouter["qualification_protocol"], 3)
+        self.assertEqual(openrouter["run_id"], 33093075809)
+        self.assertEqual(
+            openrouter["head_sha"],
+            "84ec074fda93d7fa1e4537e6bbfde26d5a58eb31",
+        )
         self.assertEqual(openrouter["evaluated_cases"], 4)
         self.assertEqual(openrouter["passed_cases"], 0)
-        self.assertEqual(
-            openrouter["failure_classification"],
-            "MIXED_CONTRACT_AND_INVALID_OUTPUT",
-        )
         for case_id in (
             "run413-bok-kbs-rate-decision",
             "run413-bok-kmib-outlook-child",
@@ -66,13 +66,19 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         ):
             self.assertEqual(
                 openrouter["case_failures"][case_id],
-                ["provider_or_contract_error:ContractError"],
+                ["provider_transport:invalid_output"],
             )
         self.assertEqual(
             openrouter["case_failures"]["run413-kbo-osen-same-game-source"],
-            ["provider_transport:invalid_output"],
+            ["adapter_contract:evidence_contract"],
         )
-        self.assertEqual(openrouter["artifact_id"], 9644987975)
+        self.assertEqual(openrouter["artifact_id"], 9655338800)
+        self.assertEqual(
+            openrouter["artifact_digest"],
+            "sha256:0f06113d6ce5e5affcadde365474bbd12d4016f88ed7fa54a97d8a4e625834dc",
+        )
+        self.assertEqual(openrouter["previous_v2_evidence"]["qualification_protocol"], 2)
+        self.assertEqual(openrouter["previous_v2_evidence"]["run_id"], 33069019702)
         self.assertEqual(openrouter["previous_v1_evidence"]["passed_cases"], 1)
         self.assertEqual(openrouter["previous_v1_evidence"]["run_id"], 33057003750)
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")

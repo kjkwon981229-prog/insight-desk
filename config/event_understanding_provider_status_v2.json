@@ -58,28 +58,51 @@
       "model": "nvidia/nemotron-3-super-120b-a12b:free",
       "status": "NOT_QUALIFIED",
       "existing_responsibility": "event_understanding_candidate",
-      "qualification_protocol": 2,
-      "run_id": 33069019702,
-      "head_sha": "f6e379f0bb1ca8d092e2d69f905c223bbc0a5f6a",
+      "qualification_protocol": 3,
+      "run_id": 33093075809,
+      "head_sha": "84ec074fda93d7fa1e4537e6bbfde26d5a58eb31",
       "evaluated_cases": 4,
       "passed_cases": 0,
-      "failure_classification": "MIXED_CONTRACT_AND_INVALID_OUTPUT",
       "case_failures": {
         "run413-bok-kbs-rate-decision": [
-          "provider_or_contract_error:ContractError"
+          "provider_transport:invalid_output"
         ],
         "run413-bok-kmib-outlook-child": [
-          "provider_or_contract_error:ContractError"
+          "provider_transport:invalid_output"
         ],
         "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_or_contract_error:ContractError"
+          "provider_transport:invalid_output"
         ],
         "run413-kbo-osen-same-game-source": [
-          "provider_transport:invalid_output"
+          "adapter_contract:evidence_contract"
         ]
       },
-      "artifact_id": 9644987975,
-      "artifact_digest": "sha256:d01c86cb1c372faa678fb038bda4edc169dfd3ed05313d35b815d40ff3d32008",
+      "artifact_id": 9655338800,
+      "artifact_digest": "sha256:0f06113d6ce5e5affcadde365474bbd12d4016f88ed7fa54a97d8a4e625834dc",
+      "previous_v2_evidence": {
+        "qualification_protocol": 2,
+        "run_id": 33069019702,
+        "head_sha": "f6e379f0bb1ca8d092e2d69f905c223bbc0a5f6a",
+        "evaluated_cases": 4,
+        "passed_cases": 0,
+        "failure_classification": "MIXED_CONTRACT_AND_INVALID_OUTPUT",
+        "case_failures": {
+          "run413-bok-kbs-rate-decision": [
+            "provider_or_contract_error:ContractError"
+          ],
+          "run413-bok-kmib-outlook-child": [
+            "provider_or_contract_error:ContractError"
+          ],
+          "run413-kpop-alphadriveone-actor-preserved": [
+            "provider_or_contract_error:ContractError"
+          ],
+          "run413-kbo-osen-same-game-source": [
+            "provider_transport:invalid_output"
+          ]
+        },
+        "artifact_id": 9644987975,
+        "artifact_digest": "sha256:d01c86cb1c372faa678fb038bda4edc169dfd3ed05313d35b815d40ff3d32008"
+      },
       "previous_v1_evidence": {
         "qualification_protocol": 1,
         "run_id": 33057003750,
