@@ -72,7 +72,7 @@ def _source_from_case(case: dict[str, object], replay_clock: datetime) -> Source
         title=str(case["search_title"]),
         body=body,
         fetched_at=replay_clock,
-        publication_time=replay_clock,
+        publication_time=None,
         retrieved_via="historical_exact_source_excerpt_qualification",
         content_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
     )
