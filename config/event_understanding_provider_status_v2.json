@@ -139,6 +139,34 @@
         "artifact_digest": "sha256:20a5a412407d5d1e80e4f14b1a23622872f3932cdf8f882debed6c0e85d90b61"
       }
     },
+    "cohere_command_a_plus": {
+      "provider": "cohere",
+      "model": "command-a-plus-05-2026",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 3,
+      "run_id": 33104385499,
+      "head_sha": "c3a7bc7bcd7f81b9f8f31ef14922950f7a49ea57",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "ADAPTER_OUTPUT_CONTRACT",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": [
+          "adapter_contract:adapter_output_contract"
+        ],
+        "run413-bok-kmib-outlook-child": [
+          "adapter_contract:adapter_output_contract"
+        ],
+        "run413-kpop-alphadriveone-actor-preserved": [
+          "adapter_contract:adapter_output_contract"
+        ],
+        "run413-kbo-osen-same-game-source": [
+          "adapter_contract:adapter_output_contract"
+        ]
+      },
+      "artifact_id": 9659910291,
+      "artifact_digest": "sha256:73594960aa92f046fef4e7ee151721b6d40ba09e064963f9d3f5ba619f567259"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",

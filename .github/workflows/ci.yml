@@ -70,27 +70,3 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
-
-  semantic-v3-provider-candidate-cohere-command-a-plus:
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, '[semantic-v3-candidate:cohere-command-a-plus]')
-    needs: [infrastructure, historical-production-replay]
-    runs-on: ubuntu-24.04
-    env:
-      COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-    steps:
-      - name: Checkout exact V3 candidate head
-        uses: actions/checkout@v6
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12.10"
-      - name: Run one-shot Cohere Command A+ Event Understanding V3 qualification
-        run: python -m scripts.qualify_event_understanding_provider --provider cohere_command_a_plus
-      - name: Upload bounded V3 qualification report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: event-understanding-v3-cohere-command-a-plus-candidate-${{ github.run_id }}
-          path: event-understanding-qualification.json
-          if-no-files-found: ignore
-          retention-days: 7
