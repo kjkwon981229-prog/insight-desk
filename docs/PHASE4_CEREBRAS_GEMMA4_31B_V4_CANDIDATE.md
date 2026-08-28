@@ -46,3 +46,5 @@ The client is qualification-only and is not exported from `insight_desk.provider
 ## Execution gate
 
 No live Cerebras call is permitted until the exact candidate head passes ordinary Infrastructure, historical production replay, and Phase 6 correctness/recall. Only then may one marker-gated one-shot V4 qualification run. The first valid result for exact route `gemma-4-31b` is final and must be frozen before any further provider work.
+
+Preflight lane-install head `1737cd489dfa6bf87d40e4d71c153246e19c0c8d` passed Infrastructure, historical production replay, and Phase 6 in run `33168345153`; the provider job was SKIPPED because that commit carried no qualification marker. This marker commit is therefore the one permitted qualification trigger.
