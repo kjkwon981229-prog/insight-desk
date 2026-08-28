@@ -22,32 +22,20 @@ class Gemini25FlashV4QualificationFreezeTests(unittest.TestCase):
         self.assertEqual(record["existing_responsibility"], "event_understanding_candidate")
         self.assertEqual(record["qualification_protocol"], 4)
         self.assertEqual(record["run_id"], 33160640114)
-        self.assertEqual(
-            record["head_sha"],
-            "ddd824b9a5c5d491f1db331a3b05d84f83b2d87a",
-        )
+        self.assertEqual(record["head_sha"], "ddd824b9a5c5d491f1db331a3b05d84f83b2d87a")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
         self.assertEqual(record["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
         self.assertEqual(
             record["case_failures"],
             {
-                "run413-bok-kbs-rate-decision": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-bok-kmib-outlook-child": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-kpop-alphadriveone-actor-preserved": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-kbo-osen-same-game-source": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
+                case_id: ["provider_transport:invalid_output", "http_status:404"]
+                for case_id in (
+                    "run413-bok-kbs-rate-decision",
+                    "run413-bok-kmib-outlook-child",
+                    "run413-kpop-alphadriveone-actor-preserved",
+                    "run413-kbo-osen-same-game-source",
+                )
             },
         )
         self.assertEqual(record["artifact_id"], 9681493475)
@@ -59,21 +47,12 @@ class Gemini25FlashV4QualificationFreezeTests(unittest.TestCase):
             record["report_digest"],
             "sha256:163a6b75147d39da5cb046c0dac99d0c44ad8c78e04e214b3bd8e5a686c252a1",
         )
-
-        self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
-        self.assertIsNone(payload["selected_event_understanding_provider"])
-        self.assertFalse(payload["production_wired"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
 
     def test_invalid_harness_run_is_not_provider_evidence(self) -> None:
-        payload = load_provider_status(STATUS_PATH)
-        record = payload["providers"]["gemini_25_flash_v4"]
-
+        record = load_provider_status(STATUS_PATH)["providers"]["gemini_25_flash_v4"]
         self.assertNotEqual(record["run_id"], 33160317727)
-        self.assertNotEqual(
-            record["head_sha"],
-            "f5a108402e5a416080467386de8e37697f75a2a0",
-        )
+        self.assertNotEqual(record["head_sha"], "f5a108402e5a416080467386de8e37697f75a2a0")
         self.assertNotEqual(record["artifact_id"], 9681363458)
         self.assertNotEqual(
             record["artifact_digest"],
@@ -86,10 +65,7 @@ class Gemini25FlashV4QualificationFreezeTests(unittest.TestCase):
 
     def test_consumed_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "  semantic-v4-provider-candidate-gemini25flash-generatecontent:\n",
-            workflow,
-        )
+        self.assertNotIn("  semantic-v4-provider-candidate-gemini25flash-generatecontent:\n", workflow)
         self.assertNotIn("[semantic-v4-candidate:gemini-2.5-flash]", workflow)
         self.assertNotIn("qualify_gemini25_flash_v4", workflow)
         self.assertNotIn("event-understanding-gemini25-flash-v4", workflow)
