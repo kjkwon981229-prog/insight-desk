@@ -60,6 +60,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
     def _without_active_v4_block(payload: dict[str, object]) -> dict[str, object]:
         mutated = deepcopy(payload)
         del mutated["providers"]["gemini_25_pro_v4"]
+        del mutated["providers"]["gemini_25_flash_v4"]
         mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(mutated)
         return mutated
@@ -89,6 +90,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
                 "gemini_36_flash_v4",
                 "gemini_25_pro_v4",
                 "gemini_35_flash_lite_v4",
+                "gemini_25_flash_v4",
             ],
         )
         gemini35 = status["providers"]["gemini_35_flash_v4"]
@@ -107,6 +109,13 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertEqual(gemini35lite["status"], "NOT_QUALIFIED")
         self.assertEqual(gemini35lite["evaluated_cases"], 4)
         self.assertEqual(gemini35lite["passed_cases"], 1)
+        gemini25flash = status["providers"]["gemini_25_flash_v4"]
+        self.assertEqual(
+            gemini25flash["status"],
+            "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE",
+        )
+        self.assertEqual(gemini25flash["evaluated_cases"], 4)
+        self.assertEqual(gemini25flash["passed_cases"], 0)
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
