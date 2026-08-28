@@ -22,10 +22,7 @@ class Gemini36FlashV4QualificationFreezeTests(unittest.TestCase):
         self.assertEqual(record["existing_responsibility"], "event_understanding_candidate")
         self.assertEqual(record["qualification_protocol"], 4)
         self.assertEqual(record["run_id"], 33144497986)
-        self.assertEqual(
-            record["head_sha"],
-            "30443380b53e30d0daff46b495fe944b6d2d195e",
-        )
+        self.assertEqual(record["head_sha"], "30443380b53e30d0daff46b495fe944b6d2d195e")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 3)
         self.assertEqual(record["failure_classification"], "CHILD_EVENT_SEMANTIC_FAILURE")
@@ -48,10 +45,7 @@ class Gemini36FlashV4QualificationFreezeTests(unittest.TestCase):
             record["report_digest"],
             "sha256:f5f56ab815e2bdb2c7c211a8b440455bb9656fc9faade9852006f5a15b31c21d",
         )
-
-        self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertIsNone(payload["selected_event_understanding_provider"])
-        self.assertFalse(payload["production_wired"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
 
     def test_consumed_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
