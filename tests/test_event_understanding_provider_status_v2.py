@@ -25,7 +25,7 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_status_preserves_historical_evidence_and_has_no_v4_result_or_wiring(self) -> None:
+    def test_current_status_preserves_historical_evidence_and_unselected_v4_nonpass(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
@@ -33,12 +33,8 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(payload["contract"], "event_understanding_v2")
         self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(
-            payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION
-        )
-        self.assertEqual(
-            payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER
-        )
+        self.assertEqual(payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
+        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
 
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -51,10 +47,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(mistral["status"], QUALIFICATION_BLOCKED_TRANSIENT)
         self.assertEqual(mistral["qualification_protocol"], 3)
         self.assertEqual(mistral["run_id"], 33094503683)
-        self.assertEqual(
-            mistral["head_sha"],
-            "a417ac291031358e547b00d59bccce2412fb9044",
-        )
+        self.assertEqual(mistral["head_sha"], "a417ac291031358e547b00d59bccce2412fb9044")
         self.assertEqual(mistral["raw_run_status"], "NOT_QUALIFIED")
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
@@ -65,10 +58,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "run413-kpop-alphadriveone-actor-preserved",
             "run413-kbo-osen-same-game-source",
         ):
-            self.assertEqual(
-                mistral["case_failures"][case_id],
-                ["provider_transport:transient_provider"],
-            )
+            self.assertEqual(mistral["case_failures"][case_id], ["provider_transport:transient_provider"])
         self.assertEqual(mistral["artifact_id"], 9656236318)
         self.assertEqual(mistral["previous_v1_evidence"]["qualification_protocol"], 1)
 
@@ -76,16 +66,10 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
         self.assertEqual(openrouter["qualification_protocol"], 3)
         self.assertEqual(openrouter["run_id"], 33093075809)
-        self.assertEqual(
-            openrouter["head_sha"],
-            "84ec074fda93d7fa1e4537e6bbfde26d5a58eb31",
-        )
+        self.assertEqual(openrouter["head_sha"], "84ec074fda93d7fa1e4537e6bbfde26d5a58eb31")
         self.assertEqual(openrouter["evaluated_cases"], 4)
         self.assertEqual(openrouter["passed_cases"], 0)
-        self.assertEqual(
-            openrouter["case_failures"]["run413-kbo-osen-same-game-source"],
-            ["adapter_contract:evidence_contract"],
-        )
+        self.assertEqual(openrouter["case_failures"]["run413-kbo-osen-same-game-source"], ["adapter_contract:evidence_contract"])
         self.assertEqual(openrouter["artifact_id"], 9655338800)
         self.assertEqual(openrouter["previous_v2_evidence"]["qualification_protocol"], 2)
         self.assertEqual(openrouter["previous_v1_evidence"]["qualification_protocol"], 1)
@@ -96,10 +80,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(qwen["qualification_protocol"], 3)
         self.assertEqual(qwen["run_id"], 33109809796)
         self.assertEqual(qwen["failure_classification"], "MIXED_ADAPTER_AND_SEMANTIC_FAILURE")
-        self.assertEqual(
-            qwen["case_failures"]["run413-bok-kmib-outlook-child"],
-            ["event_drafts_min", "expected_event_match", "parent_hint_min"],
-        )
+        self.assertEqual(qwen["case_failures"]["run413-bok-kmib-outlook-child"], ["event_drafts_min", "expected_event_match", "parent_hint_min"])
 
         hf = payload["providers"]["hf_qwen235b2507_nscale"]
         self.assertEqual(hf["model"], "Qwen/Qwen3-235B-A22B-Instruct-2507:nscale")
@@ -109,21 +90,23 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(hf["failure_classification"], "EVIDENCE_CONTRACT")
         self.assertEqual(hf["artifact_id"], 9672398678)
 
+        current_v4 = payload["providers"]["gemini_35_flash_v4"]
+        self.assertEqual(current_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(current_v4["qualification_protocol"], 4)
+        self.assertEqual(current_v4["evaluated_cases"], 4)
+        self.assertEqual(current_v4["passed_cases"], 3)
+
         for provider_id, record in payload["providers"].items():
+            if provider_id == "gemini_35_flash_v4":
+                continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:
                 with self.subTest(provider_id=provider_id):
                     self.assertLess(protocol, payload["active_qualification_protocol"])
 
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
-        self.assertEqual(
-            payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"],
-            "verification_primary",
-        )
-        self.assertEqual(
-            payload["providers"]["local_nli"]["existing_responsibility"],
-            "verification_secondary",
-        )
+        self.assertEqual(payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"], "verification_primary")
+        self.assertEqual(payload["providers"]["local_nli"]["existing_responsibility"], "verification_secondary")
 
     @staticmethod
     def _mark_selection_state(mutated: dict[str, object]) -> None:
@@ -149,9 +132,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     def test_historical_transient_record_still_rejects_semantic_failure_codes(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
-        mutated["providers"]["mistral_large_3"]["case_failures"][
-            "run413-bok-kbs-rate-decision"
-        ] = ["expected_event_match"]
+        mutated["providers"]["mistral_large_3"]["case_failures"]["run413-bok-kbs-rate-decision"] = ["expected_event_match"]
         with self.assertRaisesRegex(ContractError, "definitive failure"):
             validate_provider_status(mutated)
 
