@@ -90,7 +90,7 @@ jobs:
         continue-on-error: true
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python scripts/qualify_hf_qwen235b2507_nscale.py --report event-understanding-qualification.json
+        run: python -m scripts.qualify_hf_qwen235b2507_nscale --report event-understanding-qualification.json
       - name: Record bounded artifact digest
         if: always()
         run: sha256sum event-understanding-qualification.json || true
