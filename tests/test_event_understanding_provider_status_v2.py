@@ -25,16 +25,16 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_status_preserves_historical_evidence_and_unselected_v4_nonpass(self) -> None:
+    def test_current_status_preserves_historical_evidence_and_unselected_v5_state(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
         self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["contract"], "event_understanding_v2")
-        self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v3")
-        self.assertEqual(payload["active_qualification_protocol"], 4)
+        self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v4")
+        self.assertEqual(payload["active_qualification_protocol"], 5)
         self.assertEqual(payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
-        self.assertEqual(payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
+        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
 
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -162,16 +162,6 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         )
 
         for provider_id, record in payload["providers"].items():
-            if provider_id in {
-                "gemini_35_flash_v4",
-                "gemini_36_flash_v4",
-                "gemini_25_pro_v4",
-                "gemini_35_flash_lite_v4",
-                "gemini_25_flash_v4",
-                "hf_qwen36_35b_deepinfra_v4",
-                "cerebras_gemma4_31b_v4",
-            }:
-                continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:
                 with self.subTest(provider_id=provider_id):
@@ -187,10 +177,8 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
 
     @staticmethod
-    def _without_active_v4_block(payload: dict[str, object]) -> dict[str, object]:
+    def _active_v5_baseline(payload: dict[str, object]) -> dict[str, object]:
         mutated = deepcopy(payload)
-        del mutated["providers"]["gemini_25_pro_v4"]
-        del mutated["providers"]["gemini_25_flash_v4"]
         mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(mutated)
         return mutated
@@ -203,9 +191,9 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_stale_v3_transient_block_does_not_block_current_inventory(self) -> None:
+    def test_stale_v4_blocks_do_not_block_current_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
-        mutated = self._without_active_v4_block(payload)
+        mutated = self._active_v5_baseline(payload)
         mutated["provider_inventory_status"] = CANDIDATE_QUALIFICATION_BLOCKED
         with self.assertRaisesRegex(ContractError, "NO_ELIGIBLE_EXISTING_PROVIDER"):
             validate_provider_status(mutated)
@@ -225,14 +213,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_active_v4_credential_block_is_not_selectable_and_requires_blocked_inventory(self) -> None:
+    def test_active_v5_credential_block_is_not_selectable_and_requires_blocked_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
-        mutated = self._without_active_v4_block(payload)
+        mutated = self._active_v5_baseline(payload)
         mutated["providers"]["credential_blocked"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 4,
+            "qualification_protocol": 5,
             "evaluated_cases": 0,
             "preflight_result": "NOT_CONFIGURED",
         }
@@ -254,7 +242,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 4,
+            "qualification_protocol": 5,
             "evaluated_cases": 1,
             "preflight_result": "NOT_CONFIGURED",
         }
@@ -266,7 +254,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 4,
+            "qualification_protocol": 5,
             "evaluated_cases": 0,
             "preflight_result": "NOT_QUALIFIED",
         }
@@ -287,7 +275,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": MINIMUM_COMPATIBILITY_PASS,
-            "qualification_protocol": 3,
+            "qualification_protocol": 4,
             "evaluated_cases": 4,
             "passed_cases": 4,
         }
@@ -296,14 +284,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "stale protocol"):
             validate_provider_status(mutated)
 
-    def test_current_v4_pass_can_be_selected_despite_stale_v3_blocks(self) -> None:
+    def test_current_v5_pass_can_be_selected_despite_stale_v4_blocks(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["future_candidate"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": MINIMUM_COMPATIBILITY_PASS,
-            "qualification_protocol": 4,
+            "qualification_protocol": 5,
             "evaluated_cases": 4,
             "passed_cases": 4,
         }
