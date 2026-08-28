@@ -122,12 +122,28 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(gemini35lite_v4["passed_cases"], 1)
         self.assertEqual(gemini35lite_v4["failure_classification"], "EVENT_DRAFT_CONTRACT")
 
+        gemini25flash_v4 = payload["providers"]["gemini_25_flash_v4"]
+        self.assertEqual(gemini25flash_v4["model"], "gemini-2.5-flash")
+        self.assertEqual(
+            gemini25flash_v4["status"],
+            "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE",
+        )
+        self.assertEqual(gemini25flash_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini25flash_v4["run_id"], 33160640114)
+        self.assertEqual(gemini25flash_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini25flash_v4["passed_cases"], 0)
+        self.assertEqual(
+            gemini25flash_v4["failure_classification"],
+            "PROVIDER_MODEL_UNAVAILABLE",
+        )
+
         for provider_id, record in payload["providers"].items():
             if provider_id in {
                 "gemini_35_flash_v4",
                 "gemini_36_flash_v4",
                 "gemini_25_pro_v4",
                 "gemini_35_flash_lite_v4",
+                "gemini_25_flash_v4",
             }:
                 continue
             protocol = record.get("qualification_protocol")
@@ -148,6 +164,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     def _without_active_v4_block(payload: dict[str, object]) -> dict[str, object]:
         mutated = deepcopy(payload)
         del mutated["providers"]["gemini_25_pro_v4"]
+        del mutated["providers"]["gemini_25_flash_v4"]
         mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(mutated)
         return mutated
