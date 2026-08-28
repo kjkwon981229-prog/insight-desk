@@ -70,3 +70,37 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
+
+  semantic-v3-provider-candidate-hf-qwen235b2507-nscale:
+    needs: [infrastructure, historical-production-replay]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/phase12-hf-qwen235b2507-nscale-eu-candidate' &&
+      contains(github.event.head_commit.message, '[semantic-v3-candidate:hf-qwen235b2507-nscale]')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact qualification head
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+      - name: Run frozen V3 qualification once
+        id: qualification
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python scripts/qualify_hf_qwen235b2507_nscale.py --report event-understanding-qualification.json
+      - name: Record bounded artifact digest
+        if: always()
+        run: sha256sum event-understanding-qualification.json || true
+      - name: Upload qualification artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-understanding-hf-qwen235b2507-nscale-v3
+          path: event-understanding-qualification.json
+          if-no-files-found: error
+      - name: Preserve non-pass qualification as failed candidate job
+        if: steps.qualification.outcome == 'failure'
+        run: exit 1
