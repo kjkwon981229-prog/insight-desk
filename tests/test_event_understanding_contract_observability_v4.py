@@ -81,36 +81,69 @@ class EventUnderstandingContractObservabilityV4Tests(unittest.TestCase):
             "events": [event],
         }
 
-    def _failure(self, **event_overrides: object) -> EventUnderstandingAdapterError:
-        adapter = StructuredJsonEventUnderstandingAdapterV3(
-            client=_StaticStructuredClient(self._payload(**event_overrides)),
+    def _adapter(self, payload: dict[str, object]) -> StructuredJsonEventUnderstandingAdapterV3:
+        return StructuredJsonEventUnderstandingAdapterV3(
+            client=_StaticStructuredClient(payload),
             engine_id="qualification-v4:fixture-observability",
         )
+
+    def _failure(self, **event_overrides: object) -> EventUnderstandingAdapterError:
         with self.assertRaises(EventUnderstandingAdapterError) as caught:
-            adapter.understand(self._request())
+            self._adapter(self._payload(**event_overrides)).understand(self._request())
         self.assertEqual(caught.exception.failure_code, "event_draft_contract")
         return caught.exception
 
-    def test_distinct_core_invariants_keep_distinct_bounded_detail_codes(self) -> None:
-        metric_pair = self._failure(value="3.50")
-        event_time = self._failure(event_time="not-an-iso-date")
-        resolved_uncertainty = self._failure(uncertainty_reasons=["fixture uncertainty"])
-
-        self.assertEqual(metric_pair.diagnostic_code, "value_requires_metric")
-        self.assertEqual(event_time.diagnostic_code, "event_time_format")
-        self.assertEqual(
-            resolved_uncertainty.diagnostic_code,
-            "resolved_event_with_uncertainty",
-        )
-        self.assertEqual(
-            len(
-                {
-                    metric_pair.diagnostic_code,
-                    event_time.diagnostic_code,
-                    resolved_uncertainty.diagnostic_code,
-                }
+    def test_provider_output_reachable_event_draft_invariants_have_stable_detail_codes(self) -> None:
+        duplicate_evidence = [
+            {
+                "source_id": "source-1",
+                "field": "body",
+                "text": "한국은행은 기준금리를 결정했다.",
+            },
+            {
+                "source_id": "source-1",
+                "field": "body",
+                "text": "한국은행은 기준금리를 결정했다.",
+            },
+        ]
+        cases = (
+            ({"evidence": duplicate_evidence}, "duplicate_evidence_refs"),
+            ({"participants": ["한국은행", "한국은행"]}, "duplicate_participants"),
+            (
+                {"uncertainty_reasons": ["same", "same"]},
+                "duplicate_event_uncertainty_reasons",
             ),
-            3,
+            ({"event_time": "not-an-iso-date"}, "event_time_format"),
+            ({"event_time": "2026-08-28T12:00:00"}, "event_time_timezone"),
+            ({"value": "3.50"}, "value_requires_metric"),
+            ({"metric": "rate"}, "metric_requires_value"),
+            (
+                {"uncertainty_reasons": ["fixture uncertainty"]},
+                "resolved_event_with_uncertainty",
+            ),
+            (
+                {"understanding_status": "unresolved"},
+                "unresolved_event_without_uncertainty",
+            ),
+        )
+
+        observed: set[str] = set()
+        for overrides, expected_code in cases:
+            with self.subTest(expected_code=expected_code):
+                failure = self._failure(**overrides)
+                self.assertEqual(failure.diagnostic_code, expected_code)
+                observed.add(failure.diagnostic_code)
+        self.assertEqual(len(observed), len(cases))
+
+    def test_article_understanding_contract_also_keeps_bounded_detail_code(self) -> None:
+        payload = self._payload()
+        payload["uncertainty_reasons"] = ["fixture uncertainty"]
+        with self.assertRaises(EventUnderstandingAdapterError) as caught:
+            self._adapter(payload).understand(self._request())
+        self.assertEqual(caught.exception.failure_code, "article_understanding_contract")
+        self.assertEqual(
+            caught.exception.diagnostic_code,
+            "resolved_article_with_uncertainty",
         )
 
     def test_v4_reporter_adds_detail_without_changing_primary_failure_code(self) -> None:
@@ -125,6 +158,16 @@ class EventUnderstandingContractObservabilityV4Tests(unittest.TestCase):
         self.assertEqual(
             historical_v3._qualification_failure_codes(failure),
             ["adapter_contract:event_draft_contract"],
+        )
+
+    def test_v4_reporter_preserves_generic_behavior_when_no_detail_exists(self) -> None:
+        failure = EventUnderstandingAdapterError(
+            "bounded fixture",
+            failure_code="evidence_contract",
+        )
+        self.assertEqual(
+            qualification_v4._adapter_failures(failure),
+            ["adapter_contract:evidence_contract"],
         )
 
     def test_observability_does_not_change_v4_structured_output_schema(self) -> None:
