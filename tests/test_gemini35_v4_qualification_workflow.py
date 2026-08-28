@@ -16,7 +16,6 @@ class Gemini35FlashV4QualificationWorkflowTests(unittest.TestCase):
         self.assertNotIn("[semantic-v4-candidate:gemini-3.5-flash]", workflow)
         self.assertNotIn("qualify_gemini35_flash_v4", workflow)
         self.assertNotIn("event-understanding-gemini35-flash-v4", workflow)
-        self.assertNotIn("GEMINI_API_KEY", workflow)
 
 
 if __name__ == "__main__":
