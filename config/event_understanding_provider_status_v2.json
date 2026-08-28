@@ -7,7 +7,7 @@
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
-  "provider_inventory_status": "NO_ELIGIBLE_EXISTING_PROVIDER",
+  "provider_inventory_status": "CANDIDATE_QUALIFICATION_BLOCKED",
   "selected_event_understanding_provider": null,
   "production_wired": false,
   "providers": {
@@ -52,18 +52,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_TRANSIENT_FAILURE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:transient_provider"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:transient_provider"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:transient_provider"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:transient_provider"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:transient_provider"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:transient_provider"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:transient_provider"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:transient_provider"]
       },
       "artifact_id": 9656236318,
       "artifact_digest": "sha256:5d469827740b3a08c7367fde230beccdd8e82f422491113cebd33a86b51dc666",
@@ -89,18 +81,10 @@
       "evaluated_cases": 4,
       "passed_cases": 0,
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:invalid_output"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "adapter_contract:evidence_contract"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:evidence_contract"]
       },
       "artifact_id": 9655338800,
       "artifact_digest": "sha256:0f06113d6ce5e5affcadde365474bbd12d4016f88ed7fa54a97d8a4e625834dc",
@@ -112,18 +96,10 @@
         "passed_cases": 0,
         "failure_classification": "MIXED_CONTRACT_AND_INVALID_OUTPUT",
         "case_failures": {
-          "run413-bok-kbs-rate-decision": [
-            "provider_or_contract_error:ContractError"
-          ],
-          "run413-bok-kmib-outlook-child": [
-            "provider_or_contract_error:ContractError"
-          ],
-          "run413-kpop-alphadriveone-actor-preserved": [
-            "provider_or_contract_error:ContractError"
-          ],
-          "run413-kbo-osen-same-game-source": [
-            "provider_transport:invalid_output"
-          ]
+          "run413-bok-kbs-rate-decision": ["provider_or_contract_error:ContractError"],
+          "run413-bok-kmib-outlook-child": ["provider_or_contract_error:ContractError"],
+          "run413-kpop-alphadriveone-actor-preserved": ["provider_or_contract_error:ContractError"],
+          "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output"]
         },
         "artifact_id": 9644987975,
         "artifact_digest": "sha256:d01c86cb1c372faa678fb038bda4edc169dfd3ed05313d35b815d40ff3d32008"
@@ -151,18 +127,10 @@
       "passed_cases": 0,
       "failure_classification": "ADAPTER_OUTPUT_CONTRACT",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "adapter_contract:adapter_output_contract"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "adapter_contract:adapter_output_contract"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "adapter_contract:adapter_output_contract"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "adapter_contract:adapter_output_contract"
-        ]
+        "run413-bok-kbs-rate-decision": ["adapter_contract:adapter_output_contract"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:adapter_output_contract"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:adapter_output_contract"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:adapter_output_contract"]
       },
       "artifact_id": 9659910291,
       "artifact_digest": "sha256:73594960aa92f046fef4e7ee151721b6d40ba09e064963f9d3f5ba619f567259"
@@ -180,22 +148,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
       },
       "artifact_id": 9660968622,
       "artifact_digest": "sha256:4393d0cf8764142da6130a98fa04ee36c20e1f7fb4b7ead7bfacbf9662dbf862"
@@ -212,20 +168,10 @@
       "passed_cases": 0,
       "failure_classification": "MIXED_ADAPTER_AND_SEMANTIC_FAILURE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "adapter_contract:event_draft_contract"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "event_drafts_min",
-          "expected_event_match",
-          "parent_hint_min"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "adapter_contract:evidence_contract"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "adapter_contract:evidence_contract"
-        ]
+        "run413-bok-kbs-rate-decision": ["adapter_contract:event_draft_contract"],
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:evidence_contract"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:evidence_contract"]
       },
       "artifact_id": 9662058073,
       "artifact_digest": "sha256:f8295c8c0e81c04334ef7ec2a221cd09b8e675decaa5e7b35dbd209a0cb8cb11"
@@ -242,22 +188,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_TRANSIENT_FAILURE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:transient_provider",
-          "http_status:500"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:rate_limited",
-          "http_status:429"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:rate_limited",
-          "http_status:429"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:rate_limited",
-          "http_status:429"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:transient_provider", "http_status:500"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:rate_limited", "http_status:429"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:rate_limited", "http_status:429"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:rate_limited", "http_status:429"]
       },
       "artifact_id": 9662688106,
       "artifact_digest": "sha256:7c464425cf1ddaede9458905664f4b1038e81b1d7a10c5e1f0c72cc01e8d1371"
@@ -274,20 +208,10 @@
       "passed_cases": 0,
       "failure_classification": "MIXED_ADAPTER_AND_RATE_LIMIT_FAILURE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:rate_limited",
-          "http_status:429"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "adapter_contract:event_draft_contract"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "adapter_contract:evidence_contract"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:rate_limited",
-          "http_status:429"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:rate_limited", "http_status:429"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:event_draft_contract"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:evidence_contract"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:rate_limited", "http_status:429"]
       },
       "artifact_id": 9663362476,
       "artifact_digest": "sha256:4e47046aba32c8d045ac63a259eaf0f18b786c9845c6b0eb4a6686cdf12b289e"
@@ -304,22 +228,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
       },
       "artifact_id": 9664008294,
       "artifact_digest": "sha256:628cfc8eafea59c4cfd779b250b4839d300a87913be4f06a7beb8f6bab6c91f6"
@@ -336,22 +248,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
       },
       "artifact_id": 9667744179,
       "artifact_digest": "sha256:050415d8931c36a4b1c05c5a5608b05d2b0c6ee2e45f27c31ee56dc8d83504ed"
@@ -368,18 +268,10 @@
       "passed_cases": 0,
       "failure_classification": "EVIDENCE_CONTRACT",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "adapter_contract:evidence_contract"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "adapter_contract:evidence_contract"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "adapter_contract:evidence_contract"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "adapter_contract:evidence_contract"
-        ]
+        "run413-bok-kbs-rate-decision": ["adapter_contract:evidence_contract"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:evidence_contract"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:evidence_contract"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:evidence_contract"]
       },
       "artifact_id": 9672398678,
       "artifact_digest": "sha256:1f1f1388667e14b5836bb0b0aad4f4d719210cdcd62a1f2942acfe922124a339"
@@ -396,9 +288,7 @@
       "passed_cases": 3,
       "failure_classification": "EVENT_DRAFT_CONTRACT",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "adapter_contract:event_draft_contract"
-        ]
+        "run413-bok-kbs-rate-decision": ["adapter_contract:event_draft_contract"]
       },
       "artifact_id": 9674081915,
       "artifact_digest": "sha256:db59c3f2db9e09a61dc3fbad22021ccde116ebb2394e05f14051acfbbbfa7386",
@@ -416,11 +306,7 @@
       "passed_cases": 3,
       "failure_classification": "CHILD_EVENT_SEMANTIC_FAILURE",
       "case_failures": {
-        "run413-bok-kmib-outlook-child": [
-          "event_drafts_min",
-          "expected_event_match",
-          "parent_hint_min"
-        ]
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"]
       },
       "artifact_id": 9675278580,
       "artifact_digest": "sha256:5df26a3924ae3582026a221964a752bf94ca35c7c478ae490dbf09c79eb9990f",
@@ -438,22 +324,10 @@
       "passed_cases": 0,
       "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
       "case_failures": {
-        "run413-bok-kbs-rate-decision": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-bok-kmib-outlook-child": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kpop-alphadriveone-actor-preserved": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ],
-        "run413-kbo-osen-same-game-source": [
-          "provider_transport:invalid_output",
-          "http_status:404"
-        ]
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
       },
       "artifact_id": 9678194163,
       "artifact_digest": "sha256:29b1c06e25b229a27673ba56ee5f26c9f009214c72c66168e83c0171c7c397df",
