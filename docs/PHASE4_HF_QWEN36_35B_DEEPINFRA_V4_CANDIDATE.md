@@ -45,3 +45,5 @@ The client is qualification-only and is not exported from `insight_desk.provider
 ## Execution gate
 
 No live provider call is permitted until this branch's ordinary Infrastructure job, historical production replay, and Phase 6 correctness/recall gate are all GREEN on the exact candidate head. After those gates pass, exactly one one-shot V4 qualification may be triggered. The first valid result is final for this exact model/provider route and must be frozen before any further provider work.
+
+Preflight head `c7627ce61dab71bfa0a9dc4a3a1bae0dfc0188ea` passed Infrastructure, historical production replay, and Phase 6 correctness/recall in run `33166053391`; the provider qualification job was SKIPPED because that commit carried no qualification marker. This marker commit may therefore execute the one permitted qualification call.
