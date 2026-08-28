@@ -56,7 +56,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertNotIn("start", evidence["properties"])
         self.assertNotIn("end", evidence["properties"])
 
-    def test_machine_status_moves_to_v4_and_v3_results_become_stale_evidence(self) -> None:
+    def test_machine_status_preserves_stale_v3_and_frozen_v4_nonpass_evidence(self) -> None:
         status = load_provider_status(STATUS_PATH)
         self.assertEqual(status["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(status["active_qualification_protocol"], 4)
@@ -64,11 +64,21 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
+        current_v4: list[str] = []
         for provider_id, record in status["providers"].items():
-            if record.get("qualification_protocol") is None:
+            protocol = record.get("qualification_protocol")
+            if protocol is None:
                 continue
             with self.subTest(provider_id=provider_id):
-                self.assertLess(record["qualification_protocol"], 4)
+                self.assertLessEqual(protocol, 4)
+                if protocol == 4:
+                    current_v4.append(provider_id)
+
+        self.assertEqual(current_v4, ["gemini_35_flash_v4"])
+        frozen = status["providers"]["gemini_35_flash_v4"]
+        self.assertEqual(frozen["status"], "NOT_QUALIFIED")
+        self.assertEqual(frozen["evaluated_cases"], 4)
+        self.assertEqual(frozen["passed_cases"], 3)
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
