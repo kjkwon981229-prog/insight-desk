@@ -107,7 +107,7 @@
       "previous_v1_evidence": {
         "qualification_protocol": 1,
         "run_id": 33057003750,
-        "head_sha": "7b1230ea9ae86a0084ef34862ac1c2d7bc30bbd",
+        "head_sha": "7b1230ea9ae5d0b5da3dc5725df55b2bb9fea1bf",
         "evaluated_cases": 4,
         "passed_cases": 1,
         "failure_classification": "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
