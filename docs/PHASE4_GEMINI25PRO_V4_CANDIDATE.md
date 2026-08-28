@@ -45,6 +45,6 @@ The uploaded artifact ZIP and contained qualification report were independently 
 
 ## Consequence
 
-`gemini-2.5-pro` is not selectable under active V4. Provider inventory remains without an eligible Event Understanding owner, production remains unwired, and the three Phase 4 migration blockers must remain active.
+`gemini-2.5-pro` is not selectable under active V4. The machine inventory state is `CANDIDATE_QUALIFICATION_BLOCKED`, the selected Event Understanding provider remains `null`, production remains unwired, and the three Phase 4 migration blockers must remain active.
 
 The consumed one-shot qualification lane has been removed. The next permitted provider action is qualification of one new eligible provider/model under the same frozen V4 contract; Gemini 3.5 Flash, Gemini 3.6 Flash, and Gemini 2.5 Pro must not be retried or tuned.
