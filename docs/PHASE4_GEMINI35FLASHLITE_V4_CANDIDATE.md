@@ -25,3 +25,7 @@ This branch prepares exactly one qualification of `gemini-3.5-flash-lite` under 
 - no production wiring, legacy-blocker removal, fresh canary, deploy, Push, or merge from this candidate branch
 
 The candidate reuses only the already-isolated Gemini qualification transport contract. It does not repurpose the production Gemini verification-failover owner.
+
+## Pre-qualification gate
+
+The qualification-only wiring passed the ordinary infrastructure suite and the historical production replay / Phase 6 correctness-recall gate on the candidate branch before the one-shot qualification trigger was issued. A temporary legacy-lane name-prefix test collision was corrected as a test-only exact-match fix; that failed preflight did not invoke the provider.
