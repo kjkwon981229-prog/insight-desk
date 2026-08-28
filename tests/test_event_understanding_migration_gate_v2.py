@@ -38,13 +38,13 @@ class EventUnderstandingMigrationGateV2Tests(unittest.TestCase):
         )
 
     def test_provider_pass_alone_cannot_open_production_rewire(self) -> None:
-        provider_status = load_provider_status(STATUS_PATH)
-        provider_status = deepcopy(provider_status)
+        provider_status = deepcopy(load_provider_status(STATUS_PATH))
+        active_protocol = provider_status["active_qualification_protocol"]
         provider_status["providers"]["qualified_fixture"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": "MINIMUM_COMPATIBILITY_PASS",
-            "qualification_protocol": 4,
+            "qualification_protocol": active_protocol,
             "evaluated_cases": 4,
             "passed_cases": 4,
         }
