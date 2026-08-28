@@ -91,6 +91,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
                 "gemini_25_pro_v4",
                 "gemini_35_flash_lite_v4",
                 "gemini_25_flash_v4",
+                "hf_qwen36_35b_deepinfra_v4",
             ],
         )
         gemini35 = status["providers"]["gemini_35_flash_v4"]
@@ -116,6 +117,14 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         )
         self.assertEqual(gemini25flash["evaluated_cases"], 4)
         self.assertEqual(gemini25flash["passed_cases"], 0)
+        hf_qwen36 = status["providers"]["hf_qwen36_35b_deepinfra_v4"]
+        self.assertEqual(hf_qwen36["status"], "NOT_QUALIFIED")
+        self.assertEqual(hf_qwen36["evaluated_cases"], 4)
+        self.assertEqual(hf_qwen36["passed_cases"], 0)
+        self.assertEqual(
+            hf_qwen36["failure_classification"],
+            "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE",
+        )
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
