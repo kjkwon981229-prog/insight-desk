@@ -28,7 +28,9 @@ The corrected client is locked to:
 - no `generationConfig.responseFormat`
 - HTTP transport attempts = 1
 
-A valid provider qualification may occur only after this corrected harness passes the ordinary Infrastructure, historical replay, and Phase 6 gates. The first valid provider result after those gates is final; no semantic retry or candidate-specific tuning is permitted.
+Corrected harness head `50e599b7907086e99ee49e4323888bd2de56b5f1` passed the ordinary Infrastructure suite, historical production replay, and Phase 6 correctness/recall gate in run `33160548020`. The qualification job was skipped on that preflight because the commit carried no qualification marker.
+
+The first valid provider result after those gates is final; no semantic retry or candidate-specific tuning is permitted.
 
 ## Frozen qualification boundary
 
