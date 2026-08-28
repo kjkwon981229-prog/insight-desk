@@ -137,6 +137,18 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "PROVIDER_MODEL_UNAVAILABLE",
         )
 
+        hf_qwen36_v4 = payload["providers"]["hf_qwen36_35b_deepinfra_v4"]
+        self.assertEqual(hf_qwen36_v4["model"], "Qwen/Qwen3.6-35B-A3B:deepinfra")
+        self.assertEqual(hf_qwen36_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(hf_qwen36_v4["qualification_protocol"], 4)
+        self.assertEqual(hf_qwen36_v4["run_id"], 33166122207)
+        self.assertEqual(hf_qwen36_v4["evaluated_cases"], 4)
+        self.assertEqual(hf_qwen36_v4["passed_cases"], 0)
+        self.assertEqual(
+            hf_qwen36_v4["failure_classification"],
+            "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE",
+        )
+
         for provider_id, record in payload["providers"].items():
             if provider_id in {
                 "gemini_35_flash_v4",
@@ -144,6 +156,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
                 "gemini_25_pro_v4",
                 "gemini_35_flash_lite_v4",
                 "gemini_25_flash_v4",
+                "hf_qwen36_35b_deepinfra_v4",
             }:
                 continue
             protocol = record.get("qualification_protocol")
