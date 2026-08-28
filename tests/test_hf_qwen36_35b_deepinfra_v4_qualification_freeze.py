@@ -22,16 +22,10 @@ class HFQwen36_35BDeepInfraV4QualificationFreezeTests(unittest.TestCase):
         self.assertEqual(record["existing_responsibility"], "event_understanding_candidate")
         self.assertEqual(record["qualification_protocol"], 4)
         self.assertEqual(record["run_id"], 33166122207)
-        self.assertEqual(
-            record["head_sha"],
-            "3d716e45f8031b48fbc47c6a6110b5d580809252",
-        )
+        self.assertEqual(record["head_sha"], "3d716e45f8031b48fbc47c6a6110b5d580809252")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
-        self.assertEqual(
-            record["failure_classification"],
-            "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE",
-        )
+        self.assertEqual(record["failure_classification"], "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE")
         self.assertEqual(
             record["case_failures"],
             {
@@ -50,46 +44,19 @@ class HFQwen36_35BDeepInfraV4QualificationFreezeTests(unittest.TestCase):
             record["report_digest"],
             "sha256:e2807cc45d6a2e45e653ced1831275b7363981b2d3b9ba90eb99ab208d025017",
         )
-
-        self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
-        self.assertIsNone(payload["selected_event_understanding_provider"])
-        self.assertFalse(payload["production_wired"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
 
     def test_mixed_definitive_and_transient_result_is_not_reclassified_as_blocked(self) -> None:
         record = load_provider_status(STATUS_PATH)["providers"]["hf_qwen36_35b_deepinfra_v4"]
         self.assertEqual(record["status"], "NOT_QUALIFIED")
-        definitive = [
-            case_id
-            for case_id, failures in record["case_failures"].items()
-            if "provider_transport:invalid_output" in failures
-        ]
-        transient = [
-            case_id
-            for case_id, failures in record["case_failures"].items()
-            if "provider_transport:transient_provider" in failures
-        ]
-        self.assertEqual(
-            definitive,
-            [
-                "run413-bok-kbs-rate-decision",
-                "run413-kpop-alphadriveone-actor-preserved",
-            ],
-        )
-        self.assertEqual(
-            transient,
-            [
-                "run413-bok-kmib-outlook-child",
-                "run413-kbo-osen-same-game-source",
-            ],
-        )
+        definitive = [case_id for case_id, failures in record["case_failures"].items() if "provider_transport:invalid_output" in failures]
+        transient = [case_id for case_id, failures in record["case_failures"].items() if "provider_transport:transient_provider" in failures]
+        self.assertEqual(definitive, ["run413-bok-kbs-rate-decision", "run413-kpop-alphadriveone-actor-preserved"])
+        self.assertEqual(transient, ["run413-bok-kmib-outlook-child", "run413-kbo-osen-same-game-source"])
 
     def test_consumed_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "  semantic-v4-provider-candidate-hf-qwen36-35b-deepinfra:\n",
-            workflow,
-        )
+        self.assertNotIn("  semantic-v4-provider-candidate-hf-qwen36-35b-deepinfra:\n", workflow)
         self.assertNotIn("[semantic-v4-candidate:hf-qwen36-35b-deepinfra]", workflow)
         self.assertNotIn("qualify_hf_qwen36_35b_deepinfra_v4", workflow)
         self.assertNotIn("event-understanding-hf-qwen36-35b-deepinfra-v4", workflow)
