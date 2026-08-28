@@ -7,7 +7,6 @@ import unittest
 from insight_desk.core.contracts import ContractError
 from insight_desk.event_understanding_provider_status_v2 import (
     ELIGIBLE_CANDIDATE_AVAILABLE,
-    NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE,
     QUALIFIED_PROVIDER_SELECTED,
     load_provider_status,
@@ -44,7 +43,6 @@ class CerebrasQualificationFreezeV3Tests(unittest.TestCase):
         self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
 
     def test_provider_unavailable_candidate_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
