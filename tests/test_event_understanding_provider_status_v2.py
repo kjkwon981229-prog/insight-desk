@@ -115,8 +115,20 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(gemini25_v4["passed_cases"], 0)
         self.assertEqual(gemini25_v4["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
 
+        gemini35lite_v4 = payload["providers"]["gemini_35_flash_lite_v4"]
+        self.assertEqual(gemini35lite_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini35lite_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini35lite_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini35lite_v4["passed_cases"], 1)
+        self.assertEqual(gemini35lite_v4["failure_classification"], "EVENT_DRAFT_CONTRACT")
+
         for provider_id, record in payload["providers"].items():
-            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4", "gemini_25_pro_v4"}:
+            if provider_id in {
+                "gemini_35_flash_v4",
+                "gemini_36_flash_v4",
+                "gemini_25_pro_v4",
+                "gemini_35_flash_lite_v4",
+            }:
                 continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:
