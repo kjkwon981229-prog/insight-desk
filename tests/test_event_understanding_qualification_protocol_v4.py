@@ -18,7 +18,8 @@ from insight_desk.event_understanding_provider_status_v2 import (
     selected_provider,
     validate_provider_status,
 )
-from scripts import qualify_event_understanding_provider as qualification
+from scripts import qualify_event_understanding_provider as historical_v3_qualification
+from scripts import qualify_event_understanding_provider_v4 as qualification
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,10 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertEqual(
             qualification.DEFAULT_QUALIFICATION.name,
             "event_understanding_qualification_v4.json",
+        )
+        self.assertEqual(
+            historical_v3_qualification.DEFAULT_QUALIFICATION.name,
+            "event_understanding_qualification_v3.json",
         )
         active = json.loads(qualification.DEFAULT_QUALIFICATION.read_text(encoding="utf-8"))
         historical_v3 = json.loads(V3_PATH.read_text(encoding="utf-8"))
@@ -67,18 +72,12 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
-        mutated = deepcopy(payload)
-        mutated["structured_output_schema"] = "event_understanding_schema_v3"
-        mutated["active_qualification_protocol"] = 4
-        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
-        validate_provider_status(mutated)
+        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        validate_provider_status(payload)
 
     def test_current_v4_transient_block_requires_blocked_inventory(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
         mutated = deepcopy(payload)
-        mutated["structured_output_schema"] = "event_understanding_schema_v3"
-        mutated["active_qualification_protocol"] = 4
-        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         mutated["providers"]["v4_transient"] = {
             "provider": "fixture",
             "model": "fixture-v4-model",
@@ -99,8 +98,6 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
     def test_only_current_v4_pass_can_be_selected(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
         mutated = deepcopy(payload)
-        mutated["structured_output_schema"] = "event_understanding_schema_v3"
-        mutated["active_qualification_protocol"] = 4
         mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
         mutated["qualification_contract_status"] = QUALIFIED_PROVIDER_SELECTED
         mutated["providers"]["v4_pass"] = {
