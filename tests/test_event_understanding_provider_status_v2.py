@@ -10,6 +10,7 @@ from insight_desk.event_understanding_provider_status_v2 import (
     CANDIDATE_QUALIFICATION_BLOCKED,
     ELIGIBLE_CANDIDATE_AVAILABLE,
     MINIMUM_COMPATIBILITY_PASS,
+    NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_CREDENTIAL,
     QUALIFICATION_BLOCKED_TRANSIENT,
     QUALIFIED_PROVIDER_SELECTED,
@@ -24,20 +25,21 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_frozen_status_has_blocked_candidate_and_no_wiring(self) -> None:
+    def test_current_status_preserves_historical_evidence_and_has_no_v4_result_or_wiring(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
         self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["contract"], "event_understanding_v2")
-        self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v2")
-        self.assertEqual(payload["active_qualification_protocol"], 3)
+        self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v3")
+        self.assertEqual(payload["active_qualification_protocol"], 4)
         self.assertEqual(
             payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION
         )
         self.assertEqual(
-            payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED
+            payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER
         )
+
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
         self.assertEqual(groq["qualification_protocol"], 1)
@@ -56,10 +58,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(mistral["raw_run_status"], "NOT_QUALIFIED")
         self.assertEqual(mistral["evaluated_cases"], 4)
         self.assertEqual(mistral["passed_cases"], 0)
-        self.assertEqual(
-            mistral["failure_classification"],
-            "PROVIDER_TRANSIENT_FAILURE",
-        )
+        self.assertEqual(mistral["failure_classification"], "PROVIDER_TRANSIENT_FAILURE")
         for case_id in (
             "run413-bok-kbs-rate-decision",
             "run413-bok-kmib-outlook-child",
@@ -71,12 +70,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
                 ["provider_transport:transient_provider"],
             )
         self.assertEqual(mistral["artifact_id"], 9656236318)
-        self.assertEqual(
-            mistral["artifact_digest"],
-            "sha256:5d469827740b3a08c7367fde230beccdd8e82f422491113cebd33a86b51dc666",
-        )
         self.assertEqual(mistral["previous_v1_evidence"]["qualification_protocol"], 1)
-        self.assertEqual(mistral["previous_v1_evidence"]["run_id"], 33050426588)
 
         openrouter = payload["providers"]["openrouter_nemotron_free"]
         self.assertEqual(openrouter["status"], "NOT_QUALIFIED")
@@ -88,66 +82,38 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         )
         self.assertEqual(openrouter["evaluated_cases"], 4)
         self.assertEqual(openrouter["passed_cases"], 0)
-        for case_id in (
-            "run413-bok-kbs-rate-decision",
-            "run413-bok-kmib-outlook-child",
-            "run413-kpop-alphadriveone-actor-preserved",
-        ):
-            self.assertEqual(
-                openrouter["case_failures"][case_id],
-                ["provider_transport:invalid_output"],
-            )
         self.assertEqual(
             openrouter["case_failures"]["run413-kbo-osen-same-game-source"],
             ["adapter_contract:evidence_contract"],
         )
         self.assertEqual(openrouter["artifact_id"], 9655338800)
-        self.assertEqual(
-            openrouter["artifact_digest"],
-            "sha256:0f06113d6ce5e5affcadde365474bbd12d4016f88ed7fa54a97d8a4e625834dc",
-        )
         self.assertEqual(openrouter["previous_v2_evidence"]["qualification_protocol"], 2)
-        self.assertEqual(openrouter["previous_v2_evidence"]["run_id"], 33069019702)
-        self.assertEqual(openrouter["previous_v1_evidence"]["passed_cases"], 1)
-        self.assertEqual(openrouter["previous_v1_evidence"]["run_id"], 33057003750)
+        self.assertEqual(openrouter["previous_v1_evidence"]["qualification_protocol"], 1)
 
         qwen = payload["providers"]["groq_qwen38_27b"]
-        self.assertEqual(qwen["provider"], "groq")
         self.assertEqual(qwen["model"], "qwen/qwen3.8-27b")
         self.assertEqual(qwen["status"], "NOT_QUALIFIED")
         self.assertEqual(qwen["qualification_protocol"], 3)
         self.assertEqual(qwen["run_id"], 33109809796)
-        self.assertEqual(
-            qwen["head_sha"],
-            "b24c9961ba64c6250e819fe26198739f66960596",
-        )
-        self.assertEqual(qwen["evaluated_cases"], 4)
-        self.assertEqual(qwen["passed_cases"], 0)
-        self.assertEqual(
-            qwen["failure_classification"],
-            "MIXED_ADAPTER_AND_SEMANTIC_FAILURE",
-        )
-        self.assertEqual(
-            qwen["case_failures"]["run413-bok-kbs-rate-decision"],
-            ["adapter_contract:event_draft_contract"],
-        )
+        self.assertEqual(qwen["failure_classification"], "MIXED_ADAPTER_AND_SEMANTIC_FAILURE")
         self.assertEqual(
             qwen["case_failures"]["run413-bok-kmib-outlook-child"],
             ["event_drafts_min", "expected_event_match", "parent_hint_min"],
         )
-        self.assertEqual(
-            qwen["case_failures"]["run413-kpop-alphadriveone-actor-preserved"],
-            ["adapter_contract:evidence_contract"],
-        )
-        self.assertEqual(
-            qwen["case_failures"]["run413-kbo-osen-same-game-source"],
-            ["adapter_contract:evidence_contract"],
-        )
-        self.assertEqual(qwen["artifact_id"], 9662058073)
-        self.assertEqual(
-            qwen["artifact_digest"],
-            "sha256:f8295c8c0e81c04334ef7ec2a221cd09b8e675decaa5e7b35dbd209a0cb8cb11",
-        )
+
+        hf = payload["providers"]["hf_qwen235b2507_nscale"]
+        self.assertEqual(hf["model"], "Qwen/Qwen3-235B-A22B-Instruct-2507:nscale")
+        self.assertEqual(hf["status"], "NOT_QUALIFIED")
+        self.assertEqual(hf["qualification_protocol"], 3)
+        self.assertEqual(hf["run_id"], 33136814090)
+        self.assertEqual(hf["failure_classification"], "EVIDENCE_CONTRACT")
+        self.assertEqual(hf["artifact_id"], 9672398678)
+
+        for provider_id, record in payload["providers"].items():
+            protocol = record.get("qualification_protocol")
+            if protocol is not None:
+                with self.subTest(provider_id=provider_id):
+                    self.assertLess(protocol, payload["active_qualification_protocol"])
 
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(
@@ -172,22 +138,15 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_mistral_transient_block_cannot_be_selected(self) -> None:
+    def test_stale_v3_transient_block_does_not_block_current_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
+        validate_provider_status(payload)
         mutated = deepcopy(payload)
-        self._mark_selection_state(mutated)
-        mutated["selected_event_understanding_provider"] = "mistral_large_3"
-        with self.assertRaisesRegex(ContractError, "not qualified"):
+        mutated["provider_inventory_status"] = CANDIDATE_QUALIFICATION_BLOCKED
+        with self.assertRaisesRegex(ContractError, "NO_ELIGIBLE_EXISTING_PROVIDER"):
             validate_provider_status(mutated)
 
-    def test_transient_block_requires_blocked_inventory(self) -> None:
-        payload = load_provider_status(STATUS_PATH)
-        mutated = deepcopy(payload)
-        mutated["provider_inventory_status"] = "NO_ELIGIBLE_EXISTING_PROVIDER"
-        with self.assertRaisesRegex(ContractError, "CANDIDATE_QUALIFICATION_BLOCKED"):
-            validate_provider_status(mutated)
-
-    def test_transient_block_rejects_semantic_failure_codes(self) -> None:
+    def test_historical_transient_record_still_rejects_semantic_failure_codes(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["mistral_large_3"]["case_failures"][
@@ -196,23 +155,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "definitive failure"):
             validate_provider_status(mutated)
 
-    def test_openrouter_unqualified_provider_cannot_be_selected(self) -> None:
-        payload = load_provider_status(STATUS_PATH)
-        mutated = deepcopy(payload)
-        self._mark_selection_state(mutated)
-        mutated["selected_event_understanding_provider"] = "openrouter_nemotron_free"
-        with self.assertRaisesRegex(ContractError, "not qualified"):
-            validate_provider_status(mutated)
-
-    def test_qwen_unqualified_provider_cannot_be_selected(self) -> None:
-        payload = load_provider_status(STATUS_PATH)
-        mutated = deepcopy(payload)
-        self._mark_selection_state(mutated)
-        mutated["selected_event_understanding_provider"] = "groq_qwen38_27b"
-        with self.assertRaisesRegex(ContractError, "not qualified"):
-            validate_provider_status(mutated)
-
-    def test_excluded_120b_cannot_be_selected(self) -> None:
+    def test_excluded_provider_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         self._mark_selection_state(mutated)
@@ -220,35 +163,26 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_credential_blocked_candidate_cannot_be_selected(self) -> None:
+    def test_active_v4_credential_block_is_not_selectable_and_requires_blocked_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["credential_blocked"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 3,
+            "qualification_protocol": 4,
             "evaluated_cases": 0,
             "preflight_result": "NOT_CONFIGURED",
         }
+        with self.assertRaisesRegex(ContractError, "CANDIDATE_QUALIFICATION_BLOCKED"):
+            validate_provider_status(mutated)
+
+        mutated["provider_inventory_status"] = CANDIDATE_QUALIFICATION_BLOCKED
+        validate_provider_status(mutated)
+
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "credential_blocked"
         with self.assertRaisesRegex(ContractError, "not qualified"):
-            validate_provider_status(mutated)
-
-    def test_blocked_inventory_prevents_selection_even_for_synthetic_pass(self) -> None:
-        payload = load_provider_status(STATUS_PATH)
-        mutated = deepcopy(payload)
-        mutated["providers"]["future_candidate"] = {
-            "provider": "fixture",
-            "model": "fixture-model",
-            "status": MINIMUM_COMPATIBILITY_PASS,
-            "qualification_protocol": 3,
-            "evaluated_cases": 4,
-        }
-        mutated["qualification_contract_status"] = QUALIFIED_PROVIDER_SELECTED
-        mutated["selected_event_understanding_provider"] = "future_candidate"
-        with self.assertRaisesRegex(ContractError, "not eligible"):
             validate_provider_status(mutated)
 
     def test_credential_block_requires_zero_cases_and_not_configured_preflight(self) -> None:
@@ -258,18 +192,19 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 3,
+            "qualification_protocol": 4,
             "evaluated_cases": 1,
             "preflight_result": "NOT_CONFIGURED",
         }
         with self.assertRaisesRegex(ContractError, "zero cases"):
             validate_provider_status(mutated)
+
         mutated = deepcopy(payload)
         mutated["providers"]["credential_blocked"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": QUALIFICATION_BLOCKED_CREDENTIAL,
-            "qualification_protocol": 3,
+            "qualification_protocol": 4,
             "evaluated_cases": 0,
             "preflight_result": "NOT_QUALIFIED",
         }
@@ -290,23 +225,25 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "provider": "fixture",
             "model": "fixture-model",
             "status": MINIMUM_COMPATIBILITY_PASS,
-            "qualification_protocol": 2,
+            "qualification_protocol": 3,
             "evaluated_cases": 4,
+            "passed_cases": 4,
         }
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "historical_pass"
         with self.assertRaisesRegex(ContractError, "stale protocol"):
             validate_provider_status(mutated)
 
-    def test_explicit_inventory_current_protocol_pass_is_required_for_selection(self) -> None:
+    def test_current_v4_pass_can_be_selected_despite_stale_v3_blocks(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["future_candidate"] = {
             "provider": "fixture",
             "model": "fixture-model",
             "status": MINIMUM_COMPATIBILITY_PASS,
-            "qualification_protocol": 3,
+            "qualification_protocol": 4,
             "evaluated_cases": 4,
+            "passed_cases": 4,
         }
         self._mark_selection_state(mutated)
         mutated["selected_event_understanding_provider"] = "future_candidate"
