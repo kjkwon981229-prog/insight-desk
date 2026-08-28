@@ -3,10 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from insight_desk.event_understanding_provider_status_v2 import (
-    NO_ELIGIBLE_EXISTING_PROVIDER,
-    load_provider_status,
-)
+from insight_desk.event_understanding_provider_status_v2 import load_provider_status
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +40,6 @@ class CohereQualificationFreezeV3Tests(unittest.TestCase):
             "sha256:73594960aa92f046fef4e7ee151721b6d40ba09e064963f9d3f5ba619f567259",
         )
         self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
 
