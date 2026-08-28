@@ -436,6 +436,24 @@
       "status": "EXCLUDED",
       "existing_responsibility": "verification_secondary",
       "reason": "single_owner_boundary_preserves_verification_role_and_model_is_entailment_classifier"
+    },
+    "mistral_medium35_v5": {
+      "provider": "mistral",
+      "model": "mistral-medium-3-5",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33180474834,
+      "head_sha": "3023001921a3b87c196d91bcf3dffb94dccaba46",
+      "evaluated_cases": 4,
+      "passed_cases": 3,
+      "failure_classification": "EVENT_MATCH_SEMANTIC_FAILURE",
+      "case_failures": {
+        "run413-kbo-osen-same-game-source": ["expected_event_match"]
+      },
+      "artifact_id": 9689501036,
+      "artifact_digest": "sha256:3f0af22349d62b36bc44ce4bf59471d3a635928e4b3f9bc3873183017640707c",
+      "report_digest": "sha256:ccd0f3685dbac6b863cf98276b3b44ec38eae8113b76627d05c3d52e251d3211"
     }
   }
 }
