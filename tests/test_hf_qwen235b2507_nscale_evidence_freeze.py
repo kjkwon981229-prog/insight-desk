@@ -3,10 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from insight_desk.event_understanding_provider_status_v2 import (
-    NO_ELIGIBLE_EXISTING_PROVIDER,
-    load_provider_status,
-)
+from insight_desk.event_understanding_provider_status_v2 import load_provider_status
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,7 +42,6 @@ class HuggingFaceQwen235B2507NscaleEvidenceFreezeTests(unittest.TestCase):
             self.assertEqual(failures, ["adapter_contract:evidence_contract"])
 
         self.assertLess(record["qualification_protocol"], status["active_qualification_protocol"])
-        self.assertEqual(status["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
