@@ -1,6 +1,6 @@
 # Gemini 2.5 Flash — Event Understanding V4 candidate
 
-This branch prepares exactly one qualification of `gemini-2.5-flash` under the active frozen V4 contract.
+This branch prepares one valid provider qualification of `gemini-2.5-flash` under the active frozen V4 contract.
 
 ## Eligibility checked before implementation
 
@@ -9,14 +9,26 @@ This branch prepares exactly one qualification of `gemini-2.5-flash` under the a
 - structured outputs supported
 - Standard Free Tier input and output are free of charge
 - official REST route used here: `v1beta/models/gemini-2.5-flash:generateContent`
-- qualification client uses the current generateContent structured-output contract, not Interactions
 - `GEMINI_API_KEY` is already the repository credential boundary; no new secret is introduced
 - production Gemini verification-failover owner remains separately frozen to `gemini-3.1-flash-lite`
-- no prior Event Understanding qualification record exists for this exact model
+- no prior valid Event Understanding qualification record exists for this exact model
 
 ## Why this route differs from Gemini 2.5 Pro
 
-The earlier `gemini-2.5-pro` V4 attempt was frozen as provider unavailable after the Interactions endpoint returned HTTP 404 for all four cases. That result is not reclassified or retried. The current official Gemini documentation explicitly supports structured output for `gemini-2.5-flash` through generateContent, so this candidate uses that documented endpoint rather than assuming Interactions availability.
+The earlier `gemini-2.5-pro` V4 attempt was frozen as provider unavailable after the Interactions endpoint returned HTTP 404 for all four cases. That result is not reclassified or retried. Gemini 2.5 Flash uses the documented generateContent route.
+
+## Harness correction before valid qualification
+
+Run `33160317727` reached the generateContent endpoint but every request returned HTTP 400 before model output. The qualification client had incorrectly nested the Interactions-style `responseFormat` object inside `generationConfig`. Current generateContent REST documentation requires `responseMimeType` plus `responseJsonSchema` for this JSON-Schema path. Therefore that run is harness RED evidence, not provider qualification evidence, and must not be entered in the provider registry as `NOT_QUALIFIED`.
+
+The corrected client is locked to:
+
+- `generationConfig.responseMimeType = application/json`
+- `generationConfig.responseJsonSchema = <frozen V4 schema>`
+- no `generationConfig.responseFormat`
+- HTTP transport attempts = 1
+
+A valid provider qualification may occur only after this corrected harness passes the ordinary Infrastructure, historical replay, and Phase 6 gates. The first valid provider result after those gates is final; no semantic retry or candidate-specific tuning is permitted.
 
 ## Frozen qualification boundary
 

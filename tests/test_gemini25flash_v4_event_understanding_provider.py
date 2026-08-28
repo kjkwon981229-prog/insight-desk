@@ -52,7 +52,7 @@ class Gemini25FlashV4QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ProviderConfigError, "GEMINI_API_KEY"):
             Gemini25FlashStructuredClient.from_env(env={})
 
-    def test_structured_json_uses_generate_content_schema_and_one_transport_call(self) -> None:
+    def test_structured_json_uses_generate_content_json_schema_and_one_transport_call(self) -> None:
         transport = _FakeTransport(
             {
                 "candidates": [
@@ -93,14 +93,11 @@ class Gemini25FlashV4QualificationTests(unittest.TestCase):
         self.assertEqual(
             payload["generationConfig"],
             {
-                "responseFormat": {
-                    "text": {
-                        "mimeType": "application/json",
-                        "schema": schema,
-                    }
-                }
+                "responseMimeType": "application/json",
+                "responseJsonSchema": schema,
             },
         )
+        self.assertNotIn("responseFormat", payload["generationConfig"])
 
     def test_invalid_provider_shape_maps_to_bounded_transport_failure(self) -> None:
         client = Gemini25FlashStructuredClient(api_key="test", transport=_FakeTransport({}))

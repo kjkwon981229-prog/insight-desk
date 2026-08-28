@@ -75,12 +75,8 @@ class Gemini25FlashStructuredClient:
                     }
                 ],
                 "generationConfig": {
-                    "responseFormat": {
-                        "text": {
-                            "mimeType": "application/json",
-                            "schema": schema,
-                        }
-                    }
+                    "responseMimeType": "application/json",
+                    "responseJsonSchema": schema,
                 },
             },
             {"x-goog-api-key": self.api_key},
