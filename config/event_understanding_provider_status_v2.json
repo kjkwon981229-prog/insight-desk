@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "contract": "event_understanding_v2",
-  "structured_output_schema": "event_understanding_schema_v2",
-  "active_qualification_protocol": 3,
+  "structured_output_schema": "event_understanding_schema_v3",
+  "active_qualification_protocol": 4,
   "qualification_contract_status": "AWAITING_PROVIDER_QUALIFICATION",
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
-  "provider_inventory_status": "CANDIDATE_QUALIFICATION_BLOCKED",
+  "provider_inventory_status": "NO_ELIGIBLE_EXISTING_PROVIDER",
   "selected_event_understanding_provider": null,
   "production_wired": false,
   "providers": {
