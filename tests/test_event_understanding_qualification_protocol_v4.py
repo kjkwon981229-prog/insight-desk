@@ -84,7 +84,12 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
 
         self.assertEqual(
             current_v4,
-            ["gemini_35_flash_v4", "gemini_36_flash_v4", "gemini_25_pro_v4"],
+            [
+                "gemini_35_flash_v4",
+                "gemini_36_flash_v4",
+                "gemini_25_pro_v4",
+                "gemini_35_flash_lite_v4",
+            ],
         )
         gemini35 = status["providers"]["gemini_35_flash_v4"]
         self.assertEqual(gemini35["status"], "NOT_QUALIFIED")
@@ -98,6 +103,10 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertEqual(gemini25["status"], "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE")
         self.assertEqual(gemini25["evaluated_cases"], 4)
         self.assertEqual(gemini25["passed_cases"], 0)
+        gemini35lite = status["providers"]["gemini_35_flash_lite_v4"]
+        self.assertEqual(gemini35lite["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini35lite["evaluated_cases"], 4)
+        self.assertEqual(gemini35lite["passed_cases"], 1)
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
