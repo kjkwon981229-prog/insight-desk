@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import unittest
 
-from insight_desk.event_understanding_provider_status_v2 import load_provider_status
+from insight_desk.event_understanding_provider_status_v2 import (
+    NO_ELIGIBLE_EXISTING_PROVIDER,
+    load_provider_status,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,10 +23,7 @@ class CohereQualificationFreezeV3Tests(unittest.TestCase):
         self.assertEqual(record["status"], "NOT_QUALIFIED")
         self.assertEqual(record["qualification_protocol"], 3)
         self.assertEqual(record["run_id"], 33104385499)
-        self.assertEqual(
-            record["head_sha"],
-            "c3a7bc7bcd7f81b9f8f31ef14922950f7a49ea57",
-        )
+        self.assertEqual(record["head_sha"], "c3a7bc7bcd7f81b9f8f31ef14922950f7a49ea57")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
         self.assertEqual(record["failure_classification"], "ADAPTER_OUTPUT_CONTRACT")
@@ -43,8 +42,8 @@ class CohereQualificationFreezeV3Tests(unittest.TestCase):
             record["artifact_digest"],
             "sha256:73594960aa92f046fef4e7ee151721b6d40ba09e064963f9d3f5ba619f567259",
         )
-
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
+        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
 
