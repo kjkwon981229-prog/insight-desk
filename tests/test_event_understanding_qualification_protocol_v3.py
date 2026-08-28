@@ -6,7 +6,7 @@ import unittest
 
 from insight_desk import event_understanding_adapter_v2 as adapter
 from insight_desk.event_understanding_provider_status_v2 import (
-    NO_ELIGIBLE_EXISTING_PROVIDER,
+    CANDIDATE_QUALIFICATION_BLOCKED,
     load_provider_status,
 )
 from scripts import qualify_event_understanding_provider as historical_v3_qualification
@@ -46,7 +46,7 @@ class EventUnderstandingQualificationProtocolV3Tests(unittest.TestCase):
         self.assertEqual(status["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(status["active_qualification_protocol"], 4)
         self.assertEqual(status["qualification_contract_status"], "AWAITING_PROVIDER_QUALIFICATION")
-        self.assertEqual(status["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(status["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
