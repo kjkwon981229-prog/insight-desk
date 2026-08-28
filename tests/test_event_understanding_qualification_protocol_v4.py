@@ -74,11 +74,18 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
                 if protocol == 4:
                     current_v4.append(provider_id)
 
-        self.assertEqual(current_v4, ["gemini_35_flash_v4"])
-        frozen = status["providers"]["gemini_35_flash_v4"]
-        self.assertEqual(frozen["status"], "NOT_QUALIFIED")
-        self.assertEqual(frozen["evaluated_cases"], 4)
-        self.assertEqual(frozen["passed_cases"], 3)
+        self.assertEqual(
+            current_v4,
+            ["gemini_35_flash_v4", "gemini_36_flash_v4"],
+        )
+        gemini35 = status["providers"]["gemini_35_flash_v4"]
+        self.assertEqual(gemini35["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini35["evaluated_cases"], 4)
+        self.assertEqual(gemini35["passed_cases"], 3)
+        gemini36 = status["providers"]["gemini_36_flash_v4"]
+        self.assertEqual(gemini36["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini36["evaluated_cases"], 4)
+        self.assertEqual(gemini36["passed_cases"], 3)
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))

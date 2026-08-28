@@ -90,14 +90,26 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(hf["failure_classification"], "EVIDENCE_CONTRACT")
         self.assertEqual(hf["artifact_id"], 9672398678)
 
-        current_v4 = payload["providers"]["gemini_35_flash_v4"]
-        self.assertEqual(current_v4["status"], "NOT_QUALIFIED")
-        self.assertEqual(current_v4["qualification_protocol"], 4)
-        self.assertEqual(current_v4["evaluated_cases"], 4)
-        self.assertEqual(current_v4["passed_cases"], 3)
+        gemini35_v4 = payload["providers"]["gemini_35_flash_v4"]
+        self.assertEqual(gemini35_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini35_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini35_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini35_v4["passed_cases"], 3)
+
+        gemini36_v4 = payload["providers"]["gemini_36_flash_v4"]
+        self.assertEqual(gemini36_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(gemini36_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini36_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini36_v4["passed_cases"], 3)
+        self.assertEqual(gemini36_v4["run_id"], 33144497986)
+        self.assertEqual(gemini36_v4["failure_classification"], "CHILD_EVENT_SEMANTIC_FAILURE")
+        self.assertEqual(
+            gemini36_v4["case_failures"]["run413-bok-kmib-outlook-child"],
+            ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        )
 
         for provider_id, record in payload["providers"].items():
-            if provider_id == "gemini_35_flash_v4":
+            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4"}:
                 continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:

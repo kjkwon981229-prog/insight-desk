@@ -294,6 +294,24 @@
       "artifact_digest": "sha256:db59c3f2db9e09a61dc3fbad22021ccde116ebb2394e05f14051acfbbbfa7386",
       "report_digest": "sha256:0debab420e17a762c52b57db626b84db677c084b4659ee70e2f99054c25dcced"
     },
+    "gemini_36_flash_v4": {
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 4,
+      "run_id": 33144497986,
+      "head_sha": "30443380b53e30d0daff46b495fe944b6d2d195e",
+      "evaluated_cases": 4,
+      "passed_cases": 3,
+      "failure_classification": "CHILD_EVENT_SEMANTIC_FAILURE",
+      "case_failures": {
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"]
+      },
+      "artifact_id": 9675278580,
+      "artifact_digest": "sha256:5df26a3924ae3582026a221964a752bf94ca35c7c478ae490dbf09c79eb9990f",
+      "report_digest": "sha256:f5f56ab815e2bdb2c7c211a8b440455bb9656fc9faade9852006f5a15b31c21d"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
