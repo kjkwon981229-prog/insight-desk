@@ -22,32 +22,20 @@ class CerebrasGemma4_31BV4QualificationFreezeTests(unittest.TestCase):
         self.assertEqual(record["existing_responsibility"], "event_understanding_candidate")
         self.assertEqual(record["qualification_protocol"], 4)
         self.assertEqual(record["run_id"], 33168432708)
-        self.assertEqual(
-            record["head_sha"],
-            "23b4a8ad72d78dd61f6d8cfec2a9f9555ad8be48",
-        )
+        self.assertEqual(record["head_sha"], "23b4a8ad72d78dd61f6d8cfec2a9f9555ad8be48")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
         self.assertEqual(record["failure_classification"], "ZERO_COST_ACCESS_UNAVAILABLE")
         self.assertEqual(
             record["case_failures"],
             {
-                "run413-bok-kbs-rate-decision": [
-                    "provider_transport:invalid_output",
-                    "http_status:402",
-                ],
-                "run413-bok-kmib-outlook-child": [
-                    "provider_transport:invalid_output",
-                    "http_status:402",
-                ],
-                "run413-kpop-alphadriveone-actor-preserved": [
-                    "provider_transport:invalid_output",
-                    "http_status:402",
-                ],
-                "run413-kbo-osen-same-game-source": [
-                    "provider_transport:invalid_output",
-                    "http_status:402",
-                ],
+                case_id: ["provider_transport:invalid_output", "http_status:402"]
+                for case_id in (
+                    "run413-bok-kbs-rate-decision",
+                    "run413-bok-kmib-outlook-child",
+                    "run413-kpop-alphadriveone-actor-preserved",
+                    "run413-kbo-osen-same-game-source",
+                )
             },
         )
         self.assertEqual(record["artifact_id"], 9684571773)
@@ -59,18 +47,11 @@ class CerebrasGemma4_31BV4QualificationFreezeTests(unittest.TestCase):
             record["report_digest"],
             "sha256:8fdd84a04d8061c999e58d3019d1ec54c5c2657875bd9b9f7ddd979d6ae2e434",
         )
-
-        self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
-        self.assertIsNone(payload["selected_event_understanding_provider"])
-        self.assertFalse(payload["production_wired"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
 
     def test_consumed_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
-        self.assertNotIn(
-            "  semantic-v4-provider-candidate-cerebras-gemma4-31b:\n",
-            workflow,
-        )
+        self.assertNotIn("  semantic-v4-provider-candidate-cerebras-gemma4-31b:\n", workflow)
         self.assertNotIn("[semantic-v4-candidate:cerebras-gemma4-31b]", workflow)
         self.assertNotIn("qualify_cerebras_gemma4_31b_v4", workflow)
         self.assertNotIn("event-understanding-cerebras-gemma4-31b-v4", workflow)
