@@ -25,7 +25,7 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
-    def test_current_status_preserves_historical_evidence_and_unselected_v4_nonpass(self) -> None:
+    def test_current_status_preserves_historical_evidence_and_current_v4_results(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         self.assertIsNone(selected_provider(payload))
         self.assertFalse(payload["production_wired"])
@@ -34,7 +34,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(payload["active_qualification_protocol"], 4)
         self.assertEqual(payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
 
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -108,8 +108,16 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             ["event_drafts_min", "expected_event_match", "parent_hint_min"],
         )
 
+        gemini37_v4 = payload["providers"]["gemini_37_flash_v4"]
+        self.assertEqual(gemini37_v4["status"], QUALIFICATION_BLOCKED_TRANSIENT)
+        self.assertEqual(gemini37_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini37_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini37_v4["passed_cases"], 0)
+        self.assertEqual(gemini37_v4["run_id"], 33146748912)
+        self.assertEqual(gemini37_v4["failure_classification"], "PROVIDER_TRANSIENT_FAILURE")
+
         for provider_id, record in payload["providers"].items():
-            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4"}:
+            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4", "gemini_37_flash_v4"}:
                 continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:
@@ -133,13 +141,12 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "not qualified"):
             validate_provider_status(mutated)
 
-    def test_stale_v3_transient_block_does_not_block_current_inventory(self) -> None:
+    def test_stale_v3_transient_block_alone_does_not_block_current_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
-        validate_provider_status(payload)
         mutated = deepcopy(payload)
-        mutated["provider_inventory_status"] = CANDIDATE_QUALIFICATION_BLOCKED
-        with self.assertRaisesRegex(ContractError, "NO_ELIGIBLE_EXISTING_PROVIDER"):
-            validate_provider_status(mutated)
+        del mutated["providers"]["gemini_37_flash_v4"]
+        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
+        validate_provider_status(mutated)
 
     def test_historical_transient_record_still_rejects_semantic_failure_codes(self) -> None:
         payload = load_provider_status(STATUS_PATH)
@@ -167,6 +174,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "evaluated_cases": 0,
             "preflight_result": "NOT_CONFIGURED",
         }
+        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         with self.assertRaisesRegex(ContractError, "CANDIDATE_QUALIFICATION_BLOCKED"):
             validate_provider_status(mutated)
 
@@ -227,7 +235,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "stale protocol"):
             validate_provider_status(mutated)
 
-    def test_current_v4_pass_can_be_selected_despite_stale_v3_blocks(self) -> None:
+    def test_current_v4_pass_can_be_selected_despite_active_transient_block(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
         mutated["providers"]["future_candidate"] = {
