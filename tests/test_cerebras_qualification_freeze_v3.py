@@ -7,6 +7,7 @@ import unittest
 from insight_desk.core.contracts import ContractError
 from insight_desk.event_understanding_provider_status_v2 import (
     ELIGIBLE_CANDIDATE_AVAILABLE,
+    NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE,
     QUALIFIED_PROVIDER_SELECTED,
     load_provider_status,
@@ -27,10 +28,7 @@ class CerebrasQualificationFreezeV3Tests(unittest.TestCase):
         self.assertEqual(record["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
         self.assertEqual(record["qualification_protocol"], 3)
         self.assertEqual(record["run_id"], 33107187962)
-        self.assertEqual(
-            record["head_sha"],
-            "3fd4716da29907ed7ca1867d26315b6959684f39",
-        )
+        self.assertEqual(record["head_sha"], "3fd4716da29907ed7ca1867d26315b6959684f39")
         self.assertEqual(record["raw_run_status"], "NOT_QUALIFIED")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
@@ -42,13 +40,11 @@ class CerebrasQualificationFreezeV3Tests(unittest.TestCase):
         )
         self.assertEqual(len(record["case_failures"]), 4)
         for failures in record["case_failures"].values():
-            self.assertEqual(
-                failures,
-                ["provider_transport:invalid_output", "http_status:404"],
-            )
+            self.assertEqual(failures, ["provider_transport:invalid_output", "http_status:404"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
+        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
 
     def test_provider_unavailable_candidate_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
