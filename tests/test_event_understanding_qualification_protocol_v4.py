@@ -92,6 +92,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
                 "gemini_35_flash_lite_v4",
                 "gemini_25_flash_v4",
                 "hf_qwen36_35b_deepinfra_v4",
+                "cerebras_gemma4_31b_v4",
             ],
         )
         gemini35 = status["providers"]["gemini_35_flash_v4"]
@@ -124,6 +125,14 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertEqual(
             hf_qwen36["failure_classification"],
             "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE",
+        )
+        cerebras_gemma = status["providers"]["cerebras_gemma4_31b_v4"]
+        self.assertEqual(cerebras_gemma["status"], "NOT_QUALIFIED")
+        self.assertEqual(cerebras_gemma["evaluated_cases"], 4)
+        self.assertEqual(cerebras_gemma["passed_cases"], 0)
+        self.assertEqual(
+            cerebras_gemma["failure_classification"],
+            "ZERO_COST_ACCESS_UNAVAILABLE",
         )
 
     def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
