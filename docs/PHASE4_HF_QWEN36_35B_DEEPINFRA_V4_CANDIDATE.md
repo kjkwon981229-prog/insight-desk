@@ -46,4 +46,38 @@ The client is qualification-only and is not exported from `insight_desk.provider
 
 No live provider call is permitted until this branch's ordinary Infrastructure job, historical production replay, and Phase 6 correctness/recall gate are all GREEN on the exact candidate head. After those gates pass, exactly one one-shot V4 qualification may be triggered. The first valid result is final for this exact model/provider route and must be frozen before any further provider work.
 
-Preflight head `c7627ce61dab71bfa0a9dc4a3a1bae0dfc0188ea` passed Infrastructure, historical production replay, and Phase 6 correctness/recall in run `33166053391`; the provider qualification job was SKIPPED because that commit carried no qualification marker. This marker commit may therefore execute the one permitted qualification call.
+Preflight head `c7627ce61dab71bfa0a9dc4a3a1bae0dfc0188ea` passed Infrastructure, historical production replay, and Phase 6 correctness/recall in run `33166053391`; the provider qualification job was SKIPPED because that commit carried no qualification marker.
+
+## Frozen first valid result
+
+The one permitted V4 qualification ran at exact head `3d716e45f8031b48fbc47c6a6110b5d580809252` in Actions run `33166122207`.
+
+Result:
+
+```text
+status = NOT_QUALIFIED
+evaluated_cases = 4
+passed_cases = 0
+failure_classification = MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE
+```
+
+Case failures:
+
+- `run413-bok-kbs-rate-decision` -> `provider_transport:invalid_output`
+- `run413-bok-kmib-outlook-child` -> `provider_transport:transient_provider`
+- `run413-kpop-alphadriveone-actor-preserved` -> `provider_transport:invalid_output`
+- `run413-kbo-osen-same-game-source` -> `provider_transport:transient_provider`
+
+Because two cases contain definitive `invalid_output` failures, the mixed result is not eligible for `QUALIFICATION_BLOCKED_TRANSIENT`; it remains definitive `NOT_QUALIFIED`. The exact model/provider route must not be retried or candidate-specifically tuned.
+
+Evidence binding:
+
+- qualification run: `33166122207`
+- exact qualification head: `3d716e45f8031b48fbc47c6a6110b5d580809252`
+- artifact ID: `9683792273`
+- artifact ZIP SHA-256: `fa52047919a441da4ad819ad39b257df5e58ef7721c5c0055c545f8e3addd81f`
+- report SHA-256: `e2807cc45d6a2e45e653ced1831275b7363981b2d3b9ba90eb99ab208d025017`
+
+The uploaded ZIP and contained report were independently re-hashed and matched the Actions evidence exactly. The consumed one-shot CI lane was removed immediately after the first result.
+
+Machine state remains unselected and production-unwired. Existing active V4 provider-unavailable records still keep provider inventory at `CANDIDATE_QUALIFICATION_BLOCKED`. No migration blocker, production wiring, fresh canary, deploy, Push, or merge was touched.
