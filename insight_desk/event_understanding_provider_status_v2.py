@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """Mechanical status contract for Event Understanding provider selection.
 
-This module does not qualify providers and does not wire production. It only prevents an
-unqualified, excluded, credential-blocked, transiently blocked, provider-unavailable,
-stale-protocol, or inventory-blocked provider from being selected as the Event Understanding owner.
+Provider evidence from older qualification protocols remains valid historical evidence, but only
+results from the active protocol may make a provider selectable or make the current provider
+inventory actively blocked. This module does not qualify providers and does not wire production.
 """
 
 import json
@@ -25,6 +25,10 @@ CANDIDATE_QUALIFICATION_BLOCKED = "CANDIDATE_QUALIFICATION_BLOCKED"
 ELIGIBLE_CANDIDATE_AVAILABLE = "ELIGIBLE_CANDIDATE_AVAILABLE"
 AWAITING_PROVIDER_QUALIFICATION = "AWAITING_PROVIDER_QUALIFICATION"
 QUALIFIED_PROVIDER_SELECTED = "QUALIFIED_PROVIDER_SELECTED"
+
+ACTIVE_QUALIFICATION_PROTOCOL = 4
+ACTIVE_STRUCTURED_OUTPUT_SCHEMA = "event_understanding_schema_v3"
+
 _ALLOWED_STATUSES = frozenset(
     {
         MINIMUM_COMPATIBILITY_PASS,
@@ -63,14 +67,11 @@ def _qualification_protocol(raw: Mapping[str, Any], *, provider_id: str, active:
     return protocol
 
 
-def _validate_transient_block(raw: Mapping[str, Any], *, provider_id: str, active: int) -> None:
+def _validate_transient_block(raw: Mapping[str, Any], *, provider_id: str, active: int) -> int:
     evaluated_cases = raw.get("evaluated_cases")
     if type(evaluated_cases) is not int or evaluated_cases <= 0:
         raise ContractError(f"{provider_id}: transient-blocked qualification must evaluate cases")
-    if _qualification_protocol(raw, provider_id=provider_id, active=active) != active:
-        raise ContractError(
-            f"{provider_id}: transient-blocked qualification must target active protocol"
-        )
+    protocol = _qualification_protocol(raw, provider_id=provider_id, active=active)
     passed_cases = raw.get("passed_cases")
     if type(passed_cases) is not int or passed_cases < 0 or passed_cases >= evaluated_cases:
         raise ContractError(
@@ -102,20 +103,18 @@ def _validate_transient_block(raw: Mapping[str, Any], *, provider_id: str, activ
             raise ContractError(
                 f"{provider_id}: transient-blocked qualification contains non-transport failure"
             )
+    return protocol
 
 
 def _validate_provider_unavailable_block(
     raw: Mapping[str, Any], *, provider_id: str, active: int
-) -> None:
+) -> int:
     evaluated_cases = raw.get("evaluated_cases")
     if type(evaluated_cases) is not int or evaluated_cases <= 0:
         raise ContractError(
             f"{provider_id}: provider-unavailable qualification must evaluate cases"
         )
-    if _qualification_protocol(raw, provider_id=provider_id, active=active) != active:
-        raise ContractError(
-            f"{provider_id}: provider-unavailable qualification must target active protocol"
-        )
+    protocol = _qualification_protocol(raw, provider_id=provider_id, active=active)
     passed_cases = raw.get("passed_cases")
     if type(passed_cases) is not int or passed_cases < 0 or passed_cases >= evaluated_cases:
         raise ContractError(
@@ -141,6 +140,7 @@ def _validate_provider_unavailable_block(
             raise ContractError(
                 f"{provider_id}: provider-unavailable qualification contains definitive or non-404 failure"
             )
+    return protocol
 
 
 def validate_provider_status(payload: Mapping[str, Any]) -> None:
@@ -148,11 +148,15 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
         raise ContractError("provider status schema_version must be 2")
     if payload.get("contract") != "event_understanding_v2":
         raise ContractError("provider status contract must be event_understanding_v2")
-    if payload.get("structured_output_schema") != "event_understanding_schema_v2":
-        raise ContractError("provider status structured output schema must be event_understanding_schema_v2")
+    if payload.get("structured_output_schema") != ACTIVE_STRUCTURED_OUTPUT_SCHEMA:
+        raise ContractError(
+            f"provider status structured output schema must be {ACTIVE_STRUCTURED_OUTPUT_SCHEMA}"
+        )
     active_protocol = payload.get("active_qualification_protocol")
-    if active_protocol != 3:
-        raise ContractError("active qualification protocol must be 3")
+    if active_protocol != ACTIVE_QUALIFICATION_PROTOCOL:
+        raise ContractError(
+            f"active qualification protocol must be {ACTIVE_QUALIFICATION_PROTOCOL}"
+        )
     qualification_contract_status = payload.get("qualification_contract_status")
     if qualification_contract_status not in _ALLOWED_QUALIFICATION_CONTRACT_STATUSES:
         raise ContractError("qualification contract status is unsupported")
@@ -167,7 +171,7 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
     if not isinstance(providers, Mapping) or not providers:
         raise ContractError("provider status requires providers mapping")
 
-    blocked_provider_ids: list[str] = []
+    active_blocked_provider_ids: list[str] = []
     active_pass_provider_ids: list[str] = []
     for provider_id, raw in providers.items():
         if not isinstance(provider_id, str) or not provider_id.strip():
@@ -190,12 +194,14 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
         evaluated_cases = raw.get("evaluated_cases", 0)
         if type(evaluated_cases) is not int or evaluated_cases < 0:
             raise ContractError(f"{provider_id}: evaluated_cases must be a non-negative integer")
+
         if status in {MINIMUM_COMPATIBILITY_PASS, NOT_QUALIFIED} and evaluated_cases > 0:
             protocol = _qualification_protocol(raw, provider_id=provider_id, active=active_protocol)
             if status == MINIMUM_COMPATIBILITY_PASS and protocol == active_protocol:
                 active_pass_provider_ids.append(provider_id)
         if status == MINIMUM_COMPATIBILITY_PASS and evaluated_cases == 0:
             raise ContractError(f"{provider_id}: qualified provider must have evaluated cases")
+
         if status == QUALIFICATION_BLOCKED_CREDENTIAL:
             if evaluated_cases != 0:
                 raise ContractError(
@@ -205,31 +211,27 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
                 raise ContractError(
                     f"{provider_id}: credential-blocked qualification must be NOT_CONFIGURED"
                 )
-            protocol = raw.get("qualification_protocol")
-            if protocol is not None and protocol != active_protocol:
-                raise ContractError(
-                    f"{provider_id}: credential-blocked qualification must target active protocol"
-                )
+            protocol_raw = raw.get("qualification_protocol")
+            if protocol_raw is not None:
+                protocol = _qualification_protocol(raw, provider_id=provider_id, active=active_protocol)
+                if protocol == active_protocol:
+                    active_blocked_provider_ids.append(provider_id)
+
         if status == QUALIFICATION_BLOCKED_TRANSIENT:
-            _validate_transient_block(raw, provider_id=provider_id, active=active_protocol)
-            blocked_provider_ids.append(provider_id)
-        if status == QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE:
-            _validate_provider_unavailable_block(
+            protocol = _validate_transient_block(
                 raw, provider_id=provider_id, active=active_protocol
             )
-            blocked_provider_ids.append(provider_id)
+            if protocol == active_protocol:
+                active_blocked_provider_ids.append(provider_id)
+
+        if status == QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE:
+            protocol = _validate_provider_unavailable_block(
+                raw, provider_id=provider_id, active=active_protocol
+            )
+            if protocol == active_protocol:
+                active_blocked_provider_ids.append(provider_id)
 
     selected = payload.get("selected_event_understanding_provider")
-    if (
-        selected is None
-        and blocked_provider_ids
-        and not active_pass_provider_ids
-        and inventory_status != CANDIDATE_QUALIFICATION_BLOCKED
-    ):
-        raise ContractError(
-            "blocked candidate requires CANDIDATE_QUALIFICATION_BLOCKED inventory"
-        )
-
     production_wired = payload.get("production_wired")
     if not isinstance(production_wired, bool):
         raise ContractError("production_wired must be boolean")
@@ -239,6 +241,20 @@ def validate_provider_status(payload: Mapping[str, Any]) -> None:
             raise ContractError("production cannot be wired without a selected provider")
         if qualification_contract_status != AWAITING_PROVIDER_QUALIFICATION:
             raise ContractError("unselected provider state must await provider qualification")
+        if active_pass_provider_ids:
+            if inventory_status != ELIGIBLE_CANDIDATE_AVAILABLE:
+                raise ContractError(
+                    "active qualified candidate requires ELIGIBLE_CANDIDATE_AVAILABLE inventory"
+                )
+        elif active_blocked_provider_ids:
+            if inventory_status != CANDIDATE_QUALIFICATION_BLOCKED:
+                raise ContractError(
+                    "active blocked candidate requires CANDIDATE_QUALIFICATION_BLOCKED inventory"
+                )
+        elif inventory_status != NO_ELIGIBLE_EXISTING_PROVIDER:
+            raise ContractError(
+                "no active-protocol provider result requires NO_ELIGIBLE_EXISTING_PROVIDER inventory"
+            )
         return
 
     if not isinstance(selected, str) or not selected.strip():
