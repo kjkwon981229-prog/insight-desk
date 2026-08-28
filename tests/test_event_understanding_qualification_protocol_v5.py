@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 from insight_desk.core import EventUnderstandingRequest, SourceDocument
@@ -105,6 +106,31 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         self.assertNotIn("provider", EVENT_UNDERSTANDING_SCHEMA_V4["properties"])
         self.assertNotIn("model", EVENT_UNDERSTANDING_SCHEMA_V4["properties"])
 
+    def test_v5_unconfigured_report_identifies_v5_without_provider_call(self) -> None:
+        original_configured = qualification_v5._provider_configured
+        original_model = qualification_v5._provider_model
+        try:
+            qualification_v5._provider_configured = lambda provider: False
+            qualification_v5._provider_model = lambda provider: "fixture-model"
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report_path = Path(tmpdir) / "report.json"
+                exit_code = qualification_v5.qualify(
+                    provider="groq",
+                    qualification_path=V5_PATH,
+                    scopes_path=qualification_v5.DEFAULT_SCOPES,
+                    report_path=report_path,
+                )
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+        finally:
+            qualification_v5._provider_configured = original_configured
+            qualification_v5._provider_model = original_model
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(report["status"], "NOT_CONFIGURED")
+        self.assertEqual(report["qualification_protocol"], 5)
+        self.assertEqual(report["structured_output_schema"], "event_understanding_schema_v4")
+        self.assertEqual(report["evaluated_cases"], 0)
+
     def test_v5_becomes_active_without_reusing_any_v4_result(self) -> None:
         status = load_provider_status(STATUS_PATH)
         validate_provider_status(status)
@@ -139,7 +165,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         mutated["qualification_contract_status"] = "QUALIFIED_PROVIDER_SELECTED"
         mutated["provider_inventory_status"] = "ELIGIBLE_CANDIDATE_AVAILABLE"
         mutated["selected_event_understanding_provider"] = "synthetic_v4_pass"
-        with self.assertRaisesRegex(Exception, "active qualification protocol"):
+        with self.assertRaisesRegex(Exception, "stale protocol"):
             validate_provider_status(mutated)
 
     def test_v5_does_not_open_migration_gate(self) -> None:
