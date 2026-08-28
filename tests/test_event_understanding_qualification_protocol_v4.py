@@ -56,11 +56,11 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertNotIn("start", evidence["properties"])
         self.assertNotIn("end", evidence["properties"])
 
-    def test_machine_status_preserves_stale_v3_and_frozen_v4_nonpass_evidence(self) -> None:
+    def test_machine_status_preserves_stale_v3_and_frozen_v4_evidence(self) -> None:
         status = load_provider_status(STATUS_PATH)
         self.assertEqual(status["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(status["active_qualification_protocol"], 4)
-        self.assertEqual(status["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(status["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
@@ -76,7 +76,7 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
 
         self.assertEqual(
             current_v4,
-            ["gemini_35_flash_v4", "gemini_36_flash_v4"],
+            ["gemini_35_flash_v4", "gemini_36_flash_v4", "gemini_37_flash_v4"],
         )
         gemini35 = status["providers"]["gemini_35_flash_v4"]
         self.assertEqual(gemini35["status"], "NOT_QUALIFIED")
@@ -86,26 +86,21 @@ class EventUnderstandingQualificationProtocolV4Tests(unittest.TestCase):
         self.assertEqual(gemini36["status"], "NOT_QUALIFIED")
         self.assertEqual(gemini36["evaluated_cases"], 4)
         self.assertEqual(gemini36["passed_cases"], 3)
+        gemini37 = status["providers"]["gemini_37_flash_v4"]
+        self.assertEqual(gemini37["status"], QUALIFICATION_BLOCKED_TRANSIENT)
+        self.assertEqual(gemini37["evaluated_cases"], 4)
+        self.assertEqual(gemini37["passed_cases"], 0)
 
-    def test_stale_v3_block_does_not_count_as_current_protocol_block(self) -> None:
+    def test_stale_v3_block_alone_does_not_count_as_current_protocol_block(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        del payload["providers"]["gemini_37_flash_v4"]
+        payload["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(payload)
 
     def test_current_v4_transient_block_requires_blocked_inventory(self) -> None:
         payload = json.loads(STATUS_PATH.read_text(encoding="utf-8"))
         mutated = deepcopy(payload)
-        mutated["providers"]["v4_transient"] = {
-            "provider": "fixture",
-            "model": "fixture-v4-model",
-            "status": QUALIFICATION_BLOCKED_TRANSIENT,
-            "qualification_protocol": 4,
-            "evaluated_cases": 4,
-            "passed_cases": 0,
-            "case_failures": {
-                "case-1": ["provider_transport:transient_provider"],
-            },
-        }
+        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         with self.assertRaisesRegex(ContractError, "CANDIDATE_QUALIFICATION_BLOCKED"):
             validate_provider_status(mutated)
 
