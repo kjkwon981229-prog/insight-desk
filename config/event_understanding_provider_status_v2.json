@@ -333,6 +333,26 @@
       "artifact_digest": "sha256:29b1c06e25b229a27673ba56ee5f26c9f009214c72c66168e83c0171c7c397df",
       "report_digest": "sha256:7607598c7b96ab6c76fd45b066339f3939a3e397de6671d274f8fb132a59d639"
     },
+    "gemini_35_flash_lite_v4": {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 4,
+      "run_id": 33154997997,
+      "head_sha": "9aae9e36c1358fc3693118d99c2bd9da796f8a4a",
+      "evaluated_cases": 4,
+      "passed_cases": 1,
+      "failure_classification": "EVENT_DRAFT_CONTRACT",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": ["adapter_contract:event_draft_contract"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:event_draft_contract"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:event_draft_contract"]
+      },
+      "artifact_id": 9679252510,
+      "artifact_digest": "sha256:dbcf2e735404a3267f862dd90ebb1a9b5475e0c73994eb255bba2d247d43a6fc",
+      "report_digest": "sha256:73762b6e18f9d8c05c2ce7cf6575c2bff383907dacc6f02b78c8c6d160b44f0b"
+    },
     "groq_120b": {
       "provider": "groq",
       "model": "openai/gpt-oss-120b",
