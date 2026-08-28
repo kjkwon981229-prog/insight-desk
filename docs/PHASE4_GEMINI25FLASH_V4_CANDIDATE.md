@@ -11,7 +11,7 @@ This branch prepares one valid provider qualification of `gemini-2.5-flash` unde
 - official REST route used here: `v1beta/models/gemini-2.5-flash:generateContent`
 - `GEMINI_API_KEY` is already the repository credential boundary; no new secret is introduced
 - production Gemini verification-failover owner remains separately frozen to `gemini-3.1-flash-lite`
-- no prior valid Event Understanding qualification record exists for this exact model
+- no prior valid Event Understanding qualification record existed for this exact model before this branch
 
 ## Why this route differs from Gemini 2.5 Pro
 
@@ -19,7 +19,7 @@ The earlier `gemini-2.5-pro` V4 attempt was frozen as provider unavailable after
 
 ## Harness correction before valid qualification
 
-Run `33160317727` reached the generateContent endpoint but every request returned HTTP 400 before model output. The qualification client had incorrectly nested the Interactions-style `responseFormat` object inside `generationConfig`. Current generateContent REST documentation requires `responseMimeType` plus `responseJsonSchema` for this JSON-Schema path. Therefore that run is harness RED evidence, not provider qualification evidence, and must not be entered in the provider registry as `NOT_QUALIFIED`.
+Run `33160317727` reached the generateContent endpoint but every request returned HTTP 400 before model output. The qualification client had incorrectly nested the Interactions-style `responseFormat` object inside `generationConfig`. Current generateContent REST documentation requires `responseMimeType` plus `responseJsonSchema` for this JSON-Schema path. Therefore that run is harness RED evidence, not provider qualification evidence, and is not entered in the provider registry.
 
 The corrected client is locked to:
 
@@ -30,7 +30,24 @@ The corrected client is locked to:
 
 Corrected harness head `50e599b7907086e99ee49e4323888bd2de56b5f1` passed the ordinary Infrastructure suite, historical production replay, and Phase 6 correctness/recall gate in run `33160548020`. The qualification job was skipped on that preflight because the commit carried no qualification marker.
 
-The first valid provider result after those gates is final; no semantic retry or candidate-specific tuning is permitted.
+## Valid qualification result
+
+The first valid provider qualification was run exactly once after the corrected harness gates passed.
+
+- run: `33160640114`
+- qualification head: `ddd824b9a5c5d491f1db331a3b05d84f83b2d87a`
+- status: `QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE`
+- evaluated cases: 4
+- passed cases: 0
+- all four cases: `provider_transport:invalid_output`, `http_status:404`
+- failure classification: `PROVIDER_MODEL_UNAVAILABLE`
+- artifact ID: `9681493475`
+- artifact ZIP SHA-256: `41d62d4fccae04ff2d12ee4ccb633d2d54ff9b78134821b1668a112b427e02bf`
+- report SHA-256: `163a6b75147d39da5cb046c0dac99d0c44ad8c78e04e214b3bd8e5a686c252a1`
+
+The artifact ZIP and inner report were independently rehashed and matched the Actions evidence. This result means the exact model route was unavailable within the repository/API credential boundary used by qualification. It does not claim that the model is globally absent from Gemini's public catalog.
+
+No valid qualification retry was performed. The consumed one-shot CI lane was removed after evidence capture.
 
 ## Frozen qualification boundary
 
@@ -43,4 +60,4 @@ The first valid provider result after those gates is final; no semantic retry or
 - no provider retry loop; the qualification client sets HTTP transport attempts to 1
 - no production wiring, legacy-blocker removal, fresh canary, deploy, Push, or merge from this candidate branch
 
-The candidate client is qualification-only and is not exported from `insight_desk.providers`.
+The candidate client remains qualification-only and is not exported from `insight_desk.providers`. The provider registry remains unselected and production wiring remains disabled.
