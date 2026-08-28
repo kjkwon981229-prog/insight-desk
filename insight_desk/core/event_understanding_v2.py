@@ -46,6 +46,14 @@ class UnderstandingEvidenceField(StrEnum):
     BODY = "body"
 
 
+class EventUnderstandingContractError(ContractError):
+    """Event Understanding contract failure with a stable, payload-free diagnostic code."""
+
+    def __init__(self, message: str, *, diagnostic_code: str) -> None:
+        super().__init__(message)
+        self.diagnostic_code = diagnostic_code
+
+
 def _require_text(name: str, value: str) -> str:
     text = value.strip()
     if not text:
@@ -53,13 +61,25 @@ def _require_text(name: str, value: str) -> str:
     return text
 
 
-def _require_unique(name: str, values: tuple[str, ...], *, allow_empty: bool = False) -> None:
+def _require_unique(
+    name: str,
+    values: tuple[str, ...],
+    *,
+    allow_empty: bool = False,
+    duplicate_diagnostic_code: str | None = None,
+) -> None:
     if not allow_empty and not values:
         raise ContractError(f"{name} must contain at least one id")
     if any(not value.strip() for value in values):
         raise ContractError(f"{name} must contain non-empty ids")
     if len(values) != len(set(values)):
-        raise ContractError(f"{name} must not contain duplicate ids")
+        message = f"{name} must not contain duplicate ids"
+        if duplicate_diagnostic_code is not None:
+            raise EventUnderstandingContractError(
+                message,
+                diagnostic_code=duplicate_diagnostic_code,
+            )
+        raise ContractError(message)
 
 
 def _require_event_time(value: str | None) -> None:
@@ -72,9 +92,15 @@ def _require_event_time(value: str | None) -> None:
             return
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ContractError("event_time must be ISO-8601 date or offset-aware datetime") from exc
+        raise EventUnderstandingContractError(
+            "event_time must be ISO-8601 date or offset-aware datetime",
+            diagnostic_code="event_time_format",
+        ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ContractError("event_time datetime must be offset-aware")
+        raise EventUnderstandingContractError(
+            "event_time datetime must be offset-aware",
+            diagnostic_code="event_time_timezone",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,19 +201,38 @@ class CanonicalEventDraft:
         if not self.evidence_refs:
             raise ContractError("event draft requires at least one evidence ref")
         if len(self.evidence_refs) != len(set(self.evidence_refs)):
-            raise ContractError("event draft evidence refs must be unique")
+            raise EventUnderstandingContractError(
+                "event draft evidence refs must be unique",
+                diagnostic_code="duplicate_evidence_refs",
+            )
         if any(ref.source_id not in self.source_ids for ref in self.evidence_refs):
             raise ContractError("event draft evidence source is outside draft sources")
-        _require_unique("participants", self.participants, allow_empty=True)
+        _require_unique(
+            "participants",
+            self.participants,
+            allow_empty=True,
+            duplicate_diagnostic_code="duplicate_participants",
+        )
         _require_unique("authoritative_fact_ids", self.authoritative_fact_ids, allow_empty=True)
-        _require_unique("uncertainty_reasons", self.uncertainty_reasons, allow_empty=True)
+        _require_unique(
+            "uncertainty_reasons",
+            self.uncertainty_reasons,
+            allow_empty=True,
+            duplicate_diagnostic_code="duplicate_event_uncertainty_reasons",
+        )
         if self.object is not None:
             _require_text("object", self.object)
         _require_event_time(self.event_time)
         if self.metric is None and self.value is not None:
-            raise ContractError("value requires metric")
+            raise EventUnderstandingContractError(
+                "value requires metric",
+                diagnostic_code="value_requires_metric",
+            )
         if self.metric is not None and self.value is None:
-            raise ContractError("metric requires value")
+            raise EventUnderstandingContractError(
+                "metric requires value",
+                diagnostic_code="metric_requires_value",
+            )
         for name, value in (
             ("metric", self.metric),
             ("unit", self.unit),
@@ -198,9 +243,15 @@ class CanonicalEventDraft:
             if value is not None:
                 _require_text(name, value)
         if self.understanding_status is UnderstandingStatus.RESOLVED and self.uncertainty_reasons:
-            raise ContractError("resolved event draft cannot carry uncertainty reasons")
+            raise EventUnderstandingContractError(
+                "resolved event draft cannot carry uncertainty reasons",
+                diagnostic_code="resolved_event_with_uncertainty",
+            )
         if self.understanding_status is UnderstandingStatus.UNRESOLVED and not self.uncertainty_reasons:
-            raise ContractError("unresolved event draft requires uncertainty reasons")
+            raise EventUnderstandingContractError(
+                "unresolved event draft requires uncertainty reasons",
+                diagnostic_code="unresolved_event_without_uncertainty",
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +273,12 @@ class ArticleUnderstanding:
         _require_text("understanding_id", self.understanding_id)
         _require_text("topic", self.topic)
         _require_unique("source_ids", self.source_ids)
-        _require_unique("uncertainty_reasons", self.uncertainty_reasons, allow_empty=True)
+        _require_unique(
+            "uncertainty_reasons",
+            self.uncertainty_reasons,
+            allow_empty=True,
+            duplicate_diagnostic_code="duplicate_article_uncertainty_reasons",
+        )
         draft_ids = tuple(draft.draft_id for draft in self.event_drafts)
         _require_unique("event draft ids", draft_ids, allow_empty=True)
         source_set = set(self.source_ids)
@@ -233,13 +289,25 @@ class ArticleUnderstanding:
                 raise ContractError(f"{draft.draft_id}: draft source is outside understanding sources")
         if self.status is UnderstandingStatus.RESOLVED:
             if self.uncertainty_reasons:
-                raise ContractError("resolved understanding cannot carry uncertainty reasons")
+                raise EventUnderstandingContractError(
+                    "resolved understanding cannot carry uncertainty reasons",
+                    diagnostic_code="resolved_article_with_uncertainty",
+                )
             if not self.event_drafts:
-                raise ContractError("resolved understanding requires at least one event draft")
+                raise EventUnderstandingContractError(
+                    "resolved understanding requires at least one event draft",
+                    diagnostic_code="resolved_article_without_event",
+                )
             if not any(
                 draft.article_role is ArticleEventRole.PRIMARY
                 for draft in self.event_drafts
             ):
-                raise ContractError("resolved understanding requires at least one primary event")
+                raise EventUnderstandingContractError(
+                    "resolved understanding requires at least one primary event",
+                    diagnostic_code="resolved_article_without_primary",
+                )
         elif not self.uncertainty_reasons:
-            raise ContractError("unresolved understanding requires uncertainty reasons")
+            raise EventUnderstandingContractError(
+                "unresolved understanding requires uncertainty reasons",
+                diagnostic_code="unresolved_article_without_uncertainty",
+            )

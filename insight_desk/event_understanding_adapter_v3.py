@@ -88,6 +88,20 @@ def _unique_exact_range(source_text: str, exact_text: str) -> tuple[int, int]:
     return start, start + len(exact_text)
 
 
+def _contract_adapter_error(
+    exc: ContractError,
+    *,
+    failure_code: str,
+) -> EventUnderstandingAdapterError:
+    """Preserve only stable core diagnostic codes; never provider payload or source text."""
+
+    error = EventUnderstandingAdapterError(str(exc), failure_code=failure_code)
+    diagnostic_code = getattr(exc, "diagnostic_code", None)
+    if isinstance(diagnostic_code, str) and diagnostic_code:
+        error.diagnostic_code = diagnostic_code
+    return error
+
+
 @dataclass(slots=True)
 class StructuredJsonEventUnderstandingAdapterV3:
     client: StructuredJsonSemanticClient
@@ -213,8 +227,9 @@ class StructuredJsonEventUnderstandingAdapterV3:
                     uncertainty_reasons=event_reasons,
                 )
             except ContractError as exc:
-                raise EventUnderstandingAdapterError(
-                    str(exc), failure_code="event_draft_contract"
+                raise _contract_adapter_error(
+                    exc,
+                    failure_code="event_draft_contract",
                 ) from exc
             drafts.append(draft)
 
@@ -235,8 +250,9 @@ class StructuredJsonEventUnderstandingAdapterV3:
                 uncertainty_reasons=uncertainty_reasons,
             )
         except ContractError as exc:
-            raise EventUnderstandingAdapterError(
-                str(exc), failure_code="article_understanding_contract"
+            raise _contract_adapter_error(
+                exc,
+                failure_code="article_understanding_contract",
             ) from exc
         try:
             validate_understanding_result(request, result)

@@ -42,6 +42,16 @@ _provider_configured = v3._provider_configured
 _provider_client = v3._provider_client
 
 
+def _adapter_failures(exc: EventUnderstandingAdapterError) -> list[str]:
+    """Return bounded V4 adapter diagnostics without source/provider payload or exception text."""
+
+    failures = [f"adapter_contract:{exc.failure_code}"]
+    diagnostic_code = getattr(exc, "diagnostic_code", None)
+    if isinstance(diagnostic_code, str) and diagnostic_code:
+        failures.append(f"adapter_detail:{diagnostic_code}")
+    return failures
+
+
 def qualify(
     *,
     provider: str,
@@ -117,7 +127,7 @@ def qualify(
             failures = v3._transport_failures(exc)
         except EventUnderstandingAdapterError as exc:
             passed = False
-            failures = [f"adapter_contract:{exc.failure_code}"]
+            failures = _adapter_failures(exc)
         except Exception as exc:  # bounded diagnostic only; no raw exception/source/provider payload.
             passed = False
             failures = v3._qualification_failure_codes(exc)
