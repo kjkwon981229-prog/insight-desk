@@ -61,7 +61,7 @@ class Gemini25ProV4QualificationFreezeTests(unittest.TestCase):
         )
 
         self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(payload["provider_inventory_status"], "NO_ELIGIBLE_EXISTING_PROVIDER")
+        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
 
