@@ -34,7 +34,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v3")
         self.assertEqual(payload["active_qualification_protocol"], 4)
         self.assertEqual(payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
 
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -108,8 +108,15 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             ["event_drafts_min", "expected_event_match", "parent_hint_min"],
         )
 
+        gemini25_v4 = payload["providers"]["gemini_25_pro_v4"]
+        self.assertEqual(gemini25_v4["status"], "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE")
+        self.assertEqual(gemini25_v4["qualification_protocol"], 4)
+        self.assertEqual(gemini25_v4["evaluated_cases"], 4)
+        self.assertEqual(gemini25_v4["passed_cases"], 0)
+        self.assertEqual(gemini25_v4["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
+
         for provider_id, record in payload["providers"].items():
-            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4"}:
+            if provider_id in {"gemini_35_flash_v4", "gemini_36_flash_v4", "gemini_25_pro_v4"}:
                 continue
             protocol = record.get("qualification_protocol")
             if protocol is not None:
@@ -125,6 +132,14 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         mutated["qualification_contract_status"] = QUALIFIED_PROVIDER_SELECTED
         mutated["provider_inventory_status"] = ELIGIBLE_CANDIDATE_AVAILABLE
 
+    @staticmethod
+    def _without_active_v4_block(payload: dict[str, object]) -> dict[str, object]:
+        mutated = deepcopy(payload)
+        del mutated["providers"]["gemini_25_pro_v4"]
+        mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
+        validate_provider_status(mutated)
+        return mutated
+
     def test_unqualified_provider_cannot_be_selected(self) -> None:
         payload = load_provider_status(STATUS_PATH)
         mutated = deepcopy(payload)
@@ -135,8 +150,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
 
     def test_stale_v3_transient_block_does_not_block_current_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
-        validate_provider_status(payload)
-        mutated = deepcopy(payload)
+        mutated = self._without_active_v4_block(payload)
         mutated["provider_inventory_status"] = CANDIDATE_QUALIFICATION_BLOCKED
         with self.assertRaisesRegex(ContractError, "NO_ELIGIBLE_EXISTING_PROVIDER"):
             validate_provider_status(mutated)
@@ -158,7 +172,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
 
     def test_active_v4_credential_block_is_not_selectable_and_requires_blocked_inventory(self) -> None:
         payload = load_provider_status(STATUS_PATH)
-        mutated = deepcopy(payload)
+        mutated = self._without_active_v4_block(payload)
         mutated["providers"]["credential_blocked"] = {
             "provider": "fixture",
             "model": "fixture-model",
