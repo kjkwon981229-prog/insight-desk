@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from insight_desk.event_understanding_provider_status_v2 import load_provider_status
+from insight_desk.event_understanding_provider_status_v2 import (
+    NO_ELIGIBLE_EXISTING_PROVIDER,
+    load_provider_status,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,17 +19,11 @@ class HuggingFaceQwen235B2507NscaleEvidenceFreezeTests(unittest.TestCase):
         record = status["providers"]["hf_qwen235b2507_nscale"]
 
         self.assertEqual(record["provider"], "huggingface")
-        self.assertEqual(
-            record["model"],
-            "Qwen/Qwen3-235B-A22B-Instruct-2507:nscale",
-        )
+        self.assertEqual(record["model"], "Qwen/Qwen3-235B-A22B-Instruct-2507:nscale")
         self.assertEqual(record["status"], "NOT_QUALIFIED")
         self.assertEqual(record["qualification_protocol"], 3)
         self.assertEqual(record["run_id"], 33136814090)
-        self.assertEqual(
-            record["head_sha"],
-            "ac8057b88f46439ecaf45f59a73aa3ebc6112229",
-        )
+        self.assertEqual(record["head_sha"], "ac8057b88f46439ecaf45f59a73aa3ebc6112229")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
         self.assertEqual(record["failure_classification"], "EVIDENCE_CONTRACT")
@@ -47,7 +44,8 @@ class HuggingFaceQwen235B2507NscaleEvidenceFreezeTests(unittest.TestCase):
         for failures in record["case_failures"].values():
             self.assertEqual(failures, ["adapter_contract:evidence_contract"])
 
-        self.assertEqual(status["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
+        self.assertLess(record["qualification_protocol"], status["active_qualification_protocol"])
+        self.assertEqual(status["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
