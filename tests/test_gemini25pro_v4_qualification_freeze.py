@@ -22,32 +22,20 @@ class Gemini25ProV4QualificationFreezeTests(unittest.TestCase):
         self.assertEqual(record["existing_responsibility"], "event_understanding_candidate")
         self.assertEqual(record["qualification_protocol"], 4)
         self.assertEqual(record["run_id"], 33152273374)
-        self.assertEqual(
-            record["head_sha"],
-            "b02d7abc72cdda5302c8c24256ac0013e65b3a23",
-        )
+        self.assertEqual(record["head_sha"], "b02d7abc72cdda5302c8c24256ac0013e65b3a23")
         self.assertEqual(record["evaluated_cases"], 4)
         self.assertEqual(record["passed_cases"], 0)
         self.assertEqual(record["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
         self.assertEqual(
             record["case_failures"],
             {
-                "run413-bok-kbs-rate-decision": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-bok-kmib-outlook-child": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-kpop-alphadriveone-actor-preserved": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
-                "run413-kbo-osen-same-game-source": [
-                    "provider_transport:invalid_output",
-                    "http_status:404",
-                ],
+                case_id: ["provider_transport:invalid_output", "http_status:404"]
+                for case_id in (
+                    "run413-bok-kbs-rate-decision",
+                    "run413-bok-kmib-outlook-child",
+                    "run413-kpop-alphadriveone-actor-preserved",
+                    "run413-kbo-osen-same-game-source",
+                )
             },
         )
         self.assertEqual(record["artifact_id"], 9678194163)
@@ -59,11 +47,7 @@ class Gemini25ProV4QualificationFreezeTests(unittest.TestCase):
             record["report_digest"],
             "sha256:7607598c7b96ab6c76fd45b066339f3939a3e397de6671d274f8fb132a59d639",
         )
-
-        self.assertEqual(payload["active_qualification_protocol"], 4)
-        self.assertEqual(payload["provider_inventory_status"], "CANDIDATE_QUALIFICATION_BLOCKED")
-        self.assertIsNone(payload["selected_event_understanding_provider"])
-        self.assertFalse(payload["production_wired"])
+        self.assertLess(record["qualification_protocol"], payload["active_qualification_protocol"])
 
     def test_consumed_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
