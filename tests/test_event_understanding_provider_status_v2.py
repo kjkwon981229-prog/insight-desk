@@ -149,6 +149,18 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "MIXED_INVALID_OUTPUT_AND_TRANSIENT_FAILURE",
         )
 
+        cerebras_gemma_v4 = payload["providers"]["cerebras_gemma4_31b_v4"]
+        self.assertEqual(cerebras_gemma_v4["model"], "gemma-4-31b")
+        self.assertEqual(cerebras_gemma_v4["status"], "NOT_QUALIFIED")
+        self.assertEqual(cerebras_gemma_v4["qualification_protocol"], 4)
+        self.assertEqual(cerebras_gemma_v4["run_id"], 33168432708)
+        self.assertEqual(cerebras_gemma_v4["evaluated_cases"], 4)
+        self.assertEqual(cerebras_gemma_v4["passed_cases"], 0)
+        self.assertEqual(
+            cerebras_gemma_v4["failure_classification"],
+            "ZERO_COST_ACCESS_UNAVAILABLE",
+        )
+
         for provider_id, record in payload["providers"].items():
             if provider_id in {
                 "gemini_35_flash_v4",
@@ -157,6 +169,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
                 "gemini_35_flash_lite_v4",
                 "gemini_25_flash_v4",
                 "hf_qwen36_35b_deepinfra_v4",
+                "cerebras_gemma4_31b_v4",
             }:
                 continue
             protocol = record.get("qualification_protocol")
