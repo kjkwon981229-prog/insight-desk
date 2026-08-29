@@ -36,7 +36,7 @@ class IdentityPrecheck:
 
 @dataclass(frozen=True, slots=True)
 class IdentityDecision:
-    same_event: bool
+    same_event: bool | None
     deterministic_block: bool
     llm_judgment_used: bool
     reason: str
@@ -105,7 +105,7 @@ def _event_date_surface_compatible(left: str, right: str) -> bool:
 
 
 def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck:
-    """Block only explicit canonical conflicts; otherwise require an LLM identity judgment.
+    """Block only explicit canonical conflicts; otherwise require an identity judgment.
 
     The deterministic layer is deliberately conservative. It never declares two records the same
     event by itself. A merge always requires an explicit downstream same-event judgment.
@@ -159,10 +159,10 @@ def finalize_identity(
     *,
     llm_same_event: bool | None,
 ) -> IdentityDecision:
-    """Combine deterministic conflicts with an explicit LLM judgment.
+    """Combine deterministic conflicts with an explicit identity judgment.
 
-    Missing/failed LLM judgment always fails safe by keeping the candidate events separate.
-    No LLM result can override an explicit canonical conflict.
+    Missing/failed identity judgment remains unresolved. It is not equivalent to a proven
+    different-event decision. No judgment can override an explicit canonical conflict.
     """
 
     if precheck.verdict is IdentityPrecheckVerdict.BLOCK_MERGE:
@@ -177,18 +177,18 @@ def finalize_identity(
             same_event=True,
             deterministic_block=False,
             llm_judgment_used=True,
-            reason="llm_same_event_with_no_deterministic_conflict",
+            reason="identity_same_event_with_no_deterministic_conflict",
         )
     if llm_same_event is False:
         return IdentityDecision(
             same_event=False,
             deterministic_block=False,
             llm_judgment_used=True,
-            reason="llm_different_event",
+            reason="identity_different_event",
         )
     return IdentityDecision(
-        same_event=False,
+        same_event=None,
         deterministic_block=False,
         llm_judgment_used=False,
-        reason="identity_judgment_unavailable_keep_separate",
+        reason="identity_unresolved",
     )
