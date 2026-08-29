@@ -161,11 +161,33 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             "ZERO_COST_ACCESS_UNAVAILABLE",
         )
 
+        mistral_medium35_v5 = payload["providers"]["mistral_medium35_v5"]
+        self.assertEqual(mistral_medium35_v5["model"], "mistral-medium-3-5")
+        self.assertEqual(mistral_medium35_v5["status"], "NOT_QUALIFIED")
+        self.assertEqual(mistral_medium35_v5["qualification_protocol"], 5)
+        self.assertEqual(mistral_medium35_v5["run_id"], 33180474834)
+        self.assertEqual(mistral_medium35_v5["evaluated_cases"], 4)
+        self.assertEqual(mistral_medium35_v5["passed_cases"], 3)
+        self.assertEqual(
+            mistral_medium35_v5["failure_classification"],
+            "EVENT_MATCH_SEMANTIC_FAILURE",
+        )
+        self.assertEqual(
+            mistral_medium35_v5["case_failures"],
+            {"run413-kbo-osen-same-game-source": ["expected_event_match"]},
+        )
+
+        active_protocol = payload["active_qualification_protocol"]
+        active_records = []
         for provider_id, record in payload["providers"].items():
             protocol = record.get("qualification_protocol")
             if protocol is not None:
                 with self.subTest(provider_id=provider_id):
-                    self.assertLess(protocol, payload["active_qualification_protocol"])
+                    self.assertLessEqual(protocol, active_protocol)
+                if protocol == active_protocol:
+                    active_records.append(record)
+        self.assertTrue(active_records)
+        self.assertTrue(all(record.get("status") != MINIMUM_COMPATIBILITY_PASS for record in active_records))
 
         self.assertEqual(payload["providers"]["groq_120b"]["status"], "EXCLUDED")
         self.assertEqual(payload["providers"]["cloudflare_llama_70b"]["existing_responsibility"], "verification_primary")
