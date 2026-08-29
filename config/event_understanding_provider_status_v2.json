@@ -454,6 +454,26 @@
       "artifact_id": 9689501036,
       "artifact_digest": "sha256:3f0af22349d62b36bc44ce4bf59471d3a635928e4b3f9bc3873183017640707c",
       "report_digest": "sha256:ccd0f3685dbac6b863cf98276b3b44ec38eae8113b76627d05c3d52e251d3211"
+    },
+    "mistral_small4_v5": {
+      "provider": "mistral",
+      "model": "mistral-small-2603",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33229239969,
+      "head_sha": "02e023f4c55902c5a8d40e6d6a0930ab12ada9e9",
+      "evaluated_cases": 4,
+      "passed_cases": 1,
+      "failure_classification": "MIXED_ADAPTER_AND_SEMANTIC_FAILURE",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": ["status", "primary_direct_min", "expected_event_match"],
+        "run413-bok-kmib-outlook-child": ["adapter_contract:adapter_output_contract"],
+        "run413-kbo-osen-same-game-source": ["adapter_contract:adapter_output_contract"]
+      },
+      "artifact_id": 9707938165,
+      "artifact_digest": "sha256:7612efac4f5105f0b349bb1dbfdcd8a5faaeb841e6b95f470621e3ab12a500e6",
+      "report_digest": "sha256:5d839980e468769da18610bddd2f680cdef48d65ed1bc92aeaf7b15fa2b8be58"
     }
   }
 }
