@@ -78,7 +78,7 @@ def production_v2_runtime(core_module: ModuleType):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
-        scope_phase7_story_readmission(core_module)
+        scope_phase7_story_readmission(core_module, registry)
         yield registry
     finally:
         for name, value in hook_snapshot.items():
