@@ -85,17 +85,20 @@ class FreshEventRoutingRegressions(unittest.TestCase):
         self.assertIn("return legacy_event_topic_relevant(", owner)
         self.assertNotIn("canonical.topic == topic.topic_id", owner)
 
-    def test_daily_core_consumes_one_article_level_understanding_map_before_phase6(self) -> None:
-        source = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
-        self.assertIn("assess_compatibility_article_understanding", source)
-        mapping = source.index("understanding_by_event = assess_compatibility_article_understanding(")
-        loop = source.index("for event in semantic_result.events:", mapping)
-        phase6 = source.index("assessment = phase6.assess_with_auto_material(", loop)
-        self.assertLess(mapping, loop)
-        self.assertLess(loop, phase6)
-        event_slice = source[loop:phase6]
-        self.assertIn("understanding = understanding_by_event[event.event_id]", event_slice)
-        self.assertNotIn("understanding = event_understanding_decision(", event_slice)
+    def test_runtime_installs_article_level_understanding_before_daily_loop_executes(self) -> None:
+        runtime = Path("insight_desk/production_runtime_v2.py").read_text(encoding="utf-8")
+        self.assertIn("install_article_understanding_semantic_pipeline", runtime)
+        orchestration = runtime.index("registry = install_production_orchestration(core_module)")
+        install = runtime.index("install_article_understanding_semantic_pipeline(core_module)")
+        yielded = runtime.index("yield registry")
+        self.assertLess(orchestration, install)
+        self.assertLess(install, yielded)
+
+        owner = Path("insight_desk/production_article_understanding_v2.py").read_text(encoding="utf-8")
+        self.assertIn("assess_compatibility_article_understanding(", owner)
+        self.assertIn("article=article", owner)
+        self.assertIn("events=result.events", owner)
+        self.assertIn("primary_event_ids", owner)
 
     def test_fresh_economy_police_commentary_fact_is_not_bound_by_article_level_query_label(self) -> None:
         self.assertFalse(
