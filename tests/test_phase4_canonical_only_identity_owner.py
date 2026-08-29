@@ -32,13 +32,20 @@ def _fact(fact_id: str, *, actor: str, day: str) -> EventFact:
     )
 
 
-def _canonical(event_id: str, *, actor: str, day: str, action: str = "기준금리를 결정한다") -> CanonicalEvent:
+def _canonical(
+    event_id: str,
+    *,
+    actor: str,
+    day: str,
+    action: str = "기준금리를 결정한다",
+    object: str = "기준금리",
+) -> CanonicalEvent:
     return CanonicalEvent(
         event_id=event_id,
         topic="economy",
         actor=actor,
         action=action,
-        object="기준금리",
+        object=object,
         event_type="news_event",
         source_ids=(f"source:{event_id}",),
         event_time=day,
@@ -71,13 +78,25 @@ class CanonicalOnlyIdentityOwnerTests(unittest.TestCase):
         self.assertFalse(decision.same_event)
         self.assertEqual(identity_disposition(decision), IdentityDisposition.DIFFERENT_EVENT)
 
-    def test_same_scheduled_bok_policy_meeting_binds_parent_from_canonical_fields_only(self) -> None:
+    def test_same_scheduled_bok_policy_meeting_binds_outlook_child_from_canonical_fields_only(self) -> None:
         left = _candidate("event:left", "fact:left", "article:left")
         right = _candidate("event:right", "fact:right", "article:right")
         registry = ProductionV2Registry(
             events_by_id={
-                left.event_id: _canonical(left.event_id, actor="한국은행 금융통화위원회", day="2026-08-29"),
-                right.event_id: _canonical(right.event_id, actor="한국은행 금융통화위원회", day="2026-08-29"),
+                left.event_id: _canonical(
+                    left.event_id,
+                    actor="한국은행 금융통화위원회",
+                    day="2026-08-29",
+                    action="기준금리를 결정한다",
+                    object="기준금리",
+                ),
+                right.event_id: _canonical(
+                    right.event_id,
+                    actor="한국은행",
+                    day="2026-08-29",
+                    action="수정 경제전망과 향후 6개월 점도표를 공개한다",
+                    object="수정 경제전망과 기준금리 전망 점도표",
+                ),
             }
         )
         owner = CanonicalIdentityEngine(registry)
