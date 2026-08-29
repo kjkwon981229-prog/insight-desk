@@ -36,9 +36,10 @@ def _canonical(
     event_id: str,
     *,
     actor: str,
-    day: str,
+    day: str | None,
     action: str = "기준금리를 결정한다",
-    object: str = "기준금리",
+    object: str | None = None,
+    participants: tuple[str, ...] = (),
 ) -> CanonicalEvent:
     return CanonicalEvent(
         event_id=event_id,
@@ -50,7 +51,7 @@ def _canonical(
         source_ids=(f"source:{event_id}",),
         event_time=day,
         publication_time=NOW,
-        participants=("한국은행", "금융통화위원회"),
+        participants=participants,
     )
 
 
@@ -78,7 +79,7 @@ class CanonicalOnlyIdentityOwnerTests(unittest.TestCase):
         self.assertFalse(decision.same_event)
         self.assertEqual(identity_disposition(decision), IdentityDisposition.DIFFERENT_EVENT)
 
-    def test_same_scheduled_bok_policy_meeting_binds_outlook_child_from_canonical_fields_only(self) -> None:
+    def test_same_scheduled_bok_policy_meeting_binds_replay_shape_from_canonical_fields_only(self) -> None:
         left = _candidate("event:left", "fact:left", "article:left")
         right = _candidate("event:right", "fact:right", "article:right")
         registry = ProductionV2Registry(
@@ -86,16 +87,14 @@ class CanonicalOnlyIdentityOwnerTests(unittest.TestCase):
                 left.event_id: _canonical(
                     left.event_id,
                     actor="한국은행 금융통화위원회",
-                    day="2026-08-29",
-                    action="기준금리를 결정한다",
-                    object="기준금리",
+                    day=None,
+                    action="27일 회의를 열어 기준금리를 결정한다",
                 ),
                 right.event_id: _canonical(
                     right.event_id,
                     actor="한국은행",
-                    day="2026-08-29",
-                    action="수정 경제전망과 향후 6개월 점도표를 공개한다",
-                    object="수정 경제전망과 기준금리 전망 점도표",
+                    day=None,
+                    action="27일 금융통화위원회에서 기준금리를 결정하고 수정 경제전망과 향후 6개월 점도표를 공개한다",
                 ),
             }
         )
@@ -106,10 +105,16 @@ class CanonicalOnlyIdentityOwnerTests(unittest.TestCase):
         class ForbiddenVerifier:
             verifier_id = "forbidden"
             model_id = "forbidden"
+
             def verify(self, **_kwargs):
                 raise AssertionError("claim verifier must not run")
 
-        judgment = owner.judge("ignored raw text", "ignored raw text", primary=ForbiddenVerifier(), secondary=ForbiddenVerifier())
+        judgment = owner.judge(
+            "ignored raw text",
+            "ignored raw text",
+            primary=ForbiddenVerifier(),
+            secondary=ForbiddenVerifier(),
+        )
         self.assertTrue(judgment.same_event)
         self.assertEqual(judgment.primary_checks, 0)
         self.assertEqual(judgment.secondary_checks, 0)
@@ -118,6 +123,32 @@ class CanonicalOnlyIdentityOwnerTests(unittest.TestCase):
             registry.canonical_event(left.event_id).parent_event_id,
             registry.canonical_event(right.event_id).parent_event_id,
         )
+
+    def test_different_explicit_canonical_day_markers_do_not_bind_bok_parent(self) -> None:
+        left = _candidate("event:left", "fact:left", "article:left")
+        right = _candidate("event:right", "fact:right", "article:right")
+        registry = ProductionV2Registry(
+            events_by_id={
+                left.event_id: _canonical(
+                    left.event_id,
+                    actor="한국은행 금융통화위원회",
+                    day=None,
+                    action="27일 회의를 열어 기준금리를 결정한다",
+                ),
+                right.event_id: _canonical(
+                    right.event_id,
+                    actor="한국은행",
+                    day=None,
+                    action="28일 금융통화위원회에서 기준금리를 결정하고 경제전망을 공개한다",
+                ),
+            }
+        )
+        owner = CanonicalIdentityEngine(registry)
+        owner.precheck(left, right, {})
+        judgment = owner.judge("ignored", "ignored", primary=object(), secondary=object())
+        self.assertIsNone(judgment.same_event)
+        self.assertEqual(registry.current_identity_relation, "defer")
+        self.assertEqual(registry.parent_events_by_id, {})
 
     def test_unresolved_canonical_pair_stays_defer_and_resolve_does_not_reinvoke_legacy_identity(self) -> None:
         left = _candidate("event:left", "fact:left", "article:left")
