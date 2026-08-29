@@ -22,6 +22,7 @@ from insight_desk.acquisition import (
     default_news_discovery,
 )
 from insight_desk.core import CandidateEvent, ContractBundle, EventFact, EvidenceSpan, SelectionVerdict
+from insight_desk.core.identity import IdentityDisposition, identity_disposition
 from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
@@ -302,6 +303,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "same_event": 0,
         "different_event": 0,
         "unavailable": 0,
+        "deferred": 0,
     }
 
     articles: dict[str, object] = {}
@@ -447,6 +449,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
 
                     identity_text = generation_request.evidence_text
                     duplicate_event = False
+                    identity_deferred = False
                     identity_facts = {**facts, **article_facts}
                     for prior in published:
                         if prior.topic.topic_id != topic.topic_id:
@@ -493,12 +496,25 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         elif judgment.same_event is False:
                             identity_stats["different_event"] += 1
                         resolution = resolve_candidate_pair(event, prior_event, identity_facts, semantic_same_event=judgment.same_event)
-                        if resolution.decision.same_event:
+                        disposition = identity_disposition(resolution.decision)
+                        if disposition is IdentityDisposition.DEFER:
+                            identity_stats["deferred"] += 1
+                            attempts.append(_attempt(
+                                topic=topic.topic_id,
+                                query=query,
+                                domain=domain,
+                                stage="event_identity",
+                                status="defer",
+                                reason="identity_unresolved",
+                            ))
+                            identity_deferred = True
+                            break
+                        if disposition is IdentityDisposition.SAME_EVENT:
                             identity_stats["same_event"] += 1
                             attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_identity", status="skip", reason="cross_source_same_event_already_published"))
                             duplicate_event = True
                             break
-                    if duplicate_event:
+                    if duplicate_event or identity_deferred:
                         continue
 
                     headline_key = " ".join(visible_headline.split()).casefold()
