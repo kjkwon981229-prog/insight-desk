@@ -474,6 +474,25 @@
       "artifact_id": 9707938165,
       "artifact_digest": "sha256:7612efac4f5105f0b349bb1dbfdcd8a5faaeb841e6b95f470621e3ab12a500e6",
       "report_digest": "sha256:5d839980e468769da18610bddd2f680cdef48d65ed1bc92aeaf7b15fa2b8be58"
+    },
+    "cohere_command_a_reasoning_v5": {
+      "provider": "cohere",
+      "model": "command-a-reasoning-08-2025",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33230437202,
+      "head_sha": "f264f06083bd9c23f425339d3b45ac12119dd585",
+      "evaluated_cases": 4,
+      "passed_cases": 2,
+      "failure_classification": "MIXED_CHILD_EVENT_AND_EVENT_MATCH_SEMANTIC_FAILURE",
+      "case_failures": {
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        "run413-kbo-osen-same-game-source": ["expected_event_match"]
+      },
+      "artifact_id": 9708318114,
+      "artifact_digest": "sha256:8d695b37197d52e94f17fd488d0bb9645dc8464398fc8e946216451272f5610e",
+      "report_digest": "sha256:e149d7fbd149e341c017a8ab96712a5f1032c60e15009348db69d915c8385d01"
     }
   }
 }
