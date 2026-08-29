@@ -209,6 +209,37 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(result[generic[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[generic[0].event_id].publishable_event)
 
+    def test_generic_lead_does_not_beat_later_title_bound_named_actor(self) -> None:
+        article = _article(
+            topic="ai_tech",
+            title="앤트로픽, 로봇 제어용 하드웨어 표준 공개",
+            body=(
+                "에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.\n"
+                "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다."
+            ),
+        )
+        generic = _event_fact(
+            article,
+            suffix="generic-lead",
+            sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.",
+            subject="에이전트",
+            action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다",
+            topic="ai_tech",
+        )
+        named = _event_fact(
+            article,
+            suffix="named-later",
+            sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.",
+            subject="앤트로픽",
+            action="로봇 제어용 하드웨어 표준을 공개했다",
+            topic="ai_tech",
+        )
+        result = self._assess(article, (generic, named))
+        self.assertEqual(result[named[0].event_id].article_role, ArticleEventRole.PRIMARY)
+        self.assertTrue(result[named[0].event_id].publishable_event)
+        self.assertEqual(result[generic[0].event_id].article_role, ArticleEventRole.CONTEXT)
+        self.assertFalse(result[generic[0].event_id].publishable_event)
+
 
 if __name__ == "__main__":
     unittest.main()
