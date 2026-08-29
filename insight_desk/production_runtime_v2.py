@@ -52,10 +52,14 @@ def production_v2_runtime(core_module: ModuleType):
 
     Importing ``scripts.phase11_daily_production`` must remain side-effect free for historical
     replay/unit helpers. Production execution receives the V2 owners; every replaced symbol is
-    restored even when the run fails.
+    restored even when the run fails. Legacy hooks already removed from the ordinary daily core
+    may be installed temporarily by the compatibility orchestrator and are deleted on exit.
     """
 
-    hook_snapshot = {name: getattr(core_module, name) for name in _CORE_HOOKS}
+    hook_snapshot = {
+        name: getattr(core_module, name, _MISSING)
+        for name in _CORE_HOOKS
+    }
     marker_snapshot = {
         name: getattr(core_module, name, _MISSING)
         for name in _MARKERS
@@ -78,7 +82,11 @@ def production_v2_runtime(core_module: ModuleType):
         yield registry
     finally:
         for name, value in hook_snapshot.items():
-            setattr(core_module, name, value)
+            if value is _MISSING:
+                if hasattr(core_module, name):
+                    delattr(core_module, name)
+            else:
+                setattr(core_module, name, value)
         # The ordinary daily core has no material assessment hook after the single-owner migration.
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
