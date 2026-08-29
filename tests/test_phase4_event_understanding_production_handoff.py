@@ -141,17 +141,18 @@ class EventUnderstandingProductionHandoffTests(unittest.TestCase):
     def test_handoff_validates_exact_request_source_lineage_before_registration(self) -> None:
         source = _source()
         result = _resolved(source)
+        mutated_body = source.body.replace("2.50%", "2.75%")
         foreign_source = SourceDocument(
             source_id=source.source_id,
             candidate_ids=source.candidate_ids,
             publisher=source.publisher,
             url=source.url,
             title=source.title,
-            body=source.body + " 변조",
+            body=mutated_body,
             fetched_at=source.fetched_at,
             publication_time=source.publication_time,
             retrieved_via=source.retrieved_via,
-            content_sha256=hashlib.sha256((source.body + " 변조").encode("utf-8")).hexdigest(),
+            content_sha256=hashlib.sha256(mutated_body.encode("utf-8")).hexdigest(),
         )
         bad_request = EventUnderstandingRequest(
             topic="economy",
