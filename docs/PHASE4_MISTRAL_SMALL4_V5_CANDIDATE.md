@@ -1,6 +1,6 @@
 # Phase 4 — Mistral Small 4 Event Understanding V5 Candidate
 
-Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
+Status: ONE-SHOT QUALIFICATION ARMED — RESULT NOT YET FROZEN
 
 ## Exact candidate route
 
@@ -94,20 +94,36 @@ The new client is not exported from `insight_desk.providers`, not selected in th
 and not wired into production. The wrapper scope-registers `mistral_small4` only inside the V5
 runner and restores canonical runner state afterward.
 
+## Preflight evidence before the one-shot trigger
+
+Qualification-only candidate head `bff31dab5ce718bb5fb02a9a5fe0c98fcefdbd36`, run `33229136120`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- Python: `1228 tests / 23 skipped / 0 failed`
+- benchmark: `85 / 7 / 16 / 15 / 44`
+- Push Worker: `20/20`
+- npm audit: `0 vulnerabilities`
+- provider calls: zero
+
+Temporary-lane staging head `f17c63f373a98da4c33967431b1f95dc1d4395c8`, run `33229185187`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- `semantic-v5-provider-candidate-mistral-small4`: SKIPPED
+- provider calls: zero
+
+The staging commit deliberately omitted the trigger token. The only permitted execution is the
+single trigger commit carrying `[semantic-v5-candidate:mistral-small-2603]`. The qualification job
+still depends on ordinary Infrastructure and historical replay succeeding on that exact trigger
+head before the provider is called.
+
 ## One-shot execution gate
 
-Before any real provider request:
-
-1. ordinary Infrastructure must be SUCCESS on the exact candidate head;
-2. historical production replay must be SUCCESS;
-3. Phase 6 correctness/recall must be SUCCESS;
-4. final diff must remain qualification-only;
-5. a temporary branch-specific CI lane may then be added without its trigger;
-6. the lane itself must be observed SKIPPED while ordinary jobs remain GREEN;
-7. exactly one later trigger commit may execute the four-case qualification.
-
-The first valid execution result is frozen. There is no provider retry loop and no candidate-specific
-tuning after the result.
+The first valid execution result is frozen. There is no provider rerun and no candidate-specific
+tuning after the result. The temporary lane is removed immediately after evidence capture.
 
 ## Production and merge gates
 
