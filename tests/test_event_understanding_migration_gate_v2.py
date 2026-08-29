@@ -20,7 +20,7 @@ STATUS_PATH = ROOT / "config/event_understanding_provider_status_v2.json"
 
 
 class EventUnderstandingMigrationGateV2Tests(unittest.TestCase):
-    def test_current_phase4_gate_is_truthfully_blocked_by_reachable_legacy_paths(self) -> None:
+    def test_current_phase4_gate_is_truthfully_blocked_only_by_unqualified_legacy_handoff(self) -> None:
         gate = load_migration_gate(GATE_PATH, root=ROOT)
         self.assertFalse(gate["production_rewire_allowed"])
         active = {
@@ -28,14 +28,9 @@ class EventUnderstandingMigrationGateV2Tests(unittest.TestCase):
             for blocker_id, record in gate["runtime_blockers"].items()
             if record["active"]
         }
-        self.assertEqual(
-            active,
-            {
-                "candidate_event_direct_canonical_lift",
-                "identity_reads_source_body",
-                "legacy_candidate_identity_authority",
-            },
-        )
+        self.assertEqual(active, {"candidate_event_direct_canonical_lift"})
+        self.assertFalse(gate["runtime_blockers"]["identity_reads_source_body"]["active"])
+        self.assertFalse(gate["runtime_blockers"]["legacy_candidate_identity_authority"]["active"])
 
     def test_provider_pass_alone_cannot_open_production_rewire(self) -> None:
         provider_status = deepcopy(load_provider_status(STATUS_PATH))
@@ -64,7 +59,7 @@ class EventUnderstandingMigrationGateV2Tests(unittest.TestCase):
 
     def test_active_blocker_must_have_matching_source_evidence(self) -> None:
         gate = json.loads(GATE_PATH.read_text(encoding="utf-8"))
-        gate["runtime_blockers"]["identity_reads_source_body"]["evidence"] = "__absent_marker__"
+        gate["runtime_blockers"]["candidate_event_direct_canonical_lift"]["evidence"] = "__absent_marker__"
         with self.assertRaisesRegex(ContractError, "source evidence is absent"):
             validate_migration_gate(gate, root=ROOT)
 
