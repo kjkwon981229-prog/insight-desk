@@ -1,6 +1,6 @@
 # Phase 4 — OpenRouter Dots3-Note Preview Event Understanding V5 Candidate
 
-Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
+Status: ONE-SHOT QUALIFICATION TRIGGERED — FIRST VALID RESULT MUST FREEZE
 
 ## Exact candidate route
 
@@ -83,21 +83,41 @@ The candidate is not exported from `insight_desk.providers`, is not added to pro
 and is not production-wired. The wrapper scope-registers it only inside the V5 qualification runner
 and restores canonical runner state on exit.
 
+## Proven pre-call evidence
+
+Corrected qualification-only preflight head `21d51fcf8086a98dea8b1440961c62dbb8c894a6`, Actions run
+`33232043675`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- provider calls: 0.
+
+The pre-call diff versus PR head `db7469a6963c816eb01ba92f517e68c720608c82` was exactly four added
+qualification-only files, ahead 4 / behind 0.
+
+A temporary one-shot lane was then staged without its trigger. Staging head
+`e48f40a9813627cb9e266f0e25e5b7ffec0378a4`, Actions run `33232100583`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- `semantic-v5-provider-candidate-openrouter-dots3-note`: SKIPPED;
+- provider calls: 0.
+
+Therefore every pre-call gate is satisfied.
+
 ## One-shot execution gate
 
-Before any real provider request:
+This commit is the single trigger commit and contains the exact marker:
 
-1. ordinary Infrastructure must be SUCCESS on the exact candidate head;
-2. historical production replay must be SUCCESS;
-3. Phase 6 correctness/recall must be SUCCESS;
-4. final pre-call diff must remain qualification-only;
-5. a temporary branch-specific CI lane may be added without its trigger;
-6. that lane must be observed SKIPPED while ordinary jobs remain GREEN;
-7. exactly one later trigger commit may execute the four-case qualification.
+`[semantic-v5-candidate:openrouter-dots3-note-preview]`
 
-The first valid result is frozen. There is no provider rerun and no candidate-specific tuning after a
-valid result. A failure proven to be our qualification harness rather than provider behavior must be
-classified separately and must not be entered as provider qualification evidence.
+The branch-specific lane may execute exactly one four-case V5 qualification after its ordinary
+dependencies pass again on this exact trigger head. The first valid provider result is final evidence
+for this exact model route. There is no provider rerun and no candidate-specific tuning after a valid
+result. A failure proven to be our qualification harness rather than provider behavior must be
+classified separately and must not be entered as provider evidence.
 
 ## Production and merge gates
 
