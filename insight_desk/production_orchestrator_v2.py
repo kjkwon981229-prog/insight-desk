@@ -113,6 +113,13 @@ def canonical_event_from_candidate(
         event_time=_canonical_event_time(fact.event_date),
         publication_time=source.publication_time,
         participants=fact.participants,
+        fact_ids=(fact.fact_id,),
+        evidence_ids=fact.evidence_ids,
+        temporal_state=fact.temporal_state,
+        certainty=fact.certainty,
+        polarity=fact.polarity,
+        location=fact.location,
+        cause=fact.cause,
     )
 
 
