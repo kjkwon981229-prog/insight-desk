@@ -68,18 +68,46 @@ def _same_structured_bok_policy_meeting(left: CanonicalEvent, right: CanonicalEv
     if not left.event_time or left.event_time != right.event_time:
         return False
 
-    def is_bok_rate_decision(event: CanonicalEvent) -> bool:
+    def actor_is_bok(event: CanonicalEvent) -> bool:
         actor_surface = " ".join((event.actor, *event.participants))
-        decision_surface = " ".join(value for value in (event.action, event.object or "") if value)
-        bok_actor = any(
+        return any(
             token in actor_surface
             for token in ("한국은행", "금융통화위원회", "한은", "금통위")
         )
-        policy_rate = any(token in decision_surface for token in ("기준금리", "정책금리"))
-        decision_action = "결정" in event.action
-        return bok_actor and policy_rate and decision_action
 
-    return is_bok_rate_decision(left) and is_bok_rate_decision(right)
+    def is_rate_decision(event: CanonicalEvent) -> bool:
+        decision_surface = " ".join(value for value in (event.action, event.object or "") if value)
+        return (
+            actor_is_bok(event)
+            and any(token in decision_surface for token in ("기준금리", "정책금리"))
+            and "결정" in event.action
+        )
+
+    def is_policy_meeting_output(event: CanonicalEvent) -> bool:
+        if not actor_is_bok(event):
+            return False
+        surface = " ".join(value for value in (event.action, event.object or "") if value)
+        policy_output = any(
+            token in surface
+            for token in (
+                "기준금리",
+                "정책금리",
+                "수정 경제전망",
+                "경제전망",
+                "성장률 전망",
+                "물가 전망",
+                "점도표",
+                "금리 전망",
+            )
+        )
+        meeting_action = any(token in event.action for token in ("결정", "공개", "발표", "전망"))
+        return policy_output and meeting_action
+
+    return (
+        is_rate_decision(left) and is_policy_meeting_output(right)
+    ) or (
+        is_rate_decision(right) and is_policy_meeting_output(left)
+    )
 
 
 @dataclass(frozen=True, slots=True)
