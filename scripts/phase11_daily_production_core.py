@@ -21,7 +21,16 @@ from insight_desk.acquisition import (
     UrlLibHtmlFetcher,
     default_news_discovery,
 )
-from insight_desk.core import CandidateEvent, ContractBundle, EventFact, EvidenceSpan, SelectionVerdict
+from insight_desk.core import (
+    CandidateEvent,
+    ContractBundle,
+    EventFact,
+    EvidenceSpan,
+    RelevanceDecision,
+    RelevanceVerdict,
+    SelectionVerdict,
+    relevance_from_literal_match,
+)
 from insight_desk.core.identity import IdentityDisposition, identity_disposition
 from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
@@ -130,6 +139,15 @@ def topic_relevant(*, title: str, body: str, topic: TopicConfig) -> bool:
     if topic.required_intent_terms and not any(_term_present(text, term) for term in topic.required_intent_terms):
         return False
     return True
+
+
+def relevance_decision(*, title: str, body: str, topic: TopicConfig) -> RelevanceDecision:
+    """Compatibility lift from the preserved literal matcher into the typed owner contract."""
+
+    return relevance_from_literal_match(
+        topic_id=topic.topic_id,
+        matched=topic_relevant(title=title, body=body, topic=topic),
+    )
 
 
 def _visible_topic_headline_bound(topic: TopicConfig, headline: str) -> bool:
@@ -363,8 +381,27 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if fresh is not True:
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="freshness", status="skip", reason="published_at_missing" if fresh is None else "outside_72h_window"))
                     continue
-                if not topic_relevant(title=article.title, body=article.body, topic=topic):
-                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="topic_relevance", status="skip", reason="configured_literal_missing"))
+
+                source_relevance = relevance_decision(title=article.title, body=article.body, topic=topic)
+                if source_relevance.verdict is RelevanceVerdict.IRRELEVANT:
+                    attempts.append(_attempt(
+                        topic=topic.topic_id,
+                        query=query,
+                        domain=domain,
+                        stage="topic_relevance",
+                        status="skip",
+                        reason=source_relevance.reasons[0].value,
+                    ))
+                    continue
+                if source_relevance.verdict is RelevanceVerdict.DEFER:
+                    attempts.append(_attempt(
+                        topic=topic.topic_id,
+                        query=query,
+                        domain=domain,
+                        stage="topic_relevance",
+                        status="defer",
+                        reason=source_relevance.reasons[0].value,
+                    ))
                     continue
 
                 semantic_result = semantic.extract_article(article, topic_id=topic.topic_id, extractor=extractor)
