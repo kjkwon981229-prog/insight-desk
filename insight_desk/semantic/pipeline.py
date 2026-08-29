@@ -91,6 +91,21 @@ def _resolve_day_match(match: re.Match[str], reference: datetime) -> str | None:
         return None
 
 
+def _explicit_event_date(current_text: str, published_at: datetime | None) -> str | None:
+    """Resolve one explicit calendar date already present in the exact fact sentence.
+
+    The temporal grammar is shared with bounded prior-sentence inheritance. Multiple date mentions
+    remain unresolved because an exact-surface fact does not establish which date is the event date.
+    """
+
+    if published_at is None:
+        return None
+    matches = tuple(_EVENT_DAY_RE.finditer(current_text))
+    if len(matches) != 1:
+        return None
+    return _resolve_day_match(matches[0], published_at)
+
+
 def _bound_prior_event_date(
     *,
     source: str,
@@ -218,14 +233,21 @@ class SemanticPipeline:
                 fact_evidence_ids = (sentence_evidence_id,)
 
                 if draft.event_date is None:
-                    inherited_date = _bound_prior_event_date(
-                        source=article.field_text(parent.field),
-                        start=draft.source_start,
-                        current_text=sentence_span.text,
-                        published_at=article.provenance.published_at,
+                    explicit_date = _explicit_event_date(
+                        sentence_span.text,
+                        article.provenance.published_at,
                     )
-                    if inherited_date is not None:
-                        fact_draft = replace(draft, event_date=inherited_date)
+                    if explicit_date is not None:
+                        fact_draft = replace(draft, event_date=explicit_date)
+                    else:
+                        inherited_date = _bound_prior_event_date(
+                            source=article.field_text(parent.field),
+                            start=draft.source_start,
+                            current_text=sentence_span.text,
+                            published_at=article.provenance.published_at,
+                        )
+                        if inherited_date is not None:
+                            fact_draft = replace(draft, event_date=inherited_date)
 
             fact = fact_draft.to_event_fact(
                 fact_id=fact_id,
