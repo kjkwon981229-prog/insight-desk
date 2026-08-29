@@ -10,6 +10,12 @@ class IdentityPrecheckVerdict(StrEnum):
     REQUIRE_LLM_JUDGMENT = "require_llm_judgment"
 
 
+class IdentityDisposition(StrEnum):
+    SAME_EVENT = "same_event"
+    DIFFERENT_EVENT = "different_event"
+    DEFER = "defer"
+
+
 @dataclass(frozen=True, slots=True)
 class IdentityKey:
     """Canonical identity attributes produced upstream from explicit evidence.
@@ -40,6 +46,16 @@ class IdentityDecision:
     deterministic_block: bool
     llm_judgment_used: bool
     reason: str
+
+
+def identity_disposition(decision: IdentityDecision) -> IdentityDisposition:
+    """Map the tri-state identity decision without collapsing unresolved into different-event."""
+
+    if decision.same_event is True:
+        return IdentityDisposition.SAME_EVENT
+    if decision.same_event is False:
+        return IdentityDisposition.DIFFERENT_EVENT
+    return IdentityDisposition.DEFER
 
 
 def _normalized(value: str | None) -> str | None:
