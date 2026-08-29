@@ -177,6 +177,24 @@ contract should be weakened.
 The consumed one-shot lane was removed immediately after evidence capture and `.github/workflows/ci.yml`
 was restored to the ordinary workflow blob.
 
+## Freeze-head validation
+
+Final candidate freeze head `76082b0f8f9fa252b8eb6e3eadfc6661b62d36c6`, run `33233454081`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- Python: 1265 tests / 23 skipped / 0 failed
+- benchmark: 85 / 7 / 16 / 15 / 44
+- Push Worker: 20/20
+- npm audit: 0 vulnerabilities
+
+The first freeze-head CI attempt exposed five stale historical V5 freeze assertions that still pinned
+the former global inventory state `NO_ELIGIBLE_EXISTING_PROVIDER`. They did not indicate provider or
+production regressions. Those assertions were updated to the mechanically required current global
+state `CANDIDATE_QUALIFICATION_BLOCKED`; each historical provider's own frozen evidence remained
+unchanged. The final freeze head above is GREEN.
+
 ## Production and merge gates
 
 The three migration blockers remain active and `production_rewire_allowed = false`. No production
