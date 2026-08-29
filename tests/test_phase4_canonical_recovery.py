@@ -25,6 +25,20 @@ class _Registry:
         return self.event
 
 
+def _canonical() -> CanonicalEvent:
+    return CanonicalEvent(
+        event_id="event:graz",
+        topic="kpop",
+        actor="서울경기춤연구회",
+        action="9월 11일 전통무용 공연을 선보인다",
+        object="명가월륜: 만월",
+        event_type="news_event",
+        source_ids=("source:graz",),
+        fact_ids=("fact:graz",),
+        evidence_ids=("evidence:graz",),
+    )
+
+
 def _request() -> GenerationRequest:
     article_id = "article:graz"
     evidence_id = "evidence:graz"
@@ -65,18 +79,7 @@ def _request() -> GenerationRequest:
 
 class CanonicalRecoveryContractTests(unittest.TestCase):
     def test_recovery_projects_canonical_event_fields_not_article_prose(self) -> None:
-        canonical = CanonicalEvent(
-            event_id="event:graz",
-            topic="kpop",
-            actor="서울경기춤연구회",
-            action="9월 11일 전통무용 공연을 선보인다",
-            object="명가월륜: 만월",
-            event_type="news_event",
-            source_ids=("source:graz",),
-            fact_ids=("fact:graz",),
-            evidence_ids=("evidence:graz",),
-        )
-        generator = production_phase7_v2.CanonicalEventRecoveryGenerator(_Registry(canonical))
+        generator = production_phase7_v2.CanonicalEventRecoveryGenerator(_Registry(_canonical()))
         draft = generator.generate(_request())
 
         self.assertEqual(draft.headline, "서울경기춤연구회, 9월 11일 전통무용 공연을 선보인다")
@@ -88,6 +91,17 @@ class CanonicalRecoveryContractTests(unittest.TestCase):
         self.assertNotIn("참여 예술가들의 이력", draft.combined_text)
         self.assertEqual(draft.evidence_ids, ("evidence:graz",))
 
+    def test_canonical_projection_passes_the_normal_preservation_contract(self) -> None:
+        generator = production_phase7_v2.CanonicalEventRecoveryGenerator(_Registry(_canonical()))
+        result = production_phase7_v2._canonical_recovery_result(
+            _request(),
+            generator=generator,
+            prior=None,
+        )
+        self.assertEqual(result.render_mode, RenderMode.CANONICAL_RECOVERY)
+        self.assertTrue(result.preservation.accepted)
+        self.assertNotIn("축제는 한국 전통무용", result.draft.combined_text)
+
     def test_render_contract_has_canonical_recovery_mode(self) -> None:
         self.assertEqual(RenderMode.CANONICAL_RECOVERY.value, "canonical_recovery")
 
@@ -95,6 +109,8 @@ class CanonicalRecoveryContractTests(unittest.TestCase):
         source = Path("insight_desk/production_phase7_v2.py").read_text(encoding="utf-8")
         self.assertIn("CanonicalEventRecoveryGenerator", source)
         self.assertIn('kwargs.setdefault("recovery_generator"', source)
+        self.assertIn("verify_generated_draft(", source)
+        self.assertNotIn("verify_exact_source_draft", source)
 
 
 if __name__ == "__main__":
