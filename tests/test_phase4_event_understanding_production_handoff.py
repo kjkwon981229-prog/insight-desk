@@ -15,6 +15,7 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingEvidenceRef,
     UnderstandingStatus,
 )
+from insight_desk.production_event_understanding_handoff_v2 import ProductionEventUnderstandingHandoff
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 
 
@@ -78,8 +79,9 @@ class EventUnderstandingProductionHandoffTests(unittest.TestCase):
         )
         result = _resolved(source)
         registry = ProductionV2Registry()
+        handoff = ProductionEventUnderstandingHandoff(registry)
 
-        events = registry.register_understanding_result(
+        events = handoff.register(
             request,
             result,
             event_ids={"draft:bok-rate": "canonical:bok-rate-20260829"},
@@ -126,9 +128,10 @@ class EventUnderstandingProductionHandoffTests(unittest.TestCase):
             uncertainty_reasons=("future policy direction not resolved",),
         )
         registry = ProductionV2Registry()
+        handoff = ProductionEventUnderstandingHandoff(registry)
 
         with self.assertRaisesRegex(ContractError, "unresolved"):
-            registry.register_understanding_result(
+            handoff.register(
                 request,
                 result,
                 event_ids={"draft:uncertain": "canonical:must-not-exist"},
@@ -137,11 +140,6 @@ class EventUnderstandingProductionHandoffTests(unittest.TestCase):
 
     def test_handoff_validates_exact_request_source_lineage_before_registration(self) -> None:
         source = _source()
-        request = EventUnderstandingRequest(
-            topic="economy",
-            semantic_scope="monetary policy",
-            sources=(source,),
-        )
         result = _resolved(source)
         foreign_source = SourceDocument(
             source_id=source.source_id,
@@ -156,19 +154,40 @@ class EventUnderstandingProductionHandoffTests(unittest.TestCase):
             content_sha256=hashlib.sha256((source.body + " 변조").encode("utf-8")).hexdigest(),
         )
         bad_request = EventUnderstandingRequest(
-            topic=request.topic,
-            semantic_scope=request.semantic_scope,
+            topic="economy",
+            semantic_scope="monetary policy",
             sources=(foreign_source,),
         )
         registry = ProductionV2Registry()
+        handoff = ProductionEventUnderstandingHandoff(registry)
 
         with self.assertRaises(ContractError):
-            registry.register_understanding_result(
+            handoff.register(
                 bad_request,
                 result,
                 event_ids={"draft:bok-rate": "canonical:bad-lineage"},
             )
         self.assertNotIn("canonical:bad-lineage", registry.events_by_id)
+
+    def test_handoff_has_no_provider_selection_or_provider_call_authority(self) -> None:
+        source = _source()
+        result = _resolved(source)
+        request = EventUnderstandingRequest(
+            topic="economy",
+            semantic_scope="monetary policy",
+            sources=(source,),
+        )
+        registry = ProductionV2Registry()
+        handoff = ProductionEventUnderstandingHandoff(registry)
+
+        self.assertFalse(hasattr(handoff, "provider"))
+        self.assertFalse(hasattr(handoff, "understand"))
+        events = handoff.register(
+            request,
+            result,
+            event_ids={"draft:bok-rate": "canonical:bok-rate-20260829"},
+        )
+        self.assertEqual(len(events), 1)
 
 
 if __name__ == "__main__":
