@@ -100,10 +100,9 @@ def event_relevance_decision(
         )
 
     surface = _fact_surface(fact)
-    topic_terms = tuple(
-        dict.fromkeys(tuple(topic.intent_anchors) + tuple(topic.required_intent_terms))
-    )
-    if topic_terms and not any(_term_present(surface, term) for term in topic_terms):
+    required_terms = tuple(dict.fromkeys(tuple(topic.required_intent_terms)))
+    binding_terms = required_terms or tuple(dict.fromkeys(tuple(topic.intent_anchors)))
+    if binding_terms and not any(_term_present(surface, term) for term in binding_terms):
         return RelevanceDecision(
             topic_id=topic.topic_id,
             verdict=RelevanceVerdict.DEFER,
