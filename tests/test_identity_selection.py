@@ -34,13 +34,13 @@ class EventIdentityTests(unittest.TestCase):
         self.assertEqual(precheck.verdict, IdentityPrecheckVerdict.BLOCK_MERGE)
         self.assertIn("event_date", precheck.conflicting_fields)
 
-        # Even a mistaken same-event LLM judgment cannot override explicit canonical date conflict.
+        # Even a mistaken same-event judgment cannot override explicit canonical date conflict.
         decision = finalize_identity(precheck, llm_same_event=True)
         self.assertFalse(decision.same_event)
         self.assertTrue(decision.deterministic_block)
         self.assertFalse(decision.llm_judgment_used)
 
-    def test_no_deterministic_conflict_still_requires_explicit_llm_judgment(self) -> None:
+    def test_no_deterministic_conflict_still_requires_explicit_identity_judgment(self) -> None:
         left = IdentityKey(
             subject_key="kbo",
             action_key="resume",
@@ -57,7 +57,7 @@ class EventIdentityTests(unittest.TestCase):
         self.assertEqual(precheck.verdict, IdentityPrecheckVerdict.REQUIRE_LLM_JUDGMENT)
 
         unavailable = finalize_identity(precheck, llm_same_event=None)
-        self.assertFalse(unavailable.same_event)
+        self.assertIsNone(unavailable.same_event)
         self.assertFalse(unavailable.llm_judgment_used)
 
         supported = finalize_identity(precheck, llm_same_event=True)
