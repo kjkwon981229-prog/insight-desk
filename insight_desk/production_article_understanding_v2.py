@@ -18,6 +18,14 @@ from insight_desk.production_event_understanding_compat_v2 import (
     assess_compatibility_article_understanding,
 )
 from insight_desk.semantic.pipeline import SemanticArticleResult
+from insight_desk.semantic.tooling import KiwiMorphologyHelper
+
+
+def _optional_morphology():
+    try:
+        return KiwiMorphologyHelper()
+    except RuntimeError:
+        return None
 
 
 def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> None:
@@ -32,6 +40,7 @@ def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> 
 
         def __init__(self, *args, **kwargs) -> None:
             self._inner = inner_pipeline_type(*args, **kwargs)
+            self._morphology = _optional_morphology()
 
         def extract_article(self, article, *, topic_id: str, extractor):
             result = self._inner.extract_article(
@@ -49,7 +58,7 @@ def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> 
                 events=result.events,
                 facts=facts,
                 evidence=evidence,
-                morphology=None,
+                morphology=self._morphology,
                 now=article.provenance.fetched_at,
             )
             primary_event_ids = {
