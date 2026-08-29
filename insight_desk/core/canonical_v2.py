@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+import hashlib
 import re
 from urllib.parse import urlsplit
 
@@ -89,6 +90,38 @@ class SourceDocument:
 
 
 @dataclass(frozen=True, slots=True)
+class CanonicalEvidenceRef:
+    """Immutable exact source-range evidence carried across the canonical event boundary."""
+
+    source_id: str
+    field: str
+    start: int
+    end: int
+    text_sha256: str
+
+    def __post_init__(self) -> None:
+        _require_text("source_id", self.source_id)
+        if self.field not in {"title", "body"}:
+            raise ContractError("canonical evidence field must be title or body")
+        if self.start < 0:
+            raise ContractError("canonical evidence start must be >= 0")
+        if self.end <= self.start:
+            raise ContractError("canonical evidence end must be greater than start")
+        if not _SHA256_RE.fullmatch(self.text_sha256):
+            raise ContractError("canonical evidence text_sha256 must be a lowercase SHA-256 hex digest")
+
+    def validate_against(self, source: SourceDocument) -> None:
+        if source.source_id != self.source_id:
+            raise ContractError("canonical evidence source_id differs from SourceDocument")
+        text = source.title if self.field == "title" else source.body
+        if self.end > len(text):
+            raise ContractError("canonical evidence range is outside SourceDocument field")
+        digest = hashlib.sha256(text[self.start : self.end].encode("utf-8")).hexdigest()
+        if digest != self.text_sha256:
+            raise ContractError("canonical evidence range digest differs from SourceDocument bytes")
+
+
+@dataclass(frozen=True, slots=True)
 class AuthoritativeFact:
     fact_id: str
     provider_id: str
@@ -137,6 +170,7 @@ class CanonicalEvent:
     authoritative_fact_ids: tuple[str, ...] = ()
     fact_ids: tuple[str, ...] = ()
     evidence_ids: tuple[str, ...] = ()
+    evidence_refs: tuple[CanonicalEvidenceRef, ...] = ()
     temporal_state: TemporalState | None = None
     certainty: Certainty | None = None
     polarity: OutcomePolarity | None = None
@@ -157,6 +191,10 @@ class CanonicalEvent:
         _require_unique("authoritative_fact_ids", self.authoritative_fact_ids, allow_empty=True)
         _require_unique("fact_ids", self.fact_ids, allow_empty=True)
         _require_unique("evidence_ids", self.evidence_ids, allow_empty=True)
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ContractError("evidence_refs must not contain duplicates")
+        if any(ref.source_id not in self.source_ids for ref in self.evidence_refs):
+            raise ContractError("canonical evidence source is outside event sources")
         if self.object is not None:
             _require_text("object", self.object)
         _require_event_time(self.event_time)
@@ -244,6 +282,13 @@ class CanonicalPublicationBundle:
             for source_id in event.source_ids:
                 if source_id not in sources:
                     raise ContractError(f"{event.event_id}: missing source {source_id}")
+            for evidence_ref in event.evidence_refs:
+                source = sources.get(evidence_ref.source_id)
+                if source is None:
+                    raise ContractError(
+                        f"{event.event_id}: missing evidence source {evidence_ref.source_id}"
+                    )
+                evidence_ref.validate_against(source)
             for fact_id in event.authoritative_fact_ids:
                 if fact_id not in authoritative:
                     raise ContractError(f"{event.event_id}: missing authoritative fact {fact_id}")
