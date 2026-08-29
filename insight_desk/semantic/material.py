@@ -7,6 +7,7 @@ from functools import lru_cache
 from typing import Mapping
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
+from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
 from insight_desk.story_admission import (
     StoryAdmissionInput,
     StoryAdmissionStage,
@@ -175,10 +176,11 @@ def assess_material_event(
                 MaterialEventVerdict.DEFER,
                 (MaterialEventReason.FACT_FIELD_NOT_LITERAL,),
             )
-        if any(token.tag in {"VV", "XSV"} for token in morphology.analyze(fact.action)):
-            continue
         if fact.action in _EXPLICIT_NOMINAL_MATERIAL_ACTIONS:
             used_nominal = True
+            continue
+        predicate = assess_event_predicate(fact.action, morphology=morphology)
+        if predicate.completeness is PredicateCompleteness.COMPLETE:
             continue
         return MaterialEventAssessment(
             event.event_id,
