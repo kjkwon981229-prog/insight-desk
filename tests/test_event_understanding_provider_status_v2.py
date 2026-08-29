@@ -198,6 +198,26 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
                 ["provider_transport:invalid_output", "http_status:404"],
             )
 
+        qwen3next = payload["providers"]["openrouter_qwen3next80b_v5"]
+        self.assertEqual(qwen3next["model"], "qwen/qwen3-next-80b-a3b-instruct:free")
+        self.assertEqual(qwen3next["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
+        self.assertEqual(qwen3next["qualification_protocol"], 5)
+        self.assertEqual(qwen3next["run_id"], 33233896431)
+        self.assertEqual(qwen3next["head_sha"], "ca056f6a7ccd8babc3d106ade393539595af2fc1")
+        self.assertEqual(qwen3next["evaluated_cases"], 4)
+        self.assertEqual(qwen3next["passed_cases"], 0)
+        self.assertEqual(qwen3next["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
+        for case_id in (
+            "run413-bok-kbs-rate-decision",
+            "run413-bok-kmib-outlook-child",
+            "run413-kpop-alphadriveone-actor-preserved",
+            "run413-kbo-osen-same-game-source",
+        ):
+            self.assertEqual(
+                qwen3next["case_failures"][case_id],
+                ["provider_transport:invalid_output", "http_status:404"],
+            )
+
         active_protocol = payload["active_qualification_protocol"]
         active_records = []
         for provider_id, record in payload["providers"].items():
@@ -223,6 +243,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     def _active_v5_baseline(payload: dict[str, object]) -> dict[str, object]:
         mutated = deepcopy(payload)
         del mutated["providers"]["openrouter_nexn2pro_v5"]
+        del mutated["providers"]["openrouter_qwen3next80b_v5"]
         mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(mutated)
         return mutated
