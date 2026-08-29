@@ -366,15 +366,16 @@ def assess_compatibility_article_understanding(
         lead_end=lead_end,
     )
 
-    # A lead-bound explicit event is source-central by discourse position. Outside the lead, a title
-    # match is sufficient only when the actor is itself specific. Generic/common-noun surfaces such
-    # as "설명회" or a numeric count must not manufacture centrality merely because that noun also
-    # appears in the headline. If the compatibility extractor missed the true lead event, hold the
-    # article instead of promoting a deep-body background fact.
-    actor_specific, lead_bound, actor_bound, object_bound, _ = winner_rank
+    # A lead-bound explicit event is source-central by discourse position. Outside the lead, the
+    # title must bind the specific actor itself; an object-only overlap can describe article context
+    # without making that deep-body fact the source-central event. Generic/common-noun surfaces or
+    # numeric counts must likewise not manufacture centrality from a shared headline noun. If the
+    # compatibility extractor missed the true lead event, hold the article instead of promoting a
+    # deep-body background fact.
+    actor_specific, lead_bound, actor_bound, _object_bound, _ = winner_rank
     centrality_proven = bool(
         lead_bound
-        or (actor_specific and (actor_bound or object_bound))
+        or (actor_specific and actor_bound)
     )
     if not centrality_proven:
         for event in eligible:
