@@ -1,6 +1,6 @@
 # Phase 4 — Gemini 3 Flash Preview Event Understanding V5 Candidate
 
-Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
+Status: ONE-SHOT QUALIFICATION TRIGGERED — FIRST VALID RESULT MUST FREEZE
 
 ## Exact candidate route
 
@@ -13,27 +13,18 @@ Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
 - active qualification protocol: V5
 - required result: 4/4 only
 
-This exact model does not appear anywhere in the repository before this candidate branch. It is
-distinct from the production verification-failover owner `gemini-3.1-flash-lite` and from every
-previously frozen Gemini Event Understanding route (`gemini-3.7-flash`, `gemini-3.6-flash`,
-`gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-pro`, and `gemini-2.5-flash`). No frozen
-route is retried or reclassified.
+This exact model did not appear in the repository before this candidate branch. It is distinct from
+the production verification-failover owner `gemini-3.1-flash-lite` and from every previously frozen
+Gemini Event Understanding route (`gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`,
+`gemini-3.5-flash-lite`, `gemini-2.5-pro`, and `gemini-2.5-flash`). No frozen route is retried or
+reclassified.
 
 ## Current official provider evidence
 
-Google Gemini API documentation checked on 2026-08-29 identifies `gemini-3-flash-preview` as:
-
-- a current Gemini 3 preview model;
-- 1,048,576-token input context and 65,536-token output limit;
-- Thinking supported;
-- Structured Outputs supported;
-- text output supported;
-- available through the Gemini API;
-- Standard API input and output **free of charge on the Free Tier**.
-
-The Gemini 3 developer guide describes Gemini 3 Flash as a reasoning-capable model with Pro-level
-intelligence at Flash speed/pricing and explicitly confirms a Gemini API free tier for
-`gemini-3-flash-preview`.
+Google Gemini API documentation checked on 2026-08-29 identifies `gemini-3-flash-preview` as a
+current Gemini 3 preview model with 1,048,576-token input context, 65,536-token output limit,
+Thinking and Structured Outputs support, and Standard API input/output free on the Free Tier.
+`gemini-3.1-pro-preview` was rejected because its Gemini API Free Tier is not available.
 
 Official references checked on 2026-08-29:
 
@@ -42,13 +33,10 @@ Official references checked on 2026-08-29:
 - `https://ai.google.dev/gemini-api/docs/pricing`
 - `https://ai.google.dev/gemini-api/docs/structured-output`
 
-`gemini-3.1-pro-preview` was considered but rejected because its Gemini API Free Tier is explicitly
-not available. The new candidate therefore preserves the KRW 0 execution constraint.
-
 ## Transport and structured-output boundary
 
-The qualification-only client uses the same official Gemini Interactions API shape already proven by
-the historical Gemini 3.5 Flash qualification route:
+The qualification-only client uses the Gemini Interactions API shape already proven by the frozen
+Gemini 3.5 Flash route:
 
 ```text
 POST https://generativelanguage.googleapis.com/v1beta/interactions
@@ -60,12 +48,9 @@ response_format = {
 }
 ```
 
-The HTTP transport is explicitly constructed with `attempts=1`, so a single qualification execution
-cannot hide automatic provider retries. This is a transport-boundary safeguard only; it does not
-change the V5 semantic contract.
-
-No candidate-specific source, semantic prompt, gold, scorer, threshold, fixture, or V5 schema change
-is introduced.
+The HTTP transport is explicitly `attempts=1`, so the one-shot execution cannot hide automatic HTTP
+retries. No candidate-specific source, semantic prompt, gold, scorer, threshold, fixture, or V5
+schema change is introduced.
 
 ## Frozen V5 contract
 
@@ -88,24 +73,53 @@ Qualification-only files:
 - this document
 
 The candidate is not exported from `insight_desk.providers`, is not added to production selection,
-and is not production-wired. The wrapper scope-registers it only inside the V5 qualification runner
-and restores canonical runner state on exit.
+and is not production-wired. The wrapper scope-registers it only inside the V5 runner and restores
+canonical runner state on exit.
+
+## Proven pre-call evidence
+
+Initial candidate head `4c47b83006a1bad33954dfe3dd80076267919857` exposed exactly one
+qualification-test ImportError: the new test guessed `GEMINI_MODEL`, while the preserved production
+verification owner actually exports `GEMINI_FLASH_LITE`. No provider call occurred and this run is
+not provider qualification evidence.
+
+Only the candidate test import/assertion was corrected. Production Gemini code and the V5 contract
+were unchanged.
+
+Corrected ordinary preflight head `cc0b70bffaa7161432bba3766743cc5dad5476e6`, Actions run
+`33231056204`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- Python: 1245 tests / 23 skipped / 0 failed;
+- benchmark: 85 / 7 / 16 / 15 / 44;
+- Push Worker: 20/20;
+- npm audit: 0 vulnerabilities;
+- provider calls: 0.
+
+A temporary one-shot lane was then staged without its trigger. Staging head
+`4ec7a563b1e8cafee5f6e24617c9bf5f2535d253`, Actions run `33231107036`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- `semantic-v5-provider-candidate-gemini-3-flash`: SKIPPED;
+- provider calls: 0.
+
+Therefore every pre-call gate is satisfied.
 
 ## One-shot execution gate
 
-Before any real provider request:
+This commit is the single trigger commit and contains the exact marker:
 
-1. ordinary Infrastructure must be SUCCESS on the exact candidate head;
-2. historical production replay must be SUCCESS;
-3. Phase 6 correctness/recall must be SUCCESS;
-4. final diff must remain qualification-only;
-5. a temporary branch-specific CI lane may be added without its trigger;
-6. that lane must be observed SKIPPED while ordinary jobs remain GREEN;
-7. exactly one later trigger commit may execute the four-case qualification.
+`[semantic-v5-candidate:gemini-3-flash-preview]`
 
-The first valid result is frozen. There is no provider rerun and no candidate-specific tuning after a
-valid result. A failure proven to be our qualification harness rather than provider behavior must be
-classified separately and must not be entered as provider qualification evidence.
+The branch-specific lane may execute exactly one four-case V5 qualification after its ordinary
+dependencies pass again on this exact trigger head. The first valid provider result is final evidence
+for this exact model route. There is no provider rerun and no candidate-specific tuning after a valid
+result. A failure proven to be our qualification harness rather than provider behavior must be
+classified separately and must not be entered as provider evidence.
 
 ## Production and merge gates
 
