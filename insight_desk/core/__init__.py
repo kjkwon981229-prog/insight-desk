@@ -58,6 +58,12 @@ from .orchestration_v2 import (
     owner_for,
     validate_owner_boundaries,
 )
+from .relevance import (
+    RelevanceDecision,
+    RelevanceReason,
+    RelevanceVerdict,
+    relevance_from_literal_match,
+)
 from .selection import (
     SelectionDecision,
     SelectionReason,
@@ -96,6 +102,9 @@ __all__ = [
     "PipelineStage",
     "RawArticle",
     "RecoveryAction",
+    "RelevanceDecision",
+    "RelevanceReason",
+    "RelevanceVerdict",
     "RenderMode",
     "RenderedBriefing",
     "RenderedEntry",
@@ -122,6 +131,7 @@ __all__ = [
     "owner_for",
     "precheck_identity",
     "recovery_action",
+    "relevance_from_literal_match",
     "validate_owner_boundaries",
     "validate_understanding_result",
 ]
