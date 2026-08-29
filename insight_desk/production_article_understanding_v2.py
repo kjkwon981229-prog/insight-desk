@@ -4,8 +4,9 @@ from __future__ import annotations
 
 The legacy semantic extractor emits one CandidateEvent per extracted fact. This wrapper executes
 after the canonical compatibility pipeline has produced that evidence-bound result but before the
-daily loop sees any events. It preserves evidence/facts unchanged and exposes only the article-level
-PRIMARY event selected by the Event Understanding owner.
+daily loop sees any events. It preserves evidence/facts unchanged, exposes the article-level PRIMARY
+event selected by the Event Understanding owner, and preserves UNRESOLVED events so the
+Orchestrator can request bounded additional source evidence rather than silently dropping them.
 
 This is intentionally removable: a qualified Event Understanding provider will replace the legacy
 bridge and this compatibility wrapper together.
@@ -61,12 +62,15 @@ def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> 
                 morphology=self._morphology,
                 now=article.provenance.fetched_at,
             )
-            primary_event_ids = {
+            retained_event_ids = {
                 event_id
                 for event_id, decision in decisions.items()
-                if decision.status is UnderstandingStatus.RESOLVED
-                and decision.article_role is ArticleEventRole.PRIMARY
-                and decision.publishable_event
+                if decision.status is UnderstandingStatus.UNRESOLVED
+                or (
+                    decision.status is UnderstandingStatus.RESOLVED
+                    and decision.article_role is ArticleEventRole.PRIMARY
+                    and decision.publishable_event
+                )
             }
             return SemanticArticleResult(
                 article_id=result.article_id,
@@ -74,7 +78,7 @@ def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> 
                 evidence=result.evidence,
                 facts=result.facts,
                 events=tuple(
-                    event for event in result.events if event.event_id in primary_event_ids
+                    event for event in result.events if event.event_id in retained_event_ids
                 ),
             )
 
