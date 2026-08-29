@@ -128,16 +128,16 @@ class Live343SourceBackedStatisticalReleaseIdentityRegressions(unittest.TestCase
             )
         )
 
-    def test_canonical_identity_owner_reads_exact_source_documents_not_generated_surfaces(self) -> None:
+    def test_active_canonical_identity_owner_does_not_read_raw_source_or_generated_surfaces(self) -> None:
         daily = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
         owner = Path("insight_desk/production_orchestrator_v2.py").read_text(encoding="utf-8")
+        canonical_core = Path("insight_desk/production_identity_core_v2.py").read_text(encoding="utf-8")
         self.assertNotIn("if visible_event_redundant(", daily)
-        self.assertIn("left_source = self.registry.source_for_event(pair[0]).body", owner)
-        self.assertIn("right_source = self.registry.source_for_event(pair[1]).body", owner)
-        self.assertIn("prior_headline=\"\"", owner)
-        self.assertIn("candidate_headline=\"\"", owner)
-        self.assertIn("prior_source_text=right_source", owner)
-        self.assertIn("candidate_source_text=left_source", owner)
+        self.assertNotIn("source_for_event(pair[0]).body", owner)
+        self.assertNotIn("legacy_visible_event_redundant", owner)
+        self.assertNotIn("legacy_compare_candidate_identity", owner)
+        self.assertIn("CanonicalIdentityCore", owner)
+        self.assertIn("def _event_surface(event: CanonicalEvent)", canonical_core)
 
 
 if __name__ == "__main__":
