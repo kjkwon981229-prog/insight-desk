@@ -146,12 +146,17 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
             for provider_id, record in status["providers"].items()
             if record.get("qualification_protocol") == 5
         }
-        self.assertEqual(set(active_records), {"mistral_medium35_v5"})
-        record = active_records["mistral_medium35_v5"]
-        self.assertEqual(record["status"], "NOT_QUALIFIED")
-        self.assertEqual(record["evaluated_cases"], 4)
-        self.assertEqual(record["passed_cases"], 3)
-        self.assertLess(record["passed_cases"], 4)
+        self.assertEqual(
+            set(active_records),
+            {"mistral_medium35_v5", "mistral_small4_v5"},
+        )
+        self.assertEqual(active_records["mistral_medium35_v5"]["passed_cases"], 3)
+        self.assertEqual(active_records["mistral_small4_v5"]["passed_cases"], 1)
+        for provider_id, record in active_records.items():
+            with self.subTest(provider_id=provider_id):
+                self.assertEqual(record["status"], "NOT_QUALIFIED")
+                self.assertEqual(record["evaluated_cases"], 4)
+                self.assertLess(record["passed_cases"], 4)
         self.assertFalse(
             any(item.get("status") == "MINIMUM_COMPATIBILITY_PASS" for item in active_records.values())
         )
