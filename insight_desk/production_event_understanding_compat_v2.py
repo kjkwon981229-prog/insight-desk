@@ -105,17 +105,21 @@ def _evidence_is_local(
     fact: EventFact,
     evidence: Mapping[str, EvidenceSpan],
 ) -> bool:
-    cited: list[str] = []
+    """Check provenance locality only; Phase 6 owns fact-field evidence integrity.
+
+    Re-validating literal fact fields here would make Event Understanding a second evidence-
+    integrity authority and is brittle to ordinary Korean particle/morphology variation. This
+    compatibility owner therefore proves only that every cited span exists, belongs to one of the
+    event's source articles, and contains non-empty source text.
+    """
+
+    if not fact.evidence_ids:
+        return False
     for evidence_id in fact.evidence_ids:
         span = evidence.get(evidence_id)
-        if span is None or span.article_id not in event.article_ids:
+        if span is None or span.article_id not in event.article_ids or not span.text.strip():
             return False
-        cited.append(span.text)
-    if not cited:
-        return False
-    source = "\n".join(cited)
-    fields = (fact.subject, fact.action) + ((fact.object,) if fact.object is not None else ())
-    return all(field in source for field in fields)
+    return True
 
 
 def assess_compatibility_event_understanding(
