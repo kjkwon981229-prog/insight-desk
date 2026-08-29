@@ -12,7 +12,7 @@ from insight_desk.core import (
     RawArticle,
     SourceProvenance,
 )
-from insight_desk.core.event_understanding_v2 import ArticleEventRole, UnderstandingStatus
+from insight_desk.core.event_understanding_v2 import ArticleEventRole, TopicRelation, UnderstandingStatus
 from insight_desk.production_event_understanding_compat_v2 import (
     assess_compatibility_article_understanding,
 )
@@ -31,10 +31,17 @@ class _Token:
 
 class _Morphology:
     def analyze(self, text: str):
-        if text in {"박준영", "한화", "한화와 NC", "앤트로픽"}:
+        if text in {"박준영", "한화", "한화와 NC", "앤트로픽", "한화 이글스와 NC 다이노스"}:
             return (_Token(text, "NNP", 0, max(1, len(text))),)
-        if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회", "설명회"}:
+        if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회", "설명회", "시험"}:
             return (_Token(text, "NNG", 0, max(1, len(text))),)
+        if text == "공직 수행에 필요한 공통 역량을 평가하는 시험이다":
+            return (
+                _Token("평가", "NNG", 0, 2),
+                _Token("하", "XSV", 2, 3),
+                _Token("시험", "NNG", 3, 5),
+                _Token("이", "VCP", 5, 6),
+            )
         return (_Token(text, "VV", 0, max(1, len(text))),)
 
 
@@ -163,9 +170,6 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "설명회에는 지난 두 달간 6,901명이 신청했다."
             ),
         )
-        # Simulate the compatibility extractor missing the true lead event while still extracting a
-        # later generic noun fact whose surface happens to occur in the title. Title substring alone
-        # must not manufacture article centrality.
         attendance = _event_fact(
             article,
             suffix="generic-title-only",
@@ -213,6 +217,53 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertTrue(result[named[0].event_id].publishable_event)
         self.assertEqual(result[generic[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[generic[0].event_id].publishable_event)
+
+    def test_copular_definition_is_context_not_a_publishable_event(self) -> None:
+        article = _article(
+            topic="psat_recruitment",
+            title="채용시험 운영 방향 개편 확정",
+            body=(
+                "담당 기관은 내년 채용시험 운영 방향을 확정했다.\n"
+                "시험은 공직 수행에 필요한 공통 역량을 평가하는 시험이다."
+            ),
+        )
+        definition = _event_fact(
+            article,
+            suffix="definition",
+            sentence="시험은 공직 수행에 필요한 공통 역량을 평가하는 시험이다.",
+            subject="시험",
+            action="공직 수행에 필요한 공통 역량을 평가하는 시험이다",
+            topic="psat_recruitment",
+        )
+        result = self._assess(article, (definition,))
+        decision = result[definition[0].event_id]
+        self.assertEqual(decision.status, UnderstandingStatus.RESOLVED)
+        self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+        self.assertEqual(decision.topic_relation, TopicRelation.BACKGROUND)
+        self.assertFalse(decision.publishable_event)
+
+    def test_title_unbound_specific_lead_cannot_be_primary_context_event(self) -> None:
+        article = _article(
+            topic="kbo_hanwha",
+            title="김주원, 한화전 결승 홈런으로 NC 승리 견인",
+            body=(
+                "한화 이글스와 NC 다이노스는 앞선 경기에서 맞붙었다.\n"
+                "김주원은 한화전에서 결승 홈런을 쳐 팀 승리를 이끌었다."
+            ),
+        )
+        old_context = _event_fact(
+            article,
+            suffix="old-caption",
+            sentence="한화 이글스와 NC 다이노스는 앞선 경기에서 맞붙었다.",
+            subject="한화 이글스와 NC 다이노스",
+            action="앞선 경기에서 맞붙었다",
+            topic="kbo_hanwha",
+        )
+        result = self._assess(article, (old_context,))
+        decision = result[old_context[0].event_id]
+        self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
+        self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+        self.assertFalse(decision.publishable_event)
 
 
 if __name__ == "__main__":
