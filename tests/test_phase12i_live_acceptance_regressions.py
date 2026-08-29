@@ -64,7 +64,8 @@ class Phase12ILiveAcceptanceRegressions(unittest.TestCase):
             semantic_same_event=None,
         )
         self.assertFalse(decision.deterministic_block)
-        self.assertEqual(decision.reason, "identity_judgment_unavailable_keep_separate")
+        self.assertIsNone(decision.same_event)
+        self.assertEqual(decision.reason, "identity_unresolved")
 
     def test_genuinely_different_subjects_remain_a_hard_conflict(self) -> None:
         precheck = precheck_identity(
