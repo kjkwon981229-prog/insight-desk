@@ -31,10 +31,14 @@ from insight_desk.core import (
     SelectionVerdict,
     relevance_from_literal_match,
 )
+from insight_desk.core.event_understanding_v2 import ArticleEventRole, UnderstandingStatus
 from insight_desk.core.identity import IdentityDisposition, identity_disposition
 from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
+from insight_desk.production_event_understanding_compat_v2 import (
+    assess_compatibility_event_understanding as event_understanding_decision,
+)
 from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimVerifier
 from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
@@ -432,6 +436,34 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
                     if not event_relevant:
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
+                        continue
+
+                    understanding = event_understanding_decision(
+                        event,
+                        facts=article_facts,
+                        evidence=article_evidence,
+                        morphology=None,
+                        now=now,
+                    )
+                    if understanding.status is UnderstandingStatus.UNRESOLVED:
+                        attempts.append(_attempt(
+                            topic=topic.topic_id,
+                            query=query,
+                            domain=domain,
+                            stage="event_understanding",
+                            status="defer",
+                            reason=understanding.reasons[0] if understanding.reasons else "understanding_unresolved",
+                        ))
+                        continue
+                    if understanding.article_role is not ArticleEventRole.PRIMARY or not understanding.publishable_event:
+                        attempts.append(_attempt(
+                            topic=topic.topic_id,
+                            query=query,
+                            domain=domain,
+                            stage="event_understanding",
+                            status="skip",
+                            reason=understanding.reasons[0] if understanding.reasons else "not_primary_event",
+                        ))
                         continue
 
                     assessment = phase6.assess_with_auto_material(
