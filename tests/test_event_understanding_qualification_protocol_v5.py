@@ -131,7 +131,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         self.assertEqual(report["structured_output_schema"], "event_understanding_schema_v4")
         self.assertEqual(report["evaluated_cases"], 0)
 
-    def test_v5_becomes_active_without_reusing_any_v4_result(self) -> None:
+    def test_v5_active_non_pass_evidence_does_not_create_selection(self) -> None:
         status = load_provider_status(STATUS_PATH)
         validate_provider_status(status)
         self.assertEqual(status["active_qualification_protocol"], 5)
@@ -141,12 +141,20 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
-        active_records = [
-            record
-            for record in status["providers"].values()
+        active_records = {
+            provider_id: record
+            for provider_id, record in status["providers"].items()
             if record.get("qualification_protocol") == 5
-        ]
-        self.assertEqual(active_records, [])
+        }
+        self.assertEqual(set(active_records), {"mistral_medium35_v5"})
+        record = active_records["mistral_medium35_v5"]
+        self.assertEqual(record["status"], "NOT_QUALIFIED")
+        self.assertEqual(record["evaluated_cases"], 4)
+        self.assertEqual(record["passed_cases"], 3)
+        self.assertLess(record["passed_cases"], 4)
+        self.assertFalse(
+            any(item.get("status") == "MINIMUM_COMPATIBILITY_PASS" for item in active_records.values())
+        )
         self.assertTrue(
             any(record.get("qualification_protocol") == 4 for record in status["providers"].values())
         )
