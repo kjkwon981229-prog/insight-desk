@@ -17,12 +17,14 @@ from insight_desk.production_phase7_v2 import (
     _ORIGINAL_PIPELINE_STORY_ADMISSION,
     scope_phase7_story_readmission,
 )
+from insight_desk.production_relevance_v2 import ConfiguredLiteralRelevanceOwner
 
 
 _CORE_HOOKS = (
     "SemanticPipeline",
     "Phase6EventEngine",
     "topic_relevant",
+    "relevance_decision",
     "event_topic_relevant",
     "_visible_topic_headline_bound",
     "visible_story_issues",
@@ -60,6 +62,7 @@ def production_v2_runtime(core_module: ModuleType):
     }
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
+    relevance_owner = ConfiguredLiteralRelevanceOwner(core_module.topic_relevant)
 
     registry: ProductionV2Registry | None = None
     try:
@@ -69,6 +72,7 @@ def production_v2_runtime(core_module: ModuleType):
         # EvidenceIntegrityPhase6EventEngine is the only active evidence-integrity owner.
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
+        core_module.relevance_decision = relevance_owner.decide
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         scope_phase7_story_readmission(core_module)
         yield registry
