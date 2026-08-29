@@ -1,8 +1,8 @@
 # Phase 3 — Canonical Event Contract Freeze
 
-Status: **CONTRACT MIGRATION IN PROGRESS / PRODUCTION REWIRE NOT AUTHORIZED**
+Status: **COMPLETE / PRODUCTION REWIRE NOT YET AUTHORIZED BY THIS DOCUMENT**
 
-Phase 2 froze semantic ownership. Phase 3 now freezes the event data contract that those owners exchange.
+Phase 2 froze semantic ownership. Phase 3 freezes the event data contract that those owners exchange and proves the lossless resolved-draft-to-canonical boundary.
 
 ## 1. Primary invariant
 
@@ -16,21 +16,40 @@ The canonical event boundary therefore preserves source-bound event semantics ex
 
 - `fact_ids`
 - `evidence_ids`
+- `evidence_refs`
 - `temporal_state`
 - `certainty`
 - `polarity`
 - `location`
 - `cause`
 
-Existing canonical fields remain unchanged and backward compatible.
+Existing canonical fields remain backward compatible.
 
-The current production bridge populates these fields directly from the single evidence-bound `EventFact` used to create the candidate. It does not infer new values.
+The current production bridge populates the legacy-compatible fact/evidence ids and semantic fields directly from the single evidence-bound `EventFact` used to create the candidate. It does not infer new values.
 
 Synthetic parent events do not fabricate child-specific certainty, polarity, location, cause, or evidence identity. Optional fields remain unset unless the parent contract can support them independently.
 
-## 3. CanonicalEventDraft semantic payload
+## 3. Exact canonical evidence lineage
 
-`CanonicalEventDraft` now has additive optional slots for the same event-semantic dimensions:
+`CanonicalEvidenceRef` preserves immutable source-range provenance with:
+
+```text
+source_id
+field = title | body
+start
+end
+text_sha256
+```
+
+`CanonicalPublicationBundle.validate()` validates every canonical evidence range against the referenced `SourceDocument` bytes and digest.
+
+This prevents a future downstream owner from treating generated prose as provenance or reconstructing source evidence approximately.
+
+Legacy `evidence_ids` remain during migration for compatibility. New Event Understanding migration uses exact `evidence_refs`.
+
+## 4. CanonicalEventDraft semantic payload
+
+`CanonicalEventDraft` has additive optional slots for:
 
 - `temporal_state`
 - `certainty`
@@ -38,13 +57,37 @@ Synthetic parent events do not fabricate child-specific certainty, polarity, loc
 - `location`
 - `cause`
 
-This keeps the future Event Understanding handoff capable of expressing the same semantics that the current legacy bridge can preserve.
+This keeps the future Event Understanding handoff capable of expressing the same semantics that the current legacy bridge preserves.
 
-`UnderstandingEvidenceRef` remains the preferred future evidence-lineage contract. Legacy `evidence_ids` are preserved on the current production CanonicalEvent so migration does not destroy provenance before the new owner is wired.
+## 5. Lossless resolved draft -> canonical lift
 
-## 4. Uncertainty remains first-class
+`canonical_event_from_draft()` is now a public clean-core contract.
 
-The existing Event Understanding contract already distinguishes:
+It performs only the canonical boundary transformation:
+
+```text
+CanonicalEventDraft
+  + identity-assigned event_id
+  + publication_time
+  + optional identity-assigned parent_event_id
+  -> CanonicalEvent
+```
+
+It copies event semantics without reinterpretation and converts every `UnderstandingEvidenceRef` into a `CanonicalEvidenceRef` with the same source/field/range/digest.
+
+Important ownership rules:
+
+- an `UNRESOLVED` draft cannot become a CanonicalEvent;
+- `parent_event_hint` is not promoted automatically;
+- the Canonical Identity owner must supply a real `parent_event_id` after event-family resolution;
+- identity may assign IDs/relations but may not rewrite Event Understanding semantics;
+- no legacy fact/evidence id is fabricated when lifting a new-style draft.
+
+The public `insight_desk.core` API exports both `CanonicalEvidenceRef` and `canonical_event_from_draft`.
+
+## 6. Uncertainty remains first-class
+
+The Event Understanding contract distinguishes:
 
 - `UnderstandingStatus.RESOLVED`
 - `UnderstandingStatus.UNRESOLVED`
@@ -53,7 +96,9 @@ and requires `uncertainty_reasons` for unresolved article/event understanding.
 
 This is preserved. Missing semantic values are not automatically false values, and unresolved understanding is not equivalent to DROP.
 
-## 5. V5 provider qualification boundary is intentionally frozen
+The canonical lift enforces that boundary by refusing unresolved drafts.
+
+## 7. V5 provider qualification boundary is intentionally frozen
 
 The currently frozen provider qualification protocol is V5 and uses `event_understanding_schema_v4`.
 
@@ -64,17 +109,14 @@ Consequences:
 1. Existing V5 qualification evidence remains historically valid for exactly the frozen V5 contract.
 2. No V5 provider is selected or production-wired now, so no runtime behavior is lost by keeping the provider-facing contract frozen.
 3. The newly added optional internal draft fields do not change old V5 payload parsing; old payloads simply leave those fields unset.
-4. Before a future provider can become the production Event Understanding owner for the expanded Phase 3 contract, the migration gate must explicitly define whether these fields are:
-   - provider-required,
-   - owner-derived from another evidence-bound semantic component, or
-   - legitimately optional for that event class.
+4. Before a future provider can become the production Event Understanding owner for the expanded Phase 3 contract, the migration gate must explicitly define whether these fields are provider-required, evidence-bound owner-derived, or legitimately optional for that event class.
 5. If the provider-facing contract is expanded, that requires a **new qualification protocol/schema version**, not an edit to frozen V5 evidence.
 
-Provider search is still stopped. This requirement is a migration invariant, not authorization to resume candidate shopping.
+Provider search remains stopped. This requirement is a migration invariant, not authorization to resume candidate shopping.
 
-## 6. Information-preservation regressions
+## 8. RED/GREEN evidence
 
-Two RED/GREEN families freeze the Phase 3 boundary:
+Three regression families freeze the Phase 3 boundary.
 
 ### Production bridge preservation
 
@@ -86,43 +128,83 @@ Proves that the current `EventFact -> CanonicalEvent` bridge preserves fact/evid
 
 `tests/test_phase3_event_understanding_draft_semantics.py`
 
-Proves that `CanonicalEventDraft` can carry the expanded event-semantic fields without requiring a provider-facing schema mutation.
+Proves that `CanonicalEventDraft` can carry the expanded event-semantic fields without mutating the frozen V5 provider-facing schema.
 
-## 7. Remaining Phase 3 work
+### Draft -> canonical lift
 
-Before declaring Phase 3 complete, the migration boundary still needs one explicit transformation contract:
+`tests/test_phase3_event_draft_to_canonical_lift.py`
 
-```text
-CanonicalEventDraft
-  + canonical identity assignment
-  + source/evidence lineage
-  -> CanonicalEvent
-```
+Proves both:
 
-That transformation must prove:
+- a resolved draft lifts without semantic or exact evidence-range loss;
+- an unresolved draft cannot be silently promoted to a CanonicalEvent.
 
-- semantic fields are copied without loss;
-- exact evidence lineage is retained in a canonical representation;
-- unresolved drafts cannot be silently promoted into publishable resolved events;
-- identity may assign canonical ids/relations but may not rewrite Event Understanding semantics;
-- parent/child relations do not destroy child semantics.
+## 9. Same-head GREEN evidence
 
-Only after that transformation is RED/GREEN proven may Phase 3 be marked COMPLETE and Phase 4 production rewiring begin.
+Exact code/API head before this documentation-only completion commit:
 
-## 8. Long-body publication relevance
+`09835798f575a87292eeace2d2a83f29cbab7d24`
 
-This contract work is directly related to the historical oversized-article UI failure class.
+Infrastructure CI:
 
-The intended data flow is:
+- Python: **1287 tests / 23 skipped / 0 failed**
+- benchmark: **85 / 7 / 16 / 15 / 44**
+- Push Worker: **20 / 20 PASS**
+- npm audit: **0 vulnerabilities**
+
+Historical production replay: **SUCCESS**
+
+Phase 6 correctness and recall gate: **SUCCESS**
+
+Daily production safety gate: **SUCCESS**, while build / deploy / push_notify were **SKIPPED**.
+
+No fresh production live was authorized or executed by this closure.
+
+## 10. Long-body publication relevance
+
+This contract work directly addresses the architecture behind the historical oversized-article UI failure class.
+
+The required data flow is:
 
 ```text
 SourceDocument.body
   -> Event Understanding evidence
   -> CanonicalEventDraft / CanonicalEvent semantics
   -> compact PublicationDraft
-  -> verification
+  -> Verification
   -> VerifiedPublication
   -> PWA
 ```
 
-Raw body is evidence input, not a publication substitute. Phase 4 will address the remaining bounded exact-source generation fallback and enforce the final publication-side no-body-substitution rule without article-specific detectors.
+Raw body is evidence input, not a publication substitute.
+
+Current normal generation/publication/PWA contracts already prevent a multi-thousand-character raw body from reaching the UI through the standard path. Phase 4 must still remove the bounded exact-source prose fallback as a semantic/product bypass and enforce the final no-body-substitution rule without article-specific detectors.
+
+## 11. Phase 3 acceptance
+
+The Phase 3 contract now proves:
+
+- current EventFact semantics are not lost at the CanonicalEvent bridge;
+- future CanonicalEventDrafts can carry the same semantic dimensions;
+- exact source-range provenance can survive into CanonicalEvent;
+- unresolved understanding cannot be promoted into a resolved canonical event;
+- identity assignment is separated from semantic rewriting;
+- frozen V5 qualification evidence remains unchanged.
+
+**PHASE 3 = COMPLETE.**
+
+## 12. Next permitted work — Phase 4
+
+Phase 4 may now rewire production against the frozen Phase 2 ownership and Phase 3 contracts.
+
+Priority migration blockers are:
+
+1. remove verification-family providers from same-event identity judgment;
+2. route new Event Understanding output through `CanonicalEventDraft -> canonical_event_from_draft()` when a qualified production owner exists, while preserving a bounded migration adapter until then;
+3. remove downstream headline/summary duplicate gates as semantic event-identity authorities;
+4. remove duplicate evidence-integrity invocation;
+5. replace configured-literal relevance with an explicit `RelevanceDecision` owner contract without reintroducing downstream re-admission;
+6. redesign generation recovery so raw/extractive source prose is never used as a substitute for compact CanonicalEvent-driven publication text;
+7. implement an explicit bounded DEFER/resolution lane rather than silent semantic omission.
+
+Phase 4 must proceed by structural RED/GREEN migrations. It must not resume regex/detector patching, provider shopping, fresh live, deployment, Push, or merge.
