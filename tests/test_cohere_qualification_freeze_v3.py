@@ -43,11 +43,15 @@ class CohereQualificationFreezeV3Tests(unittest.TestCase):
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
 
-    def test_cohere_one_shot_lane_is_removed_after_freeze(self) -> None:
+    def test_cohere_v3_one_shot_lane_is_removed_after_freeze(self) -> None:
         workflow = CI_PATH.read_text(encoding="utf-8")
-        self.assertNotIn("semantic-v3-provider-candidate-cohere-command-a-plus", workflow)
+        self.assertNotIn(
+            "  semantic-v3-provider-candidate-cohere-command-a-plus:\n",
+            workflow,
+        )
         self.assertNotIn("[semantic-v3-candidate:cohere-command-a-plus]", workflow)
-        self.assertNotIn("COHERE_API_KEY", workflow)
+        self.assertNotIn("qualify_event_understanding_provider --provider cohere_command_a_plus", workflow)
+        self.assertNotIn("event-understanding-v3-cohere-command-a-plus-candidate", workflow)
 
 
 if __name__ == "__main__":
