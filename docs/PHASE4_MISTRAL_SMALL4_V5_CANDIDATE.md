@@ -1,8 +1,8 @@
-# Phase 4 — Mistral Small 4 Event Understanding V5 Candidate
+# Phase 4 — Mistral Small 4 Event Understanding V5 Qualification Evidence
 
-Status: ONE-SHOT QUALIFICATION ARMED — RESULT NOT YET FROZEN
+Status: NOT_QUALIFIED — FIRST RESULT FROZEN — NO RETRY
 
-## Exact candidate route
+## Exact route
 
 - provider: Mistral AI
 - qualification provider id: `mistral_small4`
@@ -10,15 +10,15 @@ Status: ONE-SHOT QUALIFICATION ARMED — RESULT NOT YET FROZEN
 - endpoint: `/v1/chat/completions`
 - credential: existing `MISTRAL_API_KEY`
 - production wiring: none
-- active qualification protocol: V5
-- required result: 4/4 only
+- qualification protocol: V5
+- acceptance threshold: 4/4 only
 
-This is a genuinely new exact model route. Frozen Mistral routes `mistral-large-2512` and
-`mistral-medium-3-5` are not retried, reclassified, or reused as active V5 PASS evidence.
+This exact route is now consumed and frozen. Frozen Mistral routes `mistral-large-2512`,
+`mistral-medium-3-5`, and `mistral-small-2603` must not be retried or provider-specifically tuned.
 
 ## Current provider evidence checked before implementation
 
-Mistral's current official documentation checked on 2026-08-29 identifies Mistral Small 4 as:
+Mistral's official documentation checked on 2026-08-29 identified Mistral Small 4 as:
 
 - model id `mistral-small-2603`;
 - GA, v26.03;
@@ -33,68 +33,22 @@ Official references checked on 2026-08-29:
 - `https://docs.mistral.ai/models`
 - `https://docs.mistral.ai/studio/conversations/structured-output`
 
-Mistral Small 4 has ordinary metered pricing. This project does not authorize paid fallback or a
-pay-as-you-go activation. As with the previous Mistral candidate, the bounded qualification is
-permitted only against already included zero-cost usage available to the existing Mistral
-Workspace. If the first one-shot attempt is rejected for quota, billing, payment, or model
-availability, that first result is frozen. No payment is enabled and no retry is performed.
-
-Mistral Free-mode / Workspace quota references previously verified and still applicable to the same
-existing `MISTRAL_API_KEY`:
-
-- `https://docs.mistral.ai/getting-started/quickstarts/studio/activate-and-generate-api-key`
-- `https://docs.mistral.ai/admin/billing-usage/usage-limits`
-- `https://docs.mistral.ai/admin/identity-access/api-keys`
-
-## Candidate selection rationale
-
-This candidate is not chosen by tuning against the Mistral Medium 3.5 failed output. It is a
-separate current GA model route with a different hybrid instruct/reasoning architecture while still
-supporting the frozen structured-output contract.
-
-Not selected:
-
-- `mistral-medium-3-5`: frozen V5 3/4 NOT_QUALIFIED; no retry.
-- `mistral-large-2512`: frozen historical Mistral route; no retry.
-- Leanstral: specialized for formal-proof engineering rather than general news event semantics.
-- Mistral-hosted Z.ai GLM 5.2: the same underlying GLM 5.2 model family already has frozen provider
-  evidence through OpenRouter; it is not used as an ambiguous model reroute.
+The bounded qualification was authorized only against already included zero-cost usage in the
+existing Mistral Workspace. No paid fallback or pay-as-you-go activation was enabled.
 
 ## Frozen V5 contract
 
-No candidate-specific semantic contract change is allowed. This candidate receives the canonical
-V5 contract exactly as frozen in:
+No candidate-specific semantic contract was changed. The candidate received the canonical V5
+contract frozen in:
 
 - `tests/fixtures/event_understanding_qualification_v5.json`
 - `insight_desk/event_understanding_adapter_v4.py`
 - `scripts/qualify_event_understanding_provider_v5.py`
 
-The candidate must use the same:
+The exact same four historical source cases, semantic gold, scorer, distinct event-draft matching,
+exact-text evidence binding, deterministic invariants, and 4/4 threshold were used.
 
-- four historical exact-source cases;
-- source handoff and metadata;
-- semantic gold;
-- scorer and distinct event-draft matching;
-- deterministic exact-text evidence binding;
-- deterministic output invariants;
-- acceptance threshold of 4/4.
-
-No source, gold, scorer, acceptance threshold, prompt, or V5 schema is changed for this model.
-
-## Isolation boundary
-
-The candidate implementation is qualification-only:
-
-- `insight_desk/providers/mistral_small4.py`
-- `scripts/qualify_mistral_small4_v5.py`
-- `tests/test_mistral_small4_v5_event_understanding_provider.py`
-- this document
-
-The new client is not exported from `insight_desk.providers`, not selected in the provider registry,
-and not wired into production. The wrapper scope-registers `mistral_small4` only inside the V5
-runner and restores canonical runner state afterward.
-
-## Preflight evidence before the one-shot trigger
+## Preflight evidence
 
 Qualification-only candidate head `bff31dab5ce718bb5fb02a9a5fe0c98fcefdbd36`, run `33229136120`:
 
@@ -115,18 +69,65 @@ Temporary-lane staging head `f17c63f373a98da4c33967431b1f95dc1d4395c8`, run `332
 - `semantic-v5-provider-candidate-mistral-small4`: SKIPPED
 - provider calls: zero
 
-The staging commit deliberately omitted the trigger token. The only permitted execution is the
-single trigger commit carrying `[semantic-v5-candidate:mistral-small-2603]`. The qualification job
-still depends on ordinary Infrastructure and historical replay succeeding on that exact trigger
-head before the provider is called.
+## One-shot qualification result
 
-## One-shot execution gate
+Trigger head:
 
-The first valid execution result is frozen. There is no provider rerun and no candidate-specific
-tuning after the result. The temporary lane is removed immediately after evidence capture.
+`02e023f4c55902c5a8d40e6d6a0930ab12ada9e9`
+
+GitHub Actions run:
+
+`33229239969`
+
+Result:
+
+- status: `NOT_QUALIFIED`
+- evaluated cases: `4`
+- passed cases: `1`
+- only passing case: `run413-kpop-alphadriveone-actor-preserved`
+
+Failed cases:
+
+- `run413-bok-kbs-rate-decision`
+  - `status`
+  - `primary_direct_min`
+  - `expected_event_match`
+- `run413-bok-kmib-outlook-child`
+  - `adapter_contract:adapter_output_contract`
+- `run413-kbo-osen-same-game-source`
+  - `adapter_contract:adapter_output_contract`
+
+Frozen classification:
+
+`MIXED_ADAPTER_AND_SEMANTIC_FAILURE`
+
+This is a definitive non-pass. It is not reinterpreted as a transient/provider-availability block.
+There is no retry, prompt change, schema change, source/gold/scorer change, or threshold change for
+this exact route.
+
+## Artifact evidence
+
+- artifact ID: `9707938165`
+- artifact ZIP SHA-256:
+  `7612efac4f5105f0b349bb1dbfdcd8a5faaeb841e6b95f470621e3ab12a500e6`
+- internal qualification report SHA-256:
+  `5d839980e468769da18610bddd2f680cdef48d65ed1bc92aeaf7b15fa2b8be58`
+
+The downloaded ZIP was independently re-hashed and matched the GitHub Actions artifact digest. The
+internal JSON report was independently hashed and re-read; it confirmed the exact 1/4 result and
+case failures above.
+
+## Isolation after result
+
+The temporary one-shot CI lane was removed immediately after evidence capture. The ordinary
+`.github/workflows/ci.yml` blob was restored to `72da8a9a2f8996ccdfb1af906c575911b25c28b0`.
+
+The candidate remains qualification-only and is not selected or wired into production.
 
 ## Production and merge gates
 
-A V5 4/4 result proves minimum compatibility only. It does not by itself remove the three migration
-blockers, wire production, authorize a fresh canary, deploy, Push, or merge. PR #84 remains open and
-unmerged until the downstream migration and publication acceptance sequence is separately proven.
+The machine state remains unselected. The three migration blockers remain active. No fresh canary,
+deploy, Push, or merge is authorized by this failed qualification.
+
+PR #84 must remain OPEN / UNMERGED while another genuinely new eligible provider/model is sought
+under the frozen V5 contract.
