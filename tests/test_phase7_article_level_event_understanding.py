@@ -71,6 +71,7 @@ def _event_fact(
     subject: str,
     action: str,
     topic: str,
+    event_date: str | None = None,
 ) -> tuple[CandidateEvent, EventFact, EvidenceSpan]:
     start = article.body.index(sentence)
     span = EvidenceSpan.from_article(
@@ -84,6 +85,7 @@ def _event_fact(
         fact_id=f"fact:{suffix}",
         subject=subject,
         action=action,
+        event_date=event_date,
         evidence_ids=(span.evidence_id,),
     )
     event = CandidateEvent(
@@ -242,27 +244,29 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(decision.topic_relation, TopicRelation.BACKGROUND)
         self.assertFalse(decision.publishable_event)
 
-    def test_title_unbound_specific_lead_cannot_be_primary_context_event(self) -> None:
+    def test_explicitly_old_event_inside_fresh_article_is_context(self) -> None:
         article = _article(
             topic="kbo_hanwha",
             title="김주원, 한화전 결승 홈런으로 NC 승리 견인",
             body=(
-                "한화 이글스와 NC 다이노스는 앞선 경기에서 맞붙었다.\n"
+                "한화 이글스와 NC 다이노스는 7일 앞선 경기에서 맞붙었다.\n"
                 "김주원은 한화전에서 결승 홈런을 쳐 팀 승리를 이끌었다."
             ),
         )
         old_context = _event_fact(
             article,
             suffix="old-caption",
-            sentence="한화 이글스와 NC 다이노스는 앞선 경기에서 맞붙었다.",
+            sentence="한화 이글스와 NC 다이노스는 7일 앞선 경기에서 맞붙었다.",
             subject="한화 이글스와 NC 다이노스",
-            action="앞선 경기에서 맞붙었다",
+            action="7일 앞선 경기에서 맞붙었다",
             topic="kbo_hanwha",
+            event_date="2026-08-07",
         )
         result = self._assess(article, (old_context,))
         decision = result[old_context[0].event_id]
-        self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
+        self.assertEqual(decision.status, UnderstandingStatus.RESOLVED)
         self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+        self.assertEqual(decision.topic_relation, TopicRelation.BACKGROUND)
         self.assertFalse(decision.publishable_event)
 
 
