@@ -18,6 +18,7 @@ from insight_desk.core.event_understanding_v2 import (
     TopicRelation,
     UnderstandingStatus,
 )
+from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
 
 
 class MorphologyPort(Protocol):
@@ -95,10 +96,12 @@ def _morphology_tokens(text: str, morphology: MorphologyPort | None) -> tuple[ob
 def _has_explicit_predicate(action: str, morphology: MorphologyPort | None) -> bool:
     if not _normalized(action):
         return False
-    tokens = _morphology_tokens(action, morphology)
-    if tokens is None or not tokens:
+    if morphology is None:
+        # Compatibility direct-call behavior. Production article understanding supplies morphology;
+        # the shared owner is authoritative whenever structural analysis is available.
         return True
-    return any(str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA")) for token in tokens)
+    assessment = assess_event_predicate(action, morphology=morphology)
+    return assessment.completeness is PredicateCompleteness.COMPLETE
 
 
 def _is_copular_definition(action: str, morphology: MorphologyPort | None) -> bool:
