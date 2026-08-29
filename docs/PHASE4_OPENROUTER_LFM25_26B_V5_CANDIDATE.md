@@ -1,6 +1,6 @@
 # Phase 4 — OpenRouter Liquid LFM2.5-2.6B Event Understanding V5 Candidate
 
-Status: QUALIFICATION-ONLY PREFLIGHT — NO PROVIDER CALL YET
+Status: QUALIFICATION-ONLY ONE-SHOT TRIGGERED
 
 ## Exact candidate route
 
@@ -83,20 +83,24 @@ Qualification-only files:
 
 The candidate is not exported from `insight_desk.providers`, is not added to production selection, and is not production-wired. The wrapper scope-registers it only inside the V5 qualification runner and restores canonical runner state on exit.
 
-## Required execution order
+## Preflight and staged one-shot gate
 
-1. ordinary qualification-only preflight must be GREEN;
-2. add a temporary branch-and-marker-gated one-shot lane;
-3. prove the lane is SKIPPED without its trigger marker while ordinary jobs remain GREEN;
-4. create exactly one marker commit;
-5. allow exactly one four-case provider qualification;
-6. freeze the first result without retry or candidate-specific tuning;
-7. remove the consumed lane immediately;
-8. freeze registry/tests/documentation;
-9. rerun ordinary exact-head CI;
-10. only then consider a non-force PR fast-forward.
+Qualification-only preflight head `480b09d0b750707fa23c3a55097e80b8439c5f56`, run `33234917897`:
 
-A provider/route availability failure must remain distinct from semantic non-pass. A qualification-harness failure is not provider evidence.
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- provider calls: 0
+
+Temporary-lane staging head `499f52f7e86963b2ac39dc79051c0d4c32a64f08`, run `33234966630`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- `semantic-v5-provider-candidate-openrouter-lfm25-26b`: SKIPPED
+- provider calls: 0
+
+The next commit is the only permitted trigger commit for this exact route. The first provider result is final evidence for this route: pass, semantic non-pass, or availability/transport block. No rerun is allowed.
 
 ## Production and merge gates
 
