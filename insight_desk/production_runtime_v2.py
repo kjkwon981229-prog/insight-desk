@@ -21,6 +21,9 @@ from insight_desk.production_phase7_v2 import (
     _ORIGINAL_PIPELINE_STORY_ADMISSION,
     scope_phase7_story_readmission,
 )
+from insight_desk.production_relevance_resolution_v2 import (
+    BoundedRelevanceSourceExpansionLane,
+)
 from insight_desk.production_relevance_v2 import (
     ConfiguredLiteralRelevanceOwner,
     rewrite_event_relevance_attempt,
@@ -34,6 +37,7 @@ _CORE_HOOKS = (
     "topic_relevant",
     "relevance_decision",
     "event_topic_relevant",
+    "expand_deferred_event_relevance",
     "_attempt",
     "_visible_topic_headline_bound",
     "visible_story_issues",
@@ -76,6 +80,7 @@ def production_v2_runtime(core_module: ModuleType):
         core_module.topic_relevant,
         morphology=_optional_morphology(),
     )
+    relevance_resolution_lane = BoundedRelevanceSourceExpansionLane()
 
     def audited_attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None):
         projected_status, projected_reason = rewrite_event_relevance_attempt(
@@ -92,6 +97,20 @@ def production_v2_runtime(core_module: ModuleType):
             reason=projected_reason,
         )
 
+    def expand_deferred_event_relevance(*, event, facts, topic, discovery):
+        decision = relevance_owner.decide_event(
+            event=event,
+            facts=facts,
+            topic=topic,
+        )
+        return relevance_resolution_lane.expand(
+            decision=decision,
+            event=event,
+            facts=facts,
+            topic=topic,
+            discovery=discovery,
+        )
+
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
@@ -105,6 +124,7 @@ def production_v2_runtime(core_module: ModuleType):
             facts=facts,
             topic=topic,
         )
+        core_module.expand_deferred_event_relevance = expand_deferred_event_relevance
         core_module._attempt = audited_attempt
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
