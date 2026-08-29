@@ -157,6 +157,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
                 "openrouter_dots3note_v5",
                 "openrouter_nexn2pro_v5",
                 "openrouter_qwen3next80b_v5",
+                "openrouter_lfm25_26b_v5",
             },
         )
         definitive_non_passes = {
@@ -165,6 +166,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
             "cohere_command_a_reasoning_v5": 2,
             "gemini_3_flash_v5": 2,
             "openrouter_dots3note_v5": 2,
+            "openrouter_lfm25_26b_v5": 1,
         }
         for provider_id, passed_cases in definitive_non_passes.items():
             with self.subTest(provider_id=provider_id):
