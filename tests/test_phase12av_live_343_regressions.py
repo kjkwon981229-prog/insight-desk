@@ -128,14 +128,16 @@ class Live343SourceBackedStatisticalReleaseIdentityRegressions(unittest.TestCase
             )
         )
 
-    def test_production_gate_carries_source_provenance_into_one_identity_dispatch(self) -> None:
-        source = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
-        self.assertIn("source_identity_text: str", source)
-        self.assertIn("prior_source_text=prior.source_identity_text", source)
-        self.assertIn("candidate_source_text=article.body", source)
-        call = source.index("if visible_event_redundant(")
-        precheck = source.index("precheck = compare_candidate_identity(")
-        self.assertLess(call, precheck)
+    def test_canonical_identity_owner_reads_exact_source_documents_not_generated_surfaces(self) -> None:
+        daily = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
+        owner = Path("insight_desk/production_orchestrator_v2.py").read_text(encoding="utf-8")
+        self.assertNotIn("if visible_event_redundant(", daily)
+        self.assertIn("left_source = self.registry.source_for_event(pair[0]).body", owner)
+        self.assertIn("right_source = self.registry.source_for_event(pair[1]).body", owner)
+        self.assertIn("prior_headline=\"\"", owner)
+        self.assertIn("candidate_headline=\"\"", owner)
+        self.assertIn("prior_source_text=right_source", owner)
+        self.assertIn("candidate_source_text=left_source", owner)
 
 
 if __name__ == "__main__":
