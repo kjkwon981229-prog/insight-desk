@@ -7,6 +7,7 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
+from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
 from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
     install_production_orchestration,
@@ -32,6 +33,7 @@ _CORE_HOOKS = (
     "compare_candidate_identity",
     "judge_same_event_mutual_entailment",
     "resolve_candidate_pair",
+    "resolve_deferred_identity",
     "build_rendered_briefing",
     "build_briefing_view_model",
     "ContractBundle",
@@ -71,6 +73,7 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
+        identity_resolution_lane = CanonicalIdentityResolutionLane(registry)
         # The compatibility installer historically exposed a second material/evidence hook on the
         # mechanical loop. Daily production no longer consumes it; remove it before execution so
         # EvidenceIntegrityPhase6EventEngine is the only active evidence-integrity owner.
@@ -78,6 +81,7 @@ def production_v2_runtime(core_module: ModuleType):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
+        core_module.resolve_deferred_identity = identity_resolution_lane.resolve
         scope_phase7_story_readmission(core_module, registry)
         yield registry
     finally:
