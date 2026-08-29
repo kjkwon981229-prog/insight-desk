@@ -7,6 +7,9 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
+from insight_desk.production_article_understanding_v2 import (
+    install_article_understanding_semantic_pipeline,
+)
 from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
 from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
@@ -73,6 +76,10 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
+        # The canonical compatibility pipeline has article + complete semantic_result at this
+        # point. Install the article-level Event Understanding owner before the mechanical daily
+        # loop instantiates SemanticPipeline so secondary body facts cannot reach Phase 6.
+        install_article_understanding_semantic_pipeline(core_module)
         identity_resolution_lane = CanonicalIdentityResolutionLane(registry)
         # The compatibility installer historically exposed a second material/evidence hook on the
         # mechanical loop. Daily production no longer consumes it; remove it before execution so
