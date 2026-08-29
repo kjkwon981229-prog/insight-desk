@@ -33,7 +33,6 @@ from insight_desk.core.contracts import ContractBundle as LegacyContractBundle
 from insight_desk.publication_identity_v2 import PublicationIdentityManifest
 from insight_desk.semantic.identity import (
     SemanticIdentityJudgment,
-    judge_same_event_mutual_entailment as legacy_judge_same_event,
     resolve_candidate_pair as legacy_resolve_candidate_pair,
 )
 from insight_desk.semantic.events import compare_candidate_identity as legacy_compare_candidate_identity
@@ -304,19 +303,17 @@ class CanonicalIdentityEngine:
                     0,
                 )
 
-        judgment = legacy_judge_same_event(
-            left_text,
-            right_text,
-            primary=primary,
-            secondary=secondary,
+        # Claim-verification providers are not an event-identity authority. The compatibility
+        # signature keeps primary/secondary until the legacy loop is removed, but they are never
+        # consulted here. Unresolved identity remains DEFER rather than becoming different-event.
+        del left_text, right_text, primary, secondary
+        self.registry.current_identity_relation = "defer"
+        return SemanticIdentityJudgment(
+            None,
+            "canonical_identity_unresolved_requires_identity_resolution",
+            0,
+            0,
         )
-        if judgment.same_event is True:
-            self.registry.current_identity_relation = "same_event_semantic"
-        elif judgment.same_event is False:
-            self.registry.current_identity_relation = "different_event"
-        else:
-            self.registry.current_identity_relation = "ambiguous"
-        return judgment
 
     def resolve(
         self,
