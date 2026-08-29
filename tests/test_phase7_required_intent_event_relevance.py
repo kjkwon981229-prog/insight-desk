@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import unittest
 from types import SimpleNamespace
 
 from insight_desk.core import CandidateEvent, EventFact, RelevanceVerdict
 from insight_desk.production_relevance_v2 import event_relevance_decision
+
+
+@dataclass(frozen=True)
+class _Token:
+    surface: str
+    tag: str
+    start: int
+    end: int
+
+
+class _Morphology:
+    def analyze(self, text: str):
+        return (_Token(text, "VV", 0, max(1, len(text))),)
 
 
 class RequiredIntentEventRelevanceTests(unittest.TestCase):
@@ -14,6 +28,14 @@ class RequiredIntentEventRelevanceTests(unittest.TestCase):
             intent_anchors=("league", "game", "win"),
             required_intent_terms=("Alpha Team", "Alpha"),
             event_terms=("game", "win", "loss"),
+        )
+
+    def _decision(self, fact: EventFact, event: CandidateEvent):
+        return event_relevance_decision(
+            event=event,
+            facts={fact.fact_id: fact},
+            topic=self._topic(),
+            morphology=_Morphology(),
         )
 
     def test_broad_topic_anchor_cannot_replace_required_event_binding(self) -> None:
@@ -30,12 +52,7 @@ class RequiredIntentEventRelevanceTests(unittest.TestCase):
             article_ids=("article-other-team",),
         )
 
-        decision = event_relevance_decision(
-            event=event,
-            facts={fact.fact_id: fact},
-            topic=self._topic(),
-            morphology=None,
-        )
+        decision = self._decision(fact, event)
 
         self.assertEqual(decision.verdict, RelevanceVerdict.DEFER)
 
@@ -53,12 +70,7 @@ class RequiredIntentEventRelevanceTests(unittest.TestCase):
             article_ids=("article-alpha-team",),
         )
 
-        decision = event_relevance_decision(
-            event=event,
-            facts={fact.fact_id: fact},
-            topic=self._topic(),
-            morphology=None,
-        )
+        decision = self._decision(fact, event)
 
         self.assertEqual(decision.verdict, RelevanceVerdict.RELEVANT)
 
