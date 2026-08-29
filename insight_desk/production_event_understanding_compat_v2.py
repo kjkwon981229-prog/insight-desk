@@ -47,9 +47,6 @@ _CONTEXT_SUBJECT_STEMS = (
     "그러한",
 )
 
-# Generic epistemic/evaluative predicates describe interpretation or expected effect rather than a
-# newly occurring event. This is intentionally topic-agnostic and only operates on the extracted
-# predicate already bound to source evidence.
 _ANALYTICAL_PREDICATES = (
     "평가된다",
     "평가했다",
@@ -100,18 +97,29 @@ def _has_explicit_predicate(action: str, morphology: MorphologyPort | None) -> b
     return any(str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA")) for token in tokens)
 
 
+def _actor_specificity(subject: str, morphology: MorphologyPort | None) -> int:
+    """Return 1 only when morphology exposes a proper/name-like actor surface.
+
+    Article centrality must not treat a numeric count or generic common noun as stronger merely
+    because it appears in the lead. NNP and foreign-name (SL) tokens are source-derived structural
+    evidence of a specific actor; no entity dictionary or topic vocabulary is used.
+    """
+
+    if morphology is None:
+        return 0
+    try:
+        tokens = tuple(morphology.analyze(subject))
+    except Exception:
+        return 0
+    return int(any(str(getattr(token, "tag", "")) in {"NNP", "SL"} for token in tokens))
+
+
 def _evidence_is_local(
     event: CandidateEvent,
     fact: EventFact,
     evidence: Mapping[str, EvidenceSpan],
 ) -> bool:
-    """Check provenance locality only; Phase 6 owns fact-field evidence integrity.
-
-    Re-validating literal fact fields here would make Event Understanding a second evidence-
-    integrity authority and is brittle to ordinary Korean particle/morphology variation. This
-    compatibility owner therefore proves only that every cited span exists, belongs to one of the
-    event's source articles, and contains non-empty source text.
-    """
+    """Check provenance locality only; Phase 6 owns fact-field evidence integrity."""
 
     if not fact.evidence_ids:
         return False
@@ -130,13 +138,7 @@ def assess_compatibility_event_understanding(
     morphology: MorphologyPort | None,
     now: datetime,
 ) -> CompatibilityEventUnderstandingDecision:
-    """Classify one legacy bridge event without inventing new event semantics.
-
-    This is the local semantic primitive used by the article-level owner. Production should consume
-    ``assess_compatibility_article_understanding`` so centrality is decided jointly, not one fact at
-    a time. ``now`` is explicit for parity with the future Event Understanding boundary; it is not
-    used to reinterpret evidence here.
-    """
+    """Classify one legacy bridge event without inventing new event semantics."""
 
     del now
     if len(event.fact_ids) != 1:
@@ -203,13 +205,6 @@ def assess_compatibility_event_understanding(
 
 
 def _first_sentence_end(body: str) -> int:
-    """Return the exact source boundary of the first lead sentence/line.
-
-    Centrality uses source discourse structure, not a topic-specific character threshold. The first
-    sentence terminator or physical line break is the lead boundary; if neither exists, the entire
-    body is one lead sentence.
-    """
-
     boundaries = [position + 1 for position, char in enumerate(body) if char in ".!?…\n"]
     return min(boundaries) if boundaries else len(body)
 
@@ -239,15 +234,17 @@ def _centrality_rank(
     *,
     facts: Mapping[str, EventFact],
     evidence: Mapping[str, EvidenceSpan],
+    morphology: MorphologyPort | None,
     lead_end: int,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     fact = facts[event.fact_ids[0]]
     start = _event_start(event, facts, evidence)
     actor_bound, object_bound = _title_binding(article, fact)
+    actor_specific = _actor_specificity(fact.subject, morphology)
     lead_bound = int(start < lead_end)
-    # Lead position is the strongest compatibility signal. Title-bound actor/object breaks ties,
-    # then exact source order provides a deterministic final choice.
-    return (lead_bound, actor_bound, object_bound, -start)
+    # Specific named actors outrank generic/numeric actors. Among equally specific candidates,
+    # source lead remains stronger than title substring binding, preserving ordinary news discourse.
+    return (actor_specific, lead_bound, actor_bound, object_bound, -start)
 
 
 def assess_compatibility_article_understanding(
@@ -261,14 +258,9 @@ def assess_compatibility_article_understanding(
 ) -> dict[str, CompatibilityEventUnderstandingDecision]:
     """Jointly classify all extracted events from one article.
 
-    The legacy extractor deliberately emits one CandidateEvent per fact. Treating every individually
-    valid fact as PRIMARY leaks lineups, historical statistics, marketing metrics, and other body
-    context into publication. This compatibility owner therefore performs one bounded source-
-    centrality decision across the article: at most one resolved event may remain PRIMARY.
-
-    Centrality is based only on immutable source structure already available to Event Understanding:
-    exact evidence position plus actor/object binding to the source title. No generated text,
-    verifier output, topic-specific source/domain rule, or publication surface participates.
+    At most one resolved event may remain PRIMARY. Centrality uses immutable source structure and
+    morphology-derived actor specificity only; no generated text, verifier output, source/domain
+    exception, or topic-specific vocabulary participates.
     """
 
     decisions = {
@@ -301,6 +293,7 @@ def assess_compatibility_article_understanding(
             event,
             facts=facts,
             evidence=evidence,
+            morphology=morphology,
             lead_end=lead_end,
         ),
         reverse=True,
@@ -311,12 +304,13 @@ def assess_compatibility_article_understanding(
         winner,
         facts=facts,
         evidence=evidence,
+        morphology=morphology,
         lead_end=lead_end,
     )
 
-    # If no candidate is tied to either the lead sentence or the title, the compatibility bridge
-    # cannot prove article centrality. Fail closed instead of promoting an arbitrary deep-body fact.
-    if winner_rank[:3] == (0, 0, 0):
+    # Actor specificity can break a centrality tie, but cannot by itself prove that a deep-body fact
+    # is the article event. A candidate still needs lead or title binding.
+    if winner_rank[1:4] == (0, 0, 0):
         for event in eligible:
             decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
                 status=UnderstandingStatus.UNRESOLVED,
