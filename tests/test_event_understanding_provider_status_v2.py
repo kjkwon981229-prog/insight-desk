@@ -12,6 +12,7 @@ from insight_desk.event_understanding_provider_status_v2 import (
     MINIMUM_COMPATIBILITY_PASS,
     NO_ELIGIBLE_EXISTING_PROVIDER,
     QUALIFICATION_BLOCKED_CREDENTIAL,
+    QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE,
     QUALIFICATION_BLOCKED_TRANSIENT,
     QUALIFIED_PROVIDER_SELECTED,
     load_provider_status,
@@ -34,7 +35,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
         self.assertEqual(payload["structured_output_schema"], "event_understanding_schema_v4")
         self.assertEqual(payload["active_qualification_protocol"], 5)
         self.assertEqual(payload["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
 
         groq = payload["providers"]["groq_20b"]
         self.assertEqual(groq["status"], "NOT_QUALIFIED")
@@ -177,6 +178,26 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
             {"run413-kbo-osen-same-game-source": ["expected_event_match"]},
         )
 
+        nex = payload["providers"]["openrouter_nexn2pro_v5"]
+        self.assertEqual(nex["model"], "nex-agi/nex-n2-pro:free")
+        self.assertEqual(nex["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
+        self.assertEqual(nex["qualification_protocol"], 5)
+        self.assertEqual(nex["run_id"], 33233007435)
+        self.assertEqual(nex["head_sha"], "e52138287f9a98d83e8ddf2ca0e34a427f1c1c40")
+        self.assertEqual(nex["evaluated_cases"], 4)
+        self.assertEqual(nex["passed_cases"], 0)
+        self.assertEqual(nex["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
+        for case_id in (
+            "run413-bok-kbs-rate-decision",
+            "run413-bok-kmib-outlook-child",
+            "run413-kpop-alphadriveone-actor-preserved",
+            "run413-kbo-osen-same-game-source",
+        ):
+            self.assertEqual(
+                nex["case_failures"][case_id],
+                ["provider_transport:invalid_output", "http_status:404"],
+            )
+
         active_protocol = payload["active_qualification_protocol"]
         active_records = []
         for provider_id, record in payload["providers"].items():
@@ -201,6 +222,7 @@ class EventUnderstandingProviderStatusV2Tests(unittest.TestCase):
     @staticmethod
     def _active_v5_baseline(payload: dict[str, object]) -> dict[str, object]:
         mutated = deepcopy(payload)
+        del mutated["providers"]["openrouter_nexn2pro_v5"]
         mutated["provider_inventory_status"] = NO_ELIGIBLE_EXISTING_PROVIDER
         validate_provider_status(mutated)
         return mutated
