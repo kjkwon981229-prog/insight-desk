@@ -40,7 +40,6 @@ class EventUnderstandingDeferResolutionTests(unittest.TestCase):
         event = CandidateEvent(event_id="evt", topic_id="ai_tech", article_ids=("article",), fact_ids=("fact",))
         fact = EventFact(
             fact_id="fact",
-            article_id="article",
             subject="그는",
             action="발표했다",
             object="신제품",
@@ -79,7 +78,6 @@ class EventUnderstandingDeferResolutionTests(unittest.TestCase):
         event = CandidateEvent(event_id="evt", topic_id="ai_tech", article_ids=("article",), fact_ids=("fact",))
         fact = EventFact(
             fact_id="fact",
-            article_id="article",
             subject="OpenAI",
             action="발표했다",
             object="신제품",
