@@ -62,16 +62,19 @@ def install_article_understanding_semantic_pipeline(core_module: ModuleType) -> 
                 morphology=self._morphology,
                 now=article.provenance.fetched_at,
             )
-            retained_event_ids = {
+            primary_event_ids = {
+                event_id
+                for event_id, decision in decisions.items()
+                if decision.status is UnderstandingStatus.RESOLVED
+                and decision.article_role is ArticleEventRole.PRIMARY
+                and decision.publishable_event
+            }
+            unresolved_event_ids = {
                 event_id
                 for event_id, decision in decisions.items()
                 if decision.status is UnderstandingStatus.UNRESOLVED
-                or (
-                    decision.status is UnderstandingStatus.RESOLVED
-                    and decision.article_role is ArticleEventRole.PRIMARY
-                    and decision.publishable_event
-                )
             }
+            retained_event_ids = primary_event_ids | unresolved_event_ids
             return SemanticArticleResult(
                 article_id=result.article_id,
                 extractor_id=result.extractor_id,
