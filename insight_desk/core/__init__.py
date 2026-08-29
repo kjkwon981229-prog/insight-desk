@@ -2,6 +2,7 @@
 
 from .canonical_v2 import (
     AuthoritativeFact,
+    CanonicalEvidenceRef,
     CanonicalEvent,
     CanonicalPublicationBundle,
     SourceDocument,
@@ -39,6 +40,7 @@ from .event_understanding_v2 import (
     UnderstandingEvidenceField,
     UnderstandingEvidenceRef,
     UnderstandingStatus,
+    canonical_event_from_draft,
 )
 from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
 from .identity import (
@@ -70,6 +72,7 @@ __all__ = [
     "ArticleUnderstanding",
     "AuthoritativeFact",
     "CandidateEvent",
+    "CanonicalEvidenceRef",
     "CanonicalEvent",
     "CanonicalEventDraft",
     "CanonicalPublicationBundle",
@@ -113,6 +116,7 @@ __all__ = [
     "VerifiedClaim",
     "VerifiedPublication",
     "aggregate_verdict",
+    "canonical_event_from_draft",
     "decide_selection",
     "finalize_identity",
     "owner_for",
