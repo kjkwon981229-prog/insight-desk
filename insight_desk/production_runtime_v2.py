@@ -22,6 +22,7 @@ from insight_desk.production_phase7_v2 import (
     scope_phase7_story_readmission,
 )
 from insight_desk.production_relevance_v2 import ConfiguredLiteralRelevanceOwner
+from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
 
 _CORE_HOOKS = (
@@ -51,42 +52,37 @@ _MARKERS = (
 _MISSING = object()
 
 
+def _optional_morphology():
+    try:
+        return KiwiMorphologyHelper()
+    except RuntimeError:
+        return None
+
+
 @contextmanager
 def production_v2_runtime(core_module: ModuleType):
-    """Install V2 authority only while the actual production loop executes.
+    """Install V2 authority only while the actual production loop executes."""
 
-    Importing ``scripts.phase11_daily_production`` must remain side-effect free for historical
-    replay/unit helpers. Production execution receives the V2 owners; every replaced symbol is
-    restored even when the run fails. Legacy hooks already removed from the ordinary daily core
-    may be installed temporarily by the compatibility orchestrator and are deleted on exit.
-    """
-
-    hook_snapshot = {
-        name: getattr(core_module, name, _MISSING)
-        for name in _CORE_HOOKS
-    }
-    marker_snapshot = {
-        name: getattr(core_module, name, _MISSING)
-        for name in _MARKERS
-    }
+    hook_snapshot = {name: getattr(core_module, name, _MISSING) for name in _CORE_HOOKS}
+    marker_snapshot = {name: getattr(core_module, name, _MISSING) for name in _MARKERS}
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
-    relevance_owner = ConfiguredLiteralRelevanceOwner(core_module.topic_relevant)
+    relevance_owner = ConfiguredLiteralRelevanceOwner(
+        core_module.topic_relevant,
+        morphology=_optional_morphology(),
+    )
 
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
-        # The canonical compatibility pipeline has article + complete semantic_result at this
-        # point. Install the article-level Event Understanding owner before the mechanical daily
-        # loop instantiates SemanticPipeline so secondary body facts cannot reach Phase 6.
         install_article_understanding_semantic_pipeline(core_module)
         identity_resolution_lane = CanonicalIdentityResolutionLane(registry)
-        # The compatibility installer historically exposed a second material/evidence hook on the
-        # mechanical loop. Daily production no longer consumes it; remove it before execution so
-        # EvidenceIntegrityPhase6EventEngine is the only active evidence-integrity owner.
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
+        core_module.event_topic_relevant = lambda *, event, facts, evidence, topic: (
+            relevance_owner.decide_event(event=event, facts=facts, topic=topic).is_relevant
+        )
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
         scope_phase7_story_readmission(core_module, registry)
@@ -98,7 +94,6 @@ def production_v2_runtime(core_module: ModuleType):
                     delattr(core_module, name)
             else:
                 setattr(core_module, name, value)
-        # The ordinary daily core has no material assessment hook after the single-owner migration.
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
         for name, value in marker_snapshot.items():
@@ -110,8 +105,6 @@ def production_v2_runtime(core_module: ModuleType):
         generation_module.validate_story_admission = generation_snapshot
         generation_pipeline_module.validate_story_admission = pipeline_snapshot
 
-        # The ordinary module contract must be restored, not merely any temporary no-op that
-        # escaped from a failed installation path.
         if generation_snapshot is _ORIGINAL_GENERATION_STORY_ADMISSION:
             generation_module.validate_story_admission = _ORIGINAL_GENERATION_STORY_ADMISSION
         if pipeline_snapshot is _ORIGINAL_PIPELINE_STORY_ADMISSION:
