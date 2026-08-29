@@ -121,13 +121,17 @@ class PublicationProjectionTests(unittest.TestCase):
             build_briefing_view_model(briefing(), publication_by_event={})
 
     def test_production_state_and_audit_share_manifest_digest_contract(self) -> None:
-        source = (ROOT / "insight_desk" / "production_orchestrator_v2.py").read_text(
+        mechanical = (ROOT / "insight_desk" / "production_orchestrator_compat_v2.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn('"publication_digest": publication_manifest.sha256', source)
-        self.assertIn('"sha256": publication_manifest.sha256', source)
-        self.assertIn("publication_by_event=registry.publications_by_event", source)
-        self.assertIn('"rendering": "pwa_renderer"', source)
+        facade = (ROOT / "insight_desk" / "production_orchestrator_v2.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"publication_digest": publication_manifest.sha256', mechanical)
+        self.assertIn('"sha256": publication_manifest.sha256', mechanical)
+        self.assertIn("publication_by_event=registry.publications_by_event", mechanical)
+        self.assertIn('"rendering": "pwa_renderer"', mechanical)
+        self.assertIn("_compat.install_production_orchestration(core_module)", facade)
 
 
 if __name__ == "__main__":
