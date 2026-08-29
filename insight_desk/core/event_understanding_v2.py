@@ -14,7 +14,7 @@ from enum import StrEnum
 import hashlib
 import re
 
-from .canonical_v2 import SourceDocument
+from .canonical_v2 import CanonicalEvidenceRef, CanonicalEvent, SourceDocument
 from .contracts import Certainty, ContractError, OutcomePolarity, TemporalState
 
 
@@ -259,6 +259,64 @@ class CanonicalEventDraft:
                 "unresolved event draft requires uncertainty reasons",
                 diagnostic_code="unresolved_event_without_uncertainty",
             )
+
+
+def canonical_event_from_draft(
+    draft: CanonicalEventDraft,
+    *,
+    event_id: str,
+    publication_time: datetime | None,
+    parent_event_id: str | None = None,
+) -> CanonicalEvent:
+    """Assign canonical identity without rewriting Event Understanding semantics.
+
+    Only a resolved draft may cross the canonical event boundary. ``parent_event_hint`` is not
+    promoted here: the Canonical Identity owner must supply an actual ``parent_event_id`` after
+    comparing the event family. Exact evidence ranges are copied into the canonical contract so
+    downstream owners never need to reconstruct semantic provenance from generated text.
+    """
+
+    if draft.understanding_status is not UnderstandingStatus.RESOLVED:
+        raise ContractError("unresolved event draft cannot become CanonicalEvent")
+    _require_text("event_id", event_id)
+    if publication_time is not None and (
+        publication_time.tzinfo is None or publication_time.utcoffset() is None
+    ):
+        raise ContractError("publication_time must be timezone-aware")
+    evidence_refs = tuple(
+        CanonicalEvidenceRef(
+            source_id=ref.source_id,
+            field=ref.field.value,
+            start=ref.start,
+            end=ref.end,
+            text_sha256=ref.text_sha256,
+        )
+        for ref in draft.evidence_refs
+    )
+    return CanonicalEvent(
+        event_id=event_id,
+        topic=draft.topic,
+        actor=draft.actor,
+        action=draft.action,
+        object=draft.object,
+        event_type=draft.event_type,
+        source_ids=draft.source_ids,
+        event_time=draft.event_time,
+        publication_time=publication_time,
+        participants=draft.participants,
+        metric=draft.metric,
+        unit=draft.unit,
+        value=draft.value,
+        attribution=draft.attribution,
+        parent_event_id=parent_event_id,
+        authoritative_fact_ids=draft.authoritative_fact_ids,
+        evidence_refs=evidence_refs,
+        temporal_state=draft.temporal_state,
+        certainty=draft.certainty,
+        polarity=draft.polarity,
+        location=draft.location,
+        cause=draft.cause,
+    )
 
 
 @dataclass(frozen=True, slots=True)
