@@ -1,6 +1,6 @@
 # Phase 4 — OpenRouter Qwen3-Next 80B Event Understanding V5 Candidate
 
-Status: QUALIFICATION-ONLY PREFLIGHT — NO PROVIDER CALL YET
+Status: ONE-SHOT QUALIFICATION TRIGGERED AFTER GREEN STAGING GATE
 
 ## Exact candidate route
 
@@ -61,8 +61,8 @@ provider.require_parameters = true
 requested structured-output parameters. The HTTP transport is constructed with `attempts=1`; no
 hidden HTTP retry is allowed. No random free router is used.
 
-No candidate-specific source, semantic prompt, gold, scorer, threshold, fixture, or V5 schema change
-is introduced.
+No candidate-specific source, semantic prompt, gold, scorer, threshold, fixture, token-budget tuning,
+or V5 schema change is introduced.
 
 ## Frozen V5 contract
 
@@ -88,21 +88,29 @@ The candidate is not exported from `insight_desk.providers`, is not added to pro
 and is not production-wired. The wrapper scope-registers it only inside the V5 qualification runner
 and restores canonical runner state on exit.
 
-## Required execution order
+## Preflight and staged one-shot gate
 
-1. ordinary qualification-only preflight must be GREEN;
-2. add a temporary branch-and-marker-gated one-shot lane;
-3. prove the lane is SKIPPED without its trigger marker while ordinary jobs remain GREEN;
-4. create exactly one marker commit;
-5. allow exactly one four-case provider qualification;
-6. freeze the first valid provider result without retry or candidate-specific tuning;
-7. remove the consumed lane immediately;
-8. freeze registry/tests/documentation;
-9. rerun ordinary exact-head CI;
-10. only then consider a non-force PR fast-forward.
+Qualification-only preflight head `0ef0d0c3204a12299438ba371bd0fb2bb370a436`, run `33233784216`:
 
-A provider or route availability failure must be classified separately from semantic non-pass. A
-qualification-harness failure is not provider evidence.
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- provider calls: 0
+
+Temporary-lane staging head `ec35097e51ce761e1fae97d33c7d17940673f43d`, run `33233835884`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- `semantic-v5-provider-candidate-openrouter-qwen3-next-80b`: SKIPPED
+- provider calls: 0
+
+The branch-specific lane is armed only by the explicit commit-message marker. This document-only
+commit is the single authorized one-shot trigger.
+
+The first valid provider result is frozen. There is no provider rerun and no candidate-specific tuning
+after a valid result. A failure proven to be our qualification harness rather than provider behavior
+must be classified separately and must not be entered as provider evidence.
 
 ## Production and merge gates
 
