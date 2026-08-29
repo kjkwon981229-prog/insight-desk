@@ -156,6 +156,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
                 "gemini_3_flash_v5",
                 "openrouter_dots3note_v5",
                 "openrouter_nexn2pro_v5",
+                "openrouter_qwen3next80b_v5",
             },
         )
         definitive_non_passes = {
@@ -173,11 +174,17 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
                 self.assertEqual(record["passed_cases"], passed_cases)
                 self.assertLess(record["passed_cases"], 4)
 
-        nex = active_records["openrouter_nexn2pro_v5"]
-        self.assertEqual(nex["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
-        self.assertEqual(nex["evaluated_cases"], 4)
-        self.assertEqual(nex["passed_cases"], 0)
-        self.assertEqual(nex["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
+        for provider_id in (
+            "openrouter_nexn2pro_v5",
+            "openrouter_qwen3next80b_v5",
+        ):
+            with self.subTest(provider_id=provider_id):
+                record = active_records[provider_id]
+                self.assertEqual(record["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
+                self.assertEqual(record["evaluated_cases"], 4)
+                self.assertEqual(record["passed_cases"], 0)
+                self.assertEqual(record["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
+
         self.assertFalse(
             any(item.get("status") == "MINIMUM_COMPATIBILITY_PASS" for item in active_records.values())
         )
