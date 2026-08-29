@@ -1,3 +1,0 @@
-One-shot Phase 7 PR production-preflight trigger.
-
-This file has no runtime or semantic behavior. It exists only to trigger one fresh PR canary through the real production build path. PR deploy and push notification jobs remain blocked by workflow conditions.
