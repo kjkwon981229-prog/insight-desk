@@ -21,7 +21,10 @@ from insight_desk.production_phase7_v2 import (
     _ORIGINAL_PIPELINE_STORY_ADMISSION,
     scope_phase7_story_readmission,
 )
-from insight_desk.production_relevance_v2 import ConfiguredLiteralRelevanceOwner
+from insight_desk.production_relevance_v2 import (
+    ConfiguredLiteralRelevanceOwner,
+    rewrite_event_relevance_attempt,
+)
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
 
@@ -31,6 +34,7 @@ _CORE_HOOKS = (
     "topic_relevant",
     "relevance_decision",
     "event_topic_relevant",
+    "_attempt",
     "_visible_topic_headline_bound",
     "visible_story_issues",
     "visible_event_redundant",
@@ -67,10 +71,26 @@ def production_v2_runtime(core_module: ModuleType):
     marker_snapshot = {name: getattr(core_module, name, _MISSING) for name in _MARKERS}
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
+    legacy_attempt = core_module._attempt
     relevance_owner = ConfiguredLiteralRelevanceOwner(
         core_module.topic_relevant,
         morphology=_optional_morphology(),
     )
+
+    def audited_attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None):
+        projected_status, projected_reason = rewrite_event_relevance_attempt(
+            stage=stage,
+            status=status,
+            reason=reason,
+        )
+        return legacy_attempt(
+            topic=topic,
+            query=query,
+            domain=domain,
+            stage=stage,
+            status=projected_status,
+            reason=projected_reason,
+        )
 
     registry: ProductionV2Registry | None = None
     try:
@@ -80,9 +100,12 @@ def production_v2_runtime(core_module: ModuleType):
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
-        core_module.event_topic_relevant = lambda *, event, facts, evidence, topic: (
-            relevance_owner.decide_event(event=event, facts=facts, topic=topic).is_relevant
+        core_module.event_topic_relevant = lambda *, event, facts, evidence, topic: relevance_owner.project_event(
+            event=event,
+            facts=facts,
+            topic=topic,
         )
+        core_module._attempt = audited_attempt
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
         scope_phase7_story_readmission(core_module, registry)
