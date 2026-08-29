@@ -1,6 +1,6 @@
 # Phase 4 — Cohere Command A Reasoning Event Understanding V5 Candidate
 
-Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
+Status: ONE-SHOT QUALIFICATION TRIGGERED — FIRST VALID RESULT MUST FREEZE
 
 ## Exact candidate route
 
@@ -93,20 +93,53 @@ The frozen `insight_desk/providers/cohere.py` remains unchanged. The candidate i
 wrapper scope-registers the candidate only inside the V5 runner and restores canonical runner state
 on exit.
 
+## Proven preflight and staging evidence
+
+Initial qualification-only preflight head `47715e6f754207c816b7be187c6e95890f9af206` passed ordinary
+validation in Actions run `33229670144`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- Python: 1236 tests / 23 skipped / 0 failed;
+- benchmark: 85 / 7 / 16 / 15 / 44;
+- Push Worker: 20/20;
+- npm audit: 0 vulnerabilities;
+- provider calls: 0.
+
+The temporary lane was then staged without a trigger. Run `33229735386` exposed exactly one stale
+historical test: the V3 Cohere A+ freeze test incorrectly forbade the shared `COHERE_API_KEY` string
+from appearing anywhere in the workflow, even for a different exact Cohere route. No provider call
+occurred in that failed staging run.
+
+That stale assertion was narrowed only to its intended invariant — the historical A+ exact lane and
+trigger remain absent. No production semantics, provider contract, V5 fixture, source, gold, scorer,
+threshold, or acceptance rule changed.
+
+Corrected staging head `7d37e7bf4296c73fe4cf28dd5365b5ddb0fa9ea3` then passed Actions run
+`33229771741`:
+
+- Infrastructure: SUCCESS;
+- historical production replay: SUCCESS;
+- Phase 6 correctness/recall: SUCCESS;
+- `semantic-v5-provider-candidate-cohere-command-a-reasoning`: SKIPPED;
+- provider calls: 0.
+
+Therefore every pre-call one-shot gate is satisfied before this trigger commit.
+
 ## One-shot execution gate
 
-Before any real provider request:
+This commit is the single trigger commit and contains the exact marker:
 
-1. ordinary Infrastructure must be SUCCESS on the exact candidate head;
-2. historical production replay must be SUCCESS;
-3. Phase 6 correctness/recall must be SUCCESS;
-4. final diff must remain qualification-only;
-5. a temporary branch-specific CI lane may be added without its trigger;
-6. that lane must be observed SKIPPED while ordinary jobs remain GREEN;
-7. exactly one later trigger commit may execute the four-case qualification.
+`[semantic-v5-candidate:command-a-reasoning-08-2025]`
 
-The first valid result is frozen. There is no provider rerun and no candidate-specific tuning after
-the result.
+The temporary branch-specific lane may therefore execute exactly one four-case V5 qualification
+after its ordinary dependencies pass again on this exact trigger head.
+
+The first valid provider result is final evidence for this exact model route. There is no provider
+rerun and no candidate-specific tuning after the result. If the run is invalid because of our own
+qualification harness rather than provider behavior, that must be classified separately and must
+not be entered as provider qualification evidence.
 
 ## Production and merge gates
 
