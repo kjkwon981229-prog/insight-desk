@@ -573,6 +573,26 @@
       "artifact_id": 9709329603,
       "artifact_digest": "sha256:df1b83063608936a59a5b4daed10ada080af17d74111186c85997831a38efc32",
       "report_digest": "sha256:1cc3d2c2f09c2e383d4a78bcd88a3c59d8d4c7b7f77760ea355d1beac638475a"
+    },
+    "openrouter_lfm25_26b_v5": {
+      "provider": "openrouter",
+      "model": "liquid/lfm-2.5-2.6b:free",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33235012040,
+      "head_sha": "6c30921b4ec9a33729f3049ace216376c3651c5f",
+      "evaluated_cases": 4,
+      "passed_cases": 1,
+      "failure_classification": "MIXED_SEMANTIC_AND_INVALID_OUTPUT",
+      "case_failures": {
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        "run413-kpop-alphadriveone-actor-preserved": ["expected_event_match"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output"]
+      },
+      "artifact_id": 9709657693,
+      "artifact_digest": "sha256:b518f05f8a79ac0138a84291241b79736867a45bb631d351c3a966400a1f48dc",
+      "report_digest": "sha256:64817b024f235a0e50e6a69f6730bbe3a4199b64b8fa5d7913514072c167ac3a"
     }
   }
 }
