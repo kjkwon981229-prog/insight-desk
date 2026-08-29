@@ -24,7 +24,6 @@ _CORE_HOOKS = (
     "Phase6EventEngine",
     "topic_relevant",
     "event_topic_relevant",
-    "assess_material_event",
     "_visible_topic_headline_bound",
     "visible_story_issues",
     "visible_event_redundant",
@@ -65,12 +64,20 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
+        # The compatibility installer historically exposed a second material/evidence hook on the
+        # mechanical loop. Daily production no longer consumes it; remove it before execution so
+        # EvidenceIntegrityPhase6EventEngine is the only active evidence-integrity owner.
+        if hasattr(core_module, "assess_material_event"):
+            delattr(core_module, "assess_material_event")
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         scope_phase7_story_readmission(core_module)
         yield registry
     finally:
         for name, value in hook_snapshot.items():
             setattr(core_module, name, value)
+        # The ordinary daily core has no material assessment hook after the single-owner migration.
+        if hasattr(core_module, "assess_material_event"):
+            delattr(core_module, "assess_material_event")
         for name, value in marker_snapshot.items():
             if value is _MISSING:
                 if hasattr(core_module, name):
