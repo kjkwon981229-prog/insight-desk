@@ -448,6 +448,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
     publication_manifest: PublicationIdentityManifest | None = None
 
     legacy_topic_relevant = core_module.topic_relevant
+    legacy_relevance_decision = core_module.relevance_decision
     legacy_build_view = core_module.build_briefing_view_model
     legacy_write_json = core_module._write_json
 
@@ -529,10 +530,15 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             bundle.validate()
             registry.v2_bundle_validated = True
 
+    def source_relevance_decision(*, title: str, body: str, topic):
+        # The migration installs one typed relevance owner. The underlying configured-literal
+        # policy remains unchanged here; later phases may improve resolution without changing the
+        # RelevanceDecision contract consumed by production.
+        return legacy_relevance_decision(title=title, body=body, topic=topic)
+
     def source_relevant(*, title: str, body: str, topic) -> bool:
-        # This is the one relevance owner for the current migration. The existing configured
-        # literal query filter is retained only here; later event stages cannot re-judge relevance.
-        return legacy_topic_relevant(title=title, body=body, topic=topic)
+        # Compatibility bool projection only. Daily production consumes the typed decision above.
+        return source_relevance_decision(title=title, body=body, topic=topic).is_relevant
 
     def event_relevant(*, event, facts, evidence, topic) -> bool:
         del facts, evidence
@@ -647,6 +653,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
     # Install one owner per semantic responsibility onto the old loop. The old implementations
     # stay importable for historical replay, but are no longer runtime authorities here.
     core_module.SemanticPipeline = CanonicalSemanticPipeline
+    core_module.relevance_decision = source_relevance_decision
     core_module.topic_relevant = source_relevant
     core_module.event_topic_relevant = event_relevant
     core_module.assess_material_event = _evidence_integrity_assessment
