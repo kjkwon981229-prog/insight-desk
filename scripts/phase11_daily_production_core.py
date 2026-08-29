@@ -39,7 +39,7 @@ from insight_desk.semantic import (
     judge_same_event_mutual_entailment,
     resolve_candidate_pair,
 )
-from insight_desk.semantic.material import MaterialEventVerdict, assess_material_event
+from insight_desk.semantic.material import MaterialEventVerdict
 from insight_desk.semantic.visible_identity import visible_event_redundant
 from insight_desk.story_admission import (
     StoryAdmissionInput,
@@ -379,11 +379,6 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 for event in semantic_result.events:
                     if stats["published_entries"] >= topic.selection_cap:
                         break
-                    material = assess_material_event(event, facts=article_facts, evidence=article_evidence)
-                    if material.verdict is not MaterialEventVerdict.MATERIAL:
-                        continue
-                    stats["material_events"] += 1
-
                     event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
                     if not event_relevant:
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
@@ -395,6 +390,8 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         evidence=article_evidence,
                         selection_context=Phase6SelectionContext(topic_relevant=event_relevant, fresh=True, source_usable=True, identity_resolved=True),
                     )
+                    if assessment.material.verdict is MaterialEventVerdict.MATERIAL:
+                        stats["material_events"] += 1
                     if assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE:
                         continue
                     stats["included_events"] += 1
