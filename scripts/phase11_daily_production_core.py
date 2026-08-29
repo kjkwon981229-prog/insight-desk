@@ -68,6 +68,7 @@ FUTURE_CLOCK_TOLERANCE = timedelta(hours=6)
 MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
 MAX_IDENTITY_DEFER_RESOLUTION_ATTEMPTS_PER_TOPIC = 2
+RELEVANCE_RESOLUTION_EXPANSION_LIMIT = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +354,8 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             "included_events": 0,
             "verification_attempts": 0,
             "identity_resolution_attempts": 0,
+            "relevance_resolution_expansions": 0,
+            "relevance_resolution_candidates": 0,
             "published_entries": 0,
         }
         topic_stats[topic.topic_id] = stats
@@ -436,6 +439,39 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
                     if not event_relevant:
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
+                        if (
+                            stats["relevance_resolution_expansions"] < RELEVANCE_RESOLUTION_EXPANSION_LIMIT
+                            and "expand_deferred_event_relevance" in globals()
+                        ):
+                            expansion = expand_deferred_event_relevance(
+                                event=event,
+                                facts=article_facts,
+                                topic=topic,
+                                discovery=discovery,
+                            )
+                            if expansion is not None and getattr(expansion, "attempted", False):
+                                stats["relevance_resolution_expansions"] += 1
+                                queued_urls = {
+                                    str(getattr(queued_candidate, "url", "") or "").strip()
+                                    for queued_candidate in queue
+                                }
+                                appended = 0
+                                for expanded_candidate in getattr(expansion, "candidates", ()):
+                                    expanded_url = str(getattr(expanded_candidate, "url", "") or "").strip()
+                                    if not expanded_url or expanded_url in seen_urls or expanded_url in queued_urls:
+                                        continue
+                                    queue.append(expanded_candidate)
+                                    queued_urls.add(expanded_url)
+                                    appended += 1
+                                stats["relevance_resolution_candidates"] += appended
+                                attempts.append(_attempt(
+                                    topic=topic.topic_id,
+                                    query=query,
+                                    domain=domain,
+                                    stage="event_topic_relevance_resolution",
+                                    status="expanded" if appended else "defer",
+                                    reason=str(getattr(expansion, "reason", "relevance_defer:resolution_unknown")),
+                                ))
                         continue
 
                     understanding = event_understanding_decision(
