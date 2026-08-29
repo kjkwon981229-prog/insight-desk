@@ -33,7 +33,7 @@ class _Morphology:
     def analyze(self, text: str):
         if text in {"박준영", "한화", "한화와 NC", "앤트로픽"}:
             return (_Token(text, "NNP", 0, max(1, len(text))),)
-        if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회"}:
+        if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회", "설명회"}:
             return (_Token(text, "NNG", 0, max(1, len(text))),)
         return (_Token(text, "VV", 0, max(1, len(text))),)
 
@@ -153,6 +153,32 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(result[program[0].event_id].article_role, ArticleEventRole.PRIMARY)
         self.assertEqual(result[attendance[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[attendance[0].event_id].publishable_event)
+
+    def test_deep_body_generic_title_match_cannot_be_primary_when_article_center_was_not_extracted(self) -> None:
+        article = _article(
+            topic="psat_recruitment",
+            title="수험 지원 확대, 7·9급 설명회·교재·멘토링 진행",
+            body=(
+                "교육 브랜드는 교재 출간과 통합 설명회, 멘토링 프로그램을 마련했다고 밝혔다.\n"
+                "설명회에는 지난 두 달간 6,901명이 신청했다."
+            ),
+        )
+        # Simulate the compatibility extractor missing the true lead event while still extracting a
+        # later generic noun fact whose surface happens to occur in the title. Title substring alone
+        # must not manufacture article centrality.
+        attendance = _event_fact(
+            article,
+            suffix="generic-title-only",
+            sentence="설명회에는 지난 두 달간 6,901명이 신청했다.",
+            subject="설명회",
+            action="지난 두 달간 6,901명이 신청했다",
+            topic="psat_recruitment",
+        )
+        result = self._assess(article, (attendance,))
+        decision = result[attendance[0].event_id]
+        self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
+        self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+        self.assertFalse(decision.publishable_event)
 
     def test_generic_secondary_actor_does_not_beat_named_title_bound_primary_actor(self) -> None:
         article = _article(
