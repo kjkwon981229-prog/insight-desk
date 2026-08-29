@@ -15,7 +15,7 @@ import hashlib
 import re
 
 from .canonical_v2 import SourceDocument
-from .contracts import ContractError
+from .contracts import Certainty, ContractError, OutcomePolarity, TemporalState
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -187,6 +187,11 @@ class CanonicalEventDraft:
     parent_event_hint: str | None = None
     authoritative_fact_ids: tuple[str, ...] = ()
     uncertainty_reasons: tuple[str, ...] = ()
+    temporal_state: TemporalState | None = None
+    certainty: Certainty | None = None
+    polarity: OutcomePolarity | None = None
+    location: str | None = None
+    cause: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -239,6 +244,8 @@ class CanonicalEventDraft:
             ("value", self.value),
             ("attribution", self.attribution),
             ("parent_event_hint", self.parent_event_hint),
+            ("location", self.location),
+            ("cause", self.cause),
         ):
             if value is not None:
                 _require_text(name, value)
