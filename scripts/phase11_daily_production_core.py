@@ -63,6 +63,7 @@ FRESHNESS_WINDOW = timedelta(hours=72)
 FUTURE_CLOCK_TOLERANCE = timedelta(hours=6)
 MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
+MAX_IDENTITY_DEFER_RESOLUTION_ATTEMPTS_PER_TOPIC = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +183,15 @@ def event_topic_relevant(
         )
     )
     return decision.accepted
+
+
+def _identity_defer_unresolved(*_args, **_kwargs):
+    """Compatibility default; production V2 runtime injects the bounded source-resolution lane."""
+
+    return None
+
+
+resolve_deferred_identity = _identity_defer_unresolved
 
 
 def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
@@ -319,6 +329,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "different_event": 0,
         "unavailable": 0,
         "deferred": 0,
+        "defer_resolution_attempts": 0,
+        "defer_resolution_same_event": 0,
+        "defer_resolution_held": 0,
     }
 
     articles: dict[str, object] = {}
@@ -335,6 +348,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             "material_events": 0,
             "included_events": 0,
             "verification_attempts": 0,
+            "identity_resolution_attempts": 0,
             "published_entries": 0,
         }
         topic_stats[topic.topic_id] = stats
@@ -508,7 +522,35 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         resolution = resolve_candidate_pair(event, prior_event, identity_facts, semantic_same_event=judgment.same_event)
                         disposition = identity_disposition(resolution.decision)
                         if disposition is IdentityDisposition.DEFER:
+                            resolution_judgment = None
+                            if stats["identity_resolution_attempts"] < MAX_IDENTITY_DEFER_RESOLUTION_ATTEMPTS_PER_TOPIC:
+                                stats["identity_resolution_attempts"] += 1
+                                identity_stats["defer_resolution_attempts"] += 1
+                                resolution_judgment = resolve_deferred_identity(
+                                    event,
+                                    prior_event,
+                                    discovery=discovery,
+                                    acquisition=acquisition,
+                                    topic_id=topic.topic_id,
+                                )
+                            if resolution_judgment is not None and resolution_judgment.same_event is True:
+                                identity_stats["same_event"] += 1
+                                identity_stats["defer_resolution_same_event"] += 1
+                                attempts.append(_attempt(
+                                    topic=topic.topic_id,
+                                    query=query,
+                                    domain=domain,
+                                    stage="event_identity",
+                                    status="skip",
+                                    reason="cross_source_same_event_resolved_by_source_expansion",
+                                ))
+                                duplicate_event = True
+                                break
+                            if resolution_judgment is not None and resolution_judgment.same_event is False:
+                                identity_stats["different_event"] += 1
+                                continue
                             identity_stats["deferred"] += 1
+                            identity_stats["defer_resolution_held"] += 1
                             attempts.append(_attempt(
                                 topic=topic.topic_id,
                                 query=query,
