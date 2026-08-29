@@ -5,7 +5,7 @@ import unittest
 
 from insight_desk.event_understanding_provider_status_v2 import (
     AWAITING_PROVIDER_QUALIFICATION,
-    NO_ELIGIBLE_EXISTING_PROVIDER,
+    CANDIDATE_QUALIFICATION_BLOCKED,
     load_provider_status,
 )
 
@@ -68,7 +68,7 @@ class MistralSmall4V5QualificationFreezeTests(unittest.TestCase):
             payload["qualification_contract_status"],
             AWAITING_PROVIDER_QUALIFICATION,
         )
-        self.assertEqual(payload["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(payload["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
         self.assertIsNone(payload["selected_event_understanding_provider"])
         self.assertFalse(payload["production_wired"])
 
