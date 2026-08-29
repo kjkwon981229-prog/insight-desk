@@ -62,10 +62,41 @@ def _without_subject(key: IdentityKey) -> IdentityKey:
     )
 
 
+def _explicit_day_markers(event: CanonicalEvent) -> frozenset[int]:
+    """Read explicit Korean day-of-month markers from canonical fields only.
+
+    The legacy bridge may leave ``event_time`` unresolved while preserving a literal schedule such
+    as ``27일`` inside ``CanonicalEvent.action``. This is a bounded structural fallback for identity,
+    not a source-text detector: raw article bytes are never consulted.
+    """
+
+    surface = " ".join(value for value in (event.action, event.object or "") if value)
+    for punctuation in "()[]{}<>,.;:!?/\\\"'‘’“”·":
+        surface = surface.replace(punctuation, " ")
+    markers: set[int] = set()
+    for token in surface.split():
+        if not token.endswith("일"):
+            continue
+        number = token[:-1]
+        if number.isdigit():
+            day = int(number)
+            if 1 <= day <= 31:
+                markers.add(day)
+    return frozenset(markers)
+
+
+def _same_schedule_anchor(left: CanonicalEvent, right: CanonicalEvent) -> bool:
+    if left.event_time is not None or right.event_time is not None:
+        return bool(left.event_time and left.event_time == right.event_time)
+    left_days = _explicit_day_markers(left)
+    right_days = _explicit_day_markers(right)
+    return bool(left_days and right_days and left_days.intersection(right_days))
+
+
 def _same_structured_bok_policy_meeting(left: CanonicalEvent, right: CanonicalEvent) -> bool:
     if left.topic != "economy" or right.topic != "economy":
         return False
-    if not left.event_time or left.event_time != right.event_time:
+    if not _same_schedule_anchor(left, right):
         return False
 
     def actor_is_bok(event: CanonicalEvent) -> bool:
