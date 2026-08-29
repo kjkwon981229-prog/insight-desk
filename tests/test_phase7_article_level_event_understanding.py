@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import unittest
 
@@ -18,6 +19,23 @@ from insight_desk.production_event_understanding_compat_v2 import (
 
 
 NOW = datetime(2026, 8, 29, 0, 0, tzinfo=timezone.utc)
+
+
+@dataclass(frozen=True)
+class _Token:
+    surface: str
+    tag: str
+    start: int = 0
+    end: int = 1
+
+
+class _Morphology:
+    def analyze(self, text: str):
+        if any(name in text for name in ("박준영", "한화", "NC", "앤트로픽")):
+            return (_Token(text, "NNP", 0, max(1, len(text))),)
+        if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회"}:
+            return (_Token(text, "NNG", 0, max(1, len(text))),)
+        return (_Token(text, "VV", 0, max(1, len(text))),)
 
 
 def _article(*, title: str, body: str, topic: str) -> RawArticle:
@@ -80,7 +98,7 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
             events=events,
             facts=facts,
             evidence=evidence,
-            morphology=None,
+            morphology=_Morphology(),
             now=NOW,
         )
 
@@ -94,22 +112,8 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "한화는 경기 전 선발 라인업을 발표했다."
             ),
         )
-        central = _event_fact(
-            article,
-            suffix="central",
-            sentence="박준영은 감독의 신뢰 속 NC전에 선발 등판한다.",
-            subject="박준영",
-            action="감독의 신뢰 속 NC전에 선발 등판한다",
-            topic="kbo_hanwha",
-        )
-        lineup = _event_fact(
-            article,
-            suffix="lineup",
-            sentence="한화는 경기 전 선발 라인업을 발표했다.",
-            subject="한화",
-            action="경기 전 선발 라인업을 발표했다",
-            topic="kbo_hanwha",
-        )
+        central = _event_fact(article, suffix="central", sentence="박준영은 감독의 신뢰 속 NC전에 선발 등판한다.", subject="박준영", action="감독의 신뢰 속 NC전에 선발 등판한다", topic="kbo_hanwha")
+        lineup = _event_fact(article, suffix="lineup", sentence="한화는 경기 전 선발 라인업을 발표했다.", subject="한화", action="경기 전 선발 라인업을 발표했다", topic="kbo_hanwha")
         result = self._assess(article, (central, lineup))
         self.assertEqual(result[central[0].event_id].article_role, ArticleEventRole.PRIMARY)
         self.assertTrue(result[central[0].event_id].publishable_event)
@@ -126,22 +130,8 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "한화는 팀 타율 리그 3위와 136홈런을 기록 중이다."
             ),
         )
-        game = _event_fact(
-            article,
-            suffix="game",
-            sentence="한화와 NC는 29일 대전에서 맞붙는다.",
-            subject="한화와 NC",
-            action="29일 대전에서 맞붙는다",
-            topic="kbo_hanwha",
-        )
-        stat = _event_fact(
-            article,
-            suffix="stat",
-            sentence="한화는 팀 타율 리그 3위와 136홈런을 기록 중이다.",
-            subject="한화",
-            action="팀 타율 리그 3위와 136홈런을 기록 중이다",
-            topic="kbo_hanwha",
-        )
+        game = _event_fact(article, suffix="game", sentence="한화와 NC는 29일 대전에서 맞붙는다.", subject="한화와 NC", action="29일 대전에서 맞붙는다", topic="kbo_hanwha")
+        stat = _event_fact(article, suffix="stat", sentence="한화는 팀 타율 리그 3위와 136홈런을 기록 중이다.", subject="한화", action="팀 타율 리그 3위와 136홈런을 기록 중이다", topic="kbo_hanwha")
         result = self._assess(article, (game, stat))
         self.assertEqual(result[game[0].event_id].article_role, ArticleEventRole.PRIMARY)
         self.assertEqual(result[stat[0].event_id].article_role, ArticleEventRole.CONTEXT)
@@ -157,22 +147,8 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "지난 6월과 7월 설명회에는 6,901명이 신청했다."
             ),
         )
-        program = _event_fact(
-            article,
-            suffix="program",
-            sentence="교육업체는 하반기 수험 지원 프로그램을 확대 운영한다고 밝혔다.",
-            subject="교육업체",
-            action="하반기 수험 지원 프로그램을 확대 운영한다고 밝혔다",
-            topic="psat_recruitment",
-        )
-        attendance = _event_fact(
-            article,
-            suffix="attendance",
-            sentence="지난 6월과 7월 설명회에는 6,901명이 신청했다.",
-            subject="지난 6월과 7월 설명회",
-            action="6,901명이 신청했다",
-            topic="psat_recruitment",
-        )
+        program = _event_fact(article, suffix="program", sentence="교육업체는 하반기 수험 지원 프로그램을 확대 운영한다고 밝혔다.", subject="교육업체", action="하반기 수험 지원 프로그램을 확대 운영한다고 밝혔다", topic="psat_recruitment")
+        attendance = _event_fact(article, suffix="attendance", sentence="지난 6월과 7월 설명회에는 6,901명이 신청했다.", subject="지난 6월과 7월 설명회", action="6,901명이 신청했다", topic="psat_recruitment")
         result = self._assess(article, (program, attendance))
         self.assertEqual(result[program[0].event_id].article_role, ArticleEventRole.PRIMARY)
         self.assertEqual(result[attendance[0].event_id].article_role, ArticleEventRole.CONTEXT)
@@ -187,22 +163,8 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다."
             ),
         )
-        named = _event_fact(
-            article,
-            suffix="named",
-            sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.",
-            subject="앤트로픽",
-            action="로봇 제어용 하드웨어 표준을 공개했다",
-            topic="ai_tech",
-        )
-        generic = _event_fact(
-            article,
-            suffix="generic",
-            sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.",
-            subject="에이전트",
-            action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다",
-            topic="ai_tech",
-        )
+        named = _event_fact(article, suffix="named", sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.", subject="앤트로픽", action="로봇 제어용 하드웨어 표준을 공개했다", topic="ai_tech")
+        generic = _event_fact(article, suffix="generic", sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.", subject="에이전트", action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다", topic="ai_tech")
         result = self._assess(article, (named, generic))
         self.assertEqual(result[named[0].event_id].status, UnderstandingStatus.RESOLVED)
         self.assertEqual(result[named[0].event_id].article_role, ArticleEventRole.PRIMARY)
@@ -218,22 +180,8 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
                 "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다."
             ),
         )
-        generic = _event_fact(
-            article,
-            suffix="generic-lead",
-            sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.",
-            subject="에이전트",
-            action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다",
-            topic="ai_tech",
-        )
-        named = _event_fact(
-            article,
-            suffix="named-later",
-            sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.",
-            subject="앤트로픽",
-            action="로봇 제어용 하드웨어 표준을 공개했다",
-            topic="ai_tech",
-        )
+        generic = _event_fact(article, suffix="generic-lead", sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.", subject="에이전트", action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다", topic="ai_tech")
+        named = _event_fact(article, suffix="named-later", sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.", subject="앤트로픽", action="로봇 제어용 하드웨어 표준을 공개했다", topic="ai_tech")
         result = self._assess(article, (generic, named))
         self.assertEqual(result[named[0].event_id].article_role, ArticleEventRole.PRIMARY)
         self.assertTrue(result[named[0].event_id].publishable_event)
