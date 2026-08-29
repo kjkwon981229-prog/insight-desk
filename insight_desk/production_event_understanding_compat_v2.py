@@ -9,7 +9,7 @@ separate one source-central news event from contextual/analytical facts before P
 """
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import date, datetime
 from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact, RawArticle
@@ -83,18 +83,36 @@ def _is_analytical_predicate(action: str) -> bool:
     return any(predicate in value for predicate in _ANALYTICAL_PREDICATES)
 
 
+def _morphology_tokens(text: str, morphology: MorphologyPort | None) -> tuple[object, ...] | None:
+    if morphology is None:
+        return None
+    try:
+        return tuple(morphology.analyze(text))
+    except Exception:
+        return None
+
+
 def _has_explicit_predicate(action: str, morphology: MorphologyPort | None) -> bool:
     if not _normalized(action):
         return False
-    if morphology is None:
-        return True
-    try:
-        tokens = tuple(morphology.analyze(action))
-    except Exception:
-        return True
-    if not tokens:
+    tokens = _morphology_tokens(action, morphology)
+    if tokens is None or not tokens:
         return True
     return any(str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA")) for token in tokens)
+
+
+def _is_copular_definition(action: str, morphology: MorphologyPort | None) -> bool:
+    """Identify a static classification/definition by its final morphological predicate only."""
+
+    tokens = _morphology_tokens(action, morphology)
+    if not tokens:
+        return False
+    predicate_tags = [
+        str(getattr(token, "tag", ""))
+        for token in tokens
+        if str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA"))
+    ]
+    return bool(predicate_tags) and predicate_tags[-1] in {"VCP", "VCN"}
 
 
 def _actor_specificity(subject: str, morphology: MorphologyPort | None) -> int:
@@ -105,11 +123,8 @@ def _actor_specificity(subject: str, morphology: MorphologyPort | None) -> int:
     evidence of a specific actor; no entity dictionary or topic vocabulary is used.
     """
 
-    if morphology is None:
-        return 0
-    try:
-        tokens = tuple(morphology.analyze(subject))
-    except Exception:
+    tokens = _morphology_tokens(subject, morphology)
+    if not tokens:
         return 0
     return int(any(str(getattr(token, "tag", "")) in {"NNP", "SL"} for token in tokens))
 
@@ -187,6 +202,15 @@ def assess_compatibility_event_understanding(
             reasons=("predicate_unresolved",),
         )
 
+    if _is_copular_definition(fact.action, morphology):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("copular_definition_context",),
+        )
+
     if _is_analytical_predicate(fact.action):
         return CompatibilityEventUnderstandingDecision(
             status=UnderstandingStatus.RESOLVED,
@@ -247,6 +271,21 @@ def _centrality_rank(
     return (actor_specific, lead_bound, actor_bound, object_bound, -start)
 
 
+def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
+    """Return true only when a date-only event is clearly outside the source freshness horizon."""
+
+    if fact.event_date is None or article.provenance.published_at is None:
+        return False
+    try:
+        event_date = date.fromisoformat(fact.event_date)
+    except ValueError:
+        return False
+    age_days = (article.provenance.published_at.date() - event_date).days
+    # Date-only precision cannot establish an exact 72-hour boundary. Four or more calendar days
+    # is therefore the first interval that is unambiguously older than the 72-hour source window.
+    return age_days > 3
+
+
 def assess_compatibility_article_understanding(
     article: RawArticle,
     *,
@@ -273,6 +312,25 @@ def assess_compatibility_article_understanding(
         )
         for event in events
     }
+
+    for event in events:
+        decision = decisions[event.event_id]
+        if (
+            decision.status is UnderstandingStatus.RESOLVED
+            and decision.article_role is ArticleEventRole.PRIMARY
+            and decision.publishable_event
+            and len(event.fact_ids) == 1
+        ):
+            fact = facts.get(event.fact_ids[0])
+            if fact is not None and _historical_event_context(article, fact):
+                decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
+                    status=UnderstandingStatus.RESOLVED,
+                    article_role=ArticleEventRole.CONTEXT,
+                    topic_relation=TopicRelation.BACKGROUND,
+                    publishable_event=False,
+                    reasons=decision.reasons + ("historical_event_context",),
+                )
+
     eligible = [
         event
         for event in events
