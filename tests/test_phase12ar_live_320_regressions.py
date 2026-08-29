@@ -106,13 +106,12 @@ class Live320VisibleIdentityRegressions(unittest.TestCase):
             )
         )
 
-    def test_production_gate_uses_one_shared_visible_identity_dispatch_before_semantic_nli(self) -> None:
+    def test_daily_production_no_longer_dispatches_generated_text_as_event_identity(self) -> None:
         source = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")
-        self.assertIn("from insight_desk.semantic.visible_identity import visible_event_redundant", source)
-        call = source.index("if visible_event_redundant(")
-        precheck = source.index("precheck = compare_candidate_identity(")
-        self.assertLess(call, precheck)
-        self.assertIn('reason="visible_event_fingerprint_already_published"', source)
+        self.assertNotIn("if visible_event_redundant(", source)
+        self.assertNotIn('reason="visible_event_fingerprint_already_published"', source)
+        self.assertIn("precheck = compare_candidate_identity(", source)
+        self.assertIn("disposition = identity_disposition(", source)
 
 
 if __name__ == "__main__":
