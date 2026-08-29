@@ -449,6 +449,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
 
     legacy_topic_relevant = core_module.topic_relevant
     legacy_relevance_decision = core_module.relevance_decision
+    legacy_event_topic_relevant = core_module.event_topic_relevant
     legacy_build_view = core_module.build_briefing_view_model
     legacy_write_json = core_module._write_json
 
@@ -541,9 +542,12 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
         return source_relevance_decision(title=title, body=body, topic=topic).is_relevant
 
     def event_relevant(*, event, facts, evidence, topic) -> bool:
-        del facts, evidence
-        canonical = registry.canonical_event(event.event_id)
-        return canonical.topic == topic.topic_id
+        return legacy_event_topic_relevant(
+            event=event,
+            facts=facts,
+            evidence=evidence,
+            topic=topic,
+        )
 
     def build_rendered_briefing_v2(*, briefing_id: str, generated_at, candidates):
         publications = tuple(
