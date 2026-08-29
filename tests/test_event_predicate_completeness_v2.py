@@ -1,17 +1,28 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from insight_desk.core import CandidateEvent, EvidenceField, EvidenceSpan, EventFact
+from insight_desk.core.event_understanding_v2 import UnderstandingStatus
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
+from insight_desk.production_event_understanding_compat_v2 import (
+    assess_compatibility_event_understanding,
+)
+from insight_desk.semantic.material import (
+    MaterialEventReason,
+    MaterialEventVerdict,
+    assess_material_event,
+)
 
 
 class _Morphology:
     def __init__(self, tags: tuple[str, ...]) -> None:
         self.tags = tags
 
-    def analyze(self, text: str):
-        return tuple(SimpleNamespace(tag=tag, surface=part) for tag, part in zip(self.tags, text.split()))
+    def analyze(self, _text: str):
+        return tuple(SimpleNamespace(tag=tag) for tag in self.tags)
 
 
 class EventPredicateCompletenessTests(unittest.TestCase):
@@ -34,6 +45,70 @@ class EventPredicateCompletenessTests(unittest.TestCase):
     def test_missing_morphology_is_unresolved_not_fabricated(self) -> None:
         result = assess_event_predicate("발표했다", morphology=None)
         self.assertIs(result.completeness, PredicateCompleteness.UNRESOLVED)
+
+    def test_event_understanding_holds_attributive_nominal_description(self) -> None:
+        event = CandidateEvent(
+            event_id="evt",
+            topic_id="economy",
+            fact_ids=("fact",),
+            article_ids=("article",),
+        )
+        fact = EventFact(
+            fact_id="fact",
+            subject="투자자",
+            action="부담이 가중되는 상황",
+            evidence_ids=("evidence",),
+        )
+        text = "투자자 부담이 가중되는 상황"
+        evidence = EvidenceSpan(
+            evidence_id="evidence",
+            article_id="article",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(text),
+            text=text,
+        )
+        decision = assess_compatibility_event_understanding(
+            event,
+            facts={"fact": fact},
+            evidence={"evidence": evidence},
+            morphology=_Morphology(("VV", "ETM", "NNG")),
+            now=datetime.now(timezone.utc),
+        )
+        self.assertIs(decision.status, UnderstandingStatus.UNRESOLVED)
+        self.assertIn("predicate_unresolved", decision.reasons)
+
+    def test_material_owner_defers_same_incomplete_predicate(self) -> None:
+        event = CandidateEvent(
+            event_id="evt",
+            topic_id="economy",
+            fact_ids=("fact",),
+            article_ids=("article",),
+        )
+        fact = EventFact(
+            fact_id="fact",
+            subject="투자자",
+            action="부담이 가중되는 상황",
+            evidence_ids=("evidence",),
+        )
+        text = "투자자 부담이 가중되는 상황"
+        evidence = EvidenceSpan(
+            evidence_id="evidence",
+            article_id="article",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(text),
+            text=text,
+        )
+        assessment = assess_material_event(
+            event,
+            facts={"fact": fact},
+            evidence={"evidence": evidence},
+            morphology=_Morphology(("VV", "ETM", "NNG")),
+            now=datetime.now(timezone.utc),
+        )
+        self.assertIs(assessment.verdict, MaterialEventVerdict.DEFER)
+        self.assertEqual(assessment.reasons, (MaterialEventReason.PREDICATE_SIGNAL_MISSING,))
 
 
 if __name__ == "__main__":
