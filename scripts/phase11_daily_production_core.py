@@ -69,6 +69,7 @@ MAX_ACQUISITIONS_PER_TOPIC = 8
 MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
 MAX_IDENTITY_DEFER_RESOLUTION_ATTEMPTS_PER_TOPIC = 2
 RELEVANCE_RESOLUTION_EXPANSION_LIMIT = 2
+RELEVANCE_RESOLUTION_ACQUISITION_LIMIT = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +222,19 @@ def _content_fingerprint(body: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _candidate_budget_allows(
+    *,
+    candidate_url: str,
+    relevance_resolution_candidate_urls: set[str],
+    acquisition_attempts: int,
+    max_acquisitions: int,
+    relevance_resolution_acquisitions: int,
+) -> bool:
+    if candidate_url in relevance_resolution_candidate_urls:
+        return relevance_resolution_acquisitions < RELEVANCE_RESOLUTION_ACQUISITION_LIMIT
+    return acquisition_attempts < max_acquisitions
+
+
 def _attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None) -> dict[str, object]:
     item: dict[str, object] = {"topic": topic, "query": query, "domain": domain, "stage": stage, "status": status}
     if reason is not None:
@@ -356,10 +370,12 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             "identity_resolution_attempts": 0,
             "relevance_resolution_expansions": 0,
             "relevance_resolution_candidates": 0,
+            "relevance_resolution_acquisitions": 0,
             "published_entries": 0,
         }
         topic_stats[topic.topic_id] = stats
         max_acquisitions = min(topic.candidate_budget, MAX_ACQUISITIONS_PER_TOPIC)
+        relevance_resolution_candidate_urls: set[str] = set()
 
         for query in topic.news_queries:
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
@@ -371,8 +387,26 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 continue
 
             for candidate in queue:
-                if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
+                candidate_url = str(getattr(candidate, "url", "") or "").strip()
+                if stats["published_entries"] >= topic.selection_cap:
                     break
+                if not _candidate_budget_allows(
+                    candidate_url=candidate_url,
+                    relevance_resolution_candidate_urls=relevance_resolution_candidate_urls,
+                    acquisition_attempts=stats["acquisition_attempts"],
+                    max_acquisitions=max_acquisitions,
+                    relevance_resolution_acquisitions=stats["relevance_resolution_acquisitions"],
+                ):
+                    if candidate_url in relevance_resolution_candidate_urls:
+                        attempts.append(_attempt(
+                            topic=topic.topic_id,
+                            query=query,
+                            domain=_domain(candidate_url),
+                            stage="event_topic_relevance_resolution",
+                            status="defer",
+                            reason="relevance_defer:resolution_acquisition_budget_exhausted",
+                        ))
+                    continue
                 if candidate.url in seen_urls:
                     continue
                 seen_urls.add(candidate.url)
@@ -380,7 +414,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if source_group_key in published_source_groups:
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=_domain(candidate.url), stage="source_identity", status="skip", reason="source_group_already_published"))
                     continue
-                stats["acquisition_attempts"] += 1
+                if candidate_url in relevance_resolution_candidate_urls:
+                    stats["relevance_resolution_acquisitions"] += 1
+                else:
+                    stats["acquisition_attempts"] += 1
                 domain = _domain(candidate.url)
 
                 try:
@@ -462,6 +499,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                                         continue
                                     queue.append(expanded_candidate)
                                     queued_urls.add(expanded_url)
+                                    relevance_resolution_candidate_urls.add(expanded_url)
                                     appended += 1
                                 stats["relevance_resolution_candidates"] += appended
                                 attempts.append(_attempt(
