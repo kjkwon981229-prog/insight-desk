@@ -308,9 +308,17 @@ def assess_compatibility_article_understanding(
         lead_end=lead_end,
     )
 
-    # Actor specificity can break a centrality tie, but cannot by itself prove that a deep-body fact
-    # is the article event. A candidate still needs lead or title binding.
-    if winner_rank[1:4] == (0, 0, 0):
+    # A lead-bound explicit event is source-central by discourse position. Outside the lead, a title
+    # match is sufficient only when the actor is itself specific. Generic/common-noun surfaces such
+    # as "설명회" or a numeric count must not manufacture centrality merely because that noun also
+    # appears in the headline. If the compatibility extractor missed the true lead event, hold the
+    # article instead of promoting a deep-body background fact.
+    actor_specific, lead_bound, actor_bound, object_bound, _ = winner_rank
+    centrality_proven = bool(
+        lead_bound
+        or (actor_specific and (actor_bound or object_bound))
+    )
+    if not centrality_proven:
         for event in eligible:
             decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
                 status=UnderstandingStatus.UNRESOLVED,
