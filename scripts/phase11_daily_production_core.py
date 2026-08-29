@@ -70,6 +70,8 @@ MAX_VERIFICATION_ATTEMPTS_PER_TOPIC = 6
 MAX_IDENTITY_DEFER_RESOLUTION_ATTEMPTS_PER_TOPIC = 2
 RELEVANCE_RESOLUTION_EXPANSION_LIMIT = 2
 RELEVANCE_RESOLUTION_ACQUISITION_LIMIT = 2
+EVENT_UNDERSTANDING_RESOLUTION_EXPANSION_LIMIT = 2
+EVENT_UNDERSTANDING_RESOLUTION_ACQUISITION_LIMIT = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,10 +228,14 @@ def _candidate_budget_allows(
     *,
     candidate_url: str,
     relevance_resolution_candidate_urls: set[str],
+    event_understanding_resolution_candidate_urls: set[str],
     acquisition_attempts: int,
     max_acquisitions: int,
     relevance_resolution_acquisitions: int,
+    event_understanding_resolution_acquisitions: int,
 ) -> bool:
+    if candidate_url in event_understanding_resolution_candidate_urls:
+        return event_understanding_resolution_acquisitions < EVENT_UNDERSTANDING_RESOLUTION_ACQUISITION_LIMIT
     if candidate_url in relevance_resolution_candidate_urls:
         return relevance_resolution_acquisitions < RELEVANCE_RESOLUTION_ACQUISITION_LIMIT
     return acquisition_attempts < max_acquisitions
@@ -371,11 +377,15 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
             "relevance_resolution_expansions": 0,
             "relevance_resolution_candidates": 0,
             "relevance_resolution_acquisitions": 0,
+            "event_understanding_resolution_expansions": 0,
+            "event_understanding_resolution_candidates": 0,
+            "event_understanding_resolution_acquisitions": 0,
             "published_entries": 0,
         }
         topic_stats[topic.topic_id] = stats
         max_acquisitions = min(topic.candidate_budget, MAX_ACQUISITIONS_PER_TOPIC)
         relevance_resolution_candidate_urls: set[str] = set()
+        event_understanding_resolution_candidate_urls: set[str] = set()
 
         for query in topic.news_queries:
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
@@ -393,11 +403,22 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if not _candidate_budget_allows(
                     candidate_url=candidate_url,
                     relevance_resolution_candidate_urls=relevance_resolution_candidate_urls,
+                    event_understanding_resolution_candidate_urls=event_understanding_resolution_candidate_urls,
                     acquisition_attempts=stats["acquisition_attempts"],
                     max_acquisitions=max_acquisitions,
                     relevance_resolution_acquisitions=stats["relevance_resolution_acquisitions"],
+                    event_understanding_resolution_acquisitions=stats["event_understanding_resolution_acquisitions"],
                 ):
-                    if candidate_url in relevance_resolution_candidate_urls:
+                    if candidate_url in event_understanding_resolution_candidate_urls:
+                        attempts.append(_attempt(
+                            topic=topic.topic_id,
+                            query=query,
+                            domain=_domain(candidate_url),
+                            stage="event_understanding_resolution",
+                            status="defer",
+                            reason="event_understanding_defer:resolution_acquisition_budget_exhausted",
+                        ))
+                    elif candidate_url in relevance_resolution_candidate_urls:
                         attempts.append(_attempt(
                             topic=topic.topic_id,
                             query=query,
@@ -414,7 +435,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if source_group_key in published_source_groups:
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=_domain(candidate.url), stage="source_identity", status="skip", reason="source_group_already_published"))
                     continue
-                if candidate_url in relevance_resolution_candidate_urls:
+                if candidate_url in event_understanding_resolution_candidate_urls:
+                    stats["event_understanding_resolution_acquisitions"] += 1
+                elif candidate_url in relevance_resolution_candidate_urls:
                     stats["relevance_resolution_acquisitions"] += 1
                 else:
                     stats["acquisition_attempts"] += 1
@@ -528,6 +551,42 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             status="defer",
                             reason=understanding.reasons[0] if understanding.reasons else "understanding_unresolved",
                         ))
+                        if (
+                            stats["event_understanding_resolution_expansions"] < EVENT_UNDERSTANDING_RESOLUTION_EXPANSION_LIMIT
+                            and "expand_deferred_event_understanding" in globals()
+                        ):
+                            expansion = expand_deferred_event_understanding(
+                                decision=understanding,
+                                article=article,
+                                event=event,
+                                facts=article_facts,
+                                topic=topic,
+                                discovery=discovery,
+                            )
+                            if expansion is not None and getattr(expansion, "attempted", False):
+                                stats["event_understanding_resolution_expansions"] += 1
+                                queued_urls = {
+                                    str(getattr(queued_candidate, "url", "") or "").strip()
+                                    for queued_candidate in queue
+                                }
+                                appended = 0
+                                for expanded_candidate in getattr(expansion, "candidates", ()):
+                                    expanded_url = str(getattr(expanded_candidate, "url", "") or "").strip()
+                                    if not expanded_url or expanded_url in seen_urls or expanded_url in queued_urls:
+                                        continue
+                                    queue.append(expanded_candidate)
+                                    queued_urls.add(expanded_url)
+                                    event_understanding_resolution_candidate_urls.add(expanded_url)
+                                    appended += 1
+                                stats["event_understanding_resolution_candidates"] += appended
+                                attempts.append(_attempt(
+                                    topic=topic.topic_id,
+                                    query=query,
+                                    domain=domain,
+                                    stage="event_understanding_resolution",
+                                    status="expanded" if appended else "defer",
+                                    reason=str(getattr(expansion, "reason", "event_understanding_defer:resolution_unknown")),
+                                ))
                         continue
                     if understanding.article_role is not ArticleEventRole.PRIMARY or not understanding.publishable_event:
                         attempts.append(_attempt(
