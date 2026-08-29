@@ -14,7 +14,8 @@ from insight_desk.event_understanding_adapter_v4 import (
 )
 from insight_desk.event_understanding_provider_status_v2 import (
     AWAITING_PROVIDER_QUALIFICATION,
-    NO_ELIGIBLE_EXISTING_PROVIDER,
+    CANDIDATE_QUALIFICATION_BLOCKED,
+    QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE,
     load_provider_status,
     validate_provider_status,
 )
@@ -137,7 +138,7 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         self.assertEqual(status["active_qualification_protocol"], 5)
         self.assertEqual(status["structured_output_schema"], "event_understanding_schema_v4")
         self.assertEqual(status["qualification_contract_status"], AWAITING_PROVIDER_QUALIFICATION)
-        self.assertEqual(status["provider_inventory_status"], NO_ELIGIBLE_EXISTING_PROVIDER)
+        self.assertEqual(status["provider_inventory_status"], CANDIDATE_QUALIFICATION_BLOCKED)
         self.assertIsNone(status["selected_event_understanding_provider"])
         self.assertFalse(status["production_wired"])
 
@@ -154,18 +155,29 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
                 "cohere_command_a_reasoning_v5",
                 "gemini_3_flash_v5",
                 "openrouter_dots3note_v5",
+                "openrouter_nexn2pro_v5",
             },
         )
-        self.assertEqual(active_records["mistral_medium35_v5"]["passed_cases"], 3)
-        self.assertEqual(active_records["mistral_small4_v5"]["passed_cases"], 1)
-        self.assertEqual(active_records["cohere_command_a_reasoning_v5"]["passed_cases"], 2)
-        self.assertEqual(active_records["gemini_3_flash_v5"]["passed_cases"], 2)
-        self.assertEqual(active_records["openrouter_dots3note_v5"]["passed_cases"], 2)
-        for provider_id, record in active_records.items():
+        definitive_non_passes = {
+            "mistral_medium35_v5": 3,
+            "mistral_small4_v5": 1,
+            "cohere_command_a_reasoning_v5": 2,
+            "gemini_3_flash_v5": 2,
+            "openrouter_dots3note_v5": 2,
+        }
+        for provider_id, passed_cases in definitive_non_passes.items():
             with self.subTest(provider_id=provider_id):
+                record = active_records[provider_id]
                 self.assertEqual(record["status"], "NOT_QUALIFIED")
                 self.assertEqual(record["evaluated_cases"], 4)
+                self.assertEqual(record["passed_cases"], passed_cases)
                 self.assertLess(record["passed_cases"], 4)
+
+        nex = active_records["openrouter_nexn2pro_v5"]
+        self.assertEqual(nex["status"], QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE)
+        self.assertEqual(nex["evaluated_cases"], 4)
+        self.assertEqual(nex["passed_cases"], 0)
+        self.assertEqual(nex["failure_classification"], "PROVIDER_MODEL_UNAVAILABLE")
         self.assertFalse(
             any(item.get("status") == "MINIMUM_COMPATIBILITY_PASS" for item in active_records.values())
         )
