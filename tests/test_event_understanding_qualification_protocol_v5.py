@@ -148,10 +148,15 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         }
         self.assertEqual(
             set(active_records),
-            {"mistral_medium35_v5", "mistral_small4_v5"},
+            {
+                "mistral_medium35_v5",
+                "mistral_small4_v5",
+                "cohere_command_a_reasoning_v5",
+            },
         )
         self.assertEqual(active_records["mistral_medium35_v5"]["passed_cases"], 3)
         self.assertEqual(active_records["mistral_small4_v5"]["passed_cases"], 1)
+        self.assertEqual(active_records["cohere_command_a_reasoning_v5"]["passed_cases"], 2)
         for provider_id, record in active_records.items():
             with self.subTest(provider_id=provider_id):
                 self.assertEqual(record["status"], "NOT_QUALIFIED")
