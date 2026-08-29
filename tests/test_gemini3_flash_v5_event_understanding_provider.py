@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from insight_desk.providers.gemini import GEMINI_MODEL
+from insight_desk.providers.gemini import GEMINI_FLASH_LITE
 from insight_desk.providers.gemini3flash import (
     GEMINI_3_FLASH_PREVIEW,
     GEMINI_3_INTERACTIONS_URL,
@@ -33,8 +33,8 @@ class _FakeTransport:
 class Gemini3FlashV5QualificationTests(unittest.TestCase):
     def test_candidate_is_exact_new_model_and_verification_owner_is_unchanged(self) -> None:
         self.assertEqual(GEMINI_3_FLASH_PREVIEW, "gemini-3-flash-preview")
-        self.assertEqual(GEMINI_MODEL, "gemini-3.1-flash-lite")
-        self.assertNotEqual(GEMINI_3_FLASH_PREVIEW, GEMINI_MODEL)
+        self.assertEqual(GEMINI_FLASH_LITE, "gemini-3.1-flash-lite")
+        self.assertNotEqual(GEMINI_3_FLASH_PREVIEW, GEMINI_FLASH_LITE)
         self.assertEqual(lane.CANDIDATE_PROVIDER, "gemini3_flash")
         self.assertNotIn(lane.CANDIDATE_PROVIDER, v3.PROVIDER_CHOICES)
         self.assertNotIn(lane.CANDIDATE_PROVIDER, v4.PROVIDER_CHOICES)
