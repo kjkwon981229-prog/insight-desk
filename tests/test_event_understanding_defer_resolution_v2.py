@@ -37,7 +37,7 @@ class EventUnderstandingDeferResolutionTests(unittest.TestCase):
             publishable_event=False,
             reasons=("context_dependent_actor",),
         )
-        event = CandidateEvent(event_id="evt", article_ids=("article",), fact_ids=("fact",))
+        event = CandidateEvent(event_id="evt", topic_id="ai_tech", article_ids=("article",), fact_ids=("fact",))
         fact = EventFact(
             fact_id="fact",
             article_id="article",
@@ -76,7 +76,7 @@ class EventUnderstandingDeferResolutionTests(unittest.TestCase):
             topic_relation=TopicRelation.DIRECT,
             publishable_event=True,
         )
-        event = CandidateEvent(event_id="evt", article_ids=("article",), fact_ids=("fact",))
+        event = CandidateEvent(event_id="evt", topic_id="ai_tech", article_ids=("article",), fact_ids=("fact",))
         fact = EventFact(
             fact_id="fact",
             article_id="article",
