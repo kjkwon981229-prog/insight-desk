@@ -3,6 +3,7 @@ from __future__ import annotations
 """Execution-scoped relevance owner for the Phase 4/7 production migration."""
 
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 
@@ -20,6 +21,12 @@ class MorphologyPort(Protocol):
     def analyze(self, text: str): ...
 
 
+_EVENT_RELEVANCE_AUDIT: ContextVar[RelevanceDecision | None] = ContextVar(
+    "insight_desk_event_relevance_audit",
+    default=None,
+)
+
+
 def _normalized(text: str) -> str:
     return " ".join(text.split())
 
@@ -34,12 +41,7 @@ def _fact_surface(fact: EventFact) -> str:
 
 
 def _term_is_direct_in_action(action: str, term: str, morphology: MorphologyPort | None) -> bool | None:
-    """Resolve whether a configured event term belongs to the event-bearing clause.
-
-    A configured event noun used only as a Korean genitive modifier (``... 시험의 인기``) is
-    contextual evidence, not the event predicate itself. Morphology is used only to distinguish
-    this grammatical relation; no topic-specific vocabulary is introduced here.
-    """
+    """Resolve whether a configured event term belongs to the event-bearing clause."""
 
     if not _term_present(action, term):
         return False
@@ -55,19 +57,21 @@ def _term_is_direct_in_action(action: str, term: str, morphology: MorphologyPort
     folded = action.casefold()
     needle = _normalized(term).casefold()
     cursor = 0
-    saw_occurrence = False
     while True:
         start = folded.find(needle, cursor)
         if start < 0:
-            break
-        saw_occurrence = True
+            return False
         end = start + len(needle)
         cursor = max(end, start + 1)
-        following = next((token for token in tokens if int(getattr(token, "start", -1)) >= end), None)
+        following = next(
+            (token for token in tokens if int(getattr(token, "start", -1)) >= end),
+            None,
+        )
+        # A noun used only as a genitive modifier (e.g. ``시험의 인기``) is background context,
+        # not the event-bearing topic predicate.
         if following is not None and str(getattr(following, "tag", "")) == "JKG":
             continue
         return True
-    return False if saw_occurrence else False
 
 
 def event_relevance_decision(
@@ -77,12 +81,7 @@ def event_relevance_decision(
     topic,
     morphology: MorphologyPort | None,
 ) -> RelevanceDecision:
-    """Resolve event-level direct topic ownership after source-level relevance has passed.
-
-    The source matcher answers whether an article is worth semantic extraction. This owner answers
-    the narrower question: is this extracted EventFact itself a direct event for that configured
-    topic? Ambiguous grammatical binding remains DEFER; it is never collapsed into IRRELEVANT.
-    """
+    """Resolve event-level direct topic ownership after source-level relevance has passed."""
 
     if event.topic_id != topic.topic_id or len(event.fact_ids) != 1:
         return RelevanceDecision(
@@ -101,7 +100,9 @@ def event_relevance_decision(
         )
 
     surface = _fact_surface(fact)
-    topic_terms = tuple(dict.fromkeys(tuple(topic.intent_anchors) + tuple(topic.required_intent_terms)))
+    topic_terms = tuple(
+        dict.fromkeys(tuple(topic.intent_anchors) + tuple(topic.required_intent_terms))
+    )
     if topic_terms and not any(_term_present(surface, term) for term in topic_terms):
         return RelevanceDecision(
             topic_id=topic.topic_id,
@@ -110,26 +111,22 @@ def event_relevance_decision(
             reasons=(RelevanceReason.RESOLUTION_REQUIRED,),
         )
 
-    direct = False
-    unresolved = False
     for term in tuple(topic.event_terms):
         if _term_present(fact.subject, term) or _term_present(fact.object or "", term):
-            direct = True
-            break
+            return RelevanceDecision(
+                topic_id=topic.topic_id,
+                verdict=RelevanceVerdict.RELEVANT,
+                evidence_refs=fact.evidence_ids,
+                reasons=(RelevanceReason.CONFIGURED_LITERAL_MATCH,),
+            )
         relation = _term_is_direct_in_action(fact.action, term, morphology)
         if relation is True:
-            direct = True
-            break
-        if relation is None and _term_present(fact.action, term):
-            unresolved = True
-
-    if direct:
-        return RelevanceDecision(
-            topic_id=topic.topic_id,
-            verdict=RelevanceVerdict.RELEVANT,
-            evidence_refs=fact.evidence_ids,
-            reasons=(RelevanceReason.CONFIGURED_LITERAL_MATCH,),
-        )
+            return RelevanceDecision(
+                topic_id=topic.topic_id,
+                verdict=RelevanceVerdict.RELEVANT,
+                evidence_refs=fact.evidence_ids,
+                reasons=(RelevanceReason.CONFIGURED_LITERAL_MATCH,),
+            )
 
     return RelevanceDecision(
         topic_id=topic.topic_id,
@@ -137,6 +134,34 @@ def event_relevance_decision(
         evidence_refs=fact.evidence_ids,
         reasons=(RelevanceReason.RESOLUTION_REQUIRED,),
     )
+
+
+def project_event_relevance(decision: RelevanceDecision) -> bool:
+    """Compatibility bool projection that preserves the typed decision for the next audit write."""
+
+    _EVENT_RELEVANCE_AUDIT.set(decision)
+    return decision.is_relevant
+
+
+def rewrite_event_relevance_attempt(
+    *,
+    stage: str,
+    status: str,
+    reason: str | None,
+) -> tuple[str, str | None]:
+    """Preserve DEFER in the legacy mechanical loop's audit surface.
+
+    This function does not make a semantic decision. It consumes the decision already produced by
+    the relevance owner and rewrites only the immediately following compatibility audit projection.
+    """
+
+    if stage != "event_topic_relevance":
+        return status, reason
+    decision = _EVENT_RELEVANCE_AUDIT.get()
+    _EVENT_RELEVANCE_AUDIT.set(None)
+    if decision is not None and decision.verdict is RelevanceVerdict.DEFER:
+        return "defer", RelevanceReason.RESOLUTION_REQUIRED.value
+    return status, reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,4 +187,15 @@ class ConfiguredLiteralRelevanceOwner:
             facts=facts,
             topic=topic,
             morphology=self.morphology,
+        )
+
+    def project_event(
+        self,
+        *,
+        event: CandidateEvent,
+        facts: Mapping[str, EventFact],
+        topic,
+    ) -> bool:
+        return project_event_relevance(
+            self.decide_event(event=event, facts=facts, topic=topic)
         )
