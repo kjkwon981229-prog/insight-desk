@@ -493,6 +493,25 @@
       "artifact_id": 9708318114,
       "artifact_digest": "sha256:8d695b37197d52e94f17fd488d0bb9645dc8464398fc8e946216451272f5610e",
       "report_digest": "sha256:e149d7fbd149e341c017a8ab96712a5f1032c60e15009348db69d915c8385d01"
+    },
+    "gemini_3_flash_v5": {
+      "provider": "gemini",
+      "model": "gemini-3-flash-preview",
+      "status": "NOT_QUALIFIED",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33231176013,
+      "head_sha": "11af67fe1f30954db53c1f0c772e48887fef37e4",
+      "evaluated_cases": 4,
+      "passed_cases": 2,
+      "failure_classification": "MIXED_CHILD_EVENT_AND_EVIDENCE_CONTRACT_FAILURE",
+      "case_failures": {
+        "run413-bok-kmib-outlook-child": ["event_drafts_min", "expected_event_match", "parent_hint_min"],
+        "run413-kpop-alphadriveone-actor-preserved": ["adapter_contract:evidence_contract"]
+      },
+      "artifact_id": 9708548294,
+      "artifact_digest": "sha256:06ca070f3a35001d4e4ccb4e15bed39bebcc281e4b470b705641087880712e39",
+      "report_digest": "sha256:c498b45b22198f3e0ebddaa2e76a66799b366fab9c625ed750f6349185881fce"
     }
   }
 }
