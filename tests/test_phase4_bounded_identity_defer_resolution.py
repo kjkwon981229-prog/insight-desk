@@ -7,8 +7,8 @@ import unittest
 
 from insight_desk.acquisition import ArticleCandidate
 from insight_desk.core import CandidateEvent, EventFact, RawArticle, SourceProvenance
+from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
 from insight_desk.production_orchestrator_v2 import (
-    CanonicalIdentityEngine,
     ProductionV2Registry,
     canonical_event_from_candidate,
     source_document_from_article,
@@ -92,7 +92,7 @@ class _Acquisition:
 
 
 class BoundedIdentityDeferResolutionTests(unittest.TestCase):
-    def test_identity_owner_uses_one_bounded_source_expansion_without_claim_verifiers(self) -> None:
+    def test_identity_lane_uses_one_bounded_source_expansion_without_claim_verifiers(self) -> None:
         shared_body = (
             "한국은행이 29일 금융통계를 발표했다. 가계대출 금리는 4.64%를 기록했다."
         )
@@ -116,8 +116,8 @@ class BoundedIdentityDeferResolutionTests(unittest.TestCase):
 
         discovery = _Discovery()
         acquisition = _Acquisition(shared_body)
-        owner = CanonicalIdentityEngine(registry)
-        judgment = owner.resolve_deferred(
+        lane = CanonicalIdentityResolutionLane(registry)
+        judgment = lane.resolve(
             left_event,
             right_event,
             discovery=discovery,
