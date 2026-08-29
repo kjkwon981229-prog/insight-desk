@@ -1,6 +1,6 @@
 # Phase 4 — OpenRouter Nex-N2-Pro Event Understanding V5 Candidate
 
-Status: CANDIDATE PREFLIGHT — PROVIDER NOT YET CALLED
+Status: ONE-SHOT QUALIFICATION TRIGGERED AFTER GREEN STAGING GATE
 
 ## Exact candidate route
 
@@ -89,21 +89,33 @@ The candidate is not exported from `insight_desk.providers`, is not added to pro
 and is not production-wired. The wrapper scope-registers it only inside the V5 qualification runner
 and restores canonical runner state on exit.
 
-## One-shot execution gate
+## Preflight and staged one-shot gate
 
-Before any real provider request:
+Qualification-only preflight head `83463473a1b9ee434aab0ae9e335a2f4ee4adcc4`, run `33232701196`:
 
-1. ordinary Infrastructure must be SUCCESS on the exact candidate head;
-2. historical production replay must be SUCCESS;
-3. Phase 6 correctness/recall must be SUCCESS;
-4. the pre-call diff must remain qualification-only;
-5. a temporary branch-specific CI lane may be added without its trigger;
-6. that lane must be observed SKIPPED while ordinary jobs remain GREEN;
-7. exactly one later trigger commit may execute the four-case qualification.
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- Python: 1263 tests / 23 skipped / 0 failed
+- benchmark: 85 / 7 / 16 / 15 / 44
+- Push Worker: 20/20
+- npm audit: 0 vulnerabilities
+- provider calls: 0
 
-The first valid result is frozen. There is no provider rerun and no candidate-specific tuning after a
-valid result. A failure proven to be our qualification harness rather than provider behavior must be
-classified separately and must not be entered as provider evidence.
+Temporary-lane staging head `3cea0a5098c9407e77b5b8db3e0e0e5e78a3cfa1`, run `33232948886`:
+
+- Infrastructure: SUCCESS
+- historical production replay: SUCCESS
+- Phase 6 correctness/recall: SUCCESS
+- `semantic-v5-provider-candidate-openrouter-nex-n2-pro`: SKIPPED
+- provider calls: 0
+
+The branch-specific lane is therefore armed only by the explicit commit-message marker. This
+document-only commit is the single authorized one-shot trigger.
+
+The first valid provider result is frozen. There is no provider rerun and no candidate-specific tuning
+after a valid result. A failure proven to be our qualification harness rather than provider behavior
+must be classified separately and must not be entered as provider evidence.
 
 ## Production and merge gates
 
