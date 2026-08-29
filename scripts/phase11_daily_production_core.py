@@ -228,13 +228,14 @@ def _candidate_budget_allows(
     *,
     candidate_url: str,
     relevance_resolution_candidate_urls: set[str],
-    event_understanding_resolution_candidate_urls: set[str],
     acquisition_attempts: int,
     max_acquisitions: int,
     relevance_resolution_acquisitions: int,
-    event_understanding_resolution_acquisitions: int,
+    event_understanding_resolution_candidate_urls: set[str] | None = None,
+    event_understanding_resolution_acquisitions: int = 0,
 ) -> bool:
-    if candidate_url in event_understanding_resolution_candidate_urls:
+    understanding_urls = event_understanding_resolution_candidate_urls or set()
+    if candidate_url in understanding_urls:
         return event_understanding_resolution_acquisitions < EVENT_UNDERSTANDING_RESOLUTION_ACQUISITION_LIMIT
     if candidate_url in relevance_resolution_candidate_urls:
         return relevance_resolution_acquisitions < RELEVANCE_RESOLUTION_ACQUISITION_LIMIT
