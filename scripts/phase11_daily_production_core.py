@@ -471,27 +471,6 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
-                    visible_headline = entry_candidate.final_generation.draft.headline
-                    if not _visible_topic_headline_bound(topic, visible_headline):
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="visible_topic_binding", status="skip", reason="topic_scope_missing_in_headline"))
-                        continue
-                    visible_summary = entry_candidate.final_generation.draft.summary
-                    visible_issues = visible_story_issues(
-                        topic=topic.name,
-                        headline=visible_headline,
-                        summary=visible_summary,
-                    )
-                    if visible_issues:
-                        attempts.append(_attempt(
-                            topic=topic.topic_id,
-                            query=query,
-                            domain=domain,
-                            stage="visible_quality",
-                            status="skip",
-                            reason=";".join(issue.value for issue in visible_issues),
-                        ))
-                        continue
-
                     identity_text = generation_request.evidence_text
                     duplicate_event = False
                     identity_deferred = False
