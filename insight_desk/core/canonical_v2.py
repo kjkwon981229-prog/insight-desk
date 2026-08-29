@@ -5,7 +5,7 @@ from datetime import date, datetime
 import re
 from urllib.parse import urlsplit
 
-from .contracts import ContractError, RenderMode
+from .contracts import Certainty, ContractError, OutcomePolarity, RenderMode, TemporalState
 
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -135,6 +135,13 @@ class CanonicalEvent:
     attribution: str | None = None
     parent_event_id: str | None = None
     authoritative_fact_ids: tuple[str, ...] = ()
+    fact_ids: tuple[str, ...] = ()
+    evidence_ids: tuple[str, ...] = ()
+    temporal_state: TemporalState | None = None
+    certainty: Certainty | None = None
+    polarity: OutcomePolarity | None = None
+    location: str | None = None
+    cause: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -148,6 +155,8 @@ class CanonicalEvent:
         _require_unique("source_ids", self.source_ids)
         _require_unique("participants", self.participants, allow_empty=True)
         _require_unique("authoritative_fact_ids", self.authoritative_fact_ids, allow_empty=True)
+        _require_unique("fact_ids", self.fact_ids, allow_empty=True)
+        _require_unique("evidence_ids", self.evidence_ids, allow_empty=True)
         if self.object is not None:
             _require_text("object", self.object)
         _require_event_time(self.event_time)
@@ -163,6 +172,8 @@ class CanonicalEvent:
             ("value", self.value),
             ("attribution", self.attribution),
             ("parent_event_id", self.parent_event_id),
+            ("location", self.location),
+            ("cause", self.cause),
         ):
             if value is not None:
                 _require_text(name, value)
