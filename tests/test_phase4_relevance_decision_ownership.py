@@ -42,10 +42,10 @@ class ProductionRelevanceOwnershipTests(unittest.TestCase):
         self.assertIn('status="defer"', source)
         self.assertNotIn("if not topic_relevant(title=article.title, body=article.body, topic=topic):", source)
 
-    def test_v2_orchestrator_installs_one_relevance_decision_owner(self) -> None:
-        source = Path("insight_desk/production_orchestrator_v2.py").read_text(encoding="utf-8")
-        self.assertIn("def source_relevance_decision(", source)
-        self.assertIn("core_module.relevance_decision = source_relevance_decision", source)
+    def test_v2_runtime_installs_one_relevance_decision_owner(self) -> None:
+        source = Path("insight_desk/production_runtime_v2.py").read_text(encoding="utf-8")
+        self.assertIn("ConfiguredLiteralRelevanceOwner", source)
+        self.assertIn("core_module.relevance_decision = relevance_owner.decide", source)
 
 
 if __name__ == "__main__":
