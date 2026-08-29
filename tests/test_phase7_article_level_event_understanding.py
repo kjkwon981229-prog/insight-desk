@@ -31,7 +31,7 @@ class _Token:
 
 class _Morphology:
     def analyze(self, text: str):
-        if any(name in text for name in ("박준영", "한화", "NC", "앤트로픽")):
+        if text in {"박준영", "한화", "한화와 NC", "앤트로픽"}:
             return (_Token(text, "NNP", 0, max(1, len(text))),)
         if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회"}:
             return (_Token(text, "NNG", 0, max(1, len(text))),)
