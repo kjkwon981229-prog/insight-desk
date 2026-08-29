@@ -7,7 +7,7 @@
   "source_mode": "historical_exact_source_excerpt_only",
   "qualification_set_size": 4,
   "full_production_correctness_claimed": false,
-  "provider_inventory_status": "NO_ELIGIBLE_EXISTING_PROVIDER",
+  "provider_inventory_status": "CANDIDATE_QUALIFICATION_BLOCKED",
   "selected_event_understanding_provider": null,
   "production_wired": false,
   "providers": {
@@ -531,6 +531,27 @@
       "artifact_id": 9708845325,
       "artifact_digest": "sha256:16536bedff717a665403581c4346a8ddfbae1caac87e0e69cb7d2bfc4f815729",
       "report_digest": "sha256:ce6e0af6e8137c3762eb1d15826c3fd98d7a9512d0b2cf98b4a0a7d20b47bbbd"
+    },
+    "openrouter_nexn2pro_v5": {
+      "provider": "openrouter",
+      "model": "nex-agi/nex-n2-pro:free",
+      "status": "QUALIFICATION_BLOCKED_PROVIDER_UNAVAILABLE",
+      "existing_responsibility": "event_understanding_candidate",
+      "qualification_protocol": 5,
+      "run_id": 33233007435,
+      "head_sha": "e52138287f9a98d83e8ddf2ca0e34a427f1c1c40",
+      "evaluated_cases": 4,
+      "passed_cases": 0,
+      "failure_classification": "PROVIDER_MODEL_UNAVAILABLE",
+      "case_failures": {
+        "run413-bok-kbs-rate-decision": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-bok-kmib-outlook-child": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kpop-alphadriveone-actor-preserved": ["provider_transport:invalid_output", "http_status:404"],
+        "run413-kbo-osen-same-game-source": ["provider_transport:invalid_output", "http_status:404"]
+      },
+      "artifact_id": 9709072951,
+      "artifact_digest": "sha256:fa488a030134094d2e30ea0850cfeb269a9a49ff167625544b301019274dfa2c",
+      "report_digest": "sha256:6878028b25ec743f29701c94248906eb1aa7a006231e8c119c02dd5a42f79285"
     }
   }
 }
