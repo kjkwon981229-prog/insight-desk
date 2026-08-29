@@ -10,6 +10,9 @@ import insight_desk.generation_pipeline as generation_pipeline_module
 from insight_desk.production_article_understanding_v2 import (
     install_article_understanding_semantic_pipeline,
 )
+from insight_desk.production_event_understanding_resolution_v2 import (
+    BoundedEventUnderstandingSourceExpansionLane,
+)
 from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
 from insight_desk.production_orchestrator_v2 import (
     ProductionV2Registry,
@@ -38,6 +41,7 @@ _CORE_HOOKS = (
     "relevance_decision",
     "event_topic_relevant",
     "expand_deferred_event_relevance",
+    "expand_deferred_event_understanding",
     "_attempt",
     "_visible_topic_headline_bound",
     "visible_story_issues",
@@ -81,6 +85,7 @@ def production_v2_runtime(core_module: ModuleType):
         morphology=_optional_morphology(),
     )
     relevance_resolution_lane = BoundedRelevanceSourceExpansionLane()
+    understanding_resolution_lane = BoundedEventUnderstandingSourceExpansionLane()
 
     def audited_attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None):
         projected_status, projected_reason = rewrite_event_relevance_attempt(
@@ -111,6 +116,16 @@ def production_v2_runtime(core_module: ModuleType):
             discovery=discovery,
         )
 
+    def expand_deferred_event_understanding(*, decision, article, event, facts, topic, discovery):
+        return understanding_resolution_lane.expand(
+            decision=decision,
+            article=article,
+            event=event,
+            facts=facts,
+            topic=topic,
+            discovery=discovery,
+        )
+
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
@@ -125,6 +140,7 @@ def production_v2_runtime(core_module: ModuleType):
             topic=topic,
         )
         core_module.expand_deferred_event_relevance = expand_deferred_event_relevance
+        core_module.expand_deferred_event_understanding = expand_deferred_event_understanding
         core_module._attempt = audited_attempt
         core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
