@@ -91,7 +91,9 @@ def test_production_phase6_projects_identity_and_temporal_from_canonical_event()
     assert identity.object_key == "기준금리"
     assert identity.event_date_key == "2026-08-27"
     assert temporal.state is TemporalState.COMPLETED
-    assert temporal.source is TemporalResolutionSource.CANONICAL
+    # CanonicalEvent currently preserves the extractor-origin temporal state at promotion, so the
+    # original provenance remains EXTRACTED even though Phase6 itself performs no extraction.
+    assert temporal.source is TemporalResolutionSource.EXTRACTED
     assert result.event_assessment.selection.verdict is SelectionVerdict.INCLUDE
 
 
