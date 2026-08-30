@@ -234,14 +234,20 @@ class CanonicalClaimVerificationTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(returned)
+        assert returned is not None
         self.assertEqual(legacy_calls, [])
         self.assertIs(returned.final_generation.render_mode, RenderMode.CANONICAL_RECOVERY)
         self.assertEqual(
             returned.final_generation.draft.headline,
             "인사혁신처, 2027년부터 PSAT를 별도 검정시험으로 전환해 기존 1차 시험을 대체한다고 밝혔다",
         )
-        self.assertIn("사건: 2027년부터 PSAT를 별도 검정시험으로 전환", returned.final_generation.draft.summary)
-        self.assertNotIn("도입", returned.final_generation.draft.headline)
+        self.assertEqual(
+            returned.final_generation.draft.summary,
+            "인사혁신처 · 2027년부터 PSAT를 별도 검정시험으로 전환해 기존 1차 시험을 대체한다고 밝혔다",
+        )
+        self.assertNotIn("주체:", returned.final_generation.draft.summary)
+        self.assertNotIn("사건:", returned.final_generation.draft.summary)
+        self.assertNotIn("도입", returned.final_generation.draft.combined_text)
         self.assertTrue(returned.publishable)
         self.assertEqual(len(primary.calls), 2)
         self.assertEqual(len(secondary.calls), 2)
