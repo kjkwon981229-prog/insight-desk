@@ -600,50 +600,18 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         ))
                         continue
 
-                    assessment = phase6.assess_with_auto_material(
-                        event,
-                        facts=article_facts,
-                        evidence=article_evidence,
-                        selection_context=Phase6SelectionContext(topic_relevant=event_relevant, fresh=True, source_usable=True, identity_resolved=True),
-                    )
-                    if assessment.material.verdict is MaterialEventVerdict.MATERIAL:
-                        stats["material_events"] += 1
-                    if assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE:
-                        continue
-                    stats["included_events"] += 1
-                    if stats["verification_attempts"] >= MAX_VERIFICATION_ATTEMPTS_PER_TOPIC:
-                        break
-                    stats["verification_attempts"] += 1
-
-                    if local_verifier is None:
-                        local_verifier = LocalNliVerifier.transformers_default()
-
                     generation_request = GenerationRequest(event=event, facts=article_facts, evidence=article_evidence)
-                    entry_candidate = produce_phase7_entry_candidate(
-                        generation_request,
-                        primary_generator=generator,
-                        primary_verifier=primary_verifier,
-                        secondary_verifier=local_verifier,
-                    )
-                    if entry_candidate is None:
-                        generation_stats["extractive_fallback_unavailable"] += 1
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="generation", status="skip", reason="extractive_fallback_unavailable"))
-                        continue
-
-                    _record_generation_stats(entry_candidate, generation_stats, generation_route_stats)
-                    _record_verification_stats(entry_candidate, verification_stats)
-                    if not entry_candidate.publishable:
-                        verdicts = {item.role.value: item.claim.verdict.value for item in entry_candidate.verification.claims}
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
-                        continue
-
                     identity_text = generation_request.evidence_text
                     duplicate_event = False
                     identity_deferred = False
                     identity_facts = {**facts, **article_facts}
-                    for prior in published:
-                        if prior.topic.topic_id != topic.topic_id:
-                            continue
+                    same_topic_priors = tuple(
+                        prior for prior in published if prior.topic.topic_id == topic.topic_id
+                    )
+                    if same_topic_priors and local_verifier is None:
+                        local_verifier = LocalNliVerifier.transformers_default()
+
+                    for prior in same_topic_priors:
                         prior_event = events.get(prior.candidate.event_id)
                         if not isinstance(prior_event, CandidateEvent):
                             raise AssertionError("published candidate lost event identity provenance")
@@ -712,6 +680,42 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             duplicate_event = True
                             break
                     if duplicate_event or identity_deferred:
+                        continue
+
+                    assessment = phase6.assess_with_auto_material(
+                        event,
+                        facts=article_facts,
+                        evidence=article_evidence,
+                        selection_context=Phase6SelectionContext(topic_relevant=event_relevant, fresh=True, source_usable=True, identity_resolved=True),
+                    )
+                    if assessment.material.verdict is MaterialEventVerdict.MATERIAL:
+                        stats["material_events"] += 1
+                    if assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE:
+                        continue
+                    stats["included_events"] += 1
+                    if stats["verification_attempts"] >= MAX_VERIFICATION_ATTEMPTS_PER_TOPIC:
+                        break
+                    stats["verification_attempts"] += 1
+
+                    if local_verifier is None:
+                        local_verifier = LocalNliVerifier.transformers_default()
+
+                    entry_candidate = produce_phase7_entry_candidate(
+                        generation_request,
+                        primary_generator=generator,
+                        primary_verifier=primary_verifier,
+                        secondary_verifier=local_verifier,
+                    )
+                    if entry_candidate is None:
+                        generation_stats["extractive_fallback_unavailable"] += 1
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="generation", status="skip", reason="extractive_fallback_unavailable"))
+                        continue
+
+                    _record_generation_stats(entry_candidate, generation_stats, generation_route_stats)
+                    _record_verification_stats(entry_candidate, verification_stats)
+                    if not entry_candidate.publishable:
+                        verdicts = {item.role.value: item.claim.verdict.value for item in entry_candidate.verification.claims}
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="verification", status="skip", reason=";".join(f"{key}={value}" for key, value in sorted(verdicts.items())) or "not_publishable"))
                         continue
 
                     published.append(
