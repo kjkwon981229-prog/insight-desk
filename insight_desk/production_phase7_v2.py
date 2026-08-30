@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-"""Scope Phase 4 generation authority changes to the actual production call.
+"""Production Phase 7 ownership after CanonicalEvent promotion.
 
-Historical generation utilities keep their exact-source fallback for replay compatibility. Production
-publication does not: all provider generation routes receive canonical event semantics, while exact
-source evidence remains available for preservation and verification. Any extractive fallback is
-replaced by a compact CanonicalEvent projection and must pass the ordinary claim-verification policy
-before it can be published.
+Historical generation helpers remain available for replay compatibility, but production-visible text
+is rendered deterministically from CanonicalEvent. This removes the remaining semantic mutation
+surface between Event Understanding and publication: provider-generated prose may not replace the
+canonical event meaning in the user-visible briefing. Exact canonical evidence remains bound to the
+request and ordinary claim Verification still has to support the deterministic projection.
 """
 
 from contextlib import contextmanager
@@ -31,7 +31,6 @@ from insight_desk.generation_pipeline import (
     GenerationRecoveryResult,
 )
 from insight_desk.phase7 import Phase7EntryCandidate
-from insight_desk.production_verification_v2 import wrap_claim_verifiers_for_canonical_fidelity
 from insight_desk.verification_pipeline import verify_generated_draft
 
 
@@ -49,9 +48,10 @@ class CanonicalEventRegistry(Protocol):
 class CanonicalGenerationRequest(GenerationRequest):
     """Production GenerationRequest whose semantic payload is one CanonicalEvent.
 
-    ``facts`` remains a compatibility projection for the existing preservation/fallback helpers.
-    Provider prompts must consume ``fact_text`` below, which is rendered only from CanonicalEvent.
-    ``evidence`` contains only exact EvidenceSpan ranges that correspond to canonical evidence refs.
+    ``facts`` remains a compatibility projection for the existing preservation helpers. ``evidence``
+    contains only exact EvidenceSpan ranges that correspond to canonical evidence refs. ``fact_text``
+    remains available as a canonical semantic serialization for audit/tests, but production-visible
+    text is no longer delegated to a prose-generation provider.
     """
 
     canonical_event: CanonicalEvent
@@ -149,7 +149,7 @@ def build_canonical_generation_request(
     registry: CanonicalEventRegistry,
     request: GenerationRequest,
 ) -> CanonicalGenerationRequest:
-    """Replace legacy semantic input with canonical semantics before any provider route runs."""
+    """Replace legacy semantic input with canonical semantics before visible rendering."""
 
     if len(request.event.fact_ids) != 1:
         raise GenerationContractError(
@@ -187,7 +187,7 @@ def build_canonical_generation_request(
 
 
 class CanonicalEventRecoveryGenerator:
-    """Deterministic compact recovery from canonical semantics, never article prose."""
+    """Deterministic visible projection from CanonicalEvent, never free-form article prose."""
 
     def __init__(self, registry: CanonicalEventRegistry) -> None:
         self.registry = registry
@@ -247,7 +247,7 @@ def _canonical_recovery_result(
     request: GenerationRequest,
     *,
     generator: CanonicalEventRecoveryGenerator,
-    prior: Phase7EntryCandidate | None,
+    prior: Phase7EntryCandidate | None = None,
 ) -> GenerationRecoveryResult:
     draft = generator.generate(request)
     preservation = validate_preservation(request, draft)
@@ -279,7 +279,7 @@ def _canonical_recovery_result(
 
 
 def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalEventRegistry) -> None:
-    """Install production-only canonical generation ownership without changing historical helpers."""
+    """Install CanonicalEvent as the sole production-visible text authority."""
 
     generation_module.validate_story_admission = _ORIGINAL_GENERATION_STORY_ADMISSION
     generation_pipeline_module.validate_story_admission = _ORIGINAL_PIPELINE_STORY_ADMISSION
@@ -309,35 +309,10 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
             raise GenerationContractError("production canonical recovery requires claim verifiers")
 
         canonical_request = build_canonical_generation_request(registry, request)
-        canonical_primary_verifier, canonical_secondary_verifier = (
-            wrap_claim_verifiers_for_canonical_fidelity(
-                primary=primary_verifier,
-                secondary=secondary_verifier,
-                canonical_text=canonical_request.fact_text,
-            )
-        )
-        routed_kwargs = {
-            **kwargs,
-            "primary_verifier": canonical_primary_verifier,
-            "secondary_verifier": canonical_secondary_verifier,
-        }
-        if args:
-            routed_args = (canonical_request, *args[1:])
-        else:
-            routed_args = args
-            routed_kwargs["request"] = canonical_request
-
-        with _production_generation_authority():
-            result = current(*routed_args, **routed_kwargs)
-
-        if result is not None and result.final_generation.render_mode is not RenderMode.EXTRACTIVE_FALLBACK:
-            return result
-
         try:
             canonical_generation = _canonical_recovery_result(
                 canonical_request,
                 generator=recovery_generator,
-                prior=result,
             )
         except GenerationContractError:
             return None
@@ -345,8 +320,8 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
         verification = verify_generated_draft(
             canonical_request,
             canonical_generation.draft,
-            primary=canonical_primary_verifier,
-            secondary=canonical_secondary_verifier,
+            primary=primary_verifier,
+            secondary=secondary_verifier,
         )
         return Phase7EntryCandidate(
             event_id=canonical_request.event.event_id,
