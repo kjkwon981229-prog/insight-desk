@@ -31,6 +31,7 @@ from insight_desk.generation_pipeline import (
     GenerationRecoveryResult,
 )
 from insight_desk.phase7 import Phase7EntryCandidate
+from insight_desk.production_verification_v2 import wrap_claim_verifiers_for_canonical_fidelity
 from insight_desk.verification_pipeline import verify_generated_draft
 
 
@@ -308,12 +309,23 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
             raise GenerationContractError("production canonical recovery requires claim verifiers")
 
         canonical_request = build_canonical_generation_request(registry, request)
+        canonical_primary_verifier, canonical_secondary_verifier = (
+            wrap_claim_verifiers_for_canonical_fidelity(
+                primary=primary_verifier,
+                secondary=secondary_verifier,
+                canonical_text=canonical_request.fact_text,
+            )
+        )
+        routed_kwargs = {
+            **kwargs,
+            "primary_verifier": canonical_primary_verifier,
+            "secondary_verifier": canonical_secondary_verifier,
+        }
         if args:
             routed_args = (canonical_request, *args[1:])
-            routed_kwargs = kwargs
         else:
             routed_args = args
-            routed_kwargs = {**kwargs, "request": canonical_request}
+            routed_kwargs["request"] = canonical_request
 
         with _production_generation_authority():
             result = current(*routed_args, **routed_kwargs)
@@ -333,8 +345,8 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
         verification = verify_generated_draft(
             canonical_request,
             canonical_generation.draft,
-            primary=primary_verifier,
-            secondary=secondary_verifier,
+            primary=canonical_primary_verifier,
+            secondary=canonical_secondary_verifier,
         )
         return Phase7EntryCandidate(
             event_id=canonical_request.event.event_id,
