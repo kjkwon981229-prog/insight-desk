@@ -35,8 +35,6 @@ class CanonicalFidelityVerifier:
     def __post_init__(self) -> None:
         if not self.canonical_text.strip():
             raise GenerationContractError("canonical fidelity premise must be non-empty")
-        if not self.base.verifier_id.strip() or not self.base.model_id.strip():
-            raise GenerationContractError("canonical fidelity verifier identity must be non-empty")
 
     @property
     def verifier_id(self) -> str:
