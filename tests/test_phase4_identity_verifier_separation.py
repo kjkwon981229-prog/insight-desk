@@ -5,6 +5,7 @@ import unittest
 
 from insight_desk.core import (
     CandidateEvent,
+    CanonicalEvent,
     EventFact,
     IdentityKey,
     RawArticle,
@@ -12,12 +13,7 @@ from insight_desk.core import (
     finalize_identity,
     precheck_identity,
 )
-from insight_desk.production_orchestrator_v2 import (
-    CanonicalIdentityEngine,
-    ProductionV2Registry,
-    canonical_event_from_candidate,
-    source_document_from_article,
-)
+from insight_desk.production_orchestrator_v2 import CanonicalIdentityEngine, ProductionV2Registry
 
 
 NOW = datetime(2026, 8, 29, 0, 0, tzinfo=timezone.utc)
@@ -57,6 +53,21 @@ def _event(article_id: str, event_id: str, fact_id: str, evidence_id: str, *, su
         article_ids=(article_id,),
     )
     return event, fact
+
+
+def _canonical(event: CandidateEvent, fact: EventFact) -> CanonicalEvent:
+    return CanonicalEvent(
+        event_id=event.event_id,
+        topic=event.topic_id,
+        actor=fact.subject,
+        action=fact.action,
+        object=fact.object,
+        event_type="news_event",
+        source_ids=(f"source:{event.article_ids[0]}",),
+        event_time=fact.event_date,
+        fact_ids=(fact.fact_id,),
+        evidence_ids=fact.evidence_ids,
+    )
 
 
 class IdentityDeferContractTests(unittest.TestCase):
@@ -99,18 +110,12 @@ class CanonicalIdentityVerifierSeparationTests(unittest.TestCase):
             subject="A사",
         )
 
-        registry = ProductionV2Registry()
-        for raw, event, fact in (
-            (left_article, left_event, left_fact),
-            (right_article, right_event, right_fact),
-        ):
-            source = source_document_from_article(raw)
-            registry.sources_by_article[raw.article_id] = source
-            registry.events_by_id[event.event_id] = canonical_event_from_candidate(
-                event,
-                facts={fact.fact_id: fact},
-                source=source,
-            )
+        registry = ProductionV2Registry(
+            events_by_id={
+                left_event.event_id: _canonical(left_event, left_fact),
+                right_event.event_id: _canonical(right_event, right_fact),
+            }
+        )
 
         owner = CanonicalIdentityEngine(registry)
         owner.precheck(
