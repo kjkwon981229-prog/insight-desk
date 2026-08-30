@@ -30,10 +30,28 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            result = run_recorded_production_replay(
-                fixture_path=FIXTURE,
-                work_dir=Path(tmp),
-            )
+            try:
+                result = run_recorded_production_replay(
+                    fixture_path=FIXTURE,
+                    work_dir=Path(tmp),
+                )
+            except AssertionError as exc:
+                audit_path = Path(tmp) / "production-audit.json"
+                state_path = Path(tmp) / "run-state.json"
+                diagnostic = {
+                    "assertion": str(exc),
+                    "state": (
+                        json.loads(state_path.read_text(encoding="utf-8"))
+                        if state_path.is_file()
+                        else None
+                    ),
+                    "audit": (
+                        json.loads(audit_path.read_text(encoding="utf-8"))
+                        if audit_path.is_file()
+                        else None
+                    ),
+                }
+                self.fail(json.dumps(diagnostic, ensure_ascii=False, sort_keys=True))
 
             diagnostic = json.dumps(
                 {
