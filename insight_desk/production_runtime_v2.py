@@ -7,8 +7,8 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
-from insight_desk.production_article_understanding_v2 import (
-    install_article_understanding_semantic_pipeline,
+from insight_desk.production_event_understanding_lifecycle_v2 import (
+    install_event_understanding_lifecycle,
 )
 from insight_desk.production_event_understanding_resolution_v2 import (
     BoundedEventUnderstandingSourceExpansionLane,
@@ -40,6 +40,7 @@ _CORE_HOOKS = (
     "topic_relevant",
     "relevance_decision",
     "event_topic_relevant",
+    "event_understanding_decision",
     "expand_deferred_event_relevance",
     "expand_deferred_event_understanding",
     "_attempt",
@@ -129,7 +130,7 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
-        install_article_understanding_semantic_pipeline(core_module)
+        install_event_understanding_lifecycle(core_module, registry)
         identity_resolution_lane = CanonicalIdentityResolutionLane(registry)
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
