@@ -1,0 +1,44 @@
+name: Evidence-first Event Compilation Experiment
+
+on:
+  pull_request:
+    paths:
+      - 'insight_desk/evidence_first_event_compilation_v1.py'
+      - 'scripts/run_evidence_first_event_experiment_v1.py'
+      - 'tests/test_evidence_first_event_compilation_v1.py'
+      - '.github/workflows/evidence-first-event-experiment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-experiment:
+    if: github.event.pull_request.head.ref == 'experiment/evidence-first-event-compilation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact experiment head
+        uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12.10'
+      - name: Install deterministic semantic runtime
+        run: python -m pip install --disable-pip-version-check '.[semantic-local]'
+      - name: Run evidence-first contract tests
+        run: python -m unittest discover -s tests -p 'test_evidence_first_event_compilation_v1.py'
+      - name: Run frozen V6 architecture comparison
+        id: experiment
+        continue-on-error: true
+        run: python -m scripts.run_evidence_first_event_experiment_v1 --report evidence-first-event-experiment-v1.json
+      - name: Upload frozen experiment report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-first-event-experiment-v1
+          path: evidence-first-event-experiment-v1.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Enforce experiment verdict
+        if: steps.experiment.outcome == 'failure'
+        run: exit 1
