@@ -15,6 +15,9 @@ from insight_desk.generation import GenerationRequest
 import insight_desk.production_phase7_v2 as production_phase7_v2
 
 
+PROPOSITION = "서울경기춤연구회가 9월 11일 전통무용 공연 명가월륜: 만월을 선보인다."
+
+
 class _Registry:
     def __init__(self, event: CanonicalEvent) -> None:
         self.event = event
@@ -43,19 +46,13 @@ def _request() -> GenerationRequest:
     article_id = "article:graz"
     evidence_id = "evidence:graz"
     fact_id = "fact:graz"
-    body = (
-        "서울경기춤연구회가 9월 11일 전통무용 공연 명가월륜: 만월을 선보인다. "
-        "축제는 한국 전통무용을 비롯해 영화, K팝, 한식, 한복, 전통놀이 등 "
-        "한국문화의 다양한 면모를 현지 관객에게 소개한다. "
-        "작품의 예술적 성과와 참여 예술가들의 이력에 대한 긴 배경 설명이 이어진다."
-    )
     evidence = EvidenceSpan(
         evidence_id=evidence_id,
         article_id=article_id,
         field=EvidenceField.BODY,
         start=0,
-        end=len(body),
-        text=body,
+        end=len(PROPOSITION),
+        text=PROPOSITION,
     )
     fact = EventFact(
         fact_id=fact_id,
@@ -78,22 +75,16 @@ def _request() -> GenerationRequest:
 
 
 class CanonicalRecoveryContractTests(unittest.TestCase):
-    def test_recovery_projects_canonical_event_fields_not_article_prose(self) -> None:
+    def test_recovery_uses_exact_primary_source_proposition(self) -> None:
         generator = production_phase7_v2.CanonicalEventRecoveryGenerator(_Registry(_canonical()))
         draft = generator.generate(_request())
 
-        self.assertEqual(draft.headline, "서울경기춤연구회, 9월 11일 전통무용 공연을 선보인다")
-        self.assertEqual(
-            draft.summary,
-            "서울경기춤연구회 · 9월 11일 전통무용 공연을 선보인다 · 대상: 명가월륜: 만월",
-        )
-        self.assertNotIn("주체:", draft.summary)
-        self.assertNotIn("사건:", draft.summary)
-        self.assertNotIn("축제는 한국 전통무용", draft.combined_text)
-        self.assertNotIn("참여 예술가들의 이력", draft.combined_text)
+        self.assertEqual(draft.headline, PROPOSITION)
+        self.assertEqual(draft.summary, PROPOSITION)
+        self.assertIn("명가월륜: 만월", draft.combined_text)
         self.assertEqual(draft.evidence_ids, ("evidence:graz",))
 
-    def test_canonical_projection_passes_the_normal_preservation_contract(self) -> None:
+    def test_exact_proposition_passes_normal_preservation_contract(self) -> None:
         generator = production_phase7_v2.CanonicalEventRecoveryGenerator(_Registry(_canonical()))
         result = production_phase7_v2._canonical_recovery_result(
             _request(),
@@ -102,17 +93,17 @@ class CanonicalRecoveryContractTests(unittest.TestCase):
         )
         self.assertEqual(result.render_mode, RenderMode.CANONICAL_RECOVERY)
         self.assertTrue(result.preservation.accepted)
-        self.assertNotIn("축제는 한국 전통무용", result.draft.combined_text)
+        self.assertEqual(result.draft.summary, PROPOSITION)
 
     def test_render_contract_has_canonical_recovery_mode(self) -> None:
         self.assertEqual(RenderMode.CANONICAL_RECOVERY.value, "canonical_recovery")
 
-    def test_production_phase7_injects_recovery_owner_instead_of_raw_source_fallback(self) -> None:
+    def test_production_phase7_uses_exact_source_proof_not_semantic_verifiers(self) -> None:
         source = Path("insight_desk/production_phase7_v2.py").read_text(encoding="utf-8")
         self.assertIn("CanonicalEventRecoveryGenerator", source)
         self.assertIn('kwargs.setdefault("recovery_generator"', source)
-        self.assertIn("verify_generated_draft(", source)
-        self.assertNotIn("verify_exact_source_draft", source)
+        self.assertIn("verify_exact_source_draft(", source)
+        self.assertNotIn("verify_generated_draft(", source)
 
 
 if __name__ == "__main__":
