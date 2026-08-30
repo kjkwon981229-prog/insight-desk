@@ -76,7 +76,7 @@ jobs:
         id: qualify
         continue-on-error: true
         run: >-
-          python scripts/qualify_event_understanding_provider_v6.py
+          python -m scripts.qualify_event_understanding_provider_v6
           --provider '${{ matrix.provider }}'
           --report 'event-understanding-qualification-v6-${{ matrix.provider }}.json'
 
@@ -133,7 +133,7 @@ jobs:
         id: qualify
         continue-on-error: true
         run: >-
-          python scripts/qualify_event_understanding_provider_v6.py
+          python -m scripts.qualify_event_understanding_provider_v6
           --provider '${{ inputs.provider }}'
           --report 'event-understanding-qualification-v6-${{ inputs.provider }}.json'
 
