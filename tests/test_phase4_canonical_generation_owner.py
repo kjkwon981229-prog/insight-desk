@@ -25,6 +25,8 @@ from insight_desk.production_phase7_v2 import (
     build_canonical_generation_request,
     scope_phase7_story_readmission,
 )
+from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
+from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
 
 
 NOW = datetime(2026, 8, 30, 0, 0, tzinfo=timezone.utc)
@@ -192,8 +194,8 @@ class CanonicalGenerationOwnerTests(unittest.TestCase):
         scope_phase7_story_readmission(core, _registry())
         legacy = _legacy_request()
         primary_generator = _RecordingGenerator()
-        primary_verifier = _AlwaysSupportVerifier("primary-fixture")
-        secondary_verifier = _AlwaysSupportVerifier("secondary-fixture")
+        primary_verifier = _AlwaysSupportVerifier(CLOUDFLARE_VERIFIER_ID)
+        secondary_verifier = _AlwaysSupportVerifier(LOCAL_NLI_VERIFIER_ID)
 
         returned = core.produce_phase7_entry_candidate(
             legacy,
