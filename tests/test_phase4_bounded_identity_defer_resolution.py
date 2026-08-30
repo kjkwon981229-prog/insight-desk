@@ -6,13 +6,16 @@ from types import SimpleNamespace
 import unittest
 
 from insight_desk.acquisition import ArticleCandidate
-from insight_desk.core import CandidateEvent, EventFact, RawArticle, SourceProvenance
-from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
-from insight_desk.production_orchestrator_v2 import (
-    ProductionV2Registry,
-    canonical_event_from_candidate,
-    source_document_from_article,
+from insight_desk.core import (
+    CandidateEvent,
+    CanonicalEvent,
+    EventFact,
+    RawArticle,
+    SourceProvenance,
 )
+from insight_desk.production_identity_resolution_v2 import CanonicalIdentityResolutionLane
+from insight_desk.production_orchestrator_v2 import ProductionV2Registry
+from insight_desk.production_orchestrator_compat_v2 import source_document_from_article
 
 
 NOW = datetime(2026, 8, 29, 0, 0, tzinfo=timezone.utc)
@@ -55,6 +58,22 @@ def _event(raw: RawArticle, suffix: str) -> tuple[CandidateEvent, EventFact]:
     return event, fact
 
 
+def _canonical(event: CandidateEvent, fact: EventFact, source_id: str) -> CanonicalEvent:
+    return CanonicalEvent(
+        event_id=event.event_id,
+        topic=event.topic_id,
+        actor=fact.subject,
+        action=fact.action,
+        object=fact.object,
+        event_type="news_event",
+        source_ids=(source_id,),
+        event_time=fact.event_date,
+        publication_time=NOW,
+        fact_ids=(fact.fact_id,),
+        evidence_ids=fact.evidence_ids,
+    )
+
+
 class _Discovery:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int]] = []
@@ -91,13 +110,42 @@ class _Acquisition:
         return SimpleNamespace(article=raw)
 
 
-class BoundedIdentityDeferResolutionTests(unittest.TestCase):
-    def test_identity_lane_uses_one_bounded_source_expansion_without_claim_verifiers(self) -> None:
-        shared_body = (
-            "한국은행이 29일 금융통계를 발표했다. 가계대출 금리는 4.64%를 기록했다."
+class _BridgeUnderstandingOwner:
+    def __init__(self, *, resolved: bool) -> None:
+        self.resolved = resolved
+        self.calls: list[str] = []
+
+    def identity_bridge_events(self, article, *, topic_id: str):
+        self.calls.append(article.article_id)
+        if not self.resolved:
+            return ()
+        return (
+            CanonicalEvent(
+                event_id=f"event:bridge:{article.article_id}",
+                topic=topic_id,
+                actor="한국은행",
+                action="금융통계를 발표했다",
+                object="가계대출 금리",
+                event_type="news_event",
+                source_ids=(f"source-document:{article.article_id}",),
+                event_time="2026-08-29",
+                publication_time=NOW,
+            ),
         )
-        left_raw = _article("article:left", shared_body, url="https://left.example/a")
-        right_raw = _article("article:right", shared_body, url="https://right.example/a")
+
+
+class BoundedIdentityDeferResolutionTests(unittest.TestCase):
+    def _registry_pair(self):
+        left_raw = _article(
+            "article:left",
+            "원문 A",
+            url="https://left.example/a",
+        )
+        right_raw = _article(
+            "article:right",
+            "원문 B",
+            url="https://right.example/a",
+        )
         left_event, left_fact = _event(left_raw, "left")
         right_event, right_fact = _event(right_raw, "right")
 
@@ -108,15 +156,20 @@ class BoundedIdentityDeferResolutionTests(unittest.TestCase):
         ):
             source = source_document_from_article(raw)
             registry.sources_by_article[raw.article_id] = source
-            registry.events_by_id[event.event_id] = canonical_event_from_candidate(
-                event,
-                facts={fact.fact_id: fact},
-                source=source,
-            )
+            registry.events_by_id[event.event_id] = _canonical(event, fact, source.source_id)
+        return registry, left_event, right_event
+
+    def test_identity_lane_resolves_only_through_event_understanding_canonical_bridge(self) -> None:
+        registry, left_event, right_event = self._registry_pair()
+        before_sources = dict(registry.sources_by_article)
+        before_events = dict(registry.events_by_id)
 
         discovery = _Discovery()
-        acquisition = _Acquisition(shared_body)
-        lane = CanonicalIdentityResolutionLane(registry)
+        acquisition = _Acquisition(
+            "이 본문 문자열 자체는 Identity owner가 읽거나 비교해서는 안 된다."
+        )
+        understanding = _BridgeUnderstandingOwner(resolved=True)
+        lane = CanonicalIdentityResolutionLane(registry, understanding)
         judgment = lane.resolve(
             left_event,
             right_event,
@@ -126,11 +179,59 @@ class BoundedIdentityDeferResolutionTests(unittest.TestCase):
         )
 
         self.assertTrue(judgment.same_event)
+        self.assertEqual(judgment.reason, "canonical_same_event:event_understanding_bridge")
         self.assertEqual(judgment.primary_checks, 0)
         self.assertEqual(judgment.secondary_checks, 0)
         self.assertEqual(len(discovery.calls), 1)
         self.assertEqual(discovery.calls[0][2], 3)
         self.assertLessEqual(acquisition.calls, 2)
+        self.assertTrue(understanding.calls)
+        self.assertEqual(registry.sources_by_article, before_sources)
+        self.assertEqual(registry.events_by_id, before_events)
+
+    def test_unresolved_bridge_understanding_preserves_defer(self) -> None:
+        registry, left_event, right_event = self._registry_pair()
+        discovery = _Discovery()
+        acquisition = _Acquisition("추가 기사도 사건을 확정하기 어렵다.")
+        understanding = _BridgeUnderstandingOwner(resolved=False)
+        lane = CanonicalIdentityResolutionLane(registry, understanding)
+
+        judgment = lane.resolve(
+            left_event,
+            right_event,
+            discovery=discovery,
+            acquisition=acquisition,
+            topic_id="economy",
+        )
+
+        self.assertIsNone(judgment.same_event)
+        self.assertEqual(
+            judgment.reason,
+            "canonical_identity_defer:bounded_source_expansion_exhausted",
+        )
+        self.assertTrue(understanding.calls)
+
+    def test_identity_resolution_source_has_no_raw_text_semantic_authority(self) -> None:
+        source = Path("insight_desk/production_identity_resolution_v2.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("visible_event_redundant", source)
+        self.assertNotIn("_source_matches_event", source)
+        self.assertNotIn("bridge_body", source)
+        self.assertNotIn(".body", source)
+        self.assertIn("identity_bridge_events(", source)
+        self.assertIn("bridge_corroborates_same_event", source)
+
+    def test_runtime_shares_the_installed_event_understanding_owner_with_identity_lane(self) -> None:
+        source = Path("insight_desk/production_runtime_v2.py").read_text(encoding="utf-8")
+        self.assertIn(
+            "event_understanding_owner = install_event_understanding_lifecycle(core_module, registry)",
+            source,
+        )
+        self.assertIn(
+            "CanonicalIdentityResolutionLane(\n            registry,\n            event_understanding_owner,\n        )",
+            source,
+        )
 
     def test_daily_loop_resolves_defer_before_final_hold_with_per_topic_budget(self) -> None:
         source = Path("scripts/phase11_daily_production_core.py").read_text(encoding="utf-8")

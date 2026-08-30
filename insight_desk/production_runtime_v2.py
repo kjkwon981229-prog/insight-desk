@@ -130,8 +130,11 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
-        install_event_understanding_lifecycle(core_module, registry)
-        identity_resolution_lane = CanonicalIdentityResolutionLane(registry)
+        event_understanding_owner = install_event_understanding_lifecycle(core_module, registry)
+        identity_resolution_lane = CanonicalIdentityResolutionLane(
+            registry,
+            event_understanding_owner,
+        )
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide

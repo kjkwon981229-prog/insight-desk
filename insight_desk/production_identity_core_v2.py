@@ -141,6 +141,47 @@ def _same_structured_bok_policy_meeting(left: CanonicalEvent, right: CanonicalEv
     )
 
 
+def _same_explicit_triplet(
+    left: CanonicalEvent,
+    right: CanonicalEvent,
+    bridge: CanonicalEvent,
+    field: str,
+) -> bool:
+    values = tuple(_normalized(getattr(event, field)) for event in (left, right, bridge))
+    return all(value is not None for value in values) and len(set(values)) == 1
+
+
+def _bridge_corroborates_same_event(
+    left: CanonicalEvent,
+    right: CanonicalEvent,
+    bridge: CanonicalEvent,
+) -> bool:
+    """Require an independent CanonicalEvent to corroborate one unresolved pair.
+
+    This is deliberately narrower than general identity. It never reads source prose and it does
+    not relax canonical conflicts. The independent bridge must have no canonical conflict with
+    either side and must repeat at least three explicit identity dimensions, including the actor.
+    """
+
+    if left.topic != right.topic or left.topic != bridge.topic:
+        return False
+    if set(bridge.source_ids).intersection(left.source_ids + right.source_ids):
+        return False
+
+    for existing in (left, right):
+        comparison = precheck_identity(_identity_key(existing), _identity_key(bridge))
+        if comparison.conflicting_fields:
+            return False
+
+    fields = ("actor", "action", "object", "event_time", "location", "cause")
+    matching = tuple(
+        field
+        for field in fields
+        if _same_explicit_triplet(left, right, bridge, field)
+    )
+    return "actor" in matching and len(matching) >= 3
+
+
 @dataclass(frozen=True, slots=True)
 class CanonicalIdentityCore:
     left: CanonicalEvent
@@ -187,3 +228,6 @@ class CanonicalIdentityCore:
     @property
     def same_structured_bok_policy_meeting(self) -> bool:
         return _same_structured_bok_policy_meeting(self.left, self.right)
+
+    def bridge_corroborates_same_event(self, bridge: CanonicalEvent) -> bool:
+        return _bridge_corroborates_same_event(self.left, self.right, bridge)
