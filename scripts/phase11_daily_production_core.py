@@ -608,7 +608,11 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     same_topic_priors = tuple(
                         prior for prior in published if prior.topic.topic_id == topic.topic_id
                     )
-                    if same_topic_priors and local_verifier is None:
+                    if (
+                        same_topic_priors
+                        and local_verifier is None
+                        and "_INSIGHT_DESK_V2_IDENTITY_OWNER" not in globals()
+                    ):
                         local_verifier = LocalNliVerifier.transformers_default()
 
                     for prior in same_topic_priors:
