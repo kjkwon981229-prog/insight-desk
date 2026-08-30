@@ -13,7 +13,9 @@ from insight_desk.core import (
     EvidenceField,
     EvidenceSpan,
     EventFact,
+    RenderMode,
     SourceDocument,
+    VerificationCheck,
 )
 from insight_desk.generation import GeneratedDraft, GenerationContractError, GenerationRequest
 from insight_desk.generation_pipeline import generate_with_recovery
@@ -127,6 +129,24 @@ class _RecordingGenerator:
         )
 
 
+class _AlwaysSupportVerifier:
+    def __init__(self, verifier_id: str) -> None:
+        self.verifier_id = verifier_id
+        self.model_id = verifier_id + "-fixture"
+        self.calls: list[tuple[str, str]] = []
+
+    def verify(self, *, check_id, claim_text, evidence_text, evidence_ids):
+        self.calls.append((claim_text, evidence_text))
+        return VerificationCheck(
+            check_id=check_id,
+            verifier_id=self.verifier_id,
+            model_id=self.model_id,
+            evidence_ids=evidence_ids,
+            entailed=True,
+            zero_cost=True,
+        )
+
+
 class CanonicalGenerationOwnerTests(unittest.TestCase):
     def test_primary_generation_reads_canonical_semantics_not_legacy_event_fact(self) -> None:
         request = build_canonical_generation_request(_registry(), _legacy_request())
@@ -161,31 +181,37 @@ class CanonicalGenerationOwnerTests(unittest.TestCase):
         with self.assertRaisesRegex(GenerationContractError, "canonical evidence"):
             build_canonical_generation_request(_registry(canonical), legacy)
 
-    def test_production_phase7_wrapper_replaces_ingress_request_before_generation_routes(self) -> None:
-        seen: list[GenerationRequest] = []
-        sentinel = SimpleNamespace(
-            final_generation=SimpleNamespace(render_mode=__import__("insight_desk.core", fromlist=["RenderMode"]).RenderMode.GENERATED)
-        )
+    def test_production_visible_text_is_deterministic_canonical_projection(self) -> None:
+        legacy_phase7_calls: list[GenerationRequest] = []
 
-        def current(request, **_kwargs):
-            seen.append(request)
-            return sentinel
+        def legacy_phase7(request, **_kwargs):
+            legacy_phase7_calls.append(request)
+            raise AssertionError("legacy provider generation must not own production-visible text")
 
-        core = SimpleNamespace(produce_phase7_entry_candidate=current)
+        core = SimpleNamespace(produce_phase7_entry_candidate=legacy_phase7)
         scope_phase7_story_readmission(core, _registry())
         legacy = _legacy_request()
+        primary_generator = _RecordingGenerator()
+        primary_verifier = _AlwaysSupportVerifier("primary-fixture")
+        secondary_verifier = _AlwaysSupportVerifier("secondary-fixture")
+
         returned = core.produce_phase7_entry_candidate(
             legacy,
-            primary_generator=object(),
-            primary_verifier=object(),
-            secondary_verifier=object(),
+            primary_generator=primary_generator,
+            primary_verifier=primary_verifier,
+            secondary_verifier=secondary_verifier,
         )
-        self.assertIs(returned, sentinel)
-        self.assertEqual(len(seen), 1)
-        self.assertIsInstance(seen[0], CanonicalGenerationRequest)
-        self.assertIsNot(seen[0], legacy)
-        self.assertIn("actor=한국은행", seen[0].fact_text)
-        self.assertNotIn("subject=시장", seen[0].fact_text)
+
+        self.assertIsNotNone(returned)
+        self.assertEqual(legacy_phase7_calls, [])
+        self.assertEqual(primary_generator.requests, [])
+        self.assertIs(returned.final_generation.render_mode, RenderMode.CANONICAL_RECOVERY)
+        self.assertEqual(returned.final_generation.draft.headline, "한국은행, 기준금리를 동결했다")
+        self.assertIn("주체: 한국은행", returned.final_generation.draft.summary)
+        self.assertIn("사건: 기준금리를 동결했다", returned.final_generation.draft.summary)
+        self.assertTrue(returned.publishable)
+        self.assertTrue(primary_verifier.calls)
+        self.assertTrue(secondary_verifier.calls)
 
 
 if __name__ == "__main__":
