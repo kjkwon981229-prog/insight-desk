@@ -5,7 +5,8 @@ from __future__ import annotations
 The historical mechanical installer is preserved in ``production_orchestrator_compat_v2`` while
 this module replaces its identity owner with the canonical-only implementation. CandidateEvent and
 EventFact remain compatibility provenance containers until Event Understanding is qualified; they
-are not identity semantics here.
+are not identity semantics here. Historical direct CandidateEvent -> CanonicalEvent lifting remains
+isolated inside the compatibility module and is not part of this production authority surface.
 """
 
 from typing import Mapping
@@ -20,6 +21,10 @@ from insight_desk.semantic.identity import (
 
 from . import production_orchestrator_compat_v2 as _compat
 from .production_orchestrator_compat_v2 import *  # noqa: F401,F403
+
+# Historical replay can still import the compatibility helper from its compatibility module, but the
+# active V2 facade must not advertise a direct CandidateEvent -> CanonicalEvent production path.
+globals().pop("canonical_event_from_candidate", None)
 
 
 class CanonicalIdentityEngine:
@@ -113,11 +118,20 @@ def _evidence_integrity_assessment(*args, **kwargs):
 
 
 def install_production_orchestration(core_module):
-    """Install legacy mechanical wiring with the canonical-only identity owner substituted."""
+    """Install mechanical V2 owners without activating the historical direct-lift semantic path.
 
-    previous = _compat.CanonicalIdentityEngine
+    ``production_orchestrator_compat_v2`` still contains the historical CanonicalSemanticPipeline for
+    replay compatibility. Its installer temporarily assigns that class. Restore the incoming
+    SemanticPipeline before returning so the actual runtime's Event Understanding lifecycle is the
+    only component that can acquire semantic-pipeline authority.
+    """
+
+    previous_identity = _compat.CanonicalIdentityEngine
+    incoming_semantic_pipeline = core_module.SemanticPipeline
     _compat.CanonicalIdentityEngine = CanonicalIdentityEngine
     try:
-        return _compat.install_production_orchestration(core_module)
+        registry = _compat.install_production_orchestration(core_module)
     finally:
-        _compat.CanonicalIdentityEngine = previous
+        _compat.CanonicalIdentityEngine = previous_identity
+    core_module.SemanticPipeline = incoming_semantic_pipeline
+    return registry
