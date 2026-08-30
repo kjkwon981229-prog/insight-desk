@@ -1,5 +1,13 @@
 """Clean-room core contracts for the rebuilt Insight Desk engine."""
 
+from .canonical_v2 import (
+    AuthoritativeFact,
+    CanonicalEvidenceRef,
+    CanonicalEvent,
+    CanonicalPublicationBundle,
+    SourceDocument,
+    VerifiedPublication,
+)
 from .contracts import (
     CandidateEvent,
     Certainty,
@@ -19,6 +27,21 @@ from .contracts import (
     VerificationVerdict,
     VerifiedClaim,
 )
+from .event_understanding_port_v2 import (
+    EventUnderstandingPort,
+    EventUnderstandingRequest,
+    validate_understanding_result,
+)
+from .event_understanding_v2 import (
+    ArticleEventRole,
+    ArticleUnderstanding,
+    CanonicalEventDraft,
+    TopicRelation,
+    UnderstandingEvidenceField,
+    UnderstandingEvidenceRef,
+    UnderstandingStatus,
+    canonical_event_from_draft,
+)
 from .failure_policy import FailureKind, PipelineStage, RecoveryAction, recovery_action
 from .identity import (
     IdentityDecision,
@@ -27,6 +50,19 @@ from .identity import (
     IdentityPrecheckVerdict,
     finalize_identity,
     precheck_identity,
+)
+from .orchestration_v2 import (
+    OWNER_BOUNDARIES,
+    OwnerBoundary,
+    PipelineResponsibility,
+    owner_for,
+    validate_owner_boundaries,
+)
+from .relevance import (
+    RelevanceDecision,
+    RelevanceReason,
+    RelevanceVerdict,
+    relevance_from_literal_match,
 )
 from .selection import (
     SelectionDecision,
@@ -38,10 +74,19 @@ from .selection import (
 from .verification import VerificationPolicy, aggregate_verdict
 
 __all__ = [
+    "ArticleEventRole",
+    "ArticleUnderstanding",
+    "AuthoritativeFact",
     "CandidateEvent",
+    "CanonicalEvidenceRef",
+    "CanonicalEvent",
+    "CanonicalEventDraft",
+    "CanonicalPublicationBundle",
     "Certainty",
     "ContractBundle",
     "ContractError",
+    "EventUnderstandingPort",
+    "EventUnderstandingRequest",
     "EvidenceField",
     "EvidenceSpan",
     "EventFact",
@@ -50,10 +95,16 @@ __all__ = [
     "IdentityKey",
     "IdentityPrecheck",
     "IdentityPrecheckVerdict",
+    "OWNER_BOUNDARIES",
     "OutcomePolarity",
+    "OwnerBoundary",
+    "PipelineResponsibility",
     "PipelineStage",
     "RawArticle",
     "RecoveryAction",
+    "RelevanceDecision",
+    "RelevanceReason",
+    "RelevanceVerdict",
     "RenderMode",
     "RenderedBriefing",
     "RenderedEntry",
@@ -61,15 +112,26 @@ __all__ = [
     "SelectionReason",
     "SelectionSignals",
     "SelectionVerdict",
+    "SourceDocument",
     "SourceProvenance",
     "TemporalState",
+    "TopicRelation",
+    "UnderstandingEvidenceField",
+    "UnderstandingEvidenceRef",
+    "UnderstandingStatus",
     "VerificationCheck",
     "VerificationPolicy",
     "VerificationVerdict",
     "VerifiedClaim",
+    "VerifiedPublication",
     "aggregate_verdict",
+    "canonical_event_from_draft",
     "decide_selection",
     "finalize_identity",
+    "owner_for",
     "precheck_identity",
     "recovery_action",
+    "relevance_from_literal_match",
+    "validate_owner_boundaries",
+    "validate_understanding_result",
 ]

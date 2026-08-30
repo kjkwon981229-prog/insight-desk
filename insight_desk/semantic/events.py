@@ -19,6 +19,8 @@ from insight_desk.core import (
     precheck_identity,
 )
 
+from .baseball_identity import same_game_result_fingerprint
+from .market_identity import same_market_session_fact_perspective
 from .material import MaterialEventAssessment, assess_material_event
 
 
@@ -182,6 +184,30 @@ def identity_key_from_fact(fact: EventFact) -> IdentityKey:
     )
 
 
+def _fact_identity_surface(fact: EventFact) -> str:
+    return " ".join(
+        part
+        for part in (
+            fact.subject,
+            fact.action,
+            fact.object or "",
+            " ".join(fact.participants),
+        )
+        if part
+    )
+
+
+def _without_subject(key: IdentityKey) -> IdentityKey:
+    return IdentityKey(
+        subject_key=None,
+        action_key=key.action_key,
+        object_key=key.object_key,
+        event_date_key=key.event_date_key,
+        location_key=key.location_key,
+        cause_key=key.cause_key,
+    )
+
+
 def _facts_for_event(
     event: CandidateEvent,
     facts: Mapping[str, EventFact],
@@ -339,10 +365,38 @@ def compare_candidate_identity(
 
     left_fact = _facts_for_event(left, facts)[0]
     right_fact = _facts_for_event(right, facts)[0]
-    precheck = precheck_identity(
-        identity_key_from_fact(left_fact),
-        identity_key_from_fact(right_fact),
-    )
+    left_key = identity_key_from_fact(left_fact)
+    right_key = identity_key_from_fact(right_fact)
+
+    # One baseball game may be written from the winner or loser as grammatical subject. When the
+    # evidence-bound game fingerprint independently agrees on the two teams, reciprocal score, day,
+    # and venue, the subject difference is perspective rather than an explicit event contradiction.
+    # Only that subject field is withheld from the deterministic precheck; date/location/cause
+    # conflicts remain hard blocks and semantic judgment is still required for any merge.
+    if left.topic_id == "kbo_hanwha" and same_game_result_fingerprint(
+        _fact_identity_surface(left_fact),
+        _fact_identity_surface(right_fact),
+    ):
+        left_key = _without_subject(left_key)
+        right_key = _without_subject(right_key)
+
+    # One domestic market close may likewise be written from a named-index perspective or a broad
+    # domestic-market perspective. Relax only that grammatical subject field when the extracted
+    # facts agree on an explicit date and the same closing direction. Different indexes and date,
+    # location, or cause conflicts remain deterministic blocks; a merge still requires the existing
+    # independent semantic identity judgment.
+    if left.topic_id == "economy" and same_market_session_fact_perspective(
+        left_subject=left_fact.subject,
+        right_subject=right_fact.subject,
+        left_text=_fact_identity_surface(left_fact),
+        right_text=_fact_identity_surface(right_fact),
+        left_date=left_fact.event_date,
+        right_date=right_fact.event_date,
+    ):
+        left_key = _without_subject(left_key)
+        right_key = _without_subject(right_key)
+
+    precheck = precheck_identity(left_key, right_key)
     return finalize_identity(precheck, llm_same_event=semantic_same_event)
 
 

@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+import re
 
 
 class IdentityPrecheckVerdict(StrEnum):
     BLOCK_MERGE = "block_merge"
     REQUIRE_LLM_JUDGMENT = "require_llm_judgment"
+
+
+class IdentityDisposition(StrEnum):
+    SAME_EVENT = "same_event"
+    DIFFERENT_EVENT = "different_event"
+    DEFER = "defer"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,10 +42,20 @@ class IdentityPrecheck:
 
 @dataclass(frozen=True, slots=True)
 class IdentityDecision:
-    same_event: bool
+    same_event: bool | None
     deterministic_block: bool
     llm_judgment_used: bool
     reason: str
+
+
+def identity_disposition(decision: IdentityDecision) -> IdentityDisposition:
+    """Map the tri-state identity decision without collapsing unresolved into different-event."""
+
+    if decision.same_event is True:
+        return IdentityDisposition.SAME_EVENT
+    if decision.same_event is False:
+        return IdentityDisposition.DIFFERENT_EVENT
+    return IdentityDisposition.DEFER
 
 
 def _normalized(value: str | None) -> str | None:
@@ -48,8 +65,63 @@ def _normalized(value: str | None) -> str | None:
     return normalized or None
 
 
+_SUBJECT_TOKEN_RE = re.compile(r"[a-z][a-z0-9.+-]*|[가-힣]{2,}")
+_SUBJECT_DESCRIPTOR_TOKENS = frozenset({"소속"})
+_EVENT_DATE_RE = re.compile(
+    r"(?:(20\d{2})년\s*)?(?:(1[0-2]|[1-9])월\s*)?([1-9]|[12]\d|3[01])일"
+)
+
+
+def _subject_tokens(value: str) -> frozenset[str]:
+    return frozenset(
+        token
+        for token in _SUBJECT_TOKEN_RE.findall(value)
+        if token not in _SUBJECT_DESCRIPTOR_TOKENS
+    )
+
+
+def _subject_surface_compatible(left: str, right: str) -> bool:
+    """Treat descriptor/orthography-only subject expansion as ambiguous, not a hard conflict.
+
+    Phase 6 still receives evidence-bound subject surfaces rather than stable entity IDs. Tokenizing
+    punctuation and parenthetical romanization lets forms such as ``SM 유니버스(Universe) 강사진``
+    and ``SM Universe 소속 강사진`` reach the existing semantic same-event judgment. The helper
+    never declares a merge by itself; genuinely different subject tokens remain a deterministic
+    conflict.
+    """
+
+    left_tokens = _subject_tokens(left)
+    right_tokens = _subject_tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    return left_tokens <= right_tokens or right_tokens <= left_tokens
+
+
+def _event_date_surface_compatible(left: str, right: str) -> bool:
+    """Treat different precision for the same explicit Korean date as non-conflicting.
+
+    ``25일`` and ``2026년 8월 25일`` do not contradict each other; one simply carries more
+    precision. Explicitly different days, months, or years remain hard conflicts. This helper only
+    opens the downstream semantic-identity check and never declares a merge itself.
+    """
+
+    left_match = _EVENT_DATE_RE.fullmatch(left)
+    right_match = _EVENT_DATE_RE.fullmatch(right)
+    if left_match is None or right_match is None:
+        return False
+    left_year, left_month, left_day = left_match.groups()
+    right_year, right_month, right_day = right_match.groups()
+    if left_day != right_day:
+        return False
+    if left_month is not None and right_month is not None and left_month != right_month:
+        return False
+    if left_year is not None and right_year is not None and left_year != right_year:
+        return False
+    return True
+
+
 def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck:
-    """Block only explicit canonical conflicts; otherwise require an LLM identity judgment.
+    """Block only explicit canonical conflicts; otherwise require an identity judgment.
 
     The deterministic layer is deliberately conservative. It never declares two records the same
     event by itself. A merge always requires an explicit downstream same-event judgment.
@@ -73,6 +145,16 @@ def precheck_identity(left: IdentityKey, right: IdentityKey) -> IdentityPrecheck
             continue
         if left_normalized == right_normalized:
             matching.append(name)
+        elif name == "subject" and _subject_surface_compatible(
+            left_normalized,
+            right_normalized,
+        ):
+            continue
+        elif name == "event_date" and _event_date_surface_compatible(
+            left_normalized,
+            right_normalized,
+        ):
+            continue
         elif name in {"subject", "event_date", "location", "cause"}:
             conflicts.append(name)
 
@@ -93,10 +175,10 @@ def finalize_identity(
     *,
     llm_same_event: bool | None,
 ) -> IdentityDecision:
-    """Combine deterministic conflicts with an explicit LLM judgment.
+    """Combine deterministic conflicts with an explicit identity judgment.
 
-    Missing/failed LLM judgment always fails safe by keeping the candidate events separate.
-    No LLM result can override an explicit canonical conflict.
+    Missing/failed identity judgment remains unresolved. It is not equivalent to a proven
+    different-event decision. No judgment can override an explicit canonical conflict.
     """
 
     if precheck.verdict is IdentityPrecheckVerdict.BLOCK_MERGE:
@@ -111,18 +193,18 @@ def finalize_identity(
             same_event=True,
             deterministic_block=False,
             llm_judgment_used=True,
-            reason="llm_same_event_with_no_deterministic_conflict",
+            reason="identity_same_event_with_no_deterministic_conflict",
         )
     if llm_same_event is False:
         return IdentityDecision(
             same_event=False,
             deterministic_block=False,
             llm_judgment_used=True,
-            reason="llm_different_event",
+            reason="identity_different_event",
         )
     return IdentityDecision(
-        same_event=False,
+        same_event=None,
         deterministic_block=False,
         llm_judgment_used=False,
-        reason="identity_judgment_unavailable_keep_separate",
+        reason="identity_unresolved",
     )

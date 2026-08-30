@@ -55,6 +55,8 @@ class FactDraft:
     location: str | None = None
     cause: str | None = None
     participants: tuple[str, ...] = ()
+    source_start: int | None = None
+    source_end: int | None = None
 
     def __post_init__(self) -> None:
         _require_text("draft_id", self.draft_id)
@@ -66,6 +68,11 @@ class FactDraft:
             raise ValueError("FactDraft evidence ids must be unique")
         for evidence_id in self.evidence_ids:
             _require_text("evidence_id", evidence_id)
+        if (self.source_start is None) != (self.source_end is None):
+            raise ValueError("FactDraft source range must provide both start and end")
+        if self.source_start is not None and self.source_end is not None:
+            if self.source_start < 0 or self.source_end <= self.source_start:
+                raise ValueError("FactDraft source range is invalid")
         if len(self.participants) != len(set(self.participants)):
             raise ValueError("participants must be unique")
         for participant in self.participants:
@@ -79,6 +86,10 @@ class FactDraft:
             if value is not None:
                 _require_text(name, value)
 
+    @property
+    def has_exact_source_range(self) -> bool:
+        return self.source_start is not None and self.source_end is not None
+
     def validate_against(self, request: FactExtractionRequest) -> None:
         allowed = {span.evidence_id: span for span in request.evidence}
         for evidence_id in self.evidence_ids:
@@ -91,7 +102,29 @@ class FactDraft:
                     f"{self.draft_id}: fact draft cites evidence from another article"
                 )
 
-    def to_event_fact(self, *, fact_id: str) -> EventFact:
+        if self.has_exact_source_range:
+            if len(self.evidence_ids) != 1:
+                raise ValueError(
+                    f"{self.draft_id}: exact source range requires exactly one parent evidence span"
+                )
+            parent = allowed[self.evidence_ids[0]]
+            assert self.source_start is not None and self.source_end is not None
+            if self.source_start < parent.start or self.source_end > parent.end:
+                raise ValueError(
+                    f"{self.draft_id}: source range is outside cited evidence range"
+                )
+            source = request.article.field_text(parent.field)
+            if self.source_end > len(source) or not source[self.source_start : self.source_end].strip():
+                raise ValueError(
+                    f"{self.draft_id}: source range is outside article source or empty"
+                )
+
+    def to_event_fact(
+        self,
+        *,
+        fact_id: str,
+        evidence_ids: tuple[str, ...] | None = None,
+    ) -> EventFact:
         return EventFact(
             fact_id=fact_id,
             subject=self.subject.strip(),
@@ -104,7 +137,7 @@ class FactDraft:
             location=self.location.strip() if self.location is not None else None,
             cause=self.cause.strip() if self.cause is not None else None,
             participants=tuple(value.strip() for value in self.participants),
-            evidence_ids=self.evidence_ids,
+            evidence_ids=evidence_ids if evidence_ids is not None else self.evidence_ids,
         )
 
 

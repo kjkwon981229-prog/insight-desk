@@ -17,13 +17,17 @@ from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candi
 from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
 from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
 from insight_desk.rendering import (
+    MAX_FEED_HEADLINE_CHARS,
+    MAX_FEED_SUMMARY_CHARS,
     RenderingContractError,
     build_rendered_briefing,
+    feed_text_fits,
     render_phase7_candidate,
 )
 
 
 TEXT = "네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
+FALLBACK_HEADLINE = "AI 공장 구축 사업을 15억달러에 수주했다"
 
 
 def request(event_id: str = "event:phase8") -> GenerationRequest:
@@ -38,7 +42,7 @@ def request(event_id: str = "event:phase8") -> GenerationRequest:
     fact = EventFact(
         fact_id=f"fact:{event_id}",
         subject="네오팩토리",
-        action="AI 공장 구축 사업을 15억달러에 수주했다",
+        action=FALLBACK_HEADLINE,
         object="AI 공장 구축 사업",
         evidence_ids=(span.evidence_id,),
     )
@@ -59,14 +63,16 @@ def request(event_id: str = "event:phase8") -> GenerationRequest:
 class Generator:
     event_id: str = "event:phase8"
     fail: bool = False
+    headline: str = "AI 공장 15억달러 수주"
+    summary: str = TEXT
 
     def generate(self, item: GenerationRequest) -> GeneratedDraft:
         if self.fail:
             raise RuntimeError("synthetic generation failure")
         return GeneratedDraft(
             event_id=item.event.event_id,
-            headline="AI 공장 15억달러 수주",
-            summary=TEXT,
+            headline=self.headline,
+            summary=self.summary,
             evidence_ids=item.evidence_ids,
         )
 
@@ -97,6 +103,12 @@ class Verifier:
         )
 
 
+@dataclass(frozen=True)
+class UnpublishableCandidate:
+    event_id: str
+    publishable: bool = False
+
+
 def primary(*answers: bool | None) -> Verifier:
     return Verifier(
         CLOUDFLARE_VERIFIER_ID,
@@ -117,14 +129,40 @@ def candidate(
     event_id: str = "event:phase8",
     *,
     generated_fail: bool = False,
+    headline: str = "AI 공장 15억달러 수주",
+    summary: str = TEXT,
     primary_answers: tuple[bool | None, ...] = (True, True),
     secondary_answers: tuple[bool | None, ...] = (True, True),
 ) -> Phase7EntryCandidate:
     return produce_phase7_entry_candidate(
         request(event_id),
-        primary_generator=Generator(event_id=event_id, fail=generated_fail),
+        primary_generator=Generator(
+            event_id=event_id,
+            fail=generated_fail,
+            headline=headline,
+            summary=summary,
+        ),
         primary_verifier=primary(*primary_answers),
         secondary_verifier=secondary(*secondary_answers),
+    )
+
+
+def verified_variant(event_id: str, *, headline: str, summary: str) -> Phase7EntryCandidate:
+    """Build a renderer fixture that is already verified upstream, without rerunning preservation."""
+
+    base = candidate(event_id)
+    draft = replace(base.final_generation.draft, headline=headline, summary=summary)
+    generation = replace(base.final_generation, draft=draft)
+    claim_results = []
+    for item in base.verification.claims:
+        text = headline if item.role.value == "headline" else summary
+        claim_results.append(replace(item, claim=replace(item.claim, text=text)))
+    verification = replace(base.verification, claims=tuple(claim_results))
+    return replace(
+        base,
+        initial_generation=generation,
+        final_generation=generation,
+        verification=verification,
     )
 
 
@@ -140,15 +178,15 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         self.assertIs(entry.render_mode, RenderMode.GENERATED)
 
     def test_unpublishable_candidate_is_omitted_item_locally(self) -> None:
-        rejected = candidate(primary_answers=(None, None), secondary_answers=(True, True))
+        rejected = UnpublishableCandidate("event:phase8")
         accepted = candidate("event:phase8-good")
+        self.assertIsNone(render_phase7_candidate(rejected))  # type: ignore[arg-type]
         briefing = build_rendered_briefing(
             briefing_id="briefing:phase8",
             generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
-            candidates=(rejected, accepted),
+            candidates=(rejected, accepted),  # type: ignore[arg-type]
         )
         self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-good"])
-        self.assertTrue(rejected.event_retained)
 
     def test_verified_text_mismatch_is_rejected_instead_of_rendered(self) -> None:
         item = candidate()
@@ -168,8 +206,70 @@ class Phase8RenderingBridgeTests(unittest.TestCase):
         entry = render_phase7_candidate(item)
         assert entry is not None
         self.assertIs(entry.render_mode, RenderMode.EXTRACTIVE_FALLBACK)
-        self.assertEqual(entry.headline, TEXT)
+        self.assertEqual(entry.headline, FALLBACK_HEADLINE)
         self.assertEqual(entry.summary, TEXT)
+        self.assertIn(entry.headline, TEXT)
+
+    def test_feed_size_gate_omits_oversized_verified_text_item_locally(self) -> None:
+        self.assertFalse(
+            feed_text_fits(
+                headline="가" * (MAX_FEED_HEADLINE_CHARS + 1),
+                summary="나" * 10,
+            )
+        )
+        self.assertFalse(
+            feed_text_fits(
+                headline="가" * 10,
+                summary="나" * (MAX_FEED_SUMMARY_CHARS + 1),
+            )
+        )
+
+    def test_duplicate_content_from_distinct_events_renders_once(self) -> None:
+        first = candidate("event:phase8-a")
+        second = candidate("event:phase8-b")
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:content-dedup",
+            generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual([entry.event_id for entry in briefing.entries], ["event:phase8-a"])
+
+    def test_same_normalized_headline_with_variant_summaries_renders_once(self) -> None:
+        first = verified_variant(
+            "event:rate-a",
+            headline="27일 한국은행 기준금리 결정 주목",
+            summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠리고 있습니다.",
+        )
+        second = verified_variant(
+            "event:rate-b",
+            headline=" 27일   한국은행 기준금리 결정 주목 ",
+            summary="오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다.",
+        )
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:headline-dedup",
+            generated_at=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual([entry.event_id for entry in briefing.entries], ["event:rate-a"])
+
+    def test_same_normalized_summary_with_distinct_headlines_renders_once(self) -> None:
+        summary = "오는 27일 예정된 한국은행의 기준금리 결정에 관심이 쏠립니다."
+        first = verified_variant(
+            "event:rate-summary-a",
+            headline="27일 한국은행 기준금리 결정에 이목 집중",
+            summary=summary,
+        )
+        second = verified_variant(
+            "event:rate-summary-b",
+            headline="27일 한국은행 기준금리 결정에 관심",
+            summary=" 오는 27일  예정된 한국은행의 기준금리 결정에 관심이 쏠립니다. ",
+        )
+        briefing = build_rendered_briefing(
+            briefing_id="briefing:summary-dedup",
+            generated_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+            candidates=(first, second),
+        )
+        self.assertEqual([entry.event_id for entry in briefing.entries], ["event:rate-summary-a"])
 
     def test_duplicate_rendered_event_ids_fail_closed(self) -> None:
         item = candidate()

@@ -160,6 +160,7 @@ p { margin: 0; }
 .story-row h3 { max-width: 690px; }
 .story-row.lead h3 { font-size: clamp(1.2rem, 2vw, 1.55rem); }
 .story-summary { font-size: 1rem; line-height: 1.58; margin-top: 12px; max-width: 720px; }
+.story-source { align-items: center; display: inline-flex; font-size: .86rem; font-weight: 800; margin-top: 10px; min-height: 44px; text-decoration: underline; text-underline-offset: 3px; }
 .key-fact-panel { background: var(--accent-soft); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 17px; max-width: 720px; padding: 12px 14px; }
 .key-fact { min-width: 0; }
 .key-fact + .key-fact { border-left: 1px solid var(--line); padding-left: 12px; }

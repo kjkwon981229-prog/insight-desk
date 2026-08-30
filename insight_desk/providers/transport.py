@@ -19,11 +19,17 @@ class ProviderTransportError(RuntimeError):
     failure_kind: FailureKind
     status_code: int | None = None
     detail: str = ""
+    retry_after_seconds: float | None = None
 
     def __str__(self) -> str:
         status = f" status={self.status_code}" if self.status_code is not None else ""
         detail = f" detail={self.detail}" if self.detail else ""
-        return f"provider transport failure={self.failure_kind.value}{status}{detail}"
+        retry = (
+            f" retry_after={self.retry_after_seconds}"
+            if self.retry_after_seconds is not None
+            else ""
+        )
+        return f"provider transport failure={self.failure_kind.value}{status}{retry}{detail}"
 
 
 def require_secret(env: dict[str, str], name: str) -> str:
@@ -33,12 +39,23 @@ def require_secret(env: dict[str, str], name: str) -> str:
     return value
 
 
+def _retry_after_seconds(headers: Any) -> float | None:
+    value = headers.get("Retry-After") if headers is not None else None
+    if value is None:
+        return None
+    try:
+        seconds = float(str(value).strip())
+    except ValueError:
+        return None
+    return max(0.0, seconds)
+
+
 class JsonHttpTransport:
     """Small stdlib-only JSON transport shared by production provider adapters.
 
-    The transport has no model fallback and no billing behavior. It only performs the requested
-    call, retries a small number of transient failures, and converts HTTP/network failures into the
-    clean-room FailureKind vocabulary.
+    The transport does not guess provider-specific quota semantics. Generic HTTP 429 means only
+    RATE_LIMITED here. A provider adapter may specialize a 429 into a longer-lived quota state when
+    the provider response explicitly proves that condition.
     """
 
     def __init__(
@@ -95,8 +112,9 @@ class JsonHttpTransport:
                 raise
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")[:1200]
+                retry_after = _retry_after_seconds(exc.headers)
                 if exc.code == 429:
-                    kind = FailureKind.FREE_QUOTA_EXHAUSTED
+                    kind = FailureKind.RATE_LIMITED
                 elif exc.code in {500, 502, 503, 504}:
                     kind = FailureKind.TRANSIENT_PROVIDER
                 else:
@@ -106,9 +124,9 @@ class JsonHttpTransport:
                         failure_kind=kind,
                         status_code=exc.code,
                         detail=detail,
+                        retry_after_seconds=retry_after,
                     ) from exc
-                retry_after = exc.headers.get("Retry-After")
-                delay = float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
+                delay = retry_after if retry_after is not None else float(2**attempt)
                 self._sleeper(min(delay, 30.0))
             except (urllib.error.URLError, TimeoutError) as exc:
                 if attempt + 1 >= self.attempts:

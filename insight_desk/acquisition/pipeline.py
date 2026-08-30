@@ -38,9 +38,9 @@ class HtmlRenderer(Protocol):
 class AcquisitionPipeline:
     """Acquire one article without paraphrasing or semantic rewriting.
 
-    The primary HTML body is extracted first. Playwright may be used only when the primary
-    extraction fails the deterministic quality gate. The selected extracted body becomes the
-    immutable RawArticle source for later EvidenceSpan offsets.
+    Route order is deliberately cheap-first and independent-extractor-aware:
+    HTTP+primary → HTTP+deterministic article/main → rendered+primary → rendered+article/main.
+    Every route must pass the same deterministic quality gate before it can become RawArticle.
     """
 
     def __init__(
@@ -49,16 +49,26 @@ class AcquisitionPipeline:
         fetcher: HtmlFetcher,
         primary_extractor: ArticleExtractor,
         fallback_renderer: HtmlRenderer | None = None,
+        fallback_extractor: ArticleExtractor | None = None,
         quality_policy: ExtractionQualityPolicy | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.primary_extractor = primary_extractor
         self.fallback_renderer = fallback_renderer
+        if fallback_extractor is None:
+            from .runtime import ArticleMainTextExtractor
+
+            fallback_extractor = ArticleMainTextExtractor()
+        self.fallback_extractor = fallback_extractor
         self.quality_policy = quality_policy or ExtractionQualityPolicy()
 
     def acquire(self, candidate: ArticleCandidate) -> AcquisitionResult:
         fetched = self.fetcher.fetch(candidate.url)
-        primary, primary_quality = self._extract_and_assess(fetched)
+
+        primary, primary_quality = self._extract_and_assess(
+            fetched,
+            extractor=self.primary_extractor,
+        )
         if primary is not None and primary_quality.acceptable:
             return self._build_result(
                 candidate=candidate,
@@ -69,43 +79,90 @@ class AcquisitionPipeline:
                 fallback_used=False,
             )
 
+        static_fallback, static_quality = self._extract_and_assess(
+            fetched,
+            extractor=self.fallback_extractor,
+        )
+        if static_fallback is not None and static_quality.acceptable:
+            return self._build_result(
+                candidate=candidate,
+                page=fetched,
+                extracted=static_fallback,
+                quality=static_quality,
+                method=f"{self.fetcher.method_id}+{self.fallback_extractor.method_id}",
+                fallback_used=True,
+            )
+
         if self.fallback_renderer is None:
-            reasons = primary_quality.reasons if primary_quality is not None else ("primary_extraction_failed",)
+            reasons = self._combined_reasons(primary_quality, static_quality)
             raise AcquisitionError(
                 FailureKind.EXTRACTION_EMPTY,
-                "primary extraction rejected: " + ",".join(reasons),
+                "static extraction routes rejected: " + ",".join(reasons),
             )
 
         rendered = self.fallback_renderer.render(candidate.url)
-        fallback, fallback_quality = self._extract_and_assess(rendered)
-        if fallback is None or not fallback_quality.acceptable:
-            reasons = fallback_quality.reasons if fallback_quality is not None else ("fallback_extraction_failed",)
-            raise AcquisitionError(
-                FailureKind.EXTRACTION_EMPTY,
-                "fallback extraction rejected: " + ",".join(reasons),
+        rendered_primary, rendered_primary_quality = self._extract_and_assess(
+            rendered,
+            extractor=self.primary_extractor,
+        )
+        if rendered_primary is not None and rendered_primary_quality.acceptable:
+            return self._build_result(
+                candidate=candidate,
+                page=rendered,
+                extracted=rendered_primary,
+                quality=rendered_primary_quality,
+                method=f"{self.fallback_renderer.method_id}+{self.primary_extractor.method_id}",
+                fallback_used=True,
             )
-        return self._build_result(
-            candidate=candidate,
-            page=rendered,
-            extracted=fallback,
-            quality=fallback_quality,
-            method=f"{self.fallback_renderer.method_id}+{self.primary_extractor.method_id}",
-            fallback_used=True,
+
+        rendered_fallback, rendered_fallback_quality = self._extract_and_assess(
+            rendered,
+            extractor=self.fallback_extractor,
+        )
+        if rendered_fallback is not None and rendered_fallback_quality.acceptable:
+            return self._build_result(
+                candidate=candidate,
+                page=rendered,
+                extracted=rendered_fallback,
+                quality=rendered_fallback_quality,
+                method=f"{self.fallback_renderer.method_id}+{self.fallback_extractor.method_id}",
+                fallback_used=True,
+            )
+
+        reasons = self._combined_reasons(
+            primary_quality,
+            static_quality,
+            rendered_primary_quality,
+            rendered_fallback_quality,
+        )
+        raise AcquisitionError(
+            FailureKind.EXTRACTION_EMPTY,
+            "all extraction routes rejected: " + ",".join(reasons),
         )
 
     def _extract_and_assess(
-        self, page: FetchedPage
+        self,
+        page: FetchedPage,
+        *,
+        extractor: ArticleExtractor,
     ) -> tuple[ExtractedArticle | None, ExtractionQuality]:
         try:
-            extracted = self.primary_extractor.extract(page.html, url=page.url)
+            extracted = extractor.extract(page.html, url=page.url)
         except AcquisitionError:
             return None, ExtractionQuality(
                 acceptable=False,
                 character_count=0,
-                reasons=("extractor_error",),
+                reasons=(f"{extractor.method_id}_error",),
             )
         quality = self.quality_policy.assess(extracted.body)
         return extracted, quality
+
+    @staticmethod
+    def _combined_reasons(*qualities: ExtractionQuality) -> tuple[str, ...]:
+        reasons: list[str] = []
+        for quality in qualities:
+            reasons.extend(quality.reasons or ("quality_rejected",))
+        return tuple(dict.fromkeys(reasons)) or ("extraction_failed",)
 
     @staticmethod
     def _source_id(candidate: ArticleCandidate) -> str:

@@ -1,344 +1,448 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol
+import re
 
-from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
-from insight_desk.providers.groq import GROQ_20B
-
-
-class GenerationContractError(ValueError):
-    """Raised when Phase 7 generation inputs or outputs violate a structural contract."""
-
-
-@dataclass(frozen=True, slots=True)
-class GenerationRequest:
-    event: CandidateEvent
-    facts: Mapping[str, EventFact]
-    evidence: Mapping[str, EvidenceSpan]
-
-    def __post_init__(self) -> None:
-        if not self.event.fact_ids:
-            raise GenerationContractError("generation requires at least one event fact")
-        for fact_id in self.event.fact_ids:
-            fact = self.facts.get(fact_id)
-            if fact is None:
-                raise GenerationContractError(f"event references missing fact: {fact_id}")
-            if fact.fact_id != fact_id:
-                raise GenerationContractError(f"fact index key mismatch: {fact_id}")
-            for evidence_id in fact.evidence_ids:
-                span = self.evidence.get(evidence_id)
-                if span is None:
-                    raise GenerationContractError(
-                        f"fact references missing evidence: {evidence_id}"
-                    )
-                if span.evidence_id != evidence_id:
-                    raise GenerationContractError(
-                        f"evidence index key mismatch: {evidence_id}"
-                    )
-                if span.article_id not in self.event.article_ids:
-                    raise GenerationContractError(
-                        f"evidence outside event provenance: {evidence_id}"
-                    )
-
-    @property
-    def evidence_ids(self) -> tuple[str, ...]:
-        ordered: list[str] = []
-        seen: set[str] = set()
-        for fact_id in self.event.fact_ids:
-            for evidence_id in self.facts[fact_id].evidence_ids:
-                if evidence_id not in seen:
-                    seen.add(evidence_id)
-                    ordered.append(evidence_id)
-        return tuple(ordered)
-
-    @property
-    def evidence_text(self) -> str:
-        return self.evidence_text_for(self.evidence_ids)
-
-    def evidence_text_for(self, evidence_ids: tuple[str, ...]) -> str:
-        allowed = set(self.evidence_ids)
-        parts: list[str] = []
-        for evidence_id in evidence_ids:
-            if evidence_id not in allowed:
-                raise GenerationContractError(
-                    f"requested generation evidence is outside event facts: {evidence_id}"
-                )
-            parts.append(self.evidence[evidence_id].text)
-        return "\n\n".join(parts)
-
-    @property
-    def fact_text(self) -> str:
-        lines: list[str] = []
-        for fact_id in self.event.fact_ids:
-            fact = self.facts[fact_id]
-            parts = [f"subject={fact.subject}", f"action={fact.action}"]
-            if fact.object is not None:
-                parts.append(f"object={fact.object}")
-            if fact.event_date is not None:
-                parts.append(f"event_date={fact.event_date}")
-            if fact.location is not None:
-                parts.append(f"location={fact.location}")
-            if fact.cause is not None:
-                parts.append(f"cause={fact.cause}")
-            if fact.participants:
-                parts.append("participants=" + ", ".join(fact.participants))
-            lines.append(f"{fact.fact_id}: " + " | ".join(parts))
-        return "\n".join(lines)
+# Preserve the generation/preservation contract byte-for-byte in generation_core;
+# this façade owns the one shared story-admission boundary for every generator.
+from insight_desk.generation_core import *  # noqa: F401,F403
+from insight_desk.generation_core import (
+    GeneratedDraft,
+    GenerationContractError,
+    GenerationRequest,
+    Groq20BBriefingGenerator as _CoreGroq20BBriefingGenerator,
+    PreservationIssue,
+    PreservationIssueCode,
+    PreservationReport,
+    validate_preservation as _core_validate_preservation,
+)
+from insight_desk.story_admission import (
+    StoryAdmissionReason,
+    StoryAdmissionStage,
+    evaluate_story_admission,
+)
 
 
-@dataclass(frozen=True, slots=True)
-class GeneratedDraft:
-    event_id: str
-    headline: str
-    summary: str
-    evidence_ids: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        if not self.event_id.strip():
-            raise GenerationContractError("event_id must be non-empty")
-        if not self.headline.strip():
-            raise GenerationContractError("headline must be non-empty")
-        if not self.summary.strip():
-            raise GenerationContractError("summary must be non-empty")
-        if not self.evidence_ids:
-            raise GenerationContractError("generated draft must cite evidence")
-        if len(self.evidence_ids) != len(set(self.evidence_ids)):
-            raise GenerationContractError("generated draft evidence ids must be unique")
-
-    @property
-    def combined_text(self) -> str:
-        return f"{self.headline}\n{self.summary}"
-
-
-class StructuredGenerationClient(Protocol):
-    model_id: str
-
-    def structured_json(
-        self,
-        *,
-        prompt: str,
-        schema: dict[str, object],
-        schema_name: str,
-        system_prompt: str = "Follow the JSON schema exactly. Do not output commentary.",
-    ) -> dict[str, object]: ...
-
-
-# NEWS_REWRITE_POLICY_V1 3-1: every article uses the same machine-parseable output structure.
-GENERATION_SCHEMA: dict[str, object] = {
-    "type": "object",
-    "properties": {
-        "headline": {"type": "string"},
-        "summary": {"type": "string"},
-    },
-    "required": ["headline", "summary"],
-    "additionalProperties": False,
+_TOPIC_NAMES = {
+    "kbo_hanwha": "KBO·한화 이글스",
+    "kpop": "엔터·음악·K-POP",
+    "ai_tech": "AI·테크",
+    "economy": "경제·투자",
 }
+_GENERIC_PRIMARY_SUBJECTS = frozenset(
+    {
+        "회사",
+        "기업",
+        "업체",
+        "관계자",
+        "당국",
+        "그",
+        "그가",
+        "그는",
+        "그녀",
+        "그녀가",
+        "그녀는",
+        "이들",
+        "이들이",
+        "이들은",
+    }
+)
+_ISO_EVENT_DATE_RE = re.compile(
+    r"^(?P<year>20\d{2})-(?P<month>0[1-9]|1[0-2])-(?P<day>0[1-9]|[12]\d|3[01])$"
+)
+_DURATION_AFTER_DAY_RE = r"(?:동안|간|후|뒤|째|만에|내에|이내)"
+_REPORTING_SIDE_ACTOR_RE = re.compile(
+    r"(?P<actor>[가-힣A-Za-z0-9·&()/_+-]{1,40}\s+측)"
+    r"(?:은|는|이|가)\s+(?:밝혔다|전했다|설명했다|발표했다)"
+)
+_INCOMPLETE_IDENTITY_ROLE_RE = re.compile(
+    r"^[가-힣]\s+(?:국회의원|의원|회장|부회장|대표이사|대표|사장|부사장|"
+    r"위원장|장관|차관|총재|감독|코치|교수|박사)$"
+)
+_ACTION_PROJECTION_TOKEN_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:[⅛¼⅜½⅝¾⅞⅓⅔])?(?:%|％)?[가-힣A-Za-z]*|[가-힣A-Za-z·]{2,}"
+)
+_DATE_LED_DIRECT_PROSPECTIVE_ACTION_RE = re.compile(
+    r"^(?:오는\s+|내일\s+)?"
+    r"(?:(?:20\d{2})년\s*)?"
+    r"(?:(?:1[0-2]|0?[1-9])월\s*)?"
+    r"(?:3[01]|[12]\d|0?[1-9])일(?:부터)?(?=\s)"
+    r"[^.!?。！？]{1,300}?(?:한다|합니다|된다|됩니다|예정이다|예정입니다)$"
+)
+_PROSPECTIVE_TEMPORAL_STATES = frozenset({"planned", "announced_prospective", "resuming"})
 
 
-NEWS_REWRITE_POLICY_V1 = """# 뉴스 기사 자동 처리용 AI 느낌 제거 규칙
-
-뉴스 기사를 자동으로 가져와 요약·재구성하는 파이프라인에 적용하는 버전이다. 사람이 매번 검수하지 않으므로 "사실 보존"을 스타일보다 우선한다.
-
-## 0. 사실 보존 (최우선 원칙)
-0-1) 숫자·날짜·고유명사·인용문은 원문 그대로 유지해라.
-표현을 다듬더라도 수치, 이름, 직접 인용은 바꾸지 마라. 애매하면 재구성하지 말고 원문 표현을 그대로 써라.
-0-2) 원문에 없는 정보는 추가하지 마라.
-문장을 자연스럽게 만들려고 배경 설명이나 추측을 새로 넣지 마라.
-0-3) 출처 표현은 지우지 마라.
-"~에 따르면", "~라고 밝혔다", "~라고 전했다"는 완곡 표현이 아니라 출처 표시다. 기존 규칙 9(단정하기)는 글쓴이 자신의 불필요한 헤지에 적용하는 것이지, 취재원 발언 표시에는 적용하지 않는다.
-0-4) 원문 문장을 그대로 옮기지 말고 재구성해라.
-문장 구조를 유지한 채 단어만 바꾸지 마라. 핵심 내용만 뽑아 새 문장으로 써라.
-
-## 1. 제목(헤드라인)
-1-1) 명사형으로 끝내라.
-"~다/습니다"로 끝나는 완전한 문장 대신 "OOO 발표", "OOO 논란", "OOO 예정"처럼 명사형으로 마무리해라.
-1-2) 낚시성 표현을 빼라.
-"충격", "경악", "알고 보니", "이 정도일 줄은" 같은 과장된 클릭 유도 표현은 쓰지 마라. (기존 규칙 14의 연장)
-1-3) 길이를 맞춰라.
-피드 카드에서 잘리지 않도록 20~30자 내외로 써라. (앱 UI에 맞춰 조정)
-
-## 2. 리드문·요약
-2-1) 첫 문장에 핵심을 담아라.
-누가/무엇을/언제/어디서/왜를 첫 문장에서 요약해라. 배경 설명은 뒤로 미뤄라.
-2-2) 기존 문장 규칙(1~8)을 그대로 적용해라.
-수식어 제거, 주어 생략, 번역투 제거, 나열 구조 깨기, 구체적 사실 쓰기, 접속사 생략은 원본과 동일하게 적용한다.
-2-3) 원문에 없는 주관적 수식어는 특히 금지해라.
-뉴스는 객관 서술이 원칙이다. 원문에 없는 감정적·평가적 형용사("놀라운", "충격적인" 등)는 절대 넣지 마라.
-2-4) 고정 요약 포맷은 규칙 11의 예외로 둔다.
-"3줄 요약"처럼 UX상 필요한 정형 포맷이라면 개수를 억지로 바꾸지 않아도 된다. 규칙 11(3의 법칙 피하기)은 논증적 글쓰기용이지 구조화된 요약 포맷에는 적용하지 않는다.
-
-## 3. 자동화 파이프라인
-3-1) 기사마다 같은 출력 구조를 유지해라.
-헤드라인 + 요약(N줄) 같은 템플릿을 모든 기사에 동일하게 적용해라. 형식이 흔들리면 파싱과 UI 렌더링이 깨진다.
-3-2) 불확실하면 변형을 최소화해라.
-표현을 다듬다가 의미가 달라질 위험이 있으면, 자연스러움보다 원문 보존을 우선해라.
-3-3) 메타 발언 금지는 그대로 유지해라.
-"이 기사에서는", "요약하자면" 같은 표현은 자동 요약에서도 넣지 마라. (기존 규칙 13)
-"""
+class _FacadePreservationIssueCode(StrEnum):
+    INVALID_EVENT_SUBJECT = "invalid_event_subject"
+    MISSING_HEADLINE_SUBJECT = "missing_headline_subject"
+    MISSING_EVENT_DATE = "missing_event_date"
+    MISSING_EVENT_PARTICIPANT = "missing_event_participant"
 
 
-def build_generation_prompt(request: GenerationRequest) -> str:
-    return (
-        "아래 EVENT FACTS와 EVIDENCE만 사용해 한국어 브리핑 headline과 summary를 작성하라.\n"
-        "EVIDENCE 밖의 사실, 배경지식, 원인, 평가, 수치, 날짜, 인물/기관명을 추가하지 마라.\n"
-        "아래 NEWS_REWRITE_POLICY_V1 전체를 적용하라. 불확실하면 자연스러움보다 원문 보존을 우선하라.\n\n"
-        + NEWS_REWRITE_POLICY_V1
-        + "\nEVENT ID:\n"
-        + request.event.event_id
-        + "\n\nEVENT FACTS:\n"
-        + request.fact_text
-        + "\n\nEVIDENCE:\n"
-        + request.evidence_text
+def _event_date_parts(event_date: str) -> tuple[int, int, int] | None:
+    match = _ISO_EVENT_DATE_RE.fullmatch(event_date.strip())
+    if match is None:
+        return None
+    return int(match.group("year")), int(match.group("month")), int(match.group("day"))
+
+
+def _event_date_is_visible(text: str, event_date: str) -> bool:
+    normalized = " ".join(text.split())
+    if event_date in normalized:
+        return True
+    parts = _event_date_parts(event_date)
+    if parts is None:
+        return False
+    year, month, day = parts
+    patterns = (
+        rf"(?<!\d){year}년\s*0?{month}월\s*0?{day}일(?!\s*{_DURATION_AFTER_DAY_RE})",
+        rf"(?<!\d)0?{month}월\s*0?{day}일(?!\s*{_DURATION_AFTER_DAY_RE})",
+        rf"(?<!\d)0?{day}일(?!\s*{_DURATION_AFTER_DAY_RE})",
+    )
+    return any(re.search(pattern, normalized) is not None for pattern in patterns)
+
+
+def _inherited_event_dates(request: GenerationRequest) -> tuple[str, ...]:
+    dates: list[str] = []
+    seen: set[str] = set()
+    for fact_id in request.event.fact_ids:
+        fact = request.facts[fact_id]
+        event_date = (fact.event_date or "").strip()
+        if not event_date or event_date in seen:
+            continue
+        cited = "\n".join(
+            request.evidence[evidence_id].text
+            for evidence_id in fact.evidence_ids
+            if evidence_id in request.evidence
+        )
+        if _event_date_is_visible(cited, event_date):
+            continue
+        seen.add(event_date)
+        dates.append(event_date)
+    return tuple(dates)
+
+
+def _event_date_number_aliases(event_date: str) -> frozenset[str]:
+    parts = _event_date_parts(event_date)
+    if parts is None:
+        return frozenset({event_date})
+    year, month, day = parts
+    return frozenset(
+        {
+            event_date,
+            f"{year}년",
+            f"{month}월",
+            f"{day}일",
+            f"0{month}월" if month < 10 else f"{month}월",
+            f"0{day}일" if day < 10 else f"{day}일",
+        }
     )
 
 
-@dataclass(slots=True)
-class Groq20BBriefingGenerator:
-    client: StructuredGenerationClient
+def _novel_reporting_side_actors(source: str, generated: str) -> tuple[str, ...]:
+    source_normalized = " ".join(source.split())
+    generated_normalized = " ".join(generated.split())
+    actors = {
+        " ".join(match.group("actor").split())
+        for match in _REPORTING_SIDE_ACTOR_RE.finditer(generated_normalized)
+    }
+    return tuple(sorted(actor for actor in actors if actor not in source_normalized))
 
-    def __post_init__(self) -> None:
-        if self.client.model_id != GROQ_20B:
-            raise GenerationContractError("briefing generation is frozen to Groq GPT-OSS 20B")
 
-    def generate(self, request: GenerationRequest) -> GeneratedDraft:
-        result = self.client.structured_json(
-            prompt=build_generation_prompt(request),
-            schema=GENERATION_SCHEMA,
-            schema_name="insight_desk_briefing_generation",
-            system_prompt=(
-                "Write only evidence-grounded Korean briefing text. "
-                "Return JSON matching the schema exactly."
-            ),
+def _primary_event_fact(request: GenerationRequest):
+    """Return the production primary fact only when event identity is structurally singular."""
+
+    if len(request.event.fact_ids) != 1:
+        return None
+    return request.facts[request.event.fact_ids[0]]
+
+
+def _fact_cited_text(request: GenerationRequest, fact) -> str:
+    return "\n".join(
+        request.evidence[evidence_id].text
+        for evidence_id in fact.evidence_ids
+        if evidence_id in request.evidence
+    )
+
+
+def _normalized_surface_present(text: str, surface: str) -> bool:
+    normalized_text = " ".join(text.split()).casefold()
+    normalized_surface = " ".join(surface.split()).casefold()
+    return bool(normalized_surface) and normalized_surface in normalized_text
+
+
+def _incomplete_event_subject(subject: str) -> bool:
+    return _INCOMPLETE_IDENTITY_ROLE_RE.fullmatch(" ".join(subject.split()).strip()) is not None
+
+
+def _action_projection_tokens(value: str) -> frozenset[str]:
+    """Return only literal lexical anchors used to prove headline/action projection.
+
+    This is intentionally fail-open for loose paraphrase. The identity invariant should require a
+    headline subject only when the headline demonstrably reuses the primary fact's action surface;
+    another exact-source fact in the same evidence span must remain a valid headline candidate.
+    """
+
+    return frozenset(
+        token.casefold()
+        for token in _ACTION_PROJECTION_TOKEN_RE.findall(" ".join(value.split()))
+        if token
+    )
+
+
+def _headline_projects_primary_action(*, headline: str, action: str) -> bool:
+    headline_tokens = _action_projection_tokens(headline)
+    action_tokens = _action_projection_tokens(action)
+    shared = headline_tokens & action_tokens
+    return len(shared) >= 2 and sum(len(token) for token in shared) >= 5
+
+
+def _headline_is_literal_primary_action(*, headline: str, action: str) -> bool:
+    def normalized(value: str) -> str:
+        return " ".join(value.split()).rstrip(".!?。！？").rstrip().casefold()
+
+    return normalized(headline) == normalized(action)
+
+
+def _literal_primary_action_may_omit_subject(
+    *,
+    headline: str,
+    action: str,
+    summary: str,
+    subject: str,
+) -> bool:
+    """Preserve exact-source recovery except for actorless direct prospective event clauses.
+
+    A literal action remains a valid compact exact-source headline when the paired summary carries
+    the evidence-bound subject. The exception is a calendar-led clause that directly asserts a
+    prospective action (for example ``28일 ... 발표한다``): without its actor that headline is not
+    standalone. Reporting clauses such as ``9월 3일부터 ... 시행한다고 밝혔다`` keep the existing
+    exact-source recovery contract because the visible action is the report itself, not an anonymous
+    future event assertion.
+    """
+
+    normalized_headline = " ".join(headline.split()).rstrip(".!?。！？").rstrip()
+    return (
+        _headline_is_literal_primary_action(headline=headline, action=action)
+        and _DATE_LED_DIRECT_PROSPECTIVE_ACTION_RE.search(normalized_headline) is None
+        and _normalized_surface_present(summary, subject)
+    )
+
+
+def _publication_identity_issues(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> tuple[PreservationIssue, ...]:
+    """Enforce identity-bearing source slots at the common publication boundary.
+
+    Phase 6A emits one fact per production candidate. Publication may paraphrase that fact, but it
+    may not publish an already-incomplete named actor, erase a concrete evidence-bound primary
+    subject from a headline that demonstrably projects that fact's action, or strip the
+    date/counterparty that identifies a planned event. Literal exact-source recovery remains valid
+    under its existing compact-headline contract except when the literal action is a calendar-led
+    direct prospective event clause whose actor would otherwise disappear from the headline.
+    """
+
+    fact = _primary_event_fact(request)
+    if fact is None:
+        return ()
+
+    issues: list[PreservationIssue] = []
+    subject = fact.subject.strip()
+    cited = _fact_cited_text(request, fact)
+
+    if subject and _incomplete_event_subject(subject):
+        issues.append(
+            PreservationIssue(
+                _FacadePreservationIssueCode.INVALID_EVENT_SUBJECT,
+                subject,
+            )
         )
-        headline = result.get("headline")
-        summary = result.get("summary")
-        if not isinstance(headline, str) or not isinstance(summary, str):
-            raise GenerationContractError("Groq generation output is outside headline/summary contract")
-        return GeneratedDraft(
-            event_id=request.event.event_id,
-            headline=headline,
-            summary=summary,
-            evidence_ids=request.evidence_ids,
+    elif (
+        subject
+        and subject not in _GENERIC_PRIMARY_SUBJECTS
+        and _normalized_surface_present(cited, subject)
+        and _headline_projects_primary_action(headline=draft.headline, action=fact.action)
+        and not _literal_primary_action_may_omit_subject(
+            headline=draft.headline,
+            action=fact.action,
+            summary=draft.summary,
+            subject=subject,
+        )
+        and not _normalized_surface_present(draft.headline, subject)
+    ):
+        issues.append(
+            PreservationIssue(
+                _FacadePreservationIssueCode.MISSING_HEADLINE_SUBJECT,
+                subject,
+            )
         )
 
-
-class PreservationIssueCode(StrEnum):
-    EVENT_ID_MISMATCH = "event_id_mismatch"
-    UNKNOWN_EVIDENCE = "unknown_evidence"
-    NOVEL_DATE = "novel_date"
-    NOVEL_NUMBER = "novel_number"
-    NOVEL_QUOTED_TEXT = "novel_quoted_text"
-    META_PHRASE = "meta_phrase"
-
-
-@dataclass(frozen=True, slots=True)
-class PreservationIssue:
-    code: PreservationIssueCode
-    value: str
-
-
-@dataclass(frozen=True, slots=True)
-class PreservationReport:
-    accepted: bool
-    issues: tuple[PreservationIssue, ...]
-
-    def __post_init__(self) -> None:
-        if self.accepted == bool(self.issues):
-            raise GenerationContractError(
-                "accepted preservation report must have no issues and rejected report must have issues"
+    temporal_state = getattr(fact.temporal_state, "value", fact.temporal_state)
+    if temporal_state in _PROSPECTIVE_TEMPORAL_STATES:
+        event_date = (fact.event_date or "").strip()
+        if event_date and not _event_date_is_visible(draft.combined_text, event_date):
+            issues.append(
+                PreservationIssue(
+                    _FacadePreservationIssueCode.MISSING_EVENT_DATE,
+                    event_date,
+                )
             )
 
-
-_KOREAN_DATE_RE = re.compile(r"\d{4}년\s*\d{1,2}월(?:\s*\d{1,2}일)?")
-_SEPARATED_DATE_RE = re.compile(r"\d{4}[./-]\d{1,2}(?:[./-]\d{1,2})?")
-_NUMBER_RE = re.compile(
-    r"\d[\d,]*(?:\.\d+)?(?:%|％|조원|억원|원|억달러|달러|만명|명|개|건|회|위|점|경기|이닝|시즌|년|월|일|시|분|초)?"
-)
-_QUOTE_PATTERNS = (
-    re.compile(r'"([^"\n]+)"'),
-    re.compile(r"“([^”\n]+)”"),
-    re.compile(r"‘([^’\n]+)’"),
-    re.compile(r"「([^」\n]+)」"),
-    re.compile(r"『([^』\n]+)』"),
-)
-_META_PHRASES = ("이 기사에서는", "요약하자면")
-
-
-def _date_atoms(text: str) -> tuple[str, ...]:
-    values = {match.group(0) for match in _KOREAN_DATE_RE.finditer(text)}
-    values.update(match.group(0) for match in _SEPARATED_DATE_RE.finditer(text))
-    return tuple(sorted(values))
-
-
-def _number_atoms(text: str) -> tuple[str, ...]:
-    return tuple(sorted({match.group(0) for match in _NUMBER_RE.finditer(text)}))
-
-
-def _quoted_atoms(text: str) -> tuple[str, ...]:
-    values: set[str] = set()
-    for pattern in _QUOTE_PATTERNS:
-        values.update(
-            match.group(1).strip()
-            for match in pattern.finditer(text)
-            if match.group(1).strip()
+        participants = tuple(
+            participant.strip()
+            for participant in fact.participants
+            if participant.strip()
+            and participant.strip() != subject
+            and _normalized_surface_present(cited, participant)
         )
-    return tuple(sorted(values))
+        if participants and not any(
+            _normalized_surface_present(draft.combined_text, participant)
+            for participant in participants
+        ):
+            issues.append(
+                PreservationIssue(
+                    _FacadePreservationIssueCode.MISSING_EVENT_PARTICIPANT,
+                    participants[0],
+                )
+            )
+
+    return tuple(issues)
+
+
+def _issue_key(issue: PreservationIssue) -> tuple[str, str]:
+    code = getattr(issue.code, "value", str(issue.code))
+    return str(code), issue.value
 
 
 def validate_preservation(
     request: GenerationRequest,
     draft: GeneratedDraft,
 ) -> PreservationReport:
-    """Deterministically reject source-literal and automation-policy violations before verification.
+    """Extend the frozen core report with source-to-publication identity preservation.
 
-    This gate blocks novel event/evidence references, dates, numeric expressions, quoted text, and
-    the explicit NEWS_REWRITE_POLICY_V1 3-3 meta phrases. It intentionally does not pretend to prove
-    general semantic support; that remains the frozen Cloudflare + local mDeBERTa verification role.
+    In addition to the measured date/attribution protections, every generation route—including
+    exact-source fallback—must preserve the identity-bearing slots of the primary EventFact when the
+    visible card demonstrably projects that fact. Exact source bytes are not automatically
+    publication-safe when a fallback selects only a clause and drops who/what-date/counterparty
+    context.
     """
 
-    issues: list[PreservationIssue] = []
-    if draft.event_id != request.event.event_id:
-        issues.append(
-            PreservationIssue(PreservationIssueCode.EVENT_ID_MISMATCH, draft.event_id)
-        )
-
-    allowed_evidence = set(request.evidence_ids)
-    known_citations: list[str] = []
-    for evidence_id in draft.evidence_ids:
-        if evidence_id not in allowed_evidence:
-            issues.append(
-                PreservationIssue(PreservationIssueCode.UNKNOWN_EVIDENCE, evidence_id)
-            )
-        else:
-            known_citations.append(evidence_id)
-
-    source = request.evidence_text_for(tuple(known_citations)) if known_citations else ""
+    core_report = _core_validate_preservation(request, draft)
+    issues = list(core_report.issues)
     generated = draft.combined_text
 
-    source_dates = set(_date_atoms(source))
-    for value in _date_atoms(generated):
-        if value not in source_dates:
-            issues.append(PreservationIssue(PreservationIssueCode.NOVEL_DATE, value))
-
-    source_numbers = set(_number_atoms(source))
-    generated_dates = set(_date_atoms(generated))
-    for value in _number_atoms(generated):
-        if any(value in date for date in generated_dates):
+    for event_date in _inherited_event_dates(request):
+        if _event_date_is_visible(generated, event_date):
+            allowed_values = _event_date_number_aliases(event_date)
+            issues = [
+                issue
+                for issue in issues
+                if not (
+                    issue.code
+                    in {
+                        PreservationIssueCode.NOVEL_DATE,
+                        PreservationIssueCode.NOVEL_NUMBER,
+                    }
+                    and issue.value in allowed_values
+                )
+            ]
             continue
-        if value not in source_numbers:
-            issues.append(PreservationIssue(PreservationIssueCode.NOVEL_NUMBER, value))
-
-    for value in _quoted_atoms(generated):
-        if value not in source:
-            issues.append(
-                PreservationIssue(PreservationIssueCode.NOVEL_QUOTED_TEXT, value)
+        issues.append(
+            PreservationIssue(
+                _FacadePreservationIssueCode.MISSING_EVENT_DATE,
+                event_date,
             )
+        )
 
-    for phrase in _META_PHRASES:
-        if phrase in generated:
-            issues.append(PreservationIssue(PreservationIssueCode.META_PHRASE, phrase))
+    existing = {_issue_key(issue) for issue in issues}
+    for actor in _novel_reporting_side_actors(request.evidence_text, generated):
+        issue = PreservationIssue(PreservationIssueCode.NOVEL_ATTRIBUTION, actor)
+        key = _issue_key(issue)
+        if key not in existing:
+            issues.append(issue)
+            existing.add(key)
+
+    for issue in _publication_identity_issues(request, draft):
+        key = _issue_key(issue)
+        if key not in existing:
+            issues.append(issue)
+            existing.add(key)
 
     return PreservationReport(accepted=not issues, issues=tuple(issues))
+
+
+def _evidence_bound_actor_subjects(request: GenerationRequest) -> tuple[str, ...]:
+    """Return concrete EventFact subjects literally present in their cited evidence bytes."""
+
+    subjects: list[str] = []
+    seen: set[str] = set()
+    for fact_id in request.event.fact_ids:
+        fact = request.facts[fact_id]
+        subject = fact.subject.strip()
+        if not subject or subject in _GENERIC_PRIMARY_SUBJECTS:
+            continue
+        cited = "\n".join(request.evidence[eid].text for eid in fact.evidence_ids)
+        if subject not in cited or subject in seen:
+            continue
+        seen.add(subject)
+        subjects.append(subject)
+    return tuple(subjects)
+
+
+def validate_generated_actor_preservation(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> None:
+    """Reject provider rewrites that erase every concrete evidence-bound event actor.
+
+    This remains an early provider-specific boundary. Exact-source fallback does not call this helper,
+    but it now consumes the same common ``validate_preservation`` identity invariant before it can be
+    accepted. Provider prose keeps this additional early failure classification for route telemetry.
+    """
+
+    subjects = _evidence_bound_actor_subjects(request)
+    if not subjects:
+        return
+    combined = draft.combined_text.casefold()
+    if not any(subject.casefold() in combined for subject in subjects):
+        raise GenerationContractError("generated draft drops all evidence-bound event actors")
+
+
+def validate_story_admission(request: GenerationRequest, draft: GeneratedDraft) -> None:
+    topic = _TOPIC_NAMES.get(request.event.topic_id, request.event.topic_id)
+    visible_decision = evaluate_story_admission(
+        topic=topic,
+        headline=draft.headline,
+        summary=draft.summary,
+        source_text=request.evidence_text,
+        stage=StoryAdmissionStage.VISIBLE,
+    )
+
+    # The visible rewrite may omit a stale date phrase that is present in the
+    # event evidence. Reuse the same shared decision on the source/material
+    # representation and project only FRESHNESS. Other material-side reasons are
+    # intentionally not promoted: descriptive or historical background remains
+    # allowed when the primary event itself is current.
+    evidence_decision = evaluate_story_admission(
+        topic=topic,
+        source_text=request.evidence_text,
+        stage=StoryAdmissionStage.MATERIAL,
+    )
+    evidence_stale = StoryAdmissionReason.FRESHNESS in evidence_decision.reasons
+
+    if not visible_decision.accepted or evidence_stale:
+        reasons = list(visible_decision.reasons)
+        if evidence_stale and StoryAdmissionReason.FRESHNESS not in reasons:
+            reasons.append(StoryAdmissionReason.FRESHNESS)
+        reason_text = ",".join(reason.value for reason in reasons)
+        raise GenerationContractError(
+            f"story admission rejected generated draft: {reason_text}"
+        )
+
+
+class Groq20BBriefingGenerator(_CoreGroq20BBriefingGenerator):
+    def generate(self, request: GenerationRequest):
+        draft = super().generate(request)
+        validate_story_admission(request, draft)
+        return draft

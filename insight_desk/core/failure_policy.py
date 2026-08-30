@@ -16,6 +16,7 @@ class PipelineStage(StrEnum):
 
 class FailureKind(StrEnum):
     TRANSIENT_PROVIDER = "transient_provider"
+    RATE_LIMITED = "rate_limited"
     FREE_QUOTA_EXHAUSTED = "free_quota_exhausted"
     INVALID_OUTPUT = "invalid_output"
     EXTRACTION_EMPTY = "extraction_empty"
@@ -54,9 +55,8 @@ def recovery_action(
 ) -> RecoveryDecision:
     """Return the next zero-cost, item-scoped action for a pipeline failure.
 
-    This policy intentionally has no paid-fallback action and no global-abort action.
-    Generation happens after event/claim state exists, so every generation recovery path
-    preserves the event. Ambiguous identity fails safe by keeping candidates separate.
+    Provider/run capacity is handled by the provider resilience layer before it becomes an item-level
+    recovery decision. This policy therefore remains item-scoped and has no paid/global-abort path.
     """
 
     if attempts < 0:
@@ -74,7 +74,7 @@ def recovery_action(
             )
         action = (
             RecoveryAction.RETRY_FREE_PROVIDER
-            if failure is FailureKind.TRANSIENT_PROVIDER and attempts == 0
+            if failure in {FailureKind.TRANSIENT_PROVIDER, FailureKind.RATE_LIMITED} and attempts == 0
             else RecoveryAction.SKIP_ITEM
         )
         return RecoveryDecision(action=action, preserves_existing_event=False)

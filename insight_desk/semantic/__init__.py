@@ -16,6 +16,12 @@ from .events import (
     resolve_temporal_state,
 )
 from .facts import FactDraft, FactExtractionRequest, FactExtractorPort
+from .fallback_extractors import (
+    PecabDeterministicFactExtractor,
+    SequentialFactExtractor,
+    SurfaceDeterministicFactExtractor,
+    build_resilient_fact_extractor,
+)
 from .history import (
     EventHistory,
     EventSnapshot,
@@ -25,7 +31,13 @@ from .history import (
     derive_state_transitions,
     start_event_history,
 )
-from .identity import IdentityResolution, merge_candidate_events, resolve_candidate_pair
+from .identity import (
+    IdentityResolution,
+    SemanticIdentityJudgment,
+    judge_same_event_mutual_entailment,
+    merge_candidate_events,
+    resolve_candidate_pair,
+)
 from .kiwi_extractor import KiwiDeterministicFactExtractor
 from .material import (
     MaterialEventAssessment,
@@ -57,26 +69,32 @@ __all__ = [
     "MaterialEventReason",
     "MaterialEventVerdict",
     "MorphologyToken",
+    "PecabDeterministicFactExtractor",
     "Phase6AutoMaterialAssessment",
     "Phase6EventAssessment",
     "Phase6EventEngine",
     "Phase6SelectionContext",
     "RapidFuzzAliasRetriever",
     "SemanticArticleResult",
+    "SemanticIdentityJudgment",
     "SemanticPipeline",
     "SentenceSpan",
+    "SequentialFactExtractor",
     "StateTransition",
+    "SurfaceDeterministicFactExtractor",
     "TemporalAuxiliaryPort",
     "TemporalResolution",
     "TemporalResolutionSource",
     "append_event_snapshot",
     "assess_material_event",
     "build_event_snapshot",
+    "build_resilient_fact_extractor",
     "cited_evidence_text",
     "compare_candidate_identity",
     "derive_state_transitions",
     "detect_explicit_temporal_state",
     "identity_key_from_fact",
+    "judge_same_event_mutual_entailment",
     "merge_candidate_events",
     "resolve_candidate_pair",
     "resolve_temporal_state",

@@ -31,21 +31,23 @@ class EcosClient:
         start_period: str,
         end_period: str,
         max_rows: int = 100,
+        item_code: str | None = None,
     ) -> dict[str, object]:
-        url = "/".join(
-            (
-                BASE_URL,
-                self.api_key,
-                "json",
-                "kr",
-                "1",
-                str(max_rows),
-                stat_code,
-                cycle,
-                start_period,
-                end_period,
-            )
-        ) + "/"
+        parts = [
+            BASE_URL,
+            self.api_key,
+            "json",
+            "kr",
+            "1",
+            str(max_rows),
+            stat_code,
+            cycle,
+            start_period,
+            end_period,
+        ]
+        if item_code:
+            parts.append(item_code)
+        url = "/".join(parts) + "/"
         response = (self.transport or UrlLibTransport()).request(
             "GET",
             url,

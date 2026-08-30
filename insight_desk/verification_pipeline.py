@@ -18,6 +18,10 @@ from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
 from insight_desk.providers.local_nli import LOCAL_NLI_VERIFIER_ID
 
 
+DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID = "deterministic-source-proof"
+DETERMINISTIC_SOURCE_PROOF_MODEL_ID = "evidence-substring-v1"
+
+
 class ClaimRole(StrEnum):
     HEADLINE = "headline"
     SUMMARY = "summary"
@@ -140,8 +144,6 @@ def _verify_claim(
     )
 
     checks: list[VerificationCheck] = [primary_check]
-    # Primary explicit rejection is final. Primary failure/inconclusive also cannot become SUPPORTED,
-    # so invoking the secondary would add compute without changing the aggregate verdict.
     if primary_check.entailed is True:
         checks.append(
             _safe_verify(
@@ -168,6 +170,84 @@ def _verify_claim(
     )
 
 
+def _is_exact_source_excerpt(
+    request: GenerationRequest,
+    *,
+    evidence_ids: tuple[str, ...],
+    text: str,
+) -> bool:
+    if not text:
+        return False
+    return any(text in request.evidence[evidence_id].text for evidence_id in evidence_ids)
+
+
+def verify_exact_source_draft(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> GeneratedVerificationResult:
+    """Prove an extractive fallback from immutable cited evidence without external LLM calls.
+
+    This path is intentionally stricter than semantic inference: each visible role must be a literal
+    excerpt of at least one cited EvidenceSpan, and the normal preservation contract must already
+    accept the draft. It cannot manufacture support for paraphrased/generated text.
+    """
+
+    preservation = validate_preservation(request, draft)
+    if not preservation.accepted:
+        return GeneratedVerificationResult(
+            event_id=request.event.event_id,
+            preservation=preservation,
+            claims=(),
+        )
+
+    evidence_ids = draft.evidence_ids
+    claims: list[GeneratedClaimResult] = []
+    for role, text in (
+        (ClaimRole.HEADLINE, draft.headline),
+        (ClaimRole.SUMMARY, draft.summary),
+    ):
+        claim_id = _stable_id("claim", request.event.event_id, role.value, text)
+        supported = _is_exact_source_excerpt(
+            request,
+            evidence_ids=evidence_ids,
+            text=text,
+        )
+        check = VerificationCheck(
+            check_id=_stable_id(
+                "check",
+                claim_id,
+                DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID,
+            ),
+            verifier_id=DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID,
+            model_id=DETERMINISTIC_SOURCE_PROOF_MODEL_ID,
+            evidence_ids=evidence_ids,
+            entailed=supported,
+            zero_cost=True,
+        )
+        claims.append(
+            GeneratedClaimResult(
+                role=role,
+                claim=VerifiedClaim(
+                    claim_id=claim_id,
+                    event_id=request.event.event_id,
+                    text=text,
+                    evidence_ids=evidence_ids,
+                    checks=(check,),
+                    verdict=(
+                        VerificationVerdict.SUPPORTED
+                        if supported
+                        else VerificationVerdict.REJECTED
+                    ),
+                ),
+            )
+        )
+    return GeneratedVerificationResult(
+        event_id=request.event.event_id,
+        preservation=preservation,
+        claims=tuple(claims),
+    )
+
+
 def verify_generated_draft(
     request: GenerationRequest,
     draft: GeneratedDraft,
@@ -176,13 +256,7 @@ def verify_generated_draft(
     secondary: ClaimVerifier,
     policy: VerificationPolicy = DEFAULT_VERIFICATION_POLICY,
 ) -> GeneratedVerificationResult:
-    """Verify generated headline and summary under the frozen Phase 7 policy.
-
-    The deterministic preservation gate always runs first. Rejected preservation never reaches an
-    external/local verifier. After preservation passes, primary verification is decisive for explicit
-    rejection; secondary verification is required only after primary TRUE because only TRUE+TRUE can
-    publish. Provider exceptions become item-local inconclusive checks and never delete the event.
-    """
+    """Verify generated headline and summary under the frozen two-slot Phase 7 policy."""
 
     if primary.verifier_id != policy.primary_verifier_id:
         raise GenerationContractError("primary verifier does not match frozen verification policy")

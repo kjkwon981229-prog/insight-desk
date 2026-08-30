@@ -2,11 +2,16 @@ name: Insight Desk Daily Production
 
 on:
   pull_request:
-    branches: [phase4-core-contracts]
+    branches: [main]
     paths:
-      - "scripts/phase11_daily_production.py"
+      - "config/topics.json"
+      - "config/authoritative_sources.json"
+      - "scripts/**"
+      - "insight_desk/**"
+      - "assets/css/style.css"
+      - "assets/js/push.js"
       - ".github/workflows/insight-desk-production.yml"
-      - "tests/test_phase11_production_restore.py"
+      - "tests/**"
   push:
     branches: [main]
   workflow_dispatch:
@@ -15,11 +20,40 @@ on:
     - cron: "30 22 * * *"
 
 concurrency:
-  group: insight-desk-production
+  group: insight-desk-production-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
   cancel-in-progress: true
 
 jobs:
+  pr_live_gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run_live: ${{ steps.gate.outputs.run_live }}
+    steps:
+      - name: Checkout exact PR head for preflight gate
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Require explicit production-preflight marker
+        id: gate
+        shell: bash
+        run: |
+          message="$(git log -1 --format=%B)"
+          if grep -Fq '[production-preflight]' <<<"$message"; then
+            echo "run_live=true" >> "$GITHUB_OUTPUT"
+            echo "PR live production explicitly requested for this exact head."
+          else
+            echo "run_live=false" >> "$GITHUB_OUTPUT"
+            echo "PR live production skipped: current head is not an explicit production-preflight candidate."
+          fi
+
   build:
+    needs: [pr_live_gate]
+    if: always() && (github.event_name != 'pull_request' || needs.pr_live_gate.outputs.run_live == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -30,6 +64,10 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+      KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
+      OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
       TOKENIZERS_PARALLELISM: "false"
     outputs:
@@ -39,6 +77,8 @@ jobs:
     steps:
       - name: Checkout current production candidate
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -55,26 +95,50 @@ jobs:
           python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
 
-      - name: Verify required provider credentials without exposing values
+      - name: Report zero-cost provider route configuration
         shell: bash
         run: |
           python - <<'PY'
           import os
-          required = (
-              "NCP_CLIENT_ID",
-              "NCP_CLIENT_SECRET",
-              "GROQ_API_KEY",
-              "CLOUDFLARE_ACCOUNT_ID",
-              "CLOUDFLARE_API_TOKEN",
+
+          def configured(name: str) -> bool:
+              return bool(os.environ.get(name, "").strip())
+
+          pairs = {
+              "naver": (configured("NCP_CLIENT_ID"), configured("NCP_CLIENT_SECRET")),
+              "cloudflare": (
+                  configured("CLOUDFLARE_ACCOUNT_ID"),
+                  configured("CLOUDFLARE_API_TOKEN"),
+              ),
+          }
+          partial = [name for name, pair in pairs.items() if pair[0] != pair[1]]
+          if partial:
+              raise SystemExit("PHASE12B_PARTIAL_PROVIDER_CONFIG:" + ",".join(partial))
+
+          routes = {
+              "naver": all(pairs["naver"]),
+              "bing_rss": True,
+              "gdelt": True,
+              "groq": configured("GROQ_API_KEY"),
+              "cloudflare": all(pairs["cloudflare"]),
+              "gemini": configured("GEMINI_API_KEY"),
+              "ecos": configured("ECOS_API_KEY"),
+              "kosis": configured("KOSIS_API_KEY"),
+              "opendart": configured("OPENDART_API_KEY"),
+              "local_nli": True,
+              "exact_source": True,
+          }
+          print(
+              "PHASE12B_PROVIDER_ROUTES "
+              + " ".join(
+                  f"{name}={'configured' if enabled else 'not_configured'}"
+                  for name, enabled in routes.items()
+              )
           )
-          missing = [name for name in required if not os.environ.get(name, "").strip()]
-          if missing:
-              raise SystemExit("PHASE11_CREDENTIALS_MISSING:" + ",".join(missing))
-          print("PHASE11_CREDENTIALS_PRESENT")
           PY
 
       - name: Compile current production path
-        run: python -m compileall -q insight_desk scripts/phase11_daily_production.py
+        run: python -m compileall -q insight_desk scripts
 
       - name: Run current-engine daily production
         id: production
@@ -112,7 +176,7 @@ jobs:
           )
           PY
 
-      - name: Validate generated site contract
+      - name: Validate generated site contract and product quality
         if: steps.state.outputs.publish == 'true'
         shell: bash
         run: |
@@ -136,16 +200,49 @@ jobs:
             echo "::error::Renderer manufactured an unsupported UI slot."
             exit 1
           fi
+          python scripts/validate_feed_artifact.py build/site/index.html \
+            --audit build/production-audit.json \
+            --report build/feed-quality.json
+          python scripts/validate_publication_identity.py build/site/index.html \
+            --state build/run-state.json \
+            --audit build/production-audit.json
 
-      - name: Upload production audit
-        if: always() && hashFiles('build/production-audit.json') != ''
+      - name: Upload main production audit
+        if: always() && github.event_name != 'pull_request' && hashFiles('build/production-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: production-audit-${{ github.run_id }}
           path: |
             build/run-state.json
             build/production-audit.json
+            build/feed-quality.json
           if-no-files-found: error
+
+      - name: Upload canonical PR production artifact
+        if: github.event_name == 'pull_request' && steps.state.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-site-preflight-${{ github.run_id }}
+          path: |
+            build/site
+            build/run-state.json
+            build/production-audit.json
+            build/feed-quality.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload PR failure diagnostics
+        if: always() && github.event_name == 'pull_request' && failure() && hashFiles('build/production-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-diagnostic-${{ github.run_id }}
+          path: |
+            build/site
+            build/run-state.json
+            build/production-audit.json
+            build/feed-quality.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Fail closed when no publishable briefing exists
         if: steps.state.outputs.publish != 'true'
@@ -192,6 +289,13 @@ jobs:
         shell: bash
         run: echo "::add-mask::$PUSH_SEND_TOKEN"
 
+      - name: Download exact publication identity
+        if: needs.build.result == 'success' && needs.build.outputs.publish == 'true' && needs.deploy.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: production-audit-${{ github.run_id }}
+          path: build
+
       - name: Send production state notification
         shell: bash
         run: |
@@ -208,13 +312,61 @@ jobs:
               ;;
           esac
 
+          notification_source="other"
+          case "$GITHUB_EVENT_NAME" in
+            schedule) notification_source="schedule" ;;
+            workflow_dispatch) notification_source="manual" ;;
+          esac
+
           notification_type="FAILURE"
           if [[ "$BUILD_RESULT" == "success" && "$BUILD_PUBLISH" == "true" && "$DEPLOY_RESULT" == "success" ]]; then
             notification_type="READY"
           fi
           briefing_date="$(TZ=Asia/Seoul date +%F)"
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          payload="$(printf '{"date":"%s","run_id":"%s","type":"%s"}' "$briefing_date" "$run_id" "$notification_type")"
+
+          BRIEFING_ID=""
+          PUBLICATION_DIGEST=""
+          if [[ "$notification_type" == "READY" ]]; then
+            state_file="build/run-state.json"
+            if [[ ! -s "$state_file" ]]; then
+              echo "::warning::READY push suppressed because exact run-state identity is missing."
+              exit 0
+            fi
+            BRIEFING_ID="$(jq -r '.briefing_id // empty' "$state_file")"
+            PUBLICATION_DIGEST="$(jq -r '.publication_digest // empty' "$state_file")"
+            publication_contract_version="$(jq -r '.publication_contract_version // 0' "$state_file")"
+            if [[ "$publication_contract_version" != "2" || ! "$PUBLICATION_DIGEST" =~ ^[0-9a-f]{64}$ || -z "$BRIEFING_ID" ]]; then
+              echo "::warning::READY push suppressed because publication identity is invalid."
+              exit 0
+            fi
+
+            health_file="${RUNNER_TEMP}/insight-desk-push-health.json"
+            health_status="$(curl --silent --show-error --max-time 20 \
+              --output "$health_file" \
+              --write-out '%{http_code}' \
+              "${PUSH_WORKER_URL%/}/health" || true)"
+            if [[ ! "$health_status" =~ ^2[0-9][0-9]$ ]] || ! jq -e '.publication_binding_version == 2' "$health_file" >/dev/null 2>&1; then
+              echo "::warning::READY push suppressed because the deployed Worker does not prove publication binding v2."
+              exit 0
+            fi
+            payload="$(jq -cn \
+              --arg date "$briefing_date" \
+              --arg run_id "$run_id" \
+              --arg type "$notification_type" \
+              --arg source "$notification_source" \
+              --arg briefing_id "$BRIEFING_ID" \
+              --arg publication_digest "$PUBLICATION_DIGEST" \
+              '{date:$date,run_id:$run_id,type:$type,source:$source,briefing_id:$briefing_id,publication_digest:$publication_digest}')"
+          else
+            payload="$(jq -cn \
+              --arg date "$briefing_date" \
+              --arg run_id "$run_id" \
+              --arg type "$notification_type" \
+              --arg source "$notification_source" \
+              '{date:$date,run_id:$run_id,type:$type,source:$source}')"
+          fi
+
           response_file="${RUNNER_TEMP}/insight-desk-push-response.json"
           http_status="$(curl --silent --show-error --max-time 20 \
             --output "$response_file" \
@@ -228,8 +380,18 @@ jobs:
             echo "::warning::Push endpoint did not accept the notification (type=$notification_type; http=$http_status)."
             exit 0
           fi
-          if ! jq -e '.ok == true and (.duplicate | type == "boolean")' "$response_file" >/dev/null 2>&1; then
-            echo "::warning::Push endpoint returned an invalid response (type=$notification_type; http=$http_status)."
+          if [[ "$notification_type" == "READY" ]]; then
+            if ! jq -e \
+              --arg source "$notification_source" \
+              --arg briefing_id "$BRIEFING_ID" \
+              --arg publication_digest "$PUBLICATION_DIGEST" \
+              '.request_state == "REQUEST_ACCEPTED" and (.duplicate | type == "boolean") and .source == $source and .briefing_id == $briefing_id and .publication_digest == $publication_digest' \
+              "$response_file" >/dev/null 2>&1; then
+              echo "::warning::Push endpoint returned an unbound READY response (http=$http_status)."
+              exit 0
+            fi
+          elif ! jq -e '.request_state == "REQUEST_ACCEPTED" and (.duplicate | type == "boolean")' "$response_file" >/dev/null 2>&1; then
+            echo "::warning::Push endpoint returned an invalid FAILURE response (http=$http_status)."
             exit 0
           fi
-          echo "Push notification accepted (type=$notification_type; http=$http_status)."
+          echo "Push notification accepted (type=$notification_type; source=$notification_source; http=$http_status)."

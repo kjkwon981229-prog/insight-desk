@@ -70,14 +70,15 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(request.get_header("X-test"), "yes")
         self.assertEqual(captured["timeout"], 90)
 
-    def test_transport_classifies_429_as_free_quota_exhaustion(self):
+    def test_transport_classifies_generic_429_as_rate_limited(self):
         headers = Message()
+        headers["Retry-After"] = "7"
         error = urllib.error.HTTPError(
             "https://example.invalid",
             429,
             "Too Many Requests",
             headers,
-            io.BytesIO(b"free quota exceeded"),
+            io.BytesIO(b"rate limit exceeded"),
         )
 
         def opener(request, timeout):
@@ -86,8 +87,9 @@ class ProviderAdapterTests(unittest.TestCase):
         transport = JsonHttpTransport(attempts=1, opener=opener, sleeper=lambda _: None)
         with self.assertRaises(ProviderTransportError) as raised:
             transport.post_json("https://example.invalid", {}, {})
-        self.assertIs(raised.exception.failure_kind, FailureKind.FREE_QUOTA_EXHAUSTED)
+        self.assertIs(raised.exception.failure_kind, FailureKind.RATE_LIMITED)
         self.assertEqual(raised.exception.status_code, 429)
+        self.assertEqual(raised.exception.retry_after_seconds, 7.0)
 
     def test_cloudflare_success_maps_to_verification_check(self):
         transport = RecordingTransport(
@@ -112,6 +114,24 @@ class ProviderAdapterTests(unittest.TestCase):
             error=ProviderTransportError(
                 failure_kind=FailureKind.FREE_QUOTA_EXHAUSTED,
                 status_code=429,
+            )
+        )
+        verifier = CloudflareClaimVerifier("account", "token", transport)
+        check = verifier.verify(
+            check_id="c1",
+            claim_text="claim",
+            evidence_text="evidence",
+            evidence_ids=("e1",),
+        )
+        self.assertIsNone(check.entailed)
+        self.assertEqual(check.error_code, "free_quota_exhausted:429")
+
+    def test_cloudflare_specializes_known_3036_rate_limit_as_daily_quota(self):
+        transport = RecordingTransport(
+            error=ProviderTransportError(
+                failure_kind=FailureKind.RATE_LIMITED,
+                status_code=429,
+                detail='{"errors":[{"code":3036,"message":"daily free allocation"}]}',
             )
         )
         verifier = CloudflareClaimVerifier("account", "token", transport)

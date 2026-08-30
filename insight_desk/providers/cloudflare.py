@@ -5,13 +5,14 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from insight_desk.core import VerificationCheck
+from insight_desk.core import FailureKind, VerificationCheck
 
-from .transport import JsonHttpTransport, ProviderTransportError, require_secret
+from .transport import JsonHttpTransport, ProviderConfigError, ProviderTransportError
 
 
 CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 CLOUDFLARE_VERIFIER_ID = "cloudflare"
+_CLOUDFLARE_DAILY_FREE_ALLOCATION_CODE = 3036
 
 
 @dataclass(slots=True)
@@ -27,13 +28,58 @@ class CloudflareClaimVerifier:
         cls,
         *,
         transport: JsonHttpTransport | None = None,
+        gemini_transport: JsonHttpTransport | None = None,
         env: dict[str, str] | None = None,
-    ) -> "CloudflareClaimVerifier":
+    ):
+        """Build the logical primary-verifier slot from whichever zero-cost routes exist.
+
+        Cloudflare remains the first route when fully configured. Gemini is the next route when its
+        free-tier key is configured. Missing Cloudflare credentials are an availability state rather
+        than a reason to abort construction; partially configured Cloudflare credentials remain a
+        real configuration error and fail fast. The logical verifier id stays `cloudflare` so the
+        frozen two-slot verification policy is unchanged.
+        """
+
+        from .gemini import GeminiClaimVerifier, GeminiStructuredClient
+        from .resilience import FailoverClaimVerifier, UnavailableClaimVerifier
+
         source = dict(os.environ) if env is None else env
-        return cls(
-            account_id=require_secret(source, "CLOUDFLARE_ACCOUNT_ID"),
-            api_token=require_secret(source, "CLOUDFLARE_API_TOKEN"),
-            transport=transport or JsonHttpTransport(),
+        account_id = str(source.get("CLOUDFLARE_ACCOUNT_ID", "")).strip()
+        api_token = str(source.get("CLOUDFLARE_API_TOKEN", "")).strip()
+        if bool(account_id) != bool(api_token):
+            raise ProviderConfigError(
+                "Cloudflare verifier requires both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN"
+            )
+
+        routes: list[object] = []
+        if account_id and api_token:
+            routes.append(
+                cls(
+                    account_id=account_id,
+                    api_token=api_token,
+                    transport=transport or JsonHttpTransport(),
+                )
+            )
+
+        if GeminiStructuredClient.configured(source):
+            routes.append(
+                GeminiClaimVerifier(
+                    GeminiStructuredClient.from_env(
+                        env=source,
+                        transport=gemini_transport,
+                    )
+                )
+            )
+
+        if not routes:
+            return UnavailableClaimVerifier(
+                verifier_id=CLOUDFLARE_VERIFIER_ID,
+                model_id="unavailable:external-primary",
+                error_code="config_missing",
+            )
+        return FailoverClaimVerifier(
+            verifier_id=CLOUDFLARE_VERIFIER_ID,
+            routes=tuple(routes),
         )
 
     def verify(
@@ -121,6 +167,30 @@ class CloudflareClaimVerifier:
         return value
 
     @staticmethod
-    def _error_code(exc: ProviderTransportError) -> str:
+    def _is_daily_free_allocation_exhausted(exc: ProviderTransportError) -> bool:
+        if exc.status_code != 429:
+            return False
+        try:
+            payload = json.loads(exc.detail)
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+        if isinstance(payload, dict):
+            errors = payload.get("errors")
+            if isinstance(errors, list):
+                for item in errors:
+                    if isinstance(item, dict) and item.get("code") == _CLOUDFLARE_DAILY_FREE_ALLOCATION_CODE:
+                        return True
+        lowered = exc.detail.casefold()
+        return "daily free allocation" in lowered or (
+            "3036" in lowered and "allocation" in lowered
+        )
+
+    @classmethod
+    def _error_code(cls, exc: ProviderTransportError) -> str:
         status = str(exc.status_code) if exc.status_code is not None else "none"
+        if (
+            exc.failure_kind is FailureKind.RATE_LIMITED
+            and cls._is_daily_free_allocation_exhausted(exc)
+        ):
+            return f"{FailureKind.FREE_QUOTA_EXHAUSTED.value}:{status}"
         return f"{exc.failure_kind.value}:{status}"

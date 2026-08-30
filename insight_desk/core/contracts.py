@@ -46,6 +46,7 @@ class VerificationVerdict(StrEnum):
 class RenderMode(StrEnum):
     GENERATED = "generated"
     EXTRACTIVE_FALLBACK = "extractive_fallback"
+    CANONICAL_RECOVERY = "canonical_recovery"
 
 
 def _require_text(name: str, value: str) -> None:
