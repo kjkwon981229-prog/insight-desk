@@ -208,15 +208,12 @@ class CanonicalClaimVerificationTests(unittest.TestCase):
         self.assertTrue((result.error_code or "").startswith(CANONICAL_FIDELITY_INDETERMINATE))
         self.assertEqual(len(base.calls), 1)
 
-    def test_production_phase7_wires_both_frozen_verifier_slots_through_canonical_fidelity(self) -> None:
-        seen: list[tuple[object, object, GenerationRequest]] = []
-        sentinel = SimpleNamespace(
-            final_generation=SimpleNamespace(render_mode=RenderMode.GENERATED)
-        )
+    def test_production_phase7_does_not_use_legacy_generated_result_or_fidelity_adapter(self) -> None:
+        legacy_calls: list[GenerationRequest] = []
 
-        def current(request: GenerationRequest, **kwargs):
-            seen.append((kwargs["primary_verifier"], kwargs["secondary_verifier"], request))
-            return sentinel
+        def current(request: GenerationRequest, **_kwargs):
+            legacy_calls.append(request)
+            raise AssertionError("legacy provider generation must not own production-visible text")
 
         core = SimpleNamespace(produce_phase7_entry_candidate=current)
         scope_phase7_story_readmission(core, _registry())
@@ -236,16 +233,19 @@ class CanonicalClaimVerificationTests(unittest.TestCase):
             secondary_verifier=secondary,
         )
 
-        self.assertIs(returned, sentinel)
-        self.assertEqual(len(seen), 1)
-        routed_primary, routed_secondary, routed_request = seen[0]
-        self.assertIsInstance(routed_primary, CanonicalFidelityVerifier)
-        self.assertIsInstance(routed_secondary, CanonicalFidelityVerifier)
-        self.assertIs(routed_primary.base, primary)
-        self.assertIs(routed_secondary.base, secondary)
-        self.assertIn("action=2027년부터 PSAT를 별도 검정시험으로 전환", routed_primary.canonical_text)
-        self.assertEqual(routed_primary.canonical_text, routed_secondary.canonical_text)
-        self.assertEqual(routed_request.event.event_id, EVENT_ID)
+        self.assertIsNotNone(returned)
+        self.assertEqual(legacy_calls, [])
+        self.assertIs(returned.final_generation.render_mode, RenderMode.CANONICAL_RECOVERY)
+        self.assertEqual(
+            returned.final_generation.draft.headline,
+            "인사혁신처, 2027년부터 PSAT를 별도 검정시험으로 전환해 기존 1차 시험을 대체한다고 밝혔다",
+        )
+        self.assertIn("사건: 2027년부터 PSAT를 별도 검정시험으로 전환", returned.final_generation.draft.summary)
+        self.assertNotIn("도입", returned.final_generation.draft.headline)
+        self.assertTrue(returned.publishable)
+        self.assertEqual(len(primary.calls), 2)
+        self.assertEqual(len(secondary.calls), 2)
+        self.assertTrue(all(call[1] == BODY for call in primary.calls + secondary.calls))
 
 
 if __name__ == "__main__":
