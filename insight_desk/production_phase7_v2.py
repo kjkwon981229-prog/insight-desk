@@ -2,11 +2,11 @@ from __future__ import annotations
 
 """Production Phase 7 ownership after CanonicalEvent promotion.
 
-Historical generation helpers remain available for replay compatibility, but production-visible text
-is rendered deterministically from CanonicalEvent. This removes the remaining semantic mutation
-surface between Event Understanding and publication: provider-generated prose may not replace the
-canonical event meaning in the user-visible briefing. Exact canonical evidence remains bound to the
-request and ordinary claim Verification still has to support the deterministic projection.
+Historical generation helpers remain available for replay compatibility, but production-visible
+meaning is now the exact source proposition already admitted into CanonicalEvent evidence. Flat
+actor/action/object fields remain useful identity and metadata projections; they may not replace the
+source proposition as the user-visible semantic authority. Exact-source drafts are still required to
+pass the existing preservation contract and deterministic source-proof Verification.
 """
 
 from contextlib import contextmanager
@@ -31,7 +31,7 @@ from insight_desk.generation_pipeline import (
     GenerationRecoveryResult,
 )
 from insight_desk.phase7 import Phase7EntryCandidate
-from insight_desk.verification_pipeline import verify_generated_draft
+from insight_desk.verification_pipeline import verify_exact_source_draft
 
 
 _ORIGINAL_GENERATION_STORY_ADMISSION = generation_module.validate_story_admission
@@ -48,10 +48,9 @@ class CanonicalEventRegistry(Protocol):
 class CanonicalGenerationRequest(GenerationRequest):
     """Production GenerationRequest whose semantic payload is one CanonicalEvent.
 
-    ``facts`` remains a compatibility projection for the existing preservation helpers. ``evidence``
-    contains only exact EvidenceSpan ranges that correspond to canonical evidence refs. ``fact_text``
-    remains available as a canonical semantic serialization for audit/tests, but production-visible
-    text is no longer delegated to a prose-generation provider.
+    ``facts`` remains a compatibility projection for preservation/identity helpers. ``evidence``
+    contains only exact EvidenceSpan ranges corresponding to canonical evidence refs. ``fact_text``
+    remains an audit/metadata serialization; it is not the production-visible semantic authority.
     """
 
     canonical_event: CanonicalEvent
@@ -149,7 +148,7 @@ def build_canonical_generation_request(
     registry: CanonicalEventRegistry,
     request: GenerationRequest,
 ) -> CanonicalGenerationRequest:
-    """Replace legacy semantic input with canonical semantics before visible rendering."""
+    """Replace legacy semantic input with canonical provenance before visible rendering."""
 
     if len(request.event.fact_ids) != 1:
         raise GenerationContractError(
@@ -186,33 +185,8 @@ def build_canonical_generation_request(
     )
 
 
-def _readable_canonical_summary(
-    *,
-    actor: str,
-    action: str,
-    object_text: str,
-    evidence_text: str,
-) -> str:
-    """Format exact canonical slots without rewriting their semantics.
-
-    Presentation may remove redundant field labels, but it may not conjugate, paraphrase, infer, or
-    otherwise alter actor/action/object text. If the action already contains the actor literally, the
-    actor is not repeated. A separately surfaced object retains its role label because dropping that
-    label could change the argument relationship.
-    """
-
-    summary_parts = [action] if actor.casefold() in action.casefold() else [actor, action]
-    if (
-        object_text
-        and object_text.casefold() not in action.casefold()
-        and object_text in evidence_text
-    ):
-        summary_parts.append(f"대상: {object_text}")
-    return " · ".join(summary_parts)
-
-
 class CanonicalEventRecoveryGenerator:
-    """Deterministic visible projection from CanonicalEvent, never free-form article prose."""
+    """Render the one exact canonical source proposition without semantic rewriting."""
 
     def __init__(self, registry: CanonicalEventRegistry) -> None:
         self.registry = registry
@@ -223,31 +197,21 @@ class CanonicalEventRecoveryGenerator:
             raise GenerationContractError("canonical recovery event identity mismatch")
         if event.fact_ids and tuple(event.fact_ids) != tuple(request.event.fact_ids):
             raise GenerationContractError("canonical recovery fact lineage mismatch")
+        if len(request.evidence_ids) != 1:
+            raise GenerationContractError(
+                "source-grounded canonical recovery requires exactly one proposition evidence span"
+            )
 
-        actor = event.actor.strip()
-        action = event.action.strip()
-        if not actor or not action:
-            raise GenerationContractError("canonical recovery requires actor and action")
-
-        # Only the evidence-bound core semantic slots are surfaced. CanonicalEvent can carry
-        # normalized event_time/metric/location fields whose representation is useful for identity
-        # and authority but is not necessarily a literal surface found in the cited EvidenceSpan.
-        # Rendering those normalized values would make the preservation gate see a novel date/number
-        # even though the underlying event is correct. Keep those fields downstream metadata-only.
-        headline = action if actor.casefold() in action.casefold() else f"{actor}, {action}"
-        object_text = (event.object or "").strip()
-        summary = _readable_canonical_summary(
-            actor=actor,
-            action=action,
-            object_text=object_text,
-            evidence_text=request.evidence_text,
-        )
+        evidence_id = request.evidence_ids[0]
+        proposition = request.evidence[evidence_id].text.strip()
+        if not proposition:
+            raise GenerationContractError("canonical source proposition must be non-empty")
 
         return GeneratedDraft(
             event_id=event.event_id,
-            headline=headline,
-            summary=summary,
-            evidence_ids=request.evidence_ids,
+            headline=proposition,
+            summary=proposition,
+            evidence_ids=(evidence_id,),
         )
 
 
@@ -302,7 +266,7 @@ def _canonical_recovery_result(
 
 
 def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalEventRegistry) -> None:
-    """Install CanonicalEvent as the sole production-visible text authority."""
+    """Install exact canonical source evidence as the sole production-visible semantic authority."""
 
     generation_module.validate_story_admission = _ORIGINAL_GENERATION_STORY_ADMISSION
     generation_pipeline_module.validate_story_admission = _ORIGINAL_PIPELINE_STORY_ADMISSION
@@ -326,11 +290,6 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
         if not isinstance(request, GenerationRequest):
             raise GenerationContractError("production Phase7 requires GenerationRequest")
 
-        primary_verifier = kwargs.get("primary_verifier")
-        secondary_verifier = kwargs.get("secondary_verifier")
-        if primary_verifier is None or secondary_verifier is None:
-            raise GenerationContractError("production canonical recovery requires claim verifiers")
-
         canonical_request = build_canonical_generation_request(registry, request)
         try:
             canonical_generation = _canonical_recovery_result(
@@ -340,11 +299,9 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
         except GenerationContractError:
             return None
 
-        verification = verify_generated_draft(
+        verification = verify_exact_source_draft(
             canonical_request,
             canonical_generation.draft,
-            primary=primary_verifier,
-            secondary=secondary_verifier,
         )
         return Phase7EntryCandidate(
             event_id=canonical_request.event.event_id,
