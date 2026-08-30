@@ -5,16 +5,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 
-from insight_desk.core import CandidateEvent, EventFact, RawArticle, SourceProvenance
+from insight_desk.core import (
+    CandidateEvent,
+    CanonicalEvent,
+    EventFact,
+    RawArticle,
+    SourceProvenance,
+)
+import insight_desk.generation as generation_module
+import insight_desk.generation_pipeline as generation_pipeline_module
+import insight_desk.production_orchestrator_v2 as orchestrator_v2
 from insight_desk.production_orchestrator_v2 import (
     CanonicalIdentityEngine,
     ProductionV2Registry,
-    canonical_event_from_candidate,
     source_document_from_article,
 )
 from insight_desk.production_runtime_v2 import production_v2_runtime
-import insight_desk.generation as generation_module
-import insight_desk.generation_pipeline as generation_pipeline_module
 import insight_desk.production_phase7_v2 as phase7_scope
 import scripts.phase11_daily_production as production
 import scripts.validate_feed_artifact as feed_validator
@@ -119,9 +125,13 @@ class ProductionAuthorityWiringTests(unittest.TestCase):
         )
         self.assertFalse(hasattr(production._core, "_INSIGHT_DESK_V2_REGISTRY"))
 
+    def test_v2_facade_does_not_export_direct_candidate_to_canonical_builder(self) -> None:
+        self.assertFalse(hasattr(orchestrator_v2, "canonical_event_from_candidate"))
+
     def test_v2_authority_exists_only_inside_actual_runtime_scope(self) -> None:
         original_relevance = production._core.event_topic_relevant
         original_phase7 = production._core.produce_phase7_entry_candidate
+        original_semantic = production._core.SemanticPipeline
         with production_v2_runtime(production._core) as registry:
             self.assertIsInstance(registry, ProductionV2Registry)
             self.assertIsNot(production._core.event_topic_relevant, original_relevance)
@@ -133,8 +143,17 @@ class ProductionAuthorityWiringTests(unittest.TestCase):
                 )
             )
             self.assertIs(production._core._INSIGHT_DESK_V2_REGISTRY, registry)
+            self.assertEqual(
+                production._core.SemanticPipeline.__module__,
+                "insight_desk.production_event_understanding_lifecycle_v2",
+            )
+            self.assertEqual(
+                production._core.SemanticPipeline.__name__,
+                "EventUnderstandingSemanticPipeline",
+            )
         self.assertIs(production._core.event_topic_relevant, original_relevance)
         self.assertIs(production._core.produce_phase7_entry_candidate, original_phase7)
+        self.assertIs(production._core.SemanticPipeline, original_semantic)
         self.assertFalse(hasattr(production._core, "_INSIGHT_DESK_V2_REGISTRY"))
         self.assertIs(
             generation_module.validate_story_admission,
@@ -152,53 +171,6 @@ class ProductionAuthorityWiringTests(unittest.TestCase):
         )
         self.assertEqual(source.url, raw.provenance.url)
         self.assertEqual(source.publication_time, raw.provenance.published_at)
-
-    def test_canonical_event_builder_carries_structured_event_without_reinterpreting_source(self) -> None:
-        raw = article("article:event", "한국은행 금융통화위원회는 27일 기준금리를 결정한다.")
-        source = source_document_from_article(raw)
-        event, fact = event_fact(
-            article_id=raw.article_id,
-            event_id="event:bok",
-            fact_id="fact:bok",
-            evidence_id="evidence:bok",
-        )
-        canonical = canonical_event_from_candidate(
-            event,
-            facts={fact.fact_id: fact},
-            source=source,
-        )
-        self.assertEqual(canonical.event_id, event.event_id)
-        self.assertEqual(canonical.actor, fact.subject)
-        self.assertEqual(canonical.action, fact.action)
-        self.assertEqual(canonical.object, fact.object)
-        self.assertEqual(canonical.event_time, fact.event_date)
-        self.assertEqual(canonical.source_ids, (source.source_id,))
-        self.assertEqual(canonical.publication_time, source.publication_time)
-
-    def test_non_iso_extractor_date_is_not_promoted_into_canonical_event_time(self) -> None:
-        raw = article("article:date", "한국은행 금융통화위원회는 오늘 기준금리를 결정한다.")
-        source = source_document_from_article(raw)
-        event, fact = event_fact(
-            article_id=raw.article_id,
-            event_id="event:date",
-            fact_id="fact:date",
-            evidence_id="evidence:date",
-        )
-        fact = EventFact(
-            fact_id=fact.fact_id,
-            subject=fact.subject,
-            action=fact.action,
-            object=fact.object,
-            evidence_ids=fact.evidence_ids,
-            event_date="오늘",
-            participants=fact.participants,
-        )
-        canonical = canonical_event_from_candidate(
-            event,
-            facts={fact.fact_id: fact},
-            source=source,
-        )
-        self.assertIsNone(canonical.event_time)
 
 
 class CanonicalIdentityOwnerTests(unittest.TestCase):
@@ -224,18 +196,32 @@ class CanonicalIdentityOwnerTests(unittest.TestCase):
             evidence_id="evidence:bok-right",
         )
 
-        registry = ProductionV2Registry()
-        for raw, event, fact in (
-            (left_article, left_event, left_fact),
-            (right_article, right_event, right_fact),
-        ):
-            source = source_document_from_article(raw)
-            registry.sources_by_article[raw.article_id] = source
-            registry.events_by_id[event.event_id] = canonical_event_from_candidate(
-                event,
-                facts={fact.fact_id: fact},
-                source=source,
-            )
+        registry = ProductionV2Registry(
+            events_by_id={
+                left_event.event_id: CanonicalEvent(
+                    event_id=left_event.event_id,
+                    topic="economy",
+                    actor="한국은행 금융통화위원회",
+                    action="기준금리를 결정한다",
+                    object="기준금리",
+                    event_type="news_event",
+                    source_ids=("source:bok-left",),
+                    event_time="2026-08-27",
+                    participants=("한국은행", "금융통화위원회"),
+                ),
+                right_event.event_id: CanonicalEvent(
+                    event_id=right_event.event_id,
+                    topic="economy",
+                    actor="한은 금통위",
+                    action="기준금리를 결정한다",
+                    object="기준금리",
+                    event_type="news_event",
+                    source_ids=("source:bok-right",),
+                    event_time="2026-08-27",
+                    participants=("한국은행", "금융통화위원회"),
+                ),
+            }
+        )
 
         owner = CanonicalIdentityEngine(registry)
         facts = {
