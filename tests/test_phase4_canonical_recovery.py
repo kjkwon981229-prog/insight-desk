@@ -85,8 +85,10 @@ class CanonicalRecoveryContractTests(unittest.TestCase):
         self.assertEqual(draft.headline, "서울경기춤연구회, 9월 11일 전통무용 공연을 선보인다")
         self.assertEqual(
             draft.summary,
-            "주체: 서울경기춤연구회 · 사건: 9월 11일 전통무용 공연을 선보인다 · 대상: 명가월륜: 만월",
+            "서울경기춤연구회 · 9월 11일 전통무용 공연을 선보인다 · 대상: 명가월륜: 만월",
         )
+        self.assertNotIn("주체:", draft.summary)
+        self.assertNotIn("사건:", draft.summary)
         self.assertNotIn("축제는 한국 전통무용", draft.combined_text)
         self.assertNotIn("참여 예술가들의 이력", draft.combined_text)
         self.assertEqual(draft.evidence_ids, ("evidence:graz",))
