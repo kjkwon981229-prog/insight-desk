@@ -3,6 +3,7 @@ from __future__ import annotations
 """Execution-scoped installation of Canonical V2 production owners."""
 
 from contextlib import contextmanager
+from functools import partial
 from types import ModuleType
 
 import insight_desk.generation as generation_module
@@ -146,7 +147,7 @@ def production_v2_runtime(core_module: ModuleType):
         core_module.expand_deferred_event_relevance = expand_deferred_event_relevance
         core_module.expand_deferred_event_understanding = expand_deferred_event_understanding
         core_module._attempt = audited_attempt
-        core_module.Phase6EventEngine = EvidenceIntegrityPhase6EventEngine
+        core_module.Phase6EventEngine = partial(EvidenceIntegrityPhase6EventEngine, registry)
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
         scope_phase7_story_readmission(core_module, registry)
         yield registry
