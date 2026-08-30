@@ -186,6 +186,31 @@ def build_canonical_generation_request(
     )
 
 
+def _readable_canonical_summary(
+    *,
+    actor: str,
+    action: str,
+    object_text: str,
+    evidence_text: str,
+) -> str:
+    """Format exact canonical slots without rewriting their semantics.
+
+    Presentation may remove redundant field labels, but it may not conjugate, paraphrase, infer, or
+    otherwise alter actor/action/object text. If the action already contains the actor literally, the
+    actor is not repeated. A separately surfaced object retains its role label because dropping that
+    label could change the argument relationship.
+    """
+
+    summary_parts = [action] if actor.casefold() in action.casefold() else [actor, action]
+    if (
+        object_text
+        and object_text.casefold() not in action.casefold()
+        and object_text in evidence_text
+    ):
+        summary_parts.append(f"대상: {object_text}")
+    return " · ".join(summary_parts)
+
+
 class CanonicalEventRecoveryGenerator:
     """Deterministic visible projection from CanonicalEvent, never free-form article prose."""
 
@@ -210,16 +235,18 @@ class CanonicalEventRecoveryGenerator:
         # Rendering those normalized values would make the preservation gate see a novel date/number
         # even though the underlying event is correct. Keep those fields downstream metadata-only.
         headline = action if actor.casefold() in action.casefold() else f"{actor}, {action}"
-        summary_parts = [f"주체: {actor}", f"사건: {action}"]
         object_text = (event.object or "").strip()
-        if object_text and object_text.casefold() not in action.casefold():
-            if object_text in request.evidence_text:
-                summary_parts.append(f"대상: {object_text}")
+        summary = _readable_canonical_summary(
+            actor=actor,
+            action=action,
+            object_text=object_text,
+            evidence_text=request.evidence_text,
+        )
 
         return GeneratedDraft(
             event_id=event.event_id,
             headline=headline,
-            summary=" · ".join(summary_parts),
+            summary=summary,
             evidence_ids=request.evidence_ids,
         )
 
