@@ -204,21 +204,17 @@ class CanonicalEventRecoveryGenerator:
         if not actor or not action:
             raise GenerationContractError("canonical recovery requires actor and action")
 
+        # Only the evidence-bound core semantic slots are surfaced. CanonicalEvent can carry
+        # normalized event_time/metric/location fields whose representation is useful for identity
+        # and authority but is not necessarily a literal surface found in the cited EvidenceSpan.
+        # Rendering those normalized values would make the preservation gate see a novel date/number
+        # even though the underlying event is correct. Keep those fields downstream metadata-only.
         headline = action if actor.casefold() in action.casefold() else f"{actor}, {action}"
         summary_parts = [f"주체: {actor}", f"사건: {action}"]
-        if event.object is not None:
-            summary_parts.append(f"대상: {event.object.strip()}")
-        if event.event_time is not None:
-            summary_parts.append(f"시점: {event.event_time}")
-        if event.location is not None:
-            summary_parts.append(f"장소: {event.location.strip()}")
-        if event.cause is not None:
-            summary_parts.append(f"원인: {event.cause.strip()}")
-        if event.metric is not None and event.value is not None:
-            metric_value = f"{event.metric}: {event.value}"
-            if event.unit is not None:
-                metric_value += f" {event.unit}"
-            summary_parts.append(metric_value)
+        object_text = (event.object or "").strip()
+        if object_text and object_text.casefold() not in action.casefold():
+            if object_text in request.evidence_text:
+                summary_parts.append(f"대상: {object_text}")
 
         return GeneratedDraft(
             event_id=event.event_id,
