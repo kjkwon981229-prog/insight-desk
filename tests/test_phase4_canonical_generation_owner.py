@@ -21,6 +21,7 @@ from insight_desk.generation import GeneratedDraft, GenerationContractError, Gen
 from insight_desk.generation_pipeline import generate_with_recovery
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 from insight_desk.production_phase7_v2 import (
+    CanonicalEventRecoveryGenerator,
     CanonicalGenerationRequest,
     build_canonical_generation_request,
     scope_phase7_story_readmission,
@@ -117,6 +118,87 @@ def _registry(canonical: CanonicalEvent | None = None) -> ProductionV2Registry:
     )
 
 
+def _projection_draft(
+    *,
+    topic: str,
+    actor: str,
+    action: str,
+    body: str,
+    object_text: str | None = None,
+) -> GeneratedDraft:
+    token = hashlib.sha256(f"{topic}\x1f{actor}\x1f{action}\x1f{body}".encode("utf-8")).hexdigest()[:12]
+    article_id = f"article:projection:{token}"
+    event_id = f"event:projection:{token}"
+    fact_id = f"fact:projection:{token}"
+    evidence_id = f"evidence:projection:{token}"
+    source_id = f"source-document:{article_id}"
+
+    source = SourceDocument(
+        source_id=source_id,
+        candidate_ids=(article_id,),
+        publisher="fixture.example",
+        url=f"https://fixture.example/{token}",
+        title=body,
+        body=body,
+        fetched_at=NOW,
+        publication_time=NOW,
+        retrieved_via="fixture",
+        content_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+    )
+    span = EvidenceSpan(
+        evidence_id=evidence_id,
+        article_id=article_id,
+        field=EvidenceField.BODY,
+        start=0,
+        end=len(body),
+        text=body,
+    )
+    legacy_fact = EventFact(
+        fact_id=fact_id,
+        subject="legacy-subject",
+        action="legacy-action",
+        evidence_ids=(evidence_id,),
+        certainty=Certainty.ASSERTED,
+    )
+    candidate = CandidateEvent(
+        event_id=event_id,
+        topic_id=topic,
+        fact_ids=(fact_id,),
+        article_ids=(article_id,),
+    )
+    canonical = CanonicalEvent(
+        event_id=event_id,
+        topic=topic,
+        actor=actor,
+        action=action,
+        object=object_text,
+        event_type="news_event",
+        source_ids=(source_id,),
+        publication_time=NOW,
+        certainty=Certainty.ASSERTED,
+        evidence_refs=(
+            CanonicalEvidenceRef(
+                source_id=source_id,
+                field="body",
+                start=0,
+                end=len(body),
+                text_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
+            ),
+        ),
+    )
+    request = GenerationRequest(
+        event=candidate,
+        facts={fact_id: legacy_fact},
+        evidence={evidence_id: span},
+    )
+    registry = ProductionV2Registry(
+        sources_by_article={article_id: source},
+        events_by_id={event_id: canonical},
+    )
+    canonical_request = build_canonical_generation_request(registry, request)
+    return CanonicalEventRecoveryGenerator(registry).generate(canonical_request)
+
+
 class _RecordingGenerator:
     def __init__(self) -> None:
         self.requests: list[GenerationRequest] = []
@@ -205,15 +287,106 @@ class CanonicalGenerationOwnerTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(returned)
+        assert returned is not None
         self.assertEqual(legacy_phase7_calls, [])
         self.assertEqual(primary_generator.requests, [])
         self.assertIs(returned.final_generation.render_mode, RenderMode.CANONICAL_RECOVERY)
         self.assertEqual(returned.final_generation.draft.headline, "한국은행, 기준금리를 동결했다")
-        self.assertIn("주체: 한국은행", returned.final_generation.draft.summary)
-        self.assertIn("사건: 기준금리를 동결했다", returned.final_generation.draft.summary)
+        self.assertEqual(returned.final_generation.draft.summary, "한국은행 · 기준금리를 동결했다")
+        self.assertNotIn("주체:", returned.final_generation.draft.summary)
+        self.assertNotIn("사건:", returned.final_generation.draft.summary)
         self.assertTrue(returned.publishable)
         self.assertTrue(primary_verifier.calls)
         self.assertTrue(secondary_verifier.calls)
+
+    def test_representative_visible_projection_preserves_canonical_slots_exactly(self) -> None:
+        fixtures = (
+            {
+                "name": "economy",
+                "topic": "economy",
+                "actor": "한국은행",
+                "action": "기준금리를 동결했다",
+                "body": "한국은행은 기준금리를 동결했다.",
+                "object_text": "기준금리",
+                "summary": "한국은행 · 기준금리를 동결했다",
+            },
+            {
+                "name": "kbo",
+                "topic": "kbo_hanwha",
+                "actor": "한화 이글스",
+                "action": "롯데 자이언츠를 5대 3으로 이겼다",
+                "body": "한화 이글스는 롯데 자이언츠를 5대 3으로 이겼다.",
+                "object_text": "롯데 자이언츠",
+                "summary": "한화 이글스 · 롯데 자이언츠를 5대 3으로 이겼다",
+            },
+            {
+                "name": "ai",
+                "topic": "ai_tech",
+                "actor": "오픈AI",
+                "action": "새 API 기능을 공개했다",
+                "body": "오픈AI는 새 API 기능을 공개했다.",
+                "object_text": "새 API 기능",
+                "summary": "오픈AI · 새 API 기능을 공개했다",
+            },
+            {
+                "name": "psat",
+                "topic": "economy",
+                "actor": "인사혁신처",
+                "action": "2027년부터 PSAT을 별도 검정시험으로 시행한다",
+                "body": "인사혁신처는 2027년부터 PSAT을 별도 검정시험으로 시행한다.",
+                "object_text": "PSAT",
+                "summary": "인사혁신처 · 2027년부터 PSAT을 별도 검정시험으로 시행한다",
+            },
+        )
+        for fixture in fixtures:
+            with self.subTest(fixture["name"]):
+                draft = _projection_draft(
+                    topic=fixture["topic"],
+                    actor=fixture["actor"],
+                    action=fixture["action"],
+                    body=fixture["body"],
+                    object_text=fixture["object_text"],
+                )
+                self.assertEqual(draft.summary, fixture["summary"])
+                self.assertIn(fixture["actor"], draft.combined_text)
+                self.assertIn(fixture["action"], draft.combined_text)
+                self.assertNotIn("주체:", draft.summary)
+                self.assertNotIn("사건:", draft.summary)
+
+    def test_projection_does_not_repeat_actor_already_present_in_action(self) -> None:
+        action = "한국은행이 기준금리를 동결했다"
+        draft = _projection_draft(
+            topic="economy",
+            actor="한국은행",
+            action=action,
+            body=action + ".",
+            object_text="기준금리",
+        )
+        self.assertEqual(draft.headline, action)
+        self.assertEqual(draft.summary, action)
+
+    def test_projection_keeps_explicit_object_role_when_action_does_not_contain_it(self) -> None:
+        draft = _projection_draft(
+            topic="economy",
+            actor="정부",
+            action="개편안을 발표했다",
+            body="정부는 공무원 채용시험 개편안을 발표했다.",
+            object_text="공무원 채용시험",
+        )
+        self.assertEqual(draft.summary, "정부 · 개편안을 발표했다 · 대상: 공무원 채용시험")
+
+    def test_psat_projection_cannot_mutate_separate_test_into_adoption(self) -> None:
+        action = "2027년부터 PSAT을 별도 검정시험으로 시행한다"
+        draft = _projection_draft(
+            topic="economy",
+            actor="인사혁신처",
+            action=action,
+            body="인사혁신처는 2027년부터 PSAT을 별도 검정시험으로 시행한다.",
+            object_text="PSAT",
+        )
+        self.assertIn(action, draft.headline)
+        self.assertIn(action, draft.summary)
+        self.assertNotIn("도입", draft.combined_text)
 
 
 if __name__ == "__main__":
