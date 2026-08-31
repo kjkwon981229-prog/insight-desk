@@ -232,7 +232,7 @@ jobs:
           retention-days: 7
 
       - name: Upload PR failure diagnostics
-        if: always() && github.event_name == 'pull_request' && failure() && hashFiles('build/production-audit.json') != ''
+        if: always() && github.event_name == 'pull_request' && steps.state.outputs.publish != 'true' && hashFiles('build/production-audit.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: production-diagnostic-${{ github.run_id }}
