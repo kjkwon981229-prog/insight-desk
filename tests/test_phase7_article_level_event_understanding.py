@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 import unittest
 
 from insight_desk.core import (
@@ -31,6 +32,15 @@ class _Token:
 
 class _Morphology:
     def analyze(self, text: str):
+        if "," in text:
+            surfaces = tuple(value for value in re.split(r"[\s,·-]+", text) if value)
+            cursor = 0
+            tokens = []
+            for surface in surfaces:
+                start = text.find(surface, cursor)
+                tokens.append(_Token(surface, "NNG", start, start + len(surface)))
+                cursor = start + len(surface)
+            return tuple(tokens)
         if text in {"박준영", "한화", "한화와 NC", "앤트로픽", "한화 이글스와 NC 다이노스"}:
             return (_Token(text, "NNP", 0, max(1, len(text))),)
         if text in {"에이전트", "교육업체", "지난 6월과 7월 설명회", "설명회", "시험"}:
@@ -129,7 +139,7 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(result[lineup[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[lineup[0].event_id].publishable_event)
 
-    def test_conflicting_lead_and_title_bindings_abstain_for_preview_and_stats(self) -> None:
+    def test_preview_team_stat_is_context_when_scheduled_game_is_article_center(self) -> None:
         article = _article(
             topic="kbo_hanwha",
             title="한화-NC 맞대결 프리뷰, 선발 투수와 경기 전망",
@@ -142,12 +152,9 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         game = _event_fact(article, suffix="game", sentence="한화와 NC는 29일 대전에서 맞붙는다.", subject="한화와 NC", action="29일 대전에서 맞붙는다", topic="kbo_hanwha")
         stat = _event_fact(article, suffix="stat", sentence="한화는 팀 타율 리그 3위와 136홈런을 기록 중이다.", subject="한화", action="팀 타율 리그 3위와 136홈런을 기록 중이다", topic="kbo_hanwha")
         result = self._assess(article, (game, stat))
-        for event, _fact, _span in (game, stat):
-            decision = result[event.event_id]
-            self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
-            self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
-            self.assertFalse(decision.publishable_event)
-            self.assertEqual(decision.reasons, ("article_centrality_conflict",))
+        self.assertEqual(result[game[0].event_id].article_role, ArticleEventRole.PRIMARY)
+        self.assertEqual(result[stat[0].event_id].article_role, ArticleEventRole.CONTEXT)
+        self.assertFalse(result[stat[0].event_id].publishable_event)
 
     def test_past_attendance_metric_is_context_inside_current_support_program_article(self) -> None:
         article = _article(
@@ -248,6 +255,56 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
         self.assertEqual(decision.topic_relation, TopicRelation.BACKGROUND)
         self.assertFalse(decision.publishable_event)
+
+    def test_multiple_evidence_spans_cannot_become_one_primary_proposition(self) -> None:
+        article = _article(
+            topic="ai_tech",
+            title="공동 모델 공개와 평가 자료 발표",
+            body="한빛연구소는 공동 모델을 공개했다. 새론대학교는 평가 자료를 발표했다.",
+        )
+        first_text = "한빛연구소는 공동 모델을 공개했다."
+        second_text = "새론대학교는 평가 자료를 발표했다."
+        first = EvidenceSpan.from_article(
+            evidence_id="ev:multi:first",
+            article=article,
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(first_text),
+        )
+        second_start = article.body.index(second_text)
+        second = EvidenceSpan.from_article(
+            evidence_id="ev:multi:second",
+            article=article,
+            field=EvidenceField.BODY,
+            start=second_start,
+            end=second_start + len(second_text),
+        )
+        fact = EventFact(
+            fact_id="fact:multi",
+            subject="한빛연구소와 새론대학교",
+            action="공개하고 발표했다",
+            evidence_ids=(first.evidence_id, second.evidence_id),
+        )
+        event = CandidateEvent(
+            event_id="event:multi",
+            topic_id="ai_tech",
+            fact_ids=(fact.fact_id,),
+            article_ids=(article.article_id,),
+        )
+
+        decisions = assess_compatibility_article_understanding(
+            article,
+            events=(event,),
+            facts={fact.fact_id: fact},
+            evidence={first.evidence_id: first, second.evidence_id: second},
+            morphology=_Morphology(),
+            now=NOW,
+        )
+
+        decision = decisions[event.event_id]
+        self.assertIs(decision.status, UnderstandingStatus.UNRESOLVED)
+        self.assertFalse(decision.publishable_event)
+        self.assertEqual(decision.reasons, ("canonical_primary_proposition_unresolved",))
 
     def test_explicitly_old_event_inside_fresh_article_is_context(self) -> None:
         article = _article(

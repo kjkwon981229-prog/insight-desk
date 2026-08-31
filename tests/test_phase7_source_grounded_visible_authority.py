@@ -201,19 +201,17 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
         self.assertTrue(verify_exact_canonical_proposition_draft(request, draft).publishable)
 
     def test_multiple_canonical_proposition_spans_fail_closed(self) -> None:
-        registry, request = _fixture(
-            "한화와 NC는 29일 대전에서 맞붙는다.",
-            actor="NC",
-            action="맞붙는다",
-            topic="kbo_hanwha",
-            second_proposition="양 팀은 선발 라인업을 공개했다.",
-        )
-
         with self.assertRaisesRegex(
             GenerationContractError,
-            "requires exactly one proposition evidence span",
+            "requires one exact proposition",
         ):
-            CanonicalEventRecoveryGenerator(registry).generate(request)
+            _fixture(
+                "한화와 NC는 29일 대전에서 맞붙는다.",
+                actor="NC",
+                action="맞붙는다",
+                topic="kbo_hanwha",
+                second_proposition="양 팀은 선발 라인업을 공개했다.",
+            )
 
     def test_exact_source_verification_does_not_need_semantic_verifier(self) -> None:
         proposition = "한국은행은 기준금리를 동결했다."

@@ -14,8 +14,12 @@ class SingleEvidenceIntegrityOwnerTests(unittest.TestCase):
 
     def test_phase6_bridge_remains_the_evidence_integrity_owner(self) -> None:
         source = Path("insight_desk/production_phase6_v2.py").read_text(encoding="utf-8")
-        self.assertEqual(source.count("_evidence_integrity_assessment("), 1)
-        self.assertIn("material = _evidence_integrity_assessment(", source)
+        self.assertEqual(source.count("_canonical_proposition_integrity("), 2)
+        self.assertIn("material = _canonical_proposition_integrity(", source)
+        self.assertNotIn("_evidence_integrity_assessment", source)
+        self.assertNotIn("fact.subject", source)
+        self.assertNotIn("fact.action", source)
+        self.assertNotIn("fact.object", source)
 
 
 if __name__ == "__main__":

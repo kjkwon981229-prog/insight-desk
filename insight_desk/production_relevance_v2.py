@@ -138,7 +138,7 @@ def event_relevance_decision(
 def project_event_relevance(decision: RelevanceDecision) -> bool:
     """Compatibility bool projection that preserves the typed decision for the next audit write."""
 
-    _EVENT_RELEVANCE_AUDIT.set(decision)
+    _EVENT_RELEVANCE_AUDIT.set(decision if decision.requires_resolution else None)
     return decision.is_relevant
 
 

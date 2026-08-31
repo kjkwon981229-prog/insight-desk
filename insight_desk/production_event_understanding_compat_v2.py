@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Mapping, Protocol
 
-from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact, RawArticle
+from insight_desk.core import CandidateEvent, ContractError, EvidenceSpan, EventFact, RawArticle
 from insight_desk.core.event_understanding_v2 import (
     ArticleEventRole,
     TopicRelation,
@@ -89,7 +89,7 @@ def _morphology_tokens(text: str, morphology: MorphologyPort | None) -> tuple[ob
         return None
     try:
         return tuple(morphology.analyze(text))
-    except Exception:
+    except ContractError:
         return None
 
 
@@ -116,20 +116,6 @@ def _is_copular_definition(action: str, morphology: MorphologyPort | None) -> bo
         if str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA"))
     ]
     return bool(predicate_tags) and predicate_tags[-1] in {"VCP", "VCN"}
-
-
-def _actor_specificity(subject: str, morphology: MorphologyPort | None) -> int:
-    """Return 1 only when morphology exposes a proper/name-like actor surface.
-
-    Article centrality must not treat a numeric count or generic common noun as stronger merely
-    because it appears in the lead. NNP and foreign-name (SL) tokens are source-derived structural
-    evidence of a specific actor; no entity dictionary or topic vocabulary is used.
-    """
-
-    tokens = _morphology_tokens(subject, morphology)
-    if not tokens:
-        return 0
-    return int(any(str(getattr(token, "tag", "")) in {"NNP", "SL"} for token in tokens))
 
 
 def _evidence_is_local(
@@ -236,75 +222,95 @@ def _first_sentence_end(body: str) -> int:
     return min(boundaries) if boundaries else len(body)
 
 
-def _event_start(event: CandidateEvent, facts: Mapping[str, EventFact], evidence: Mapping[str, EvidenceSpan]) -> int:
-    if len(event.fact_ids) != 1:
-        return 2**31 - 1
-    fact = facts.get(event.fact_ids[0])
-    if fact is None:
-        return 2**31 - 1
-    starts = [evidence[evidence_id].start for evidence_id in fact.evidence_ids if evidence_id in evidence]
-    return min(starts) if starts else 2**31 - 1
+_TITLE_CONTENT_TAG_PREFIXES = (
+    "NN",
+    "NR",
+    "NP",
+    "VV",
+    "VA",
+    "SL",
+    "SN",
+    "XR",
+    "XPN",
+)
 
 
-def _title_binding(article: RawArticle, fact: EventFact) -> tuple[int, int]:
-    title = _normalized(article.title).casefold()
-    actor = _normalized(fact.subject).casefold()
-    object_text = _normalized(fact.object or "").casefold()
-    actor_bound = int(bool(actor) and actor in title)
-    object_bound = int(bool(object_text) and object_text in title)
-    return actor_bound, object_bound
-
-
-def _source_window_event_date_binding(article: RawArticle, fact: EventFact) -> int:
-    """Return one when an explicit event date falls inside the source's current time window.
-
-    This consumes the existing EventFact time representation; it does not infer an event from
-    words. The signal participates only in the article-level partial order, so it cannot make an
-    otherwise unproved candidate central by itself.
-    """
-
-    if fact.event_date is None or article.provenance.published_at is None:
-        return 0
-    try:
-        event_date = date.fromisoformat(fact.event_date)
-    except ValueError:
-        return 0
-    age_days = (article.provenance.published_at.date() - event_date).days
-    return int(-3 <= age_days <= 3)
-
-
-def _centrality_signals(
+def _exact_proposition_span(
     article: RawArticle,
     event: CandidateEvent,
     *,
     facts: Mapping[str, EventFact],
     evidence: Mapping[str, EvidenceSpan],
+) -> EvidenceSpan | None:
+    """Resolve one immutable proposition without consulting flat semantic fields."""
+
+    if len(event.fact_ids) != 1:
+        return None
+    fact = facts.get(event.fact_ids[0])
+    if fact is None or len(fact.evidence_ids) != 1:
+        return None
+    span = evidence.get(fact.evidence_ids[0])
+    if span is None or span.article_id not in event.article_ids:
+        return None
+    try:
+        span.validate_against(article)
+    except Exception:
+        return None
+    return span
+
+
+def _source_key(text: str) -> str:
+    return "".join(text.split()).casefold()
+
+
+def _title_content_units(
+    article: RawArticle,
     morphology: MorphologyPort | None,
-    lead_end: int,
-) -> tuple[int, int, int, int, int]:
-    """Return independent source-structure evidence without imposing a winner order."""
+) -> tuple[tuple[str, ...], ...]:
+    """Return source-derived title units; no topic or event vocabulary participates."""
 
-    fact = facts[event.fact_ids[0]]
-    start = _event_start(event, facts, evidence)
-    actor_bound, object_bound = _title_binding(article, fact)
-    actor_specific = _actor_specificity(fact.subject, morphology)
-    lead_bound = int(start < lead_end)
-    source_window_date_bound = _source_window_event_date_binding(article, fact)
+    tokens = _morphology_tokens(article.title, morphology)
+    if not tokens:
+        return ()
+    units: list[tuple[str, ...]] = []
+    for token in tokens:
+        tag = str(getattr(token, "tag", ""))
+        if not tag.startswith(_TITLE_CONTENT_TAG_PREFIXES):
+            continue
+        surface = str(getattr(token, "surface", "")).strip().casefold()
+        normalized = str(getattr(token, "normalized", "")).strip().casefold()
+        alternatives = tuple(dict.fromkeys(value for value in (surface, normalized) if value))
+        if alternatives and alternatives not in units:
+            units.append(alternatives)
+    return tuple(units)
+
+
+def _proposition_title_alignment(
+    proposition: str,
+    title_units: tuple[tuple[str, ...], ...],
+) -> tuple[int, int]:
+    """Measure literal title coverage in exact proposition bytes.
+
+    The score is used only to prove which source proposition is central. It never rewrites the
+    proposition and never becomes visible or canonical identity text.
+    """
+
+    source = _source_key(proposition)
+    matched_lengths = tuple(
+        max(
+            (len(value) for value in alternatives if _source_key(value) in source),
+            default=0,
+        )
+        for alternatives in title_units
+    )
     return (
-        actor_specific,
-        lead_bound,
-        actor_bound,
-        object_bound,
-        source_window_date_bound,
+        sum(length > 0 for length in matched_lengths),
+        sum(matched_lengths),
     )
 
 
-def _strictly_dominates(left: tuple[int, ...], right: tuple[int, ...]) -> bool:
-    """Require one candidate to be no weaker on every independent centrality signal."""
-
-    return all(a >= b for a, b in zip(left, right, strict=True)) and any(
-        a > b for a, b in zip(left, right, strict=True)
-    )
+def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
+    return span.field.value == "body" and span.start < lead_end
 
 
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
@@ -380,59 +386,65 @@ def assess_compatibility_article_understanding(
         return decisions
 
     lead_end = _first_sentence_end(article.body)
-    signals = {
-        event.event_id: _centrality_signals(
+    propositions = {
+        event.event_id: _exact_proposition_span(
             article,
             event,
             facts=facts,
             evidence=evidence,
-            morphology=morphology,
-            lead_end=lead_end,
         )
         for event in eligible
     }
-    dominant = [
-        event
-        for event in eligible
-        if all(
-            other.event_id == event.event_id
-            or _strictly_dominates(signals[event.event_id], signals[other.event_id])
-            for other in eligible
-        )
-    ]
-    if len(dominant) != 1:
+    if any(span is None for span in propositions.values()):
         for event in eligible:
             decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
                 status=UnderstandingStatus.UNRESOLVED,
                 article_role=ArticleEventRole.CONTEXT,
                 topic_relation=TopicRelation.UNRESOLVED,
                 publishable_event=False,
-                reasons=("article_centrality_conflict",),
+                reasons=("canonical_primary_proposition_unresolved",),
             )
         return decisions
 
-    winner = dominant[0]
-    winner_signals = signals[winner.event_id]
+    frozen_propositions = {
+        event_id: span
+        for event_id, span in propositions.items()
+        if span is not None
+    }
+    lead_events = [
+        event
+        for event in eligible
+        if _is_body_lead(frozen_propositions[event.event_id], lead_end=lead_end)
+    ]
+    winner: CandidateEvent | None = None
+    failure_reason = "article_centrality_unresolved"
+    if len(eligible) == 1:
+        if len(lead_events) == 1:
+            winner = lead_events[0]
+    elif len(lead_events) == 1:
+        title_units = _title_content_units(article, morphology)
+        if title_units:
+            alignment = {
+                event.event_id: _proposition_title_alignment(
+                    frozen_propositions[event.event_id].text,
+                    title_units,
+                )
+                for event in eligible
+            }
+            best = max(alignment.values())
+            best_events = [event for event in eligible if alignment[event.event_id] == best]
+            if len(best_events) == 1 and best_events[0] == lead_events[0] and best[0] > 0:
+                winner = lead_events[0]
+        failure_reason = "article_centrality_conflict"
 
-    # A lead-bound explicit event is source-central by discourse position. Outside the lead, the
-    # title must bind the specific actor itself; an object-only overlap can describe article context
-    # without making that deep-body fact the source-central event. Generic/common-noun surfaces or
-    # numeric counts must likewise not manufacture centrality from a shared headline noun. If the
-    # compatibility extractor missed the true lead event, hold the article instead of promoting a
-    # deep-body background fact.
-    actor_specific, lead_bound, actor_bound, _object_bound, _source_window_date = winner_signals
-    centrality_proven = bool(
-        lead_bound
-        or (actor_specific and actor_bound)
-    )
-    if not centrality_proven:
+    if winner is None:
         for event in eligible:
             decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
                 status=UnderstandingStatus.UNRESOLVED,
                 article_role=ArticleEventRole.CONTEXT,
                 topic_relation=TopicRelation.UNRESOLVED,
                 publishable_event=False,
-                reasons=("article_centrality_unresolved",),
+                reasons=(failure_reason,),
             )
         return decisions
 

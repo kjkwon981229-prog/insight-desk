@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import hashlib
 from pathlib import Path
 
 from insight_desk.core import (
     CandidateEvent,
+    CanonicalEvidenceRef,
     CanonicalEvent,
     EvidenceField,
     EvidenceSpan,
     EventFact,
     SelectionVerdict,
+    SourceDocument,
     TemporalState,
 )
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
@@ -23,6 +27,7 @@ def _fixture():
     fact_id = "fact:phase6-canonical"
     event_id = "event:phase6-canonical"
     text = "한국은행은 기준금리를 동결했다."
+    now = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
     span = EvidenceSpan(
         evidence_id=evidence_id,
         article_id=article_id,
@@ -35,8 +40,8 @@ def _fixture():
     # differs from the CanonicalEvent so this test proves Phase6 does not re-own temporal meaning.
     fact = EventFact(
         fact_id=fact_id,
-        subject="한국은행",
-        action="기준금리를 동결했다",
+        subject="축약 주체",
+        action="축약 동작",
         evidence_ids=(evidence_id,),
         temporal_state=TemporalState.PLANNED,
     )
@@ -57,9 +62,33 @@ def _fixture():
         event_time="2026-08-27",
         fact_ids=(fact_id,),
         evidence_ids=(evidence_id,),
+        evidence_refs=(
+            CanonicalEvidenceRef(
+                source_id="source:phase6-canonical",
+                field="body",
+                start=0,
+                end=len(text),
+                text_sha256=hashlib.sha256(text.encode()).hexdigest(),
+            ),
+        ),
         temporal_state=TemporalState.COMPLETED,
     )
-    registry = ProductionV2Registry(events_by_id={event_id: canonical})
+    source = SourceDocument(
+        source_id="source:phase6-canonical",
+        candidate_ids=(article_id,),
+        publisher="fixture",
+        url="https://example.com/phase6-canonical",
+        title="기준금리 동결",
+        body=text,
+        fetched_at=now,
+        publication_time=now,
+        retrieved_via="fixture",
+        content_sha256=hashlib.sha256(text.encode()).hexdigest(),
+    )
+    registry = ProductionV2Registry(
+        events_by_id={event_id: canonical},
+        sources_by_article={article_id: source},
+    )
     return event, fact, span, registry
 
 

@@ -19,6 +19,7 @@ from insight_desk.core import (
     EvidenceField,
     EvidenceSpan,
     RawArticle,
+    SelectionVerdict,
     SourceDocument,
     SourceProvenance,
     UnderstandingStatus,
@@ -31,6 +32,8 @@ from insight_desk.production_phase7_v2 import (
 )
 from insight_desk.production_runtime_v2 import production_v2_runtime
 from insight_desk.semantic import build_resilient_fact_extractor
+from insight_desk.semantic.events import Phase6SelectionContext
+from insight_desk.semantic.material import MaterialEventVerdict
 from insight_desk.verification_pipeline import DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID
 from scripts import phase11_daily_production_core as production_core
 
@@ -90,8 +93,13 @@ def _run_cases(
     default_clock = datetime(2026, 8, 30, 8, 0, tzinfo=UTC)
     outcomes: dict[str, _Outcome] = {}
     with production_v2_runtime(production_core) as registry:
+        topics = {
+            topic.topic_id: topic
+            for topic in production_core.load_topics(ROOT / "config" / "topics.json")
+        }
         semantic = production_core.SemanticPipeline()
         extractor = build_resilient_fact_extractor()
+        phase6 = production_core.Phase6EventEngine()
         for case in cases:
             clock = (clocks or {}).get(case.case_id, default_clock)
             article_id = case.article_id or f"production-contract:{case.case_id}"
@@ -112,6 +120,7 @@ def _run_cases(
                 body=case.body,
                 topic_ids=(case.topic,),
             )
+            topic = topics[case.topic]
             result = semantic.extract_article(
                 article,
                 topic_id=case.topic,
@@ -121,6 +130,12 @@ def _run_cases(
             evidence = {span.evidence_id: span for span in result.evidence}
             primary = []
             for event in result.events:
+                event_relevant = production_core.event_topic_relevant(
+                    event=event,
+                    facts=facts,
+                    evidence=evidence,
+                    topic=topic,
+                )
                 decision = production_core.event_understanding_decision(
                     event,
                     facts=facts,
@@ -132,6 +147,7 @@ def _run_cases(
                     decision.status is UnderstandingStatus.RESOLVED
                     and decision.article_role is ArticleEventRole.PRIMARY
                     and decision.publishable_event
+                    and event_relevant
                 ):
                     primary.append(event)
 
@@ -142,6 +158,23 @@ def _run_cases(
             event = primary[0]
             canonical = registry.canonical_event(event.event_id)
             source = registry.source_for_event(event.event_id)
+            assessment = phase6.assess_with_auto_material(
+                event,
+                facts=facts,
+                evidence=evidence,
+                selection_context=Phase6SelectionContext(
+                    topic_relevant=True,
+                    fresh=True,
+                    source_usable=True,
+                    identity_resolved=True,
+                ),
+            )
+            if (
+                assessment.material.verdict is not MaterialEventVerdict.MATERIAL
+                or assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE
+            ):
+                outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
+                continue
             candidate = production_core.produce_phase7_entry_candidate(
                 GenerationRequest(event=event, facts=facts, evidence=evidence)
             )
@@ -326,6 +359,22 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
                 "하늘연구원은 30일 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
                 "하늘연구원은 30일 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
             ),
+            _ArticleCase(
+                "high-cardinality-article",
+                "ai_tech",
+                "새빛연구소, AI 반도체 시제품 공개",
+                "새빛연구소는 AI 반도체 시제품을 공개했다. "
+                "새빛연구소는 연구 인력을 확대했다. "
+                "협력사는 생산 설비를 점검했다. "
+                "시험기관은 성능 자료를 발표했다. "
+                "투자사는 신규 펀드를 조성했다. "
+                "대학 연구팀은 후속 논문을 제출했다. "
+                "부품사는 공급 계약을 체결했다. "
+                "지역 기관은 지원 센터를 개소했다. "
+                "운영사는 교육 과정을 시작했다. "
+                "위원회는 다음 회의 일정을 확정했다.",
+                "새빛연구소는 AI 반도체 시제품을 공개했다.",
+            ),
         )
         outcomes = _run_cases(cases)
         correctly_published = 0
@@ -344,7 +393,7 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
                     {DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID},
                 )
                 correctly_published += 1
-        self.assertEqual(correctly_published, 5)
+        self.assertEqual(correctly_published, 6)
         self.assertEqual(correctly_abstained, 4)
 
     def test_multiple_canonical_evidence_spans_abstain(self) -> None:
@@ -422,19 +471,18 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             sources_by_article={"article:multi-ref": source},
             events_by_id={canonical.event_id: canonical},
         )
-        request = build_canonical_generation_request(
-            registry,
-            GenerationRequest(
-                event=candidate,
-                facts={fact.fact_id: fact},
-                evidence={span.evidence_id: span for span in spans},
-            ),
-        )
         with self.assertRaisesRegex(
             GenerationContractError,
-            "exactly one proposition evidence span",
+            "requires one exact proposition",
         ):
-            CanonicalEventRecoveryGenerator(registry).generate(request)
+            build_canonical_generation_request(
+                registry,
+                GenerationRequest(
+                    event=candidate,
+                    facts={fact.fact_id: fact},
+                    evidence={span.evidence_id: span for span in spans},
+                ),
+            )
 
     def test_source_document_rejects_a_body_digest_from_different_bytes(self) -> None:
         body = "원문 본문이다."

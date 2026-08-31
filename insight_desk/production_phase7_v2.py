@@ -13,11 +13,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 from types import ModuleType
-from typing import Protocol
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
-from insight_desk.core import CanonicalEvent, EventFact, RenderMode, SourceDocument
+from insight_desk.core import CanonicalEvent, ContractError, EventFact, RenderMode
 from insight_desk.generation import (
     GeneratedDraft,
     GenerationContractError,
@@ -31,17 +30,15 @@ from insight_desk.generation_pipeline import (
     GenerationRecoveryResult,
 )
 from insight_desk.phase7 import Phase7EntryCandidate
+from insight_desk.production_canonical_proposition_v2 import (
+    CanonicalEventRegistry,
+    resolve_exact_canonical_proposition,
+)
 from insight_desk.verification_pipeline import verify_exact_canonical_proposition_draft
 
 
 _ORIGINAL_GENERATION_STORY_ADMISSION = generation_module.validate_story_admission
 _ORIGINAL_PIPELINE_STORY_ADMISSION = generation_pipeline_module.validate_story_admission
-
-
-class CanonicalEventRegistry(Protocol):
-    def canonical_event(self, event_id: str) -> CanonicalEvent: ...
-
-    def source_for_event(self, event_id: str) -> SourceDocument: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,46 +105,33 @@ def _canonical_evidence_ids(
     closed instead of falling back to legacy semantic facts.
     """
 
-    if not event.evidence_refs:
-        raise GenerationContractError("canonical generation requires canonical evidence refs")
-    source = registry.source_for_event(event.event_id)
-    if tuple(event.source_ids) != (source.source_id,):
-        raise GenerationContractError("canonical generation requires one bound primary source")
+    try:
+        authority = resolve_exact_canonical_proposition(registry, event.event_id)
+    except ContractError as exc:
+        raise GenerationContractError("canonical generation requires one exact proposition") from exc
+    if authority.event != event:
+        raise GenerationContractError("canonical generation event changed during proposition resolution")
+    source = authority.source
+    ref = authority.ref
 
     allowed_ids = request.evidence_ids
-    matched_ids: list[str] = []
-    seen: set[str] = set()
-    for ref in event.evidence_refs:
-        try:
-            ref.validate_against(source)
-        except Exception as exc:
-            raise GenerationContractError("canonical evidence no longer matches SourceDocument") from exc
-
-        matched_id = None
-        for evidence_id in allowed_ids:
-            span = request.evidence[evidence_id]
-            if span.article_id not in source.candidate_ids:
-                continue
-            if span.field.value != ref.field or span.start != ref.start or span.end != ref.end:
-                continue
-            source_text = source.title if ref.field == "title" else source.body
-            exact_source_text = source_text[ref.start : ref.end]
-            if span.text != exact_source_text:
-                continue
-            digest = hashlib.sha256(exact_source_text.encode("utf-8")).hexdigest()
-            if digest != ref.text_sha256:
-                continue
-            matched_id = evidence_id
-            break
-        if matched_id is None:
-            raise GenerationContractError("canonical evidence ref is absent from generation provenance")
-        if matched_id not in seen:
-            seen.add(matched_id)
-            matched_ids.append(matched_id)
-
-    if not matched_ids:
-        raise GenerationContractError("canonical generation evidence mapping is empty")
-    return tuple(matched_ids)
+    matched_id = None
+    for evidence_id in allowed_ids:
+        span = request.evidence[evidence_id]
+        if span.article_id not in source.candidate_ids:
+            continue
+        if span.field.value != ref.field or span.start != ref.start or span.end != ref.end:
+            continue
+        if span.text != authority.text:
+            continue
+        digest = hashlib.sha256(authority.text.encode("utf-8")).hexdigest()
+        if digest != ref.text_sha256:
+            continue
+        matched_id = evidence_id
+        break
+    if matched_id is None:
+        raise GenerationContractError("canonical evidence ref is absent from generation provenance")
+    return (matched_id,)
 
 
 def build_canonical_generation_request(
@@ -209,14 +193,11 @@ class CanonicalEventRecoveryGenerator:
             )
 
         evidence_id = request.evidence_ids[0]
-        ref = event.evidence_refs[0]
-        source = self.registry.source_for_event(event.event_id)
         try:
-            ref.validate_against(source)
-        except Exception as exc:
+            authority = resolve_exact_canonical_proposition(self.registry, event.event_id)
+        except ContractError as exc:
             raise GenerationContractError("canonical source proposition is no longer valid") from exc
-        source_text = source.title if ref.field == "title" else source.body
-        proposition = source_text[ref.start : ref.end]
+        proposition = authority.text
         if request.evidence[evidence_id].text != proposition:
             raise GenerationContractError("canonical source proposition differs from generation provenance")
         if not proposition.strip():

@@ -25,12 +25,8 @@ from insight_desk.production_phase7_v2 import (
     _ORIGINAL_PIPELINE_STORY_ADMISSION,
     scope_phase7_story_readmission,
 )
-from insight_desk.production_relevance_resolution_v2 import (
-    BoundedRelevanceSourceExpansionLane,
-)
 from insight_desk.production_relevance_v2 import (
     ConfiguredLiteralRelevanceOwner,
-    rewrite_event_relevance_attempt,
 )
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
@@ -42,7 +38,6 @@ _CORE_HOOKS = (
     "relevance_decision",
     "event_topic_relevant",
     "event_understanding_decision",
-    "expand_deferred_event_relevance",
     "expand_deferred_event_understanding",
     "_attempt",
     "_visible_topic_headline_bound",
@@ -81,42 +76,11 @@ def production_v2_runtime(core_module: ModuleType):
     marker_snapshot = {name: getattr(core_module, name, _MISSING) for name in _MARKERS}
     generation_snapshot = generation_module.validate_story_admission
     pipeline_snapshot = generation_pipeline_module.validate_story_admission
-    legacy_attempt = core_module._attempt
     relevance_owner = ConfiguredLiteralRelevanceOwner(
         core_module.topic_relevant,
         morphology=_optional_morphology(),
     )
-    relevance_resolution_lane = BoundedRelevanceSourceExpansionLane()
     understanding_resolution_lane = BoundedEventUnderstandingSourceExpansionLane()
-
-    def audited_attempt(*, topic: str, query: str, domain: str, stage: str, status: str, reason: str | None = None):
-        projected_status, projected_reason = rewrite_event_relevance_attempt(
-            stage=stage,
-            status=status,
-            reason=reason,
-        )
-        return legacy_attempt(
-            topic=topic,
-            query=query,
-            domain=domain,
-            stage=stage,
-            status=projected_status,
-            reason=projected_reason,
-        )
-
-    def expand_deferred_event_relevance(*, event, facts, topic, discovery):
-        decision = relevance_owner.decide_event(
-            event=event,
-            facts=facts,
-            topic=topic,
-        )
-        return relevance_resolution_lane.expand(
-            decision=decision,
-            event=event,
-            facts=facts,
-            topic=topic,
-            discovery=discovery,
-        )
 
     def expand_deferred_event_understanding(*, decision, article, event, facts, topic, discovery):
         return understanding_resolution_lane.expand(
@@ -139,14 +103,18 @@ def production_v2_runtime(core_module: ModuleType):
         if hasattr(core_module, "assess_material_event"):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
-        core_module.event_topic_relevant = lambda *, event, facts, evidence, topic: relevance_owner.project_event(
-            event=event,
-            facts=facts,
-            topic=topic,
-        )
-        core_module.expand_deferred_event_relevance = expand_deferred_event_relevance
+
+        def project_prequalified_event_relevance(*, event, facts, evidence, topic):
+            # Source-level Relevance already ran before Event Understanding. The legacy loop asks a
+            # second event-level question only because of its historical ordering. Re-evaluating
+            # flat EventFact fields here would create a second semantic authority, so this adapter
+            # is mechanical. The immediately following cached Event Understanding projection still
+            # blocks every unresolved/non-primary event before identity or publication.
+            del event, facts, evidence, topic
+            return True
+
+        core_module.event_topic_relevant = project_prequalified_event_relevance
         core_module.expand_deferred_event_understanding = expand_deferred_event_understanding
-        core_module._attempt = audited_attempt
         core_module.Phase6EventEngine = partial(EvidenceIntegrityPhase6EventEngine, registry)
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve
         scope_phase7_story_readmission(core_module, registry)

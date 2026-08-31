@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+import hashlib
 import unittest
 
 from insight_desk.core import (
     CandidateEvent,
+    CanonicalEvidenceRef,
     CanonicalEvent,
     EvidenceField,
     EvidenceSpan,
     EventFact,
     SelectionVerdict,
+    SourceDocument,
 )
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 from insight_desk.production_phase6_v2 import EvidenceIntegrityPhase6EventEngine
@@ -34,6 +38,7 @@ class Phase5Phase6OwnerWiringTests(unittest.TestCase):
         fact_id = "fact:phase5-owner"
         event_id = "event:phase5-owner"
         source = "한국은행은 27일 기준금리를 결정한다."
+        now = datetime(2026, 8, 27, 12, 0, tzinfo=UTC)
         evidence = EvidenceSpan(
             evidence_id=evidence_id,
             article_id=article_id,
@@ -54,7 +59,20 @@ class Phase5Phase6OwnerWiringTests(unittest.TestCase):
             fact_ids=(fact_id,),
             article_ids=(article_id,),
         )
+        canonical_source = SourceDocument(
+            source_id="source:phase5-owner",
+            candidate_ids=(article_id,),
+            publisher="fixture",
+            url="https://example.com/phase5-owner",
+            title="기준금리 결정",
+            body=source,
+            fetched_at=now,
+            publication_time=now,
+            retrieved_via="fixture",
+            content_sha256=hashlib.sha256(source.encode()).hexdigest(),
+        )
         registry = ProductionV2Registry(
+            sources_by_article={article_id: canonical_source},
             events_by_id={
                 event_id: CanonicalEvent(
                     event_id=event_id,
@@ -63,6 +81,15 @@ class Phase5Phase6OwnerWiringTests(unittest.TestCase):
                     action="27일 기준금리를 결정한다",
                     event_type="news_event",
                     source_ids=("source:phase5-owner",),
+                    evidence_refs=(
+                        CanonicalEvidenceRef(
+                            source_id="source:phase5-owner",
+                            field="body",
+                            start=0,
+                            end=len(source),
+                            text_sha256=hashlib.sha256(source.encode()).hexdigest(),
+                        ),
+                    ),
                 )
             }
         )
