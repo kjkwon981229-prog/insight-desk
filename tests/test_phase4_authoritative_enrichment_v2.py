@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 import unittest
 
-from insight_desk.api import EcosClient, HttpResponse
+from insight_desk.api import EcosClient, HttpResponse, OpenDartClient
 from insight_desk.authoritative_enrichment_v2 import AuthoritativeEnricher
 from insight_desk.core import CanonicalEvent, CanonicalPublicationBundle, SourceDocument
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
@@ -194,6 +194,14 @@ class RecordingTransport:
         )
 
 
+class FixedResponseTransport:
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def request(self, method, url, headers, body=None, timeout=20.0):
+        return HttpResponse(status=200, body=self.body, headers={})
+
+
 class AuthoritativeEnrichmentTests(unittest.TestCase):
     def test_ecos_matches_canonical_event_and_binds_latest_configured_item(self) -> None:
         ecos = FakeEcos()
@@ -233,6 +241,7 @@ class AuthoritativeEnrichmentTests(unittest.TestCase):
         stats = enricher.audit_stats["ecos"]
         self.assertEqual(stats["calls"], 1)
         self.assertEqual(stats["errors"], 1)
+        self.assertEqual(stats["error_kinds"], {"RuntimeError": 1})
         self.assertEqual(stats["facts"], 0)
 
     def test_article_body_keyword_alone_cannot_trigger_authoritative_route(self) -> None:
@@ -314,6 +323,21 @@ class AuthoritativeEnrichmentTests(unittest.TestCase):
         )
         self.assertEqual(len(transport.urls), 1)
         self.assertTrue(transport.urls[0].endswith("/722Y001/M/202607/202608/0101000/"))
+
+    def test_opendart_no_data_status_is_a_valid_empty_result(self) -> None:
+        client = OpenDartClient(
+            "secret",
+            transport=FixedResponseTransport(b'{"status":"013","message":"No data viewed."}'),
+        )
+        payload = client.list_filings(
+            corp_code="00126380",
+            begin_date=NOW.date(),
+            end_date=NOW.date(),
+            disclosure_type="B",
+            page_count=1,
+        )
+        self.assertEqual(payload["status"], "013")
+        self.assertEqual(payload["list"], [])
 
     def test_workflow_exposes_optional_authoritative_credentials_and_config_path_trigger(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(

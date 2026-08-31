@@ -114,11 +114,11 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
         self.assertFalse(GroqFreeClient.configured({}, model_id=GROQ_20B))
         self.assertTrue(GroqFreeClient.configured({"GROQ_API_KEY": "key"}, model_id=GROQ_20B))
 
-    def test_discovery_without_naver_credentials_keeps_independent_free_routes(self) -> None:
+    def test_discovery_without_naver_credentials_keeps_operational_free_route(self) -> None:
         discovery = default_news_discovery(env={})
         self.assertEqual(
             [route.route_id for route in discovery.routes],
-            ["bing_news_rss", "gdelt_doc"],
+            ["bing_news_rss"],
         )
 
     def test_partial_naver_credentials_fail_fast(self) -> None:
@@ -181,7 +181,8 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
         workflow = Path(".github/workflows/insight-desk-production.yml").read_text(encoding="utf-8")
         self.assertNotIn("PHASE11_CREDENTIALS_MISSING", workflow)
         self.assertNotIn("PHASE11_CREDENTIALS_PRESENT", workflow)
-        self.assertIn("PHASE12B_PROVIDER_ROUTES", workflow)
+        self.assertIn("PHASE12B_ROUTE_CONFIGURATION", workflow)
+        self.assertNotIn("PHASE12B_PROVIDER_ROUTES", workflow)
         self.assertIn("PHASE12B_PARTIAL_PROVIDER_CONFIG", workflow)
 
 

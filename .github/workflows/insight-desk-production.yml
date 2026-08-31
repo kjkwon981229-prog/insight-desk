@@ -69,6 +69,7 @@ jobs:
       KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
       OPENDART_API_KEY: ${{ secrets.OPENDART_API_KEY }}
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
+      GDELT_DISCOVERY_ENABLED: "false"
       TOKENIZERS_PARALLELISM: "false"
     outputs:
       publish: ${{ steps.state.outputs.publish }}
@@ -95,7 +96,7 @@ jobs:
           python -m pip install --disable-pip-version-check torch==2.12.1 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --disable-pip-version-check transformers==5.14.1 sentencepiece==0.2.1
 
-      - name: Report zero-cost provider route configuration
+      - name: Report route configuration without claiming live validation
         shell: bash
         run: |
           python - <<'PY'
@@ -118,7 +119,7 @@ jobs:
           routes = {
               "naver": all(pairs["naver"]),
               "bing_rss": True,
-              "gdelt": True,
+              "gdelt": os.environ.get("GDELT_DISCOVERY_ENABLED", "false").casefold() == "true",
               "groq": configured("GROQ_API_KEY"),
               "cloudflare": all(pairs["cloudflare"]),
               "gemini": configured("GEMINI_API_KEY"),
@@ -129,7 +130,7 @@ jobs:
               "exact_source": True,
           }
           print(
-              "PHASE12B_PROVIDER_ROUTES "
+              "PHASE12B_ROUTE_CONFIGURATION "
               + " ".join(
                   f"{name}={'configured' if enabled else 'not_configured'}"
                   for name, enabled in routes.items()
@@ -139,6 +140,13 @@ jobs:
 
       - name: Compile current production path
         run: python -m compileall -q insight_desk scripts
+
+      - name: Live-validate configured non-semantic integrations
+        if: github.event_name == 'pull_request'
+        run: >-
+          python -m scripts.audit_runtime_integrations
+          --output build/runtime-integration-audit.json
+          --strict-configured
 
       - name: Run current-engine daily production
         id: production
@@ -228,11 +236,14 @@ jobs:
             build/run-state.json
             build/production-audit.json
             build/feed-quality.json
+            build/runtime-integration-audit.json
           if-no-files-found: error
           retention-days: 7
 
       - name: Upload PR failure diagnostics
-        if: always() && github.event_name == 'pull_request' && steps.state.outputs.publish != 'true' && hashFiles('build/production-audit.json') != ''
+        if: >-
+          always() && github.event_name == 'pull_request' && steps.state.outputs.publish != 'true' &&
+          (hashFiles('build/production-audit.json') != '' || hashFiles('build/runtime-integration-audit.json') != '')
         uses: actions/upload-artifact@v4
         with:
           name: production-diagnostic-${{ github.run_id }}
@@ -241,6 +252,7 @@ jobs:
             build/run-state.json
             build/production-audit.json
             build/feed-quality.json
+            build/runtime-integration-audit.json
           if-no-files-found: error
           retention-days: 7
 

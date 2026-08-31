@@ -47,7 +47,7 @@ Ordered zero-cost routes:
 
 1. NAVER Search API when both NAVER credentials are configured.
 2. Bing News RSS.
-3. GDELT DOC.
+3. GDELT DOC only when `GDELT_DISCOVERY_ENABLED=true` and its bounded live probe succeeds.
 
 NAVER credentials are optional as a pair. Both absent means the independent free routes remain usable. A partial NAVER credential pair is treated as configuration corruption and fails fast.
 
@@ -139,7 +139,9 @@ The workflow reports configured routes without exposing values. Pair-valued prov
 
 Partial pairs fail with `PHASE12B_PARTIAL_PROVIDER_CONFIG`. Complete absence is allowed where an independent zero-cost fallback exists.
 
-Current zero-cost routes reported by the workflow include NAVER, Bing RSS, GDELT, Groq, Cloudflare, Gemini, local NLI, and deterministic exact source.
+The workflow now separates configuration from validation. NAVER and Bing are production discovery
+routes; GDELT is opt-in. Groq, Cloudflare, Gemini, and local NLI are explicitly reported as inactive
+on the exact-source visible path rather than being presented as successfully exercised providers.
 
 ## Rejected local NLI fallback candidates
 

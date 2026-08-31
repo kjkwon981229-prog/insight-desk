@@ -47,7 +47,8 @@ GitHub Actions
 
 Discovery
   -> default_news_discovery()
-  -> Naver + Bing RSS + GDELT candidate routes
+  -> Naver when configured + Bing RSS candidate routes
+  -> GDELT only when explicitly enabled after a live contract probe
 
 Source acquisition
   -> HTTP fetch + Trafilatura

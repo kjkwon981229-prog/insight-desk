@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Protocol, cast
 from urllib.parse import parse_qs, urlparse, urlsplit, urlunsplit
 
 from insight_desk.api import NaverApiClient
@@ -260,14 +260,17 @@ class GdeltDocDiscovery:
 class AggregatedNewsDiscovery:
     """Collect candidates from every healthy route, then mechanically merge them.
 
-    Route order is priority order, not failover order. Naver therefore remains the first discovery
-    source when configured, while Bing and GDELT still contribute candidates on the same query.
-    The final queue is round-robin across routes so one provider cannot monopolize the production
-    acquisition budget merely because it returned first.
+    Route order is priority order, not failover order. The final queue is round-robin across every
+    configured route so one provider cannot monopolize the production acquisition budget merely
+    because it returned first. A route that repeatedly fails is isolated for the remainder of the
+    run; the failure never becomes a semantic decision about another route's candidates.
     """
 
     routes: tuple[DiscoveryRoute, ...]
-    _route_stats: dict[str, dict[str, int]] = field(init=False, repr=False)
+    max_consecutive_errors: int = 2
+    _route_stats: dict[str, dict[str, object]] = field(init=False, repr=False)
+    _consecutive_errors: dict[str, int] = field(init=False, repr=False)
+    _open_routes: set[str] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if len(self.routes) < 1:
@@ -275,6 +278,8 @@ class AggregatedNewsDiscovery:
         ids = [route.route_id for route in self.routes]
         if len(ids) != len(set(ids)):
             raise ValueError("discovery route ids must be unique")
+        if self.max_consecutive_errors < 1:
+            raise ValueError("max_consecutive_errors must be positive")
         self._route_stats = {
             route_id: {
                 "calls": 0,
@@ -283,13 +288,24 @@ class AggregatedNewsDiscovery:
                 "selected": 0,
                 "candidates": 0,
                 "contributed": 0,
+                "circuit_skips": 0,
+                "state": "healthy",
+                "last_error_kind": None,
+                "error_kinds": {},
             }
             for route_id in ids
         }
+        self._consecutive_errors = {route_id: 0 for route_id in ids}
+        self._open_routes = set()
 
     @property
-    def route_stats(self) -> dict[str, dict[str, int]]:
-        return {route_id: dict(stats) for route_id, stats in self._route_stats.items()}
+    def route_stats(self) -> dict[str, dict[str, object]]:
+        snapshot: dict[str, dict[str, object]] = {}
+        for route_id, stats in self._route_stats.items():
+            copied = dict(stats)
+            copied["error_kinds"] = dict(cast(dict[str, int], stats["error_kinds"]))
+            snapshot[route_id] = copied
+        return snapshot
 
     def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]:
         if limit < 1:
@@ -299,17 +315,33 @@ class AggregatedNewsDiscovery:
         last_error: DiscoveryError | None = None
         for route in self.routes:
             stats = self._route_stats[route.route_id]
-            stats["calls"] += 1
+            if route.route_id in self._open_routes:
+                stats["circuit_skips"] = int(stats["circuit_skips"]) + 1
+                route_results.append((route, ()))
+                continue
+            stats["calls"] = int(stats["calls"]) + 1
             try:
                 candidates = route.search(query, topic_id=topic_id, limit=limit)
             except DiscoveryError as exc:
-                stats["errors"] += 1
+                stats["errors"] = int(stats["errors"]) + 1
+                error_kind = exc.failure_kind.value
+                error_kinds = cast(dict[str, int], stats["error_kinds"])
+                error_kinds[error_kind] = int(error_kinds.get(error_kind, 0)) + 1
+                stats["last_error_kind"] = error_kind
+                consecutive = self._consecutive_errors[route.route_id] + 1
+                self._consecutive_errors[route.route_id] = consecutive
+                if consecutive >= self.max_consecutive_errors:
+                    self._open_routes.add(route.route_id)
+                    stats["state"] = "open"
                 last_error = exc
                 route_results.append((route, ()))
                 continue
-            stats["candidates"] += len(candidates)
+            self._consecutive_errors[route.route_id] = 0
+            stats["state"] = "healthy"
+            stats["last_error_kind"] = None
+            stats["candidates"] = int(stats["candidates"]) + len(candidates)
             if not candidates:
-                stats["empty"] += 1
+                stats["empty"] = int(stats["empty"]) + 1
             route_results.append((route, candidates))
 
         output: list[ArticleCandidate] = []
@@ -335,8 +367,8 @@ class AggregatedNewsDiscovery:
         for route_id, count in contributed.items():
             if count:
                 stats = self._route_stats[route_id]
-                stats["selected"] += 1
-                stats["contributed"] += count
+                stats["selected"] = int(stats["selected"]) + 1
+                stats["contributed"] = int(stats["contributed"]) + count
 
         if output:
             return tuple(output)
@@ -359,6 +391,11 @@ def default_news_discovery(*, env: dict[str, str] | None = None) -> AggregatedNe
             "NAVER discovery credentials must provide both NCP_CLIENT_ID and NCP_CLIENT_SECRET"
         )
 
+    gdelt_flag = str(source.get("GDELT_DISCOVERY_ENABLED", "false")).strip().casefold()
+    if gdelt_flag not in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+        raise DiscoveryConfigError("GDELT_DISCOVERY_ENABLED must be an explicit boolean")
+    gdelt_enabled = gdelt_flag in {"true", "1", "yes", "on"}
+
     routes: list[DiscoveryRoute] = []
     if client_id and client_secret:
         routes.append(
@@ -366,5 +403,7 @@ def default_news_discovery(*, env: dict[str, str] | None = None) -> AggregatedNe
                 NaverApiClient(NaverCredentials(client_id=client_id, client_secret=client_secret))
             )
         )
-    routes.extend((BingNewsRssDiscovery(), GdeltDocDiscovery()))
+    routes.append(BingNewsRssDiscovery())
+    if gdelt_enabled:
+        routes.append(GdeltDocDiscovery())
     return AggregatedNewsDiscovery(tuple(routes))

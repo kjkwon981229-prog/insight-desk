@@ -18,7 +18,8 @@ Date: 2026-08-24
 
 Phase 12B remains regression-locked:
 
-- discovery: NAVER when configured → Bing News RSS → GDELT DOC;
+- discovery: NAVER when configured + Bing News RSS; GDELT adapter retained but default-disabled
+  after a 13/13 live failure audit;
 - acquisition: HTTP+Trafilatura → HTTP+Article/Main → Playwright+Trafilatura → Playwright+Article/Main;
 - fact extraction: Kiwi → PeCab-backed exact-surface → conservative exact-surface parser;
 - generation: Groq GPT-OSS 20B → Gemini Flash-Lite when configured → deterministic exact source;

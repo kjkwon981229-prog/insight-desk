@@ -247,7 +247,7 @@ def _canonical_recovery_result(
     next_sequence = max((attempt.sequence for attempt in previous_attempts), default=0) + 1
     attempts = previous_attempts + (
         GenerationAttempt(
-            kind=GenerationAttemptKind.ALTERNATE,
+            kind=GenerationAttemptKind.CANONICAL_SOURCE,
             sequence=next_sequence,
             status=GenerationAttemptStatus.ACCEPTED,
         ),
