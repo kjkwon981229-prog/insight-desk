@@ -129,7 +129,7 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(result[lineup[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[lineup[0].event_id].publishable_event)
 
-    def test_preview_team_stat_is_context_when_scheduled_game_is_article_center(self) -> None:
+    def test_conflicting_lead_and_title_bindings_abstain_for_preview_and_stats(self) -> None:
         article = _article(
             topic="kbo_hanwha",
             title="한화-NC 맞대결 프리뷰, 선발 투수와 경기 전망",
@@ -142,9 +142,12 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         game = _event_fact(article, suffix="game", sentence="한화와 NC는 29일 대전에서 맞붙는다.", subject="한화와 NC", action="29일 대전에서 맞붙는다", topic="kbo_hanwha")
         stat = _event_fact(article, suffix="stat", sentence="한화는 팀 타율 리그 3위와 136홈런을 기록 중이다.", subject="한화", action="팀 타율 리그 3위와 136홈런을 기록 중이다", topic="kbo_hanwha")
         result = self._assess(article, (game, stat))
-        self.assertEqual(result[game[0].event_id].article_role, ArticleEventRole.PRIMARY)
-        self.assertEqual(result[stat[0].event_id].article_role, ArticleEventRole.CONTEXT)
-        self.assertFalse(result[stat[0].event_id].publishable_event)
+        for event, _fact, _span in (game, stat):
+            decision = result[event.event_id]
+            self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
+            self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+            self.assertFalse(decision.publishable_event)
+            self.assertEqual(decision.reasons, ("article_centrality_conflict",))
 
     def test_past_attendance_metric_is_context_inside_current_support_program_article(self) -> None:
         article = _article(
@@ -203,7 +206,7 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         self.assertEqual(result[generic[0].event_id].article_role, ArticleEventRole.CONTEXT)
         self.assertFalse(result[generic[0].event_id].publishable_event)
 
-    def test_generic_lead_does_not_beat_later_title_bound_named_actor(self) -> None:
+    def test_conflicting_generic_lead_and_named_title_binding_abstain(self) -> None:
         article = _article(
             topic="ai_tech",
             title="앤트로픽, 로봇 제어용 하드웨어 표준 공개",
@@ -215,10 +218,12 @@ class ArticleLevelEventUnderstandingTests(unittest.TestCase):
         generic = _event_fact(article, suffix="generic-lead", sentence="에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.", subject="에이전트", action="실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다", topic="ai_tech")
         named = _event_fact(article, suffix="named-later", sentence="앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.", subject="앤트로픽", action="로봇 제어용 하드웨어 표준을 공개했다", topic="ai_tech")
         result = self._assess(article, (generic, named))
-        self.assertEqual(result[named[0].event_id].article_role, ArticleEventRole.PRIMARY)
-        self.assertTrue(result[named[0].event_id].publishable_event)
-        self.assertEqual(result[generic[0].event_id].article_role, ArticleEventRole.CONTEXT)
-        self.assertFalse(result[generic[0].event_id].publishable_event)
+        for event, _fact, _span in (generic, named):
+            decision = result[event.event_id]
+            self.assertEqual(decision.status, UnderstandingStatus.UNRESOLVED)
+            self.assertEqual(decision.article_role, ArticleEventRole.CONTEXT)
+            self.assertFalse(decision.publishable_event)
+            self.assertEqual(decision.reasons, ("article_centrality_conflict",))
 
     def test_copular_definition_is_context_not_a_publishable_event(self) -> None:
         article = _article(

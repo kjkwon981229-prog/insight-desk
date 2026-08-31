@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -25,7 +26,7 @@ def source(*, body: str = "원문에는 기준금리라는 단어가 있을 수 
         fetched_at=NOW,
         publication_time=NOW,
         retrieved_via="fixture",
-        content_sha256="a" * 64,
+        content_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
     )
 
 

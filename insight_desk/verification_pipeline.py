@@ -181,17 +181,25 @@ def _is_exact_source_excerpt(
     return any(text in request.evidence[evidence_id].text for evidence_id in evidence_ids)
 
 
-def verify_exact_source_draft(
+def _is_full_canonical_proposition(
+    request: GenerationRequest,
+    *,
+    evidence_ids: tuple[str, ...],
+    text: str,
+) -> bool:
+    return (
+        len(evidence_ids) == 1
+        and evidence_ids == request.evidence_ids
+        and text == request.evidence[evidence_ids[0]].text
+    )
+
+
+def _verify_deterministic_source_draft(
     request: GenerationRequest,
     draft: GeneratedDraft,
+    *,
+    require_full_proposition: bool,
 ) -> GeneratedVerificationResult:
-    """Prove an extractive fallback from immutable cited evidence without external LLM calls.
-
-    This path is intentionally stricter than semantic inference: each visible role must be a literal
-    excerpt of at least one cited EvidenceSpan, and the normal preservation contract must already
-    accept the draft. It cannot manufacture support for paraphrased/generated text.
-    """
-
     preservation = validate_preservation(request, draft)
     if not preservation.accepted:
         return GeneratedVerificationResult(
@@ -207,11 +215,18 @@ def verify_exact_source_draft(
         (ClaimRole.SUMMARY, draft.summary),
     ):
         claim_id = _stable_id("claim", request.event.event_id, role.value, text)
-        supported = _is_exact_source_excerpt(
-            request,
-            evidence_ids=evidence_ids,
-            text=text,
-        )
+        if require_full_proposition:
+            supported = _is_full_canonical_proposition(
+                request,
+                evidence_ids=evidence_ids,
+                text=text,
+            )
+        else:
+            supported = _is_exact_source_excerpt(
+                request,
+                evidence_ids=evidence_ids,
+                text=text,
+            )
         check = VerificationCheck(
             check_id=_stable_id(
                 "check",
@@ -245,6 +260,37 @@ def verify_exact_source_draft(
         event_id=request.event.event_id,
         preservation=preservation,
         claims=tuple(claims),
+    )
+
+
+def verify_exact_source_draft(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> GeneratedVerificationResult:
+    """Prove an extractive fallback from immutable cited evidence without external LLM calls.
+
+    This path is intentionally stricter than semantic inference: each visible role must be a literal
+    excerpt of at least one cited EvidenceSpan, and the normal preservation contract must already
+    accept the draft. It cannot manufacture support for paraphrased/generated text.
+    """
+
+    return _verify_deterministic_source_draft(
+        request,
+        draft,
+        require_full_proposition=False,
+    )
+
+
+def verify_exact_canonical_proposition_draft(
+    request: GenerationRequest,
+    draft: GeneratedDraft,
+) -> GeneratedVerificationResult:
+    """Prove that both visible roles equal the one complete canonical evidence proposition."""
+
+    return _verify_deterministic_source_draft(
+        request,
+        draft,
+        require_full_proposition=True,
     )
 
 

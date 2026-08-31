@@ -59,13 +59,15 @@ Source acquisition
 
 Relevance
   -> source-level configured-literal preselection (topic_relevant)
-  -> Canonical V2 event-level hook only checks canonical.topic == topic_id
+  -> configured evidence-local event relevance owner
   -> no visible-story semantic re-admission in production
 
 Event understanding — CURRENT PRODUCTION TRUTH
   -> LegacySemanticPipeline.extract_article()
   -> EvidenceSpan + EventFact + CandidateEvent
-  -> canonical_event_from_candidate()
+  -> article-scope Event Understanding owner
+  -> resolved PRIMARY only
+  -> CanonicalEventDraft with exact source ranges
   -> CanonicalEvent
 
 Authoritative enrichment
@@ -76,18 +78,17 @@ Authoritative enrichment
 Phase 6 mechanics
   -> EvidenceIntegrityPhase6EventEngine
   -> evidence-integrity/material signal only
-  -> temporal / identity-key / selection mechanics
-  -> current production selection context is otherwise already resolved
+  -> consumes existing CanonicalEvent temporal/identity state
+  -> selection mechanics only; no EventFact semantic reinterpretation
 
-Generation
-  -> Groq GPT-OSS 20B primary, max two attempts
-  -> Gemini free alternate, one attempt when configured
-  -> exact-source extractive fallback
-  -> GeneratedDraft(headline, summary)
+Visible projection
+  -> exactly one canonical evidence proposition is required
+  -> headline == summary == immutable source range bytes
+  -> provider generation is not called
 
 Verification
-  -> resilient logical primary: Cloudflare first
-  -> Gemini verification failover only if Cloudflare is unavailable/indeterminate
+  -> deterministic full-proposition source proof
+  -> external semantic verifier is not called on the visible path
   -> Local NLI independent second confirmation after logical primary support
   -> SUPPORTED only when required verification contract passes
 
@@ -340,27 +341,27 @@ Push uses briefing/publication digest identity for idempotency. A repeated ident
 
 ---
 
-## 11. Phase 1 structural findings to carry forward
+## 11. Historical Phase 1 findings — current disposition
 
-### P1 — Event Understanding production gap
+### Resolved — Event Understanding production gap
 
-No V5 LLM Event Understanding provider is selected. Current production still depends on `LegacySemanticPipeline -> EventFact/CandidateEvent -> CanonicalEvent bridge`.
+No provider is selected, but production no longer directly lifts `CandidateEvent`. The deterministic article-scope owner is explicit and promotes only resolved PRIMARY output through `CanonicalEventDraft`.
 
-### P1 — CanonicalEvent information loss
+### Resolved for visible publication — CanonicalEvent information loss
 
-Evidence, certainty, temporal, polarity, location, cause, and original fact identity are not fully preserved at the CanonicalEvent boundary.
+Exact canonical evidence ranges, certainty, temporal state, polarity, location, cause, participants, and fact lineage cross the boundary. Visible semantics use the exact source proposition rather than the flat projection.
 
-### P1 — Identity/verifier responsibility collision
+### Resolved — Identity/verifier responsibility collision
 
-Verifier-family providers are still reused for same-event semantic identity judgment.
+Canonical identity executes before Phase 6/7 and does not consume claim verifiers or generated visible text.
 
-### P1 — No real uncertainty-resolution lane
+### Bounded — uncertainty resolution
 
-The generic DEFER contract exists, but the daily production loop has no hold/escalation/source-expansion workflow for unresolved items. Most pre-publication failures are item-local `continue`/skip.
+Relevance, Event Understanding, and Identity each have bounded source-expansion lanes. Unresolved centrality or multi-proposition authority remains non-publishable rather than being guessed.
 
-### P1 — Exact-source fallback is product-risky even though bounded
+### Resolved for semantic integrity — exact-source visible authority
 
-The fallback is contract-safe against multi-thousand-character leakage on the current head, but can still display up to 420 chars of literal source prose. It should become CanonicalEvent-driven compact recovery, or otherwise have a stronger publication contract, without reverting to detector whack-a-mole.
+Production requires one complete canonical proposition and proves byte equality deterministically. Length or journalistic polish is a P2/P3 presentation concern and cannot truncate the proposition or reopen semantic authority.
 
 ### P2 — Residual mechanical duplication
 

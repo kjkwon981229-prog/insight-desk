@@ -255,7 +255,25 @@ def _title_binding(article: RawArticle, fact: EventFact) -> tuple[int, int]:
     return actor_bound, object_bound
 
 
-def _centrality_rank(
+def _source_window_event_date_binding(article: RawArticle, fact: EventFact) -> int:
+    """Return one when an explicit event date falls inside the source's current time window.
+
+    This consumes the existing EventFact time representation; it does not infer an event from
+    words. The signal participates only in the article-level partial order, so it cannot make an
+    otherwise unproved candidate central by itself.
+    """
+
+    if fact.event_date is None or article.provenance.published_at is None:
+        return 0
+    try:
+        event_date = date.fromisoformat(fact.event_date)
+    except ValueError:
+        return 0
+    age_days = (article.provenance.published_at.date() - event_date).days
+    return int(-3 <= age_days <= 3)
+
+
+def _centrality_signals(
     article: RawArticle,
     event: CandidateEvent,
     *,
@@ -264,14 +282,29 @@ def _centrality_rank(
     morphology: MorphologyPort | None,
     lead_end: int,
 ) -> tuple[int, int, int, int, int]:
+    """Return independent source-structure evidence without imposing a winner order."""
+
     fact = facts[event.fact_ids[0]]
     start = _event_start(event, facts, evidence)
     actor_bound, object_bound = _title_binding(article, fact)
     actor_specific = _actor_specificity(fact.subject, morphology)
     lead_bound = int(start < lead_end)
-    # Specific named actors outrank generic/numeric actors. Among equally specific candidates,
-    # source lead remains stronger than title substring binding, preserving ordinary news discourse.
-    return (actor_specific, lead_bound, actor_bound, object_bound, -start)
+    source_window_date_bound = _source_window_event_date_binding(article, fact)
+    return (
+        actor_specific,
+        lead_bound,
+        actor_bound,
+        object_bound,
+        source_window_date_bound,
+    )
+
+
+def _strictly_dominates(left: tuple[int, ...], right: tuple[int, ...]) -> bool:
+    """Require one candidate to be no weaker on every independent centrality signal."""
+
+    return all(a >= b for a, b in zip(left, right, strict=True)) and any(
+        a > b for a, b in zip(left, right, strict=True)
+    )
 
 
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
@@ -347,27 +380,39 @@ def assess_compatibility_article_understanding(
         return decisions
 
     lead_end = _first_sentence_end(article.body)
-    ranked = sorted(
-        eligible,
-        key=lambda event: _centrality_rank(
+    signals = {
+        event.event_id: _centrality_signals(
             article,
             event,
             facts=facts,
             evidence=evidence,
             morphology=morphology,
             lead_end=lead_end,
-        ),
-        reverse=True,
-    )
-    winner = ranked[0]
-    winner_rank = _centrality_rank(
-        article,
-        winner,
-        facts=facts,
-        evidence=evidence,
-        morphology=morphology,
-        lead_end=lead_end,
-    )
+        )
+        for event in eligible
+    }
+    dominant = [
+        event
+        for event in eligible
+        if all(
+            other.event_id == event.event_id
+            or _strictly_dominates(signals[event.event_id], signals[other.event_id])
+            for other in eligible
+        )
+    ]
+    if len(dominant) != 1:
+        for event in eligible:
+            decisions[event.event_id] = CompatibilityEventUnderstandingDecision(
+                status=UnderstandingStatus.UNRESOLVED,
+                article_role=ArticleEventRole.CONTEXT,
+                topic_relation=TopicRelation.UNRESOLVED,
+                publishable_event=False,
+                reasons=("article_centrality_conflict",),
+            )
+        return decisions
+
+    winner = dominant[0]
+    winner_signals = signals[winner.event_id]
 
     # A lead-bound explicit event is source-central by discourse position. Outside the lead, the
     # title must bind the specific actor itself; an object-only overlap can describe article context
@@ -375,7 +420,7 @@ def assess_compatibility_article_understanding(
     # numeric counts must likewise not manufacture centrality from a shared headline noun. If the
     # compatibility extractor missed the true lead event, hold the article instead of promoting a
     # deep-body background fact.
-    actor_specific, lead_bound, actor_bound, _object_bound, _ = winner_rank
+    actor_specific, lead_bound, actor_bound, _object_bound, _source_window_date = winner_signals
     centrality_proven = bool(
         lead_bound
         or (actor_specific and actor_bound)

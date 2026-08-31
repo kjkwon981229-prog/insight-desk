@@ -14,6 +14,7 @@ from insight_desk.core import (
 )
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
+import insight_desk.production_orchestrator_compat_v2 as orchestrator_compat_v2
 import insight_desk.production_orchestrator_v2 as orchestrator_v2
 from insight_desk.production_orchestrator_v2 import (
     CanonicalIdentityEngine,
@@ -127,6 +128,21 @@ class ProductionAuthorityWiringTests(unittest.TestCase):
 
     def test_v2_facade_does_not_export_direct_candidate_to_canonical_builder(self) -> None:
         self.assertFalse(hasattr(orchestrator_v2, "canonical_event_from_candidate"))
+        self.assertFalse(hasattr(orchestrator_compat_v2, "canonical_event_from_candidate"))
+        self.assertFalse(hasattr(ProductionV2Registry(), "register_article_result"))
+
+    def test_compatibility_reinstall_cannot_replace_runtime_semantic_authority(self) -> None:
+        with production_v2_runtime(production._core) as registry:
+            active_pipeline = production._core.SemanticPipeline
+            returned = orchestrator_compat_v2.install_production_orchestration(
+                production._core
+            )
+            self.assertIs(returned, registry)
+            self.assertIs(production._core.SemanticPipeline, active_pipeline)
+            self.assertEqual(
+                active_pipeline.__module__,
+                "insight_desk.production_event_understanding_lifecycle_v2",
+            )
 
     def test_v2_authority_exists_only_inside_actual_runtime_scope(self) -> None:
         original_relevance = production._core.event_topic_relevant

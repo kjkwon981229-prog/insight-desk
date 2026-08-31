@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -77,17 +78,18 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
                 self.assertIsInstance(instruction, str)
                 self.assertTrue(instruction.strip())
 
+        body = "한국은행은 기준금리를 결정했다."
         source = SourceDocument(
             source_id="source-1",
             candidate_ids=("candidate-1",),
             publisher="fixture",
             url="https://example.com/article",
             title="한국은행 기준금리 결정",
-            body="한국은행은 기준금리를 결정했다.",
+            body=body,
             fetched_at=qualification_v5.datetime.fromisoformat("2026-08-28T00:00:00+00:00"),
             publication_time=None,
             retrieved_via="fixture",
-            content_sha256="f" * 64,
+            content_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
         )
         request = EventUnderstandingRequest(
             topic="macro",
@@ -211,18 +213,21 @@ class EventUnderstandingQualificationProtocolV5Tests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "stale protocol"):
             validate_provider_status(mutated)
 
-    def test_v5_does_not_open_migration_gate(self) -> None:
+    def test_open_structural_gate_does_not_select_or_wire_a_v5_provider(self) -> None:
         gate = json.loads(MIGRATION_GATE_PATH.read_text(encoding="utf-8"))
-        self.assertFalse(gate["production_rewire_allowed"])
+        self.assertTrue(gate["production_rewire_allowed"])
         self.assertEqual(len(gate["runtime_blockers"]), 3)
         active = {
             blocker_id
             for blocker_id, item in gate["runtime_blockers"].items()
             if item["active"]
         }
-        self.assertEqual(active, {"candidate_event_direct_canonical_lift"})
+        self.assertEqual(active, set())
         self.assertFalse(gate["runtime_blockers"]["identity_reads_source_body"]["active"])
         self.assertFalse(gate["runtime_blockers"]["legacy_candidate_identity_authority"]["active"])
+        status = load_provider_status(STATUS_PATH)
+        self.assertIsNone(status["selected_event_understanding_provider"])
+        self.assertFalse(status["production_wired"])
 
 
 if __name__ == "__main__":

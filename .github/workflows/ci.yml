@@ -70,3 +70,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
+      - name: Run source-grounded production and adversarial structural gates
+        run: >-
+          python -m unittest discover -s tests
+          -p 'test_source_grounded_production_stability_v2.py'

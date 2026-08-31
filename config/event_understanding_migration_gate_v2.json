@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "contract": "event_understanding_phase4_migration_gate_v1",
-  "production_rewire_allowed": false,
+  "production_rewire_allowed": true,
   "runtime_blockers": {
     "candidate_event_direct_canonical_lift": {
-      "active": true,
+      "active": false,
       "path": "insight_desk/production_orchestrator_compat_v2.py",
       "evidence": "canonical_event_from_candidate("
     },

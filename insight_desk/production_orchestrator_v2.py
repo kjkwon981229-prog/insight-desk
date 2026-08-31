@@ -5,8 +5,8 @@ from __future__ import annotations
 The historical mechanical installer is preserved in ``production_orchestrator_compat_v2`` while
 this module replaces its identity owner with the canonical-only implementation. CandidateEvent and
 EventFact remain compatibility provenance containers until Event Understanding is qualified; they
-are not identity semantics here. Historical direct CandidateEvent -> CanonicalEvent lifting remains
-isolated inside the compatibility module and is not part of this production authority surface.
+are not identity semantics here. The historical direct CandidateEvent -> CanonicalEvent lift has
+been removed; only the Event Understanding lifecycle may cross the canonical boundary.
 """
 
 from typing import Mapping
@@ -21,10 +21,7 @@ from insight_desk.semantic.identity import (
 
 from . import production_orchestrator_compat_v2 as _compat
 from .production_orchestrator_compat_v2 import *  # noqa: F401,F403
-
-# Historical replay can still import the compatibility helper from its compatibility module, but the
-# active V2 facade must not advertise a direct CandidateEvent -> CanonicalEvent production path.
-globals().pop("canonical_event_from_candidate", None)
+from .production_orchestrator_compat_v2 import ProductionV2Registry
 
 
 class CanonicalIdentityEngine:
@@ -120,10 +117,8 @@ def _evidence_integrity_assessment(*args, **kwargs):
 def install_production_orchestration(core_module):
     """Install mechanical V2 owners without activating the historical direct-lift semantic path.
 
-    ``production_orchestrator_compat_v2`` still contains the historical CanonicalSemanticPipeline for
-    replay compatibility. Its installer temporarily assigns that class. Restore the incoming
-    SemanticPipeline before returning so the actual runtime's Event Understanding lifecycle is the
-    only component that can acquire semantic-pipeline authority.
+    Preserve the incoming SemanticPipeline across the mechanical compatibility install. This is an
+    explicit authority invariant: only the runtime's Event Understanding lifecycle may replace it.
     """
 
     previous_identity = _compat.CanonicalIdentityEngine

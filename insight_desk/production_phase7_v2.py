@@ -31,7 +31,7 @@ from insight_desk.generation_pipeline import (
     GenerationRecoveryResult,
 )
 from insight_desk.phase7 import Phase7EntryCandidate
-from insight_desk.verification_pipeline import verify_exact_source_draft
+from insight_desk.verification_pipeline import verify_exact_canonical_proposition_draft
 
 
 _ORIGINAL_GENERATION_STORY_ADMISSION = generation_module.validate_story_admission
@@ -126,9 +126,15 @@ def _canonical_evidence_ids(
         matched_id = None
         for evidence_id in allowed_ids:
             span = request.evidence[evidence_id]
+            if span.article_id not in source.candidate_ids:
+                continue
             if span.field.value != ref.field or span.start != ref.start or span.end != ref.end:
                 continue
-            digest = hashlib.sha256(span.text.encode("utf-8")).hexdigest()
+            source_text = source.title if ref.field == "title" else source.body
+            exact_source_text = source_text[ref.start : ref.end]
+            if span.text != exact_source_text:
+                continue
+            digest = hashlib.sha256(exact_source_text.encode("utf-8")).hexdigest()
             if digest != ref.text_sha256:
                 continue
             matched_id = evidence_id
@@ -197,14 +203,23 @@ class CanonicalEventRecoveryGenerator:
             raise GenerationContractError("canonical recovery event identity mismatch")
         if event.fact_ids and tuple(event.fact_ids) != tuple(request.event.fact_ids):
             raise GenerationContractError("canonical recovery fact lineage mismatch")
-        if len(request.evidence_ids) != 1:
+        if len(event.evidence_refs) != 1 or len(request.evidence_ids) != 1:
             raise GenerationContractError(
                 "source-grounded canonical recovery requires exactly one proposition evidence span"
             )
 
         evidence_id = request.evidence_ids[0]
-        proposition = request.evidence[evidence_id].text.strip()
-        if not proposition:
+        ref = event.evidence_refs[0]
+        source = self.registry.source_for_event(event.event_id)
+        try:
+            ref.validate_against(source)
+        except Exception as exc:
+            raise GenerationContractError("canonical source proposition is no longer valid") from exc
+        source_text = source.title if ref.field == "title" else source.body
+        proposition = source_text[ref.start : ref.end]
+        if request.evidence[evidence_id].text != proposition:
+            raise GenerationContractError("canonical source proposition differs from generation provenance")
+        if not proposition.strip():
             raise GenerationContractError("canonical source proposition must be non-empty")
 
         return GeneratedDraft(
@@ -299,7 +314,7 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
         except GenerationContractError:
             return None
 
-        verification = verify_exact_source_draft(
+        verification = verify_exact_canonical_proposition_draft(
             canonical_request,
             canonical_generation.draft,
         )
