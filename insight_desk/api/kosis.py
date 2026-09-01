@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+import urllib.error
 from urllib.parse import urlencode
 
 from .transport import Transport, UrlLibTransport, decode_json_value
@@ -18,6 +19,7 @@ class KosisClient:
     api_key: str
     transport: Transport | None = None
     timeout: float = 20.0
+    transport_attempts: int = 3
 
     @classmethod
     def from_environment(cls, *, transport: Transport | None = None) -> "KosisClient | None":
@@ -35,6 +37,8 @@ class KosisClient:
         max_periods: int,
         object_l2: str | None = None,
     ) -> object:
+        if self.transport_attempts < 1:
+            raise ValueError("KOSIS transport_attempts must be at least 1")
         params: dict[str, str] = {
             "method": "getList",
             "apiKey": self.api_key,
@@ -49,12 +53,21 @@ class KosisClient:
         }
         if object_l2:
             params["objL2"] = object_l2
-        response = (self.transport or UrlLibTransport()).request(
-            "GET",
-            f"{BASE_URL}?{urlencode(params)}",
-            {"Accept": "application/json", "User-Agent": "InsightDesk/2.0"},
-            timeout=self.timeout,
-        )
+        transport = self.transport or UrlLibTransport()
+        response = None
+        for attempt in range(self.transport_attempts):
+            try:
+                response = transport.request(
+                    "GET",
+                    f"{BASE_URL}?{urlencode(params)}",
+                    {"Accept": "application/json", "User-Agent": "InsightDesk/2.0"},
+                    timeout=self.timeout,
+                )
+                break
+            except (urllib.error.URLError, TimeoutError, OSError):
+                if attempt + 1 >= self.transport_attempts:
+                    raise
+        assert response is not None
         if not 200 <= response.status < 300:
             raise KosisApiError(f"KOSIS HTTP {response.status}")
         payload = decode_json_value(response)
