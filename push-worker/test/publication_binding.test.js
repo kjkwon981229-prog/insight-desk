@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
+import worker, {
   PUBLICATION_BINDING_VERSION,
   handlePublicationRequest,
 } from "../src/publication_gateway.js";
@@ -119,8 +119,13 @@ test("health advertises the publication binding contract without exposing secret
   assert.equal(body.publication_binding_version, PUBLICATION_BINDING_VERSION);
   assert.equal(body.publication_binding_version, 2);
   assert.equal(body.publication_ready_identity, "briefing_id+sha256");
+  assert.equal(body.notification_policy, "publication_ready_only");
   assert.equal(JSON.stringify(body).includes(env.VAPID_PRIVATE_KEY), false);
   assert.equal(JSON.stringify(body).includes(env.PUSH_SEND_TOKEN), false);
+});
+
+test("the deployed worker exposes no scheduled failure entrypoint", () => {
+  assert.equal(worker.scheduled, undefined);
 });
 
 test("same publication digest deduplicates across workflow runs and records scheduled ready identity", async () => {
@@ -232,6 +237,25 @@ test("partial or malformed publication identity fails the authenticated send con
   );
   assert.equal(badDigest.status, 400);
   assert.deepEqual(await badDigest.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+});
+
+test("an authenticated READY request cannot bypass publication identity", async () => {
+  const env = environment();
+  const response = await handlePublicationRequest(
+    request("/send", {
+      method: "POST",
+      body: {
+        date: "2026-08-27",
+        run_id: "legacy-ready",
+        type: "READY",
+        source: "schedule",
+      },
+      headers: { Authorization: `Bearer ${sendToken}` },
+    }),
+    env,
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { ok: false, error: "INVALID_NOTIFICATION" });
 });
 
 test("legacy READY without publication identity remains backward compatible", async () => {

@@ -208,9 +208,9 @@ def _push_html(config: PwaRuntimeConfig) -> tuple[str, str, str]:
     head_meta = f'<meta name="insight-desk-push-worker-url" content="{worker_url}">'
     section = '''<section class="push-settings" data-push-settings data-push-service-worker-url="push-sw.js">
     <div>
-      <span class="eyebrow">웹 알림</span>
-      <h2>브리핑 상태 알림</h2>
-      <p>홈 화면에 추가한 앱에서 브리핑 준비 완료 또는 업데이트 실패 상태만 알립니다.</p>
+      <span class="eyebrow">알림</span>
+      <h2>새 브리핑 알림</h2>
+      <p>새 브리핑이 준비되면 알려드립니다.</p>
     </div>
     <div class="push-actions">
       <button type="button" data-push-enable>알림 켜기</button>

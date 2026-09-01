@@ -105,6 +105,16 @@ class ProductionPushWiringTests(unittest.TestCase):
     def test_wrangler_routes_public_worker_through_publication_gateway(self) -> None:
         wrangler = (ROOT / "push-worker" / "wrangler.jsonc").read_text(encoding="utf-8")
         self.assertIn('"main": "src/publication_gateway.js"', wrangler)
+        self.assertIn('"crons": []', wrangler)
+
+    def test_main_push_deploys_worker_code_and_empty_trigger_set(self) -> None:
+        workflow = (
+            ROOT / ".github" / "workflows" / "insight-desk-push-worker.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("npx wrangler deploy", workflow)
+        self.assertIn("npx wrangler triggers deploy", workflow)
+        self.assertIn("publication_ready_only", workflow)
+        self.assertIn("branches: [main]", workflow)
 
     def test_workflow_validates_identity_before_deploy_and_binds_ready_payload(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(
@@ -119,6 +129,9 @@ class ProductionPushWiringTests(unittest.TestCase):
         self.assertIn('notification_source="manual"', workflow)
         self.assertIn("PUBLICATION_DIGEST", workflow)
         self.assertIn("BRIEFING_ID", workflow)
+        self.assertIn('notification_type="READY"', workflow)
+        self.assertNotIn('notification_type="FAILURE"', workflow)
+        self.assertIn('notification_policy == "publication_ready_only"', workflow)
 
     def test_workflow_runtime_path_covers_new_structural_validator(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(
@@ -147,18 +160,20 @@ class ProductionPushWiringTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(
-            'if [[ "$BUILD_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then',
+            "needs.build.result == 'success' && needs.deploy.result == 'success'",
             workflow,
         )
+        self.assertIn("operational failures remain visible in Actions but never become PWA failure popups", workflow)
         self.assertIn("Fail when a successful build was not deployed", workflow)
         self.assertIn(
-            "if: always() && needs.build.result == 'success' && needs.deploy.result != 'success'",
+            "if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result != 'success'",
             workflow,
         )
         self.assertIn(
-            "Production build succeeded but Pages deployment did not; FAILURE notification was sent when configured.",
+            "Production build succeeded but Pages deployment did not; no end-user notification was sent.",
             workflow,
         )
+        self.assertNotIn("invalid FAILURE response", workflow)
 
 
 if __name__ == "__main__":

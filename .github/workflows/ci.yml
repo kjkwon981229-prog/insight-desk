@@ -53,7 +53,7 @@ jobs:
           cache-dependency-path: push-worker/package-lock.json
       - name: Run preserved push Worker tests
         working-directory: push-worker
-        run: npm ci && npm test
+        run: npm ci && npm test && npm run deploy:dry-run
 
   historical-production-replay:
     runs-on: ubuntu-24.04

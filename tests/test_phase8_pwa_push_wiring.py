@@ -54,12 +54,13 @@ class Phase8PwaPushWiringTests(unittest.TestCase):
         self.assertEqual(root_worker, preserved_worker)
         self.assertNotIn('addEventListener("fetch"', root_worker)
 
-    def test_push_ui_describes_only_ready_or_failure_status_not_article_content(self) -> None:
+    def test_push_ui_describes_only_new_briefing_notifications_not_article_content(self) -> None:
         html = render_briefing_html(
             view(),
             runtime=PwaRuntimeConfig(push_worker_url="https://push.example.workers.dev"),
         )
-        self.assertIn("브리핑 준비 완료 또는 업데이트 실패 상태만 알립니다.", html)
+        self.assertIn("새 브리핑이 준비되면 알려드립니다.", html)
+        self.assertNotIn("업데이트 실패", html)
         push_start = html.index('<section class="push-settings"')
         push_end = html.index("</section>", push_start)
         push_section = html[push_start:push_end]

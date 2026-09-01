@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deliveryState, handleRequest, runWatchdog } from "../src/index.js";
+import { deliveryState, handleRequest } from "../src/index.js";
 
 class MemoryKV {
   constructor() {
@@ -373,53 +373,23 @@ test("delivery states distinguish no subscribers, partial delivery, total failur
   assert.equal((await staleResponse.json()).delivery_state, "STALE_SUBSCRIPTIONS_PRUNED");
 });
 
-test("watchdog emits one failure only when today's ready marker is absent", async () => {
+test("failure notifications are rejected without contacting subscribers", async () => {
   const env = environment();
   await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
   let calls = 0;
-  const dependencies = {
-    now: () => new Date("2026-08-10T00:00:00.000Z"),
-    sendNotification: async (_subscription, message) => {
-      calls += 1;
-      assert.equal(message.title, "오늘 브리핑 업데이트 실패");
-    },
-  };
-  const first = await runWatchdog(env, dependencies);
-  assert.equal(first.type, "FAILURE");
-  const second = await runWatchdog(env, dependencies);
-  assert.equal(second.skipped, undefined);
-  assert.equal(second.duplicate, true);
-  assert.equal(calls, 1);
-  await env.PUSH_SUBSCRIPTIONS.put(
-    "state:ready:2026-08-10",
-    JSON.stringify({ source: "schedule", delivery_state: "DELIVERED" }),
-  );
-  const ready = await runWatchdog(env, dependencies);
-  assert.equal(ready.reason, "READY_ALREADY_RECORDED");
-});
-
-test("manual READY never masks a missing scheduled run", async () => {
-  const env = environment();
-  await handleRequest(request("/subscribe", { method: "POST", body: subscription }), env);
-  let failures = 0;
-  await handleRequest(
+  const response = await handleRequest(
     request("/send", {
       method: "POST",
-      body: { date: "2026-08-15", run_id: "manual", type: "READY", source: "manual" },
+      body: { date: "2026-08-10", run_id: "failed", type: "FAILURE", source: "schedule" },
       headers: { Authorization: `Bearer ${sendToken}` },
     }),
     env,
     undefined,
-    { sendNotification: async (_subscription, message) => { if (message.title.includes("실패")) failures += 1; } },
+    { sendNotification: async () => { calls += 1; } },
   );
-  const watchdog = await runWatchdog(env, {
-    now: () => new Date("2026-08-15T00:00:00.000Z"),
-    sendNotification: async (_subscription, message) => {
-      if (message.title.includes("실패")) failures += 1;
-    },
-  });
-  assert.equal(watchdog.type, "FAILURE");
-  assert.equal(failures, 1);
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+  assert.equal(calls, 0);
 });
 
 test("subscription writes enforce the configured maximum", async () => {
