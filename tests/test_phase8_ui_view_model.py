@@ -80,6 +80,17 @@ class Phase8UIViewModelTests(unittest.TestCase):
         self.assertNotIn("원문 보존", html)
         self.assertNotIn("검증된 재구성", html)
 
+    def test_identical_headline_and_summary_are_shown_once_in_story_card(self) -> None:
+        source = "한화가 홈 경기에서 승리했다."
+        html = render_briefing_html(
+            build_briefing_view_model(
+                briefing(entry(headline=source, summary=source, render_mode=RenderMode.EXTRACTIVE_FALLBACK))
+            )
+        )
+        story_card = html.split('<article id="story-1"', 1)[1].split("</article>", 1)[0]
+        self.assertEqual(story_card.count(source), 1)
+        self.assertNotIn('class="story-summary"', story_card)
+
     def test_html_uses_plain_korean_copy_and_localized_topic_labels(self) -> None:
         rendered = briefing(
             entry("event:ai"),
@@ -107,7 +118,7 @@ class Phase8UIViewModelTests(unittest.TestCase):
 
     def test_empty_briefing_renders_empty_state_without_fake_story(self) -> None:
         html = render_briefing_html(build_briefing_view_model(briefing()))
-        self.assertIn("오늘 보여드릴 뉴스가 없습니다.", html)
+        self.assertIn("오늘 보여드릴 뉴스가 없습니다.")
         self.assertIn("<strong>0</strong>건", html)
         self.assertNotIn('<article class="story-row"', html)
 
