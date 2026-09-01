@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 import unittest
 
-from insight_desk.runtime_integration_audit_v2 import build_runtime_integration_specs
+from insight_desk.runtime_integration_audit_v2 import (
+    build_runtime_integration_specs,
+    evaluate_integration_probes,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +30,13 @@ class KosisProductionScopeTests(unittest.TestCase):
         self.assertTrue(kosis.configured)
         self.assertFalse(kosis.active)
         self.assertEqual(kosis.inactive_status, "DISABLED")
-        self.assertIsNone(kosis.probe)
+
+        payload = evaluate_integration_probes(specs)
+        record = payload["integrations"]["kosis"]
+        self.assertEqual(record["status"], "DISABLED")
+        self.assertFalse(record["attempted"])
+        self.assertEqual(record["calls"], 0)
+        self.assertNotIn("kosis", payload["configured_failures"])
 
 
 if __name__ == "__main__":
