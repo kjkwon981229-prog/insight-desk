@@ -170,13 +170,18 @@ def _story_html(story: StoryViewModel) -> str:
         if story.source_url is not None
         else ""
     )
+    summary = (
+        ""
+        if story.summary.strip() == story.headline.strip()
+        else f'<p class="story-summary">{escape(story.summary)}</p>'
+    )
     return (
         f'<article class="story-row" data-event-id="{escape(story.event_id, quote=True)}">'
         f'<div class="story-index">{story.index:02d}</div>'
         '<div class="story-main">'
         f'{metadata}'
         f'<h3>{escape(story.headline)}</h3>'
-        f'<p class="story-summary">{escape(story.summary)}</p>'
+        f'{summary}'
         f'{source}'
         '</div></article>'
     )
