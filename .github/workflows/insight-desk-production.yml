@@ -270,7 +270,12 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name != 'pull_request' && needs.build.result == 'success' && needs.build.outputs.publish == 'true'
+    # The build job is fail-closed when no publishable briefing exists. A successful non-PR build
+    # therefore already proves that a validated Pages artifact was uploaded. Do not gate delivery
+    # on a cross-job string output: GitHub may expose that output as empty even after the producing
+    # step and artifact upload both succeeded, which previously skipped deployment and emitted a
+    # false FAILURE notification.
+    if: github.event_name != 'pull_request' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -292,7 +297,6 @@ jobs:
       contents: read
     env:
       BUILD_RESULT: ${{ needs.build.result }}
-      BUILD_PUBLISH: ${{ needs.build.outputs.publish }}
       DEPLOY_RESULT: ${{ needs.deploy.result }}
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
       PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
@@ -302,7 +306,7 @@ jobs:
         run: echo "::add-mask::$PUSH_SEND_TOKEN"
 
       - name: Download exact publication identity
-        if: needs.build.result == 'success' && needs.build.outputs.publish == 'true' && needs.deploy.result == 'success'
+        if: needs.build.result == 'success' && needs.deploy.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: production-audit-${{ github.run_id }}
@@ -331,7 +335,7 @@ jobs:
           esac
 
           notification_type="FAILURE"
-          if [[ "$BUILD_RESULT" == "success" && "$BUILD_PUBLISH" == "true" && "$DEPLOY_RESULT" == "success" ]]; then
+          if [[ "$BUILD_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then
             notification_type="READY"
           fi
           briefing_date="$(TZ=Asia/Seoul date +%F)"
@@ -407,3 +411,9 @@ jobs:
             exit 0
           fi
           echo "Push notification accepted (type=$notification_type; source=$notification_source; http=$http_status)."
+
+      - name: Fail when a successful build was not deployed
+        if: always() && needs.build.result == 'success' && needs.deploy.result != 'success'
+        run: |
+          echo "::error::Production build succeeded but Pages deployment did not; FAILURE notification was sent when configured."
+          exit 1
