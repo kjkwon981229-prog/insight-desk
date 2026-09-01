@@ -118,7 +118,7 @@ class Phase8UIViewModelTests(unittest.TestCase):
 
     def test_empty_briefing_renders_empty_state_without_fake_story(self) -> None:
         html = render_briefing_html(build_briefing_view_model(briefing()))
-        self.assertIn("오늘 보여드릴 뉴스가 없습니다.")
+        self.assertIn("오늘 보여드릴 뉴스가 없습니다.", html)
         self.assertIn("<strong>0</strong>건", html)
         self.assertNotIn('<article class="story-row"', html)
 
