@@ -17,7 +17,7 @@
     ]
   },
   "kosis": {
-    "enabled": true,
+    "enabled": false,
     "max_requests": 2,
     "datasets": [
       {
