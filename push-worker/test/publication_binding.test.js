@@ -239,28 +239,8 @@ test("partial or malformed publication identity fails the authenticated send con
   assert.deepEqual(await badDigest.json(), { ok: false, error: "INVALID_NOTIFICATION" });
 });
 
-test("an authenticated READY request cannot bypass publication identity", async () => {
+test("legacy READY without publication identity cannot bypass the gateway", async () => {
   const env = environment();
-  const response = await handlePublicationRequest(
-    request("/send", {
-      method: "POST",
-      body: {
-        date: "2026-08-27",
-        run_id: "legacy-ready",
-        type: "READY",
-        source: "schedule",
-      },
-      headers: { Authorization: `Bearer ${sendToken}` },
-    }),
-    env,
-  );
-  assert.equal(response.status, 400);
-  assert.deepEqual(await response.json(), { ok: false, error: "INVALID_NOTIFICATION" });
-});
-
-test("legacy READY without publication identity remains backward compatible", async () => {
-  const env = environment();
-  await subscribe(env);
   let calls = 0;
   const dependencies = { sendNotification: async () => { calls += 1; } };
   const payload = {
@@ -271,8 +251,9 @@ test("legacy READY without publication identity remains backward compatible", as
   };
   const first = await send(env, payload, dependencies);
   const second = await send(env, { ...payload, run_id: "legacy-retry" }, dependencies);
-  assert.equal(first.status, 200);
-  assert.equal((await first.json()).duplicate, false);
-  assert.equal((await second.json()).duplicate, true);
-  assert.equal(calls, 1);
+  assert.equal(first.status, 400);
+  assert.deepEqual(await first.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+  assert.equal(second.status, 400);
+  assert.deepEqual(await second.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+  assert.equal(calls, 0);
 });
