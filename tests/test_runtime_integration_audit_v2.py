@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import socket
+import ssl
 import unittest
+import urllib.error
 
 from insight_desk.runtime_integration_audit_v2 import (
     IntegrationProbeSpec,
@@ -69,6 +72,40 @@ class RuntimeIntegrationAuditTests(unittest.TestCase):
         self.assertEqual(payload["status"], "FAIL")
         self.assertNotIn("must-never-be-logged", rendered)
         self.assertIn('"error_kind": "RuntimeError"', rendered)
+
+    def test_url_error_diagnostics_are_bounded_to_safe_transport_classes(self) -> None:
+        cases = (
+            (socket.timeout("secret timeout detail"), "URLError_TIMEOUT"),
+            (socket.gaierror(-2, "secret dns detail"), "URLError_DNS"),
+            (ssl.SSLError("secret tls detail"), "URLError_TLS"),
+            (ConnectionRefusedError("secret refusal detail"), "URLError_CONNECTION_REFUSED"),
+            (ConnectionResetError("secret reset detail"), "URLError_CONNECTION_RESET"),
+            (OSError("secret os detail"), "URLError_OS"),
+            ("secret opaque detail", "URLError_OTHER"),
+        )
+        for reason, expected in cases:
+            with self.subTest(expected=expected):
+                def fail(reason=reason) -> None:
+                    raise urllib.error.URLError(reason)
+
+                payload = evaluate_integration_probes(
+                    (
+                        IntegrationProbeSpec(
+                            "transport",
+                            role="enrichment",
+                            scope="conditional_runtime",
+                            configured=True,
+                            active=True,
+                            probe=fail,
+                        ),
+                    )
+                )
+                integrations = payload["integrations"]
+                assert isinstance(integrations, dict)
+                self.assertEqual(integrations["transport"]["error_kind"], expected)
+                rendered = json.dumps(payload, ensure_ascii=False)
+                self.assertNotIn("secret", rendered)
+                self.assertNotIn("detail", rendered)
 
     def test_inactive_provider_is_not_probed_even_when_credential_exists(self) -> None:
         payload = evaluate_integration_probes(
