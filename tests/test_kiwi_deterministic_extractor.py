@@ -150,6 +150,26 @@ class KiwiDeterministicFactExtractorTests(unittest.TestCase):
         self.assertEqual(result.facts[0].subject, "네오팩토리")
         self.assertIn("15억달러", result.facts[0].action)
 
+    def test_facts_never_cross_acquired_source_block_boundaries(self) -> None:
+        first = "시장 전망은 개선될 수 있다"
+        second = "5대 은행의 정기예금 잔액이 증가했다."
+        result = extract(
+            "서로 다른 두 source block",
+            first + "\n" + second,
+            topic_id="economy",
+            suffix="source-block-boundary",
+        )
+
+        cited = {
+            span.text
+            for fact in result.facts
+            for span in result.evidence
+            if span.evidence_id in fact.evidence_ids
+        }
+        self.assertTrue(cited)
+        self.assertTrue(cited <= {first, second})
+        self.assertTrue(all("\n" not in proposition for proposition in cited))
+
     def test_unsupported_english_sentence_fails_closed(self) -> None:
         text = "BTS' Arirang remained No. 14 on the Billboard 200 for a 20th week."
         result = extract(text, text, topic_id="kpop", suffix="english")

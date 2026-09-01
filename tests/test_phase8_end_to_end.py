@@ -128,7 +128,8 @@ class Phase8EndToEndTests(unittest.TestCase):
 
         self.assertEqual([entry.event_id for entry in rendered.entries], ["event:accepted"])
         self.assertIn(accepted_text, html)
-        self.assertIn("AI·테크", html)
+        self.assertIn("AI 테크", html)
+        self.assertNotIn("AI·테크", html)
         self.assertNotIn(rejected_text, html)
         self.assertIn('rel="manifest" href="manifest.webmanifest"', html)
         self.assertIn('data-push-service-worker-url="push-sw.js"', html)

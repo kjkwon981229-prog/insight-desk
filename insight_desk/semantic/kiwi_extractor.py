@@ -134,6 +134,24 @@ def _right_source_boundary_is_safe(source: str, end: int) -> bool:
     return False
 
 
+def _structural_line_ranges(text: str) -> tuple[tuple[int, int], ...]:
+    """Return exact non-empty ranges that never cross an acquired source block boundary."""
+
+    ranges: list[tuple[int, int]] = []
+    cursor = 0
+    while cursor < len(text):
+        newline = text.find("\n", cursor)
+        end = len(text) if newline < 0 else newline
+        if end > cursor and text[end - 1] == "\r":
+            end -= 1
+        if end > cursor and text[cursor:end].strip():
+            ranges.append((cursor, end))
+        if newline < 0:
+            break
+        cursor = newline + 1
+    return tuple(ranges)
+
+
 class KiwiDeterministicFactExtractor:
     """Precision-first local FactExtractorPort implementation with exact-source output only."""
 
@@ -146,45 +164,46 @@ class KiwiDeterministicFactExtractor:
         drafts: list[FactDraft] = []
         for evidence in request.evidence:
             source = request.article.field_text(evidence.field)
-            try:
-                sentences = self._kiwi.split_sentences(evidence.text)
-            except MorphologySourceOffsetError:
-                # Exact source provenance cannot be established for this evidence window.
-                # Fail closed locally instead of aborting the article or the full pipeline.
-                continue
-            for sentence in sentences:
-                absolute_start = evidence.start + sentence.start
-                absolute_end = evidence.start + sentence.end
-                if not _left_source_boundary_is_safe(source, absolute_start):
-                    continue
-                if not _right_source_boundary_is_safe(source, absolute_end):
-                    continue
-                text = sentence.text
+            for line_start, line_end in _structural_line_ranges(evidence.text):
+                structural_line = evidence.text[line_start:line_end]
                 try:
-                    tokens = self._kiwi.analyze(text)
+                    sentences = self._kiwi.split_sentences(structural_line)
                 except MorphologySourceOffsetError:
-                    # Kiwi can occasionally return unusable coordinates for unusual live text.
-                    # Never clip or repair them: skip only this sentence and preserve exactness.
+                    # Exact source provenance cannot be established for this source block.
                     continue
-                parts = _predicate_fact_parts(text, tokens) or _nominal_fact_parts(text)
-                if parts is None:
-                    continue
-                if parts.subject not in text or parts.action not in text:
-                    raise ValueError("Kiwi deterministic extractor lost exact source surface")
-                if parts.object is not None and parts.object not in text:
-                    raise ValueError("Kiwi deterministic extractor object lost source surface")
-                digest = hashlib.sha256(
-                    f"{evidence.evidence_id}\x1f{sentence.start}\x1f{sentence.end}".encode("utf-8")
-                ).hexdigest()[:20]
-                drafts.append(
-                    FactDraft(
-                        draft_id=f"kiwi:{digest}",
-                        subject=parts.subject,
-                        action=parts.action,
-                        object=parts.object,
-                        evidence_ids=(evidence.evidence_id,),
-                        source_start=absolute_start,
-                        source_end=absolute_end,
+                for sentence in sentences:
+                    absolute_start = evidence.start + line_start + sentence.start
+                    absolute_end = evidence.start + line_start + sentence.end
+                    if not _left_source_boundary_is_safe(source, absolute_start):
+                        continue
+                    if not _right_source_boundary_is_safe(source, absolute_end):
+                        continue
+                    text = sentence.text
+                    try:
+                        tokens = self._kiwi.analyze(text)
+                    except MorphologySourceOffsetError:
+                        # Never clip or repair unusable coordinates: skip only this sentence.
+                        continue
+                    parts = _predicate_fact_parts(text, tokens) or _nominal_fact_parts(text)
+                    if parts is None:
+                        continue
+                    if parts.subject not in text or parts.action not in text:
+                        raise ValueError("Kiwi deterministic extractor lost exact source surface")
+                    if parts.object is not None and parts.object not in text:
+                        raise ValueError("Kiwi deterministic extractor object lost source surface")
+                    digest = hashlib.sha256(
+                        f"{evidence.evidence_id}\x1f{line_start + sentence.start}\x1f"
+                        f"{line_start + sentence.end}".encode("utf-8")
+                    ).hexdigest()[:20]
+                    drafts.append(
+                        FactDraft(
+                            draft_id=f"kiwi:{digest}",
+                            subject=parts.subject,
+                            action=parts.action,
+                            object=parts.object,
+                            evidence_ids=(evidence.evidence_id,),
+                            source_start=absolute_start,
+                            source_end=absolute_end,
+                        )
                     )
-                )
         return tuple(drafts)

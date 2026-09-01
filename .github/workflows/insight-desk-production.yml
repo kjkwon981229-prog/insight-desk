@@ -193,8 +193,12 @@ jobs:
           test -s build/site/push-sw.js
           test -s build/site/assets/css/style.css
           test -s build/site/assets/js/push.js
-          grep -q 'SUPPORTED headline + summary only' build/site/index.html
+          grep -q '오늘 알아둘 뉴스를 모았습니다.' build/site/index.html
           grep -q 'manifest.webmanifest' build/site/index.html
+          if grep -Eq 'SUPPORTED headline \+ summary only|>VERIFIED<|검증 뉴스|검증된 재구성|검증 완료 뉴스|원문 보존|검증된 항목만 표시|검증을 통과한 뉴스만 표시합니다\.' build/site/index.html; then
+            echo "::error::Internal verification copy leaked into the user-facing briefing."
+            exit 1
+          fi
           if [[ -n "$PUSH_WORKER_URL" ]]; then
             grep -q 'push-sw.js' build/site/index.html
             grep -q 'assets/js/push.js' build/site/index.html
