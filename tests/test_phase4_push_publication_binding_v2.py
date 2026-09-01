@@ -126,6 +126,39 @@ class ProductionPushWiringTests(unittest.TestCase):
         )
         self.assertIn('      - "scripts/**"', workflow)
 
+    def test_successful_fail_closed_build_delivers_without_cross_job_publish_output(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(
+            encoding="utf-8"
+        )
+        delivery = workflow[workflow.index("\n  deploy:\n") :]
+        self.assertIn(
+            "if: github.event_name != 'pull_request' && needs.build.result == 'success'",
+            delivery,
+        )
+        build = workflow[: workflow.index("\n  deploy:\n")]
+        self.assertIn("Fail closed when no publishable briefing exists", build)
+        self.assertIn("if: steps.state.outputs.publish != 'true'", build)
+        self.assertNotIn("needs.build.outputs.publish", delivery)
+        self.assertNotIn("BUILD_PUBLISH", delivery)
+
+    def test_delivery_failure_cannot_be_reported_as_successful_workflow(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            'if [[ "$BUILD_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then',
+            workflow,
+        )
+        self.assertIn("Fail when a successful build was not deployed", workflow)
+        self.assertIn(
+            "if: always() && needs.build.result == 'success' && needs.deploy.result != 'success'",
+            workflow,
+        )
+        self.assertIn(
+            "Production build succeeded but Pages deployment did not; FAILURE notification was sent when configured.",
+            workflow,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
