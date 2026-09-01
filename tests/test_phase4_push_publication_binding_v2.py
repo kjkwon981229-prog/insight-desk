@@ -132,9 +132,10 @@ class ProductionPushWiringTests(unittest.TestCase):
         )
         delivery = workflow[workflow.index("\n  deploy:\n") :]
         self.assertIn(
-            "if: github.event_name != 'pull_request' && needs.build.result == 'success'",
+            "if: always() && github.event_name != 'pull_request' && needs.build.result == 'success'",
             delivery,
         )
+        self.assertIn("build itself depends on the PR-only gate", delivery)
         build = workflow[: workflow.index("\n  deploy:\n")]
         self.assertIn("Fail closed when no publishable briefing exists", build)
         self.assertIn("if: steps.state.outputs.publish != 'true'", build)

@@ -271,11 +271,11 @@ jobs:
   deploy:
     needs: build
     # The build job is fail-closed when no publishable briefing exists. A successful non-PR build
-    # therefore already proves that a validated Pages artifact was uploaded. Do not gate delivery
-    # on a cross-job string output: GitHub may expose that output as empty even after the producing
-    # step and artifact upload both succeeded, which previously skipped deployment and emitted a
-    # false FAILURE notification.
-    if: github.event_name != 'pull_request' && needs.build.result == 'success'
+    # therefore already proves that a validated Pages artifact was uploaded. `always()` is required
+    # because build itself depends on the PR-only gate: without an explicit status function GitHub
+    # propagates that skipped ancestor and suppresses deploy even when needs.build.result is success.
+    # Do not add the fragile cross-job publish string back to this delivery boundary.
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
