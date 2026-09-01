@@ -13,6 +13,8 @@ from datetime import date, timedelta
 import json
 import os
 from pathlib import Path
+import socket
+import ssl
 from typing import Callable, Mapping
 import urllib.error
 import urllib.parse
@@ -70,9 +72,34 @@ class IntegrationProbeSpec:
             raise ValueError(f"{self.integration_id}: required integration must be active")
 
 
+def _url_error_kind(exc: urllib.error.URLError) -> str:
+    reason = exc.reason
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "URLError_TIMEOUT"
+    if isinstance(reason, socket.gaierror):
+        return "URLError_DNS"
+    if isinstance(reason, (ssl.SSLError, ssl.CertificateError)):
+        return "URLError_TLS"
+    if isinstance(reason, ConnectionRefusedError):
+        return "URLError_CONNECTION_REFUSED"
+    if isinstance(reason, ConnectionResetError):
+        return "URLError_CONNECTION_RESET"
+    if isinstance(reason, ConnectionError):
+        return "URLError_CONNECTION"
+    if isinstance(reason, OSError):
+        return "URLError_OS"
+    return "URLError_OTHER"
+
+
 def _error_kind(exc: Exception) -> str:
     if isinstance(exc, DiscoveryError):
         return exc.failure_kind.value
+    if isinstance(exc, urllib.error.URLError):
+        return _url_error_kind(exc)
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "TIMEOUT"
+    if isinstance(exc, ssl.SSLError):
+        return "TLS"
     return type(exc).__name__
 
 
