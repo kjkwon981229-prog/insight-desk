@@ -27,7 +27,6 @@ from insight_desk.core import (
 from insight_desk.generation import GenerationContractError, GenerationRequest
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 from insight_desk.production_phase7_v2 import (
-    CanonicalEventRecoveryGenerator,
     build_canonical_generation_request,
 )
 from insight_desk.production_runtime_v2 import production_v2_runtime
@@ -291,10 +290,10 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             _ArticleCase(
                 "same-actor-central-and-background",
                 "ai_tech",
-                "오로라연구소, 양자센서 시제품 공개",
-                "오로라연구소는 양자센서 시제품을 공개했다. "
+                "오로라연구소, AI 기술 기반 양자센서 시제품 공개",
+                "오로라연구소는 AI 기술 기반 양자센서 시제품을 공개했다. "
                 "오로라연구소는 2024년부터 관련 연구를 진행해 왔다.",
-                "오로라연구소는 양자센서 시제품을 공개했다.",
+                "오로라연구소는 AI 기술 기반 양자센서 시제품을 공개했다.",
             ),
             _ArticleCase(
                 "background-before-central-event",
@@ -307,25 +306,25 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             _ArticleCase(
                 "headline-body-centrality-conflict",
                 "ai_tech",
-                "세림연구원, 우주망원경 개발 경험",
-                "다온우주원은 30일 새 위성 관측 장비를 공개했다. "
-                "세림연구원은 2023년 우주망원경을 개발했다.",
+                "세림연구원, AI 기술 기반 우주망원경 개발 경험",
+                "다온우주원은 30일 새 AI 기술 기반 위성 관측 장비를 공개했다. "
+                "세림연구원은 2023년 AI 기술 기반 우주망원경을 개발했다.",
                 None,
             ),
             _ArticleCase(
                 "coordinated-actors",
                 "ai_tech",
-                "한빛연구소·새론대, 공동 모델 공개",
-                "한빛연구소와 새론대학교는 30일 공동 언어모델을 공개했다.",
-                "한빛연구소와 새론대학교는 30일 공동 언어모델을 공개했다.",
+                "한빛연구소·새론대, 공동 AI 모델 공개",
+                "한빛연구소와 새론대학교는 30일 공동 AI 모델을 공개했다.",
+                "한빛연구소와 새론대학교는 30일 공동 AI 모델을 공개했다.",
             ),
             _ArticleCase(
                 "substantive-embedded-clause",
                 "psat_recruitment",
                 "별도 자격시험 시행안 확정",
-                "내년부터 별도 자격시험 형태로 시행돼 기존 채용시험의 1차 시험을 "
+                "내년부터 별도 자격시험 형태로 시행돼 기존 국가공무원 채용시험의 1차 시험을 "
                 "대체하는 평가제도의 운영안이 확정됐다.",
-                "내년부터 별도 자격시험 형태로 시행돼 기존 채용시험의 1차 시험을 "
+                "내년부터 별도 자격시험 형태로 시행돼 기존 국가공무원 채용시험의 1차 시험을 "
                 "대체하는 평가제도의 운영안이 확정됐다.",
             ),
             _ArticleCase(
@@ -339,25 +338,25 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             _ArticleCase(
                 "planned-and-completed-status-conflict",
                 "economy",
-                "푸른에너지, 실증사업 완료",
-                "푸른에너지는 내년 3월 2단계 사업을 시작할 예정이다. "
-                "푸른에너지는 30일 1단계 실증사업을 완료했다.",
+                "푸른에너지, 투자 실증사업 완료",
+                "푸른에너지는 내년 3월 2단계 투자사업을 시작할 예정이다. "
+                "푸른에너지는 30일 1단계 투자 실증사업을 완료했다.",
                 None,
             ),
             _ArticleCase(
                 "historical-comparison",
                 "economy",
-                "새봄은행, 간편결제 서비스 출시",
-                "새봄은행은 30일 간편결제 서비스를 출시했다. "
+                "새봄은행, 금융당국 허가 후 간편결제 서비스 출시",
+                "새봄은행은 금융당국 허가를 받아 30일 간편결제 서비스를 출시했다. "
                 "새봄은행은 2025년 8월 20일 모바일 통장을 출시했다.",
-                "새봄은행은 30일 간편결제 서비스를 출시했다.",
+                "새봄은행은 금융당국 허가를 받아 30일 간편결제 서비스를 출시했다.",
             ),
             _ArticleCase(
                 "two-events-one-source-proposition",
                 "ai_tech",
-                "하늘연구원, 센서 공개·시험 착수",
-                "하늘연구원은 30일 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
-                "하늘연구원은 30일 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
+                "하늘연구원, AI 기술 기반 기상 센서 공개·시험 착수",
+                "하늘연구원은 30일 AI 기술 기반 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
+                "하늘연구원은 30일 AI 기술 기반 기상 센서를 공개하고 제주에서 현장 시험에 착수했다.",
             ),
             _ArticleCase(
                 "high-cardinality-article",
@@ -374,6 +373,14 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
                 "운영사는 교육 과정을 시작했다. "
                 "위원회는 다음 회의 일정을 확정했다.",
                 "새빛연구소는 AI 반도체 시제품을 공개했다.",
+            ),
+            _ArticleCase(
+                "topic-context-outside-central-proposition",
+                "kpop",
+                "새봄시, 국제정원박람회 운영 계획 공개",
+                "새봄시는 국제정원박람회 운영 계획을 공개했다. "
+                "행사장에서는 가수 공연과 K-POP 댄스 무대도 운영한다.",
+                None,
             ),
         )
         outcomes = _run_cases(cases)
@@ -394,7 +401,7 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
                 )
                 correctly_published += 1
         self.assertEqual(correctly_published, 6)
-        self.assertEqual(correctly_abstained, 4)
+        self.assertEqual(correctly_abstained, 5)
 
     def test_multiple_canonical_evidence_spans_abstain(self) -> None:
         first = "한빛연구소는 공동 모델을 공개했다."

@@ -8,6 +8,10 @@ from types import ModuleType
 
 import insight_desk.generation as generation_module
 import insight_desk.generation_pipeline as generation_pipeline_module
+from insight_desk.core import ContractError
+from insight_desk.production_canonical_proposition_v2 import (
+    resolve_exact_canonical_proposition,
+)
 from insight_desk.production_event_understanding_lifecycle_v2 import (
     install_event_understanding_lifecycle,
 )
@@ -27,6 +31,8 @@ from insight_desk.production_phase7_v2 import (
 )
 from insight_desk.production_relevance_v2 import (
     ConfiguredLiteralRelevanceOwner,
+    project_event_relevance,
+    rewrite_event_relevance_attempt,
 )
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
@@ -95,6 +101,7 @@ def production_v2_runtime(core_module: ModuleType):
     registry: ProductionV2Registry | None = None
     try:
         registry = install_production_orchestration(core_module)
+        mechanical_attempt = core_module._attempt
         event_understanding_owner = install_event_understanding_lifecycle(core_module, registry)
         identity_resolution_lane = CanonicalIdentityResolutionLane(
             registry,
@@ -104,16 +111,50 @@ def production_v2_runtime(core_module: ModuleType):
             delattr(core_module, "assess_material_event")
         core_module.relevance_decision = relevance_owner.decide
 
-        def project_prequalified_event_relevance(*, event, facts, evidence, topic):
-            # Source-level Relevance already ran before Event Understanding. The legacy loop asks a
-            # second event-level question only because of its historical ordering. Re-evaluating
-            # flat EventFact fields here would create a second semantic authority, so this adapter
-            # is mechanical. The immediately following cached Event Understanding projection still
-            # blocks every unresolved/non-primary event before identity or publication.
-            del event, facts, evidence, topic
-            return True
+        def project_canonical_proposition_relevance(*, event, facts, evidence, topic):
+            # The source article was prequalified before Event Understanding, but scattered topic
+            # terms cannot prove that the selected central event belongs to that topic. Bind the
+            # event locally using the one exact canonical proposition and never re-read flat SVO.
+            del facts, evidence
+            try:
+                proposition = resolve_exact_canonical_proposition(registry, event.event_id)
+            except ContractError:
+                decision = relevance_owner.decide_canonical_proposition(
+                    proposition="",
+                    canonical_topic=event.topic_id,
+                    topic=topic,
+                )
+            else:
+                ref = proposition.ref
+                evidence_ref = (
+                    f"{ref.source_id}:{ref.field}:{ref.start}:{ref.end}:{ref.text_sha256}"
+                )
+                decision = relevance_owner.decide_canonical_proposition(
+                    proposition=proposition.text,
+                    canonical_topic=proposition.event.topic,
+                    topic=topic,
+                    evidence_refs=(evidence_ref,),
+                )
+            return project_event_relevance(decision)
 
-        core_module.event_topic_relevant = project_prequalified_event_relevance
+        core_module.event_topic_relevant = project_canonical_proposition_relevance
+
+        def project_relevance_attempt(*, topic, query, domain, stage, status, reason=None):
+            projected_status, projected_reason = rewrite_event_relevance_attempt(
+                stage=stage,
+                status=status,
+                reason=reason,
+            )
+            return mechanical_attempt(
+                topic=topic,
+                query=query,
+                domain=domain,
+                stage=stage,
+                status=projected_status,
+                reason=projected_reason,
+            )
+
+        core_module._attempt = project_relevance_attempt
         core_module.expand_deferred_event_understanding = expand_deferred_event_understanding
         core_module.Phase6EventEngine = partial(EvidenceIntegrityPhase6EventEngine, registry)
         core_module.resolve_deferred_identity = identity_resolution_lane.resolve

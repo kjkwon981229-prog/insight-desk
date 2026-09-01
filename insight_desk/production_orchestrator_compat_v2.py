@@ -557,6 +557,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                 "authoritative_enrichment": authoritative.audit_stats,
                 "runtime_authority": {
                     "relevance": "relevance_engine",
+                    "event_topic_binding": "exact_canonical_source_proposition",
                     "event_understanding": "canonical_event_builder",
                     "authoritative_enrichment": "authoritative_enricher",
                     "event_identity": "canonical_identity_engine",
