@@ -834,10 +834,30 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "tool_usage": tool_usage,
         "rendered_sources": rendered_sources,
         "provider_roles": {
-            "generation": GROQ_20B,
-            "primary_verifier": CLOUDFLARE_MODEL,
-            "secondary_verifier": LOCAL_NLI_MODEL,
-            "groq_configured": generator is not None,
+            "visible_generation_authority": "exact_canonical_source_proposition",
+            "visible_verification_authority": "evidence-substring-v1",
+            "external_routes": {
+                "groq_generation": {
+                    "model": GROQ_20B,
+                    "configured": generator is not None,
+                    "active_visible_path": False,
+                },
+                "cloudflare_verification": {
+                    "model": CLOUDFLARE_MODEL,
+                    "configured": bool(os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip())
+                    and bool(os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()),
+                    "active_visible_path": False,
+                },
+                "local_nli_verification": {
+                    "model": LOCAL_NLI_MODEL,
+                    "configured": True,
+                    "active_visible_path": False,
+                },
+                "gemini_verification": {
+                    "configured": bool(os.environ.get("GEMINI_API_KEY", "").strip()),
+                    "active_visible_path": False,
+                },
+            },
         },
         "paid_paths": 0,
         "article_body_logged": False,

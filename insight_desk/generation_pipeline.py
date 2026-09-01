@@ -45,6 +45,7 @@ class GenerationAttemptKind(StrEnum):
     PRIMARY = "primary"
     ALTERNATE = "alternate"
     EXTRACTIVE_FALLBACK = "extractive_fallback"
+    CANONICAL_SOURCE = "canonical_source"
 
 
 class GenerationAttemptStatus(StrEnum):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import unittest
@@ -14,13 +15,14 @@ from insight_desk.core import (
     EventFact,
     SourceDocument,
 )
-from insight_desk.generation import GenerationContractError, GenerationRequest
+from insight_desk.generation import GeneratedDraft, GenerationContractError, GenerationRequest
 from insight_desk.production_phase7_v2 import (
     CanonicalEventRecoveryGenerator,
     build_canonical_generation_request,
 )
 from insight_desk.verification_pipeline import (
     DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID,
+    verify_exact_canonical_proposition_draft,
     verify_exact_source_draft,
 )
 
@@ -165,7 +167,7 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
         self.assertEqual(draft.summary, proposition)
         self.assertIn("한화", draft.headline)
         self.assertIn("NC", draft.headline)
-        verification = verify_exact_source_draft(request, draft)
+        verification = verify_exact_canonical_proposition_draft(request, draft)
         self.assertTrue(verification.publishable)
         self.assertTrue(
             all(
@@ -196,22 +198,20 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
         self.assertIn("1차 시험으로 대체", draft.combined_text)
         self.assertNotIn("PSAT 도입", draft.combined_text)
         self.assertNotEqual(draft.headline, "확정됐다")
-        self.assertTrue(verify_exact_source_draft(request, draft).publishable)
+        self.assertTrue(verify_exact_canonical_proposition_draft(request, draft).publishable)
 
     def test_multiple_canonical_proposition_spans_fail_closed(self) -> None:
-        registry, request = _fixture(
-            "한화와 NC는 29일 대전에서 맞붙는다.",
-            actor="NC",
-            action="맞붙는다",
-            topic="kbo_hanwha",
-            second_proposition="양 팀은 선발 라인업을 공개했다.",
-        )
-
         with self.assertRaisesRegex(
             GenerationContractError,
-            "requires exactly one proposition evidence span",
+            "requires one exact proposition",
         ):
-            CanonicalEventRecoveryGenerator(registry).generate(request)
+            _fixture(
+                "한화와 NC는 29일 대전에서 맞붙는다.",
+                actor="NC",
+                action="맞붙는다",
+                topic="kbo_hanwha",
+                second_proposition="양 팀은 선발 라인업을 공개했다.",
+            )
 
     def test_exact_source_verification_does_not_need_semantic_verifier(self) -> None:
         proposition = "한국은행은 기준금리를 동결했다."
@@ -223,7 +223,7 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
         )
         draft = CanonicalEventRecoveryGenerator(registry).generate(request)
 
-        verification = verify_exact_source_draft(request, draft)
+        verification = verify_exact_canonical_proposition_draft(request, draft)
 
         self.assertTrue(verification.publishable)
         self.assertEqual(len(verification.claims), 2)
@@ -234,6 +234,58 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
                 DETERMINISTIC_SOURCE_PROOF_VERIFIER_ID,
             )
             self.assertTrue(result.claim.checks[0].entailed)
+
+    def test_canonical_proof_rejects_a_punctuation_truncated_excerpt(self) -> None:
+        proposition = "한국은행은 기준금리를 동결했다."
+        _registry, request = _fixture(
+            proposition,
+            actor="한국은행",
+            action="기준금리를 동결했다",
+            topic="economy",
+        )
+        excerpt = proposition[:-1]
+        draft = GeneratedDraft(
+            event_id=request.event.event_id,
+            headline=excerpt,
+            summary=excerpt,
+            evidence_ids=request.evidence_ids,
+        )
+
+        self.assertTrue(verify_exact_source_draft(request, draft).publishable)
+        self.assertFalse(
+            verify_exact_canonical_proposition_draft(request, draft).publishable
+        )
+
+    def test_identical_bytes_from_an_unbound_article_cannot_satisfy_provenance(self) -> None:
+        proposition = "한국은행은 기준금리를 동결했다."
+        registry, canonical_request = _fixture(
+            proposition,
+            actor="한국은행",
+            action="기준금리를 동결했다",
+            topic="economy",
+        )
+        evidence_id = canonical_request.evidence_ids[0]
+        foreign_span = replace(
+            canonical_request.evidence[evidence_id],
+            article_id="article-with-identical-bytes-but-no-source-binding",
+        )
+        foreign_request = GenerationRequest(
+            event=replace(
+                canonical_request.event,
+                article_ids=(
+                    canonical_request.event.article_ids[0],
+                    foreign_span.article_id,
+                ),
+            ),
+            facts=canonical_request.facts,
+            evidence={evidence_id: foreign_span},
+        )
+
+        with self.assertRaisesRegex(
+            GenerationContractError,
+            "absent from generation provenance",
+        ):
+            build_canonical_generation_request(registry, foreign_request)
 
 
 if __name__ == "__main__":

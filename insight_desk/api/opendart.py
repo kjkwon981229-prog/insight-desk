@@ -60,6 +60,11 @@ class OpenDartClient:
         if not isinstance(payload, dict):
             raise OpenDartApiError("OpenDART returned non-object JSON")
         status = str(payload.get("status") or "").strip()
+        # OpenDART documents 013 as a valid empty-result response. Treating it as a provider
+        # failure makes a quiet disclosure window indistinguishable from authentication or
+        # transport failure and pollutes the enrichment error audit.
+        if status == "013":
+            return {**payload, "list": []}
         if status and status != "000":
             raise OpenDartApiError(f"OpenDART API status {status}")
         return payload

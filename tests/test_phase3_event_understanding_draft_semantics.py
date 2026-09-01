@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import unittest
 
 from insight_desk.core import (
@@ -30,7 +31,7 @@ class EventUnderstandingDraftSemanticContractTests(unittest.TestCase):
             fetched_at=datetime(2026, 8, 29, 7, 0, tzinfo=timezone.utc),
             publication_time=datetime(2026, 8, 29, 6, 0, tzinfo=timezone.utc),
             retrieved_via="test",
-            content_sha256="0" * 64,
+            content_sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
         )
         evidence = UnderstandingEvidenceRef.from_source(
             source,

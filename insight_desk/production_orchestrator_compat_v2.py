@@ -9,7 +9,6 @@ V2 contracts.
 """
 
 from dataclasses import dataclass, field, replace
-from datetime import date
 import hashlib
 from types import ModuleType
 from typing import Mapping
@@ -41,7 +40,6 @@ from insight_desk.semantic.material import (
     MaterialEventReason,
     MaterialEventVerdict,
 )
-from insight_desk.semantic.pipeline import SemanticPipeline as LegacySemanticPipeline
 from insight_desk.semantic.visible_identity import (
     _same_scheduled_bok_policy_decision,
     visible_event_redundant as legacy_visible_event_redundant,
@@ -51,18 +49,6 @@ from insight_desk.semantic.visible_identity import (
 def _stable_id(prefix: str, *parts: str) -> str:
     material = "\x1f".join(parts)
     return f"{prefix}-" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:20]
-
-
-def _canonical_event_time(value: str | None) -> str | None:
-    """Carry only already-resolved ISO dates into CanonicalEvent; never guess a date."""
-
-    if value is None:
-        return None
-    try:
-        date.fromisoformat(value)
-    except ValueError:
-        return None
-    return value
 
 
 def source_document_from_article(article) -> SourceDocument:
@@ -82,46 +68,6 @@ def source_document_from_article(article) -> SourceDocument:
     )
 
 
-def canonical_event_from_candidate(
-    event: CandidateEvent,
-    *,
-    facts: Mapping[str, EventFact],
-    source: SourceDocument,
-) -> CanonicalEvent:
-    """Lift the current evidence-bound one-fact candidate into the V2 event contract.
-
-    Phase 4 does not invent a new model role. Existing evidence extraction remains an auxiliary
-    input, while this builder becomes the only runtime component allowed to create CanonicalEvent.
-    A richer semantic event type can replace ``news_event`` later without changing downstream
-    contracts.
-    """
-
-    if len(event.fact_ids) != 1:
-        raise ContractError("V2 production bridge requires one pre-identity EventFact per candidate")
-    fact = facts.get(event.fact_ids[0])
-    if fact is None:
-        raise ContractError(f"{event.event_id}: missing fact for canonical event")
-    return CanonicalEvent(
-        event_id=event.event_id,
-        topic=event.topic_id,
-        actor=fact.subject,
-        action=fact.action,
-        object=fact.object,
-        event_type="news_event",
-        source_ids=(source.source_id,),
-        event_time=_canonical_event_time(fact.event_date),
-        publication_time=source.publication_time,
-        participants=fact.participants,
-        fact_ids=(fact.fact_id,),
-        evidence_ids=fact.evidence_ids,
-        temporal_state=fact.temporal_state,
-        certainty=fact.certainty,
-        polarity=fact.polarity,
-        location=fact.location,
-        cause=fact.cause,
-    )
-
-
 def _unique(values):
     return tuple(dict.fromkeys(values))
 
@@ -136,17 +82,6 @@ class ProductionV2Registry:
     current_identity_pair: tuple[str, str] | None = None
     current_identity_relation: str | None = None
     v2_bundle_validated: bool = False
-
-    def register_article_result(self, article, semantic_result) -> None:
-        source = source_document_from_article(article)
-        self.sources_by_article[article.article_id] = source
-        facts = {fact.fact_id: fact for fact in semantic_result.facts}
-        for event in semantic_result.events:
-            self.events_by_id[event.event_id] = canonical_event_from_candidate(
-                event,
-                facts=facts,
-                source=source,
-            )
 
     def canonical_event(self, event_id: str) -> CanonicalEvent:
         try:
@@ -447,29 +382,10 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
     authoritative = AuthoritativeEnricher.from_environment()
     publication_manifest: PublicationIdentityManifest | None = None
 
-    legacy_topic_relevant = core_module.topic_relevant
     legacy_relevance_decision = core_module.relevance_decision
     legacy_event_topic_relevant = core_module.event_topic_relevant
     legacy_build_view = core_module.build_briefing_view_model
     legacy_write_json = core_module._write_json
-
-    class CanonicalSemanticPipeline:
-        def __init__(self, *args, **kwargs) -> None:
-            self._inner = LegacySemanticPipeline(*args, **kwargs)
-
-        def extract_article(self, article, *, topic_id: str, extractor):
-            result = self._inner.extract_article(
-                article,
-                topic_id=topic_id,
-                extractor=extractor,
-            )
-            registry.register_article_result(article, result)
-            for event in result.events:
-                canonical = registry.canonical_event(event.event_id)
-                source = registry.source_for_event(event.event_id)
-                official_facts = authoritative.enrich(canonical, source)
-                registry.bind_authoritative_facts(event.event_id, official_facts)
-            return result
 
     class V2BoundContractBundle:
         def __init__(self, **kwargs) -> None:
@@ -644,8 +560,8 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
                     "event_understanding": "canonical_event_builder",
                     "authoritative_enrichment": "authoritative_enricher",
                     "event_identity": "canonical_identity_engine",
-                    "generation": "publication_generator",
-                    "verification": "claim_verification_engine",
+                    "visible_projection": "exact_canonical_source_proposition",
+                    "verification": "deterministic_exact_source_proof",
                     "publication": "publication_contract",
                     "rendering": "pwa_renderer",
                     "story_admission_semantic_gate": False,
@@ -656,7 +572,6 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
 
     # Install one owner per semantic responsibility onto the old loop. The old implementations
     # stay importable for historical replay, but are no longer runtime authorities here.
-    core_module.SemanticPipeline = CanonicalSemanticPipeline
     core_module.relevance_decision = source_relevance_decision
     core_module.topic_relevant = source_relevant
     core_module.event_topic_relevant = event_relevant

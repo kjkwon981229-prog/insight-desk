@@ -117,6 +117,10 @@ def canonical_event_from_resolved_understanding(
     fact = facts.get(event.fact_ids[0])
     if fact is None:
         raise ContractError(f"{event.event_id}: Event Understanding fact is missing")
+    if len(fact.evidence_ids) != 1:
+        raise ContractError(
+            f"{event.event_id}: canonical primary requires exactly one source proposition"
+        )
 
     draft = CanonicalEventDraft(
         draft_id=f"compat-understanding:{event.event_id}",

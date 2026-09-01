@@ -9,19 +9,21 @@ remain only for provenance and the mechanical evidence-integrity check required 
 loop.
 """
 
-from typing import Mapping, Protocol
+from typing import Mapping
 
 from insight_desk.core import (
     CandidateEvent,
-    CanonicalEvent,
     ContractError,
     EvidenceSpan,
     EventFact,
     SelectionSignals,
     decide_selection,
 )
+from insight_desk.production_canonical_proposition_v2 import (
+    CanonicalEventRegistry,
+    resolve_exact_canonical_proposition,
+)
 from insight_desk.production_identity_core_v2 import _identity_key as canonical_identity_key
-from insight_desk.production_orchestrator_v2 import _evidence_integrity_assessment
 from insight_desk.semantic.events import (
     Phase6AutoMaterialAssessment,
     Phase6EventAssessment,
@@ -31,10 +33,79 @@ from insight_desk.semantic.events import (
     TemporalResolution,
     TemporalResolutionSource,
 )
+from insight_desk.semantic.material import (
+    MaterialEventAssessment,
+    MaterialEventReason,
+    MaterialEventVerdict,
+)
 
 
-class CanonicalEventRegistry(Protocol):
-    def canonical_event(self, event_id: str) -> CanonicalEvent: ...
+def _canonical_proposition_integrity(
+    registry: CanonicalEventRegistry,
+    event: CandidateEvent,
+    *,
+    facts: Mapping[str, EventFact],
+    evidence: Mapping[str, EvidenceSpan],
+) -> MaterialEventAssessment:
+    """Validate canonical provenance without interpreting flat EventFact meaning."""
+
+    if len(event.fact_ids) != 1:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.FACT_MISSING,),
+        )
+    fact = facts.get(event.fact_ids[0])
+    if fact is None:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.FACT_MISSING,),
+        )
+    try:
+        authority = resolve_exact_canonical_proposition(registry, event.event_id)
+    except ContractError:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.CANONICAL_PROPOSITION_MISMATCH,),
+        )
+    if len(fact.evidence_ids) != 1:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.CANONICAL_PROPOSITION_MISMATCH,),
+        )
+    span = evidence.get(fact.evidence_ids[0])
+    if span is None:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.EVIDENCE_MISSING,),
+        )
+    if span.article_id not in event.article_ids or span.article_id not in authority.source.candidate_ids:
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.EVIDENCE_OUTSIDE_EVENT,),
+        )
+    ref = authority.ref
+    if (
+        span.field.value != ref.field
+        or span.start != ref.start
+        or span.end != ref.end
+        or span.text != authority.text
+    ):
+        return MaterialEventAssessment(
+            event.event_id,
+            MaterialEventVerdict.DEFER,
+            (MaterialEventReason.CANONICAL_PROPOSITION_MISMATCH,),
+        )
+    return MaterialEventAssessment(
+        event.event_id,
+        MaterialEventVerdict.MATERIAL,
+        (MaterialEventReason.CANONICAL_PROPOSITION_PROVENANCE,),
+    )
 
 
 class EvidenceIntegrityPhase6EventEngine(Phase6EventEngine):
@@ -62,7 +133,8 @@ class EvidenceIntegrityPhase6EventEngine(Phase6EventEngine):
         if canonical.topic != event.topic_id:
             raise ContractError(f"{event.event_id}: CandidateEvent/CanonicalEvent topic mismatch")
 
-        material = _evidence_integrity_assessment(
+        material = _canonical_proposition_integrity(
+            self.registry,
             event,
             facts=facts,
             evidence=evidence,

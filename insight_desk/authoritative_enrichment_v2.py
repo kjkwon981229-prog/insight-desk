@@ -14,7 +14,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, cast
 from urllib.parse import urlencode
 
 from insight_desk.api import EcosClient, KosisClient, OpenDartClient
@@ -187,7 +187,7 @@ class AuthoritativeEnricher:
     _cache: dict[tuple[str, ...], tuple[AuthoritativeFact, ...]] = field(
         default_factory=dict, init=False, repr=False
     )
-    _stats: dict[str, dict[str, int | bool]] = field(default_factory=dict, init=False, repr=False)
+    _stats: dict[str, dict[str, object]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.config, Mapping):
@@ -199,7 +199,7 @@ class AuthoritativeEnricher:
         }
 
     @staticmethod
-    def _initial_stats(raw_config: object, client: object | None) -> dict[str, int | bool]:
+    def _initial_stats(raw_config: object, client: object | None) -> dict[str, object]:
         enabled = isinstance(raw_config, Mapping) and raw_config.get("enabled") is True
         return {
             "enabled": enabled,
@@ -208,6 +208,7 @@ class AuthoritativeEnricher:
             "calls": 0,
             "success": 0,
             "errors": 0,
+            "error_kinds": {},
             "cache_hits": 0,
             "budget_skips": 0,
             "facts": 0,
@@ -230,8 +231,13 @@ class AuthoritativeEnricher:
         )
 
     @property
-    def audit_stats(self) -> dict[str, dict[str, int | bool]]:
-        return {provider: dict(stats) for provider, stats in self._stats.items()}
+    def audit_stats(self) -> dict[str, dict[str, object]]:
+        snapshot: dict[str, dict[str, object]] = {}
+        for provider, stats in self._stats.items():
+            copied = dict(stats)
+            copied["error_kinds"] = dict(cast(dict[str, int], stats["error_kinds"]))
+            snapshot[provider] = copied
+        return snapshot
 
     def enrich(
         self,
@@ -291,8 +297,11 @@ class AuthoritativeEnricher:
         stats["calls"] = int(stats["calls"]) + 1
         try:
             facts = tuple(call())
-        except Exception:
+        except Exception as exc:
             stats["errors"] = int(stats["errors"]) + 1
+            error_kinds = cast(dict[str, int], stats["error_kinds"])
+            error_kind = type(exc).__name__
+            error_kinds[error_kind] = int(error_kinds.get(error_kind, 0)) + 1
             self._cache[key] = ()
             return ()
         stats["success"] = int(stats["success"]) + 1

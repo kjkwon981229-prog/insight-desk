@@ -87,6 +87,9 @@ class SourceDocument:
         _require_text("retrieved_via", self.retrieved_via)
         if not _SHA256_RE.fullmatch(self.content_sha256):
             raise ContractError("content_sha256 must be a lowercase SHA-256 hex digest")
+        expected_digest = hashlib.sha256(self.body.encode("utf-8")).hexdigest()
+        if self.content_sha256 != expected_digest:
+            raise ContractError("content_sha256 differs from SourceDocument body bytes")
 
 
 @dataclass(frozen=True, slots=True)

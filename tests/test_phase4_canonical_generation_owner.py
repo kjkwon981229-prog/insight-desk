@@ -18,7 +18,7 @@ from insight_desk.core import (
     VerificationCheck,
 )
 from insight_desk.generation import GeneratedDraft, GenerationContractError, GenerationRequest
-from insight_desk.generation_pipeline import generate_with_recovery
+from insight_desk.generation_pipeline import GenerationAttemptKind, generate_with_recovery
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 from insight_desk.production_phase7_v2 import (
     CanonicalEventRecoveryGenerator,
@@ -280,6 +280,10 @@ class CanonicalGenerationOwnerTests(unittest.TestCase):
         self.assertIs(returned.final_generation.render_mode, RenderMode.CANONICAL_RECOVERY)
         self.assertEqual(returned.final_generation.draft.headline, PRIMARY)
         self.assertEqual(returned.final_generation.draft.summary, PRIMARY)
+        self.assertIs(
+            returned.final_generation.attempts[-1].kind,
+            GenerationAttemptKind.CANONICAL_SOURCE,
+        )
         self.assertTrue(returned.publishable)
         self.assertEqual(primary_verifier.calls, [])
         self.assertEqual(secondary_verifier.calls, [])

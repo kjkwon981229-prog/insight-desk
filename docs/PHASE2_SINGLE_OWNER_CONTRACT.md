@@ -108,7 +108,8 @@ One route failing must not redefine relevance. Other configured discovery routes
 
 ### Current implementation lineage
 
-`default_news_discovery()` with Naver + Bing RSS + GDELT.
+`default_news_discovery()` with Naver when configured and Bing RSS. GDELT is an explicit opt-in
+route because the accepted live canary recorded only errors and no contributed candidates.
 
 ---
 

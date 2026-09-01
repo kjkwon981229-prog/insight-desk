@@ -161,19 +161,19 @@ Historic visible-card regression fixtures remain useful evidence but are not suf
 
 ## 11. PHASE 4 migration gate
 
-Provider qualification is necessary but not sufficient for production rewiring.
+Provider qualification is separate from the structural runtime gate.
 
-`config/event_understanding_migration_gate_v2.json` mechanically freezes the currently reachable legacy bypasses. Production rewiring remains closed while any of these are active:
+`config/event_understanding_migration_gate_v2.json` mechanically records three forbidden legacy bypasses:
 
 1. `CandidateEvent -> CanonicalEvent` direct compatibility lift via `canonical_event_from_candidate()`;
 2. canonical identity reading `SourceDocument.body` and reinterpreting raw source after event understanding;
 3. legacy `CandidateEvent` identity comparison remaining an authority inside the compatibility identity path.
 
-The gate additionally requires a selected Event Understanding provider with `MINIMUM_COMPATIBILITY_PASS`, source-range-bound Event Understanding output, and an identity path that consumes canonical event drafts without raw-source reinterpretation.
+All three bypasses are now inactive. In particular, `canonical_event_from_candidate()` and the compatibility registry entry point that called it have been removed. A compatibility reinstall cannot replace the runtime Event Understanding `SemanticPipeline`.
 
-Current provider state is separately frozen in `config/event_understanding_provider_status_v2.json`. Mistral Large 3 is only a qualification candidate and is currently `QUALIFICATION_BLOCKED_CREDENTIAL` because GitHub Actions has no configured `MISTRAL_API_KEY`. It is not selected and production is not wired.
+The gate is therefore structurally open, but it does not select or authorize a provider. Current provider state remains separately frozen in `config/event_understanding_provider_status_v2.json`; no provider is selected or production-wired.
 
-A future provider PASS must not silently open production. The migration blockers must first be removed and the migration gate explicitly opened.
+A future provider PASS still cannot silently change production. It must satisfy the provider-status contract and preserve the source-range-bound Event Understanding and canonical-only identity contracts.
 
 ## 12. Migration boundary
 
@@ -187,9 +187,8 @@ During PHASE 2 and PHASE 3:
 
 PHASE 4 may proceed only from the frozen owner map and data contract. Its job is removal of bypass semantic authorities and rewiring of the active production path, not further detector accumulation.
 
-While the provider inventory is blocked or the PHASE 4 migration gate is closed:
+While the provider inventory is blocked:
 
-- no production Event Understanding rewiring is authorized;
-- no production marker or fresh canonical live is authorized;
-- no deploy or Push acceptance is authorized;
-- compatibility replay success must not be represented as new-architecture Phase 5/6 completion.
+- no provider-backed Event Understanding rewiring is authorized;
+- the deterministic compatibility owner remains the active Event Understanding owner;
+- a production marker or fresh canonical run still requires the independent full regression, replay, provenance, and human-audit gates.

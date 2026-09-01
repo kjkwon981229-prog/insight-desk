@@ -28,6 +28,8 @@ class MaterialEventVerdict(StrEnum):
 class MaterialEventReason(StrEnum):
     EVIDENCE_BOUND_EXPLICIT_PREDICATE = "evidence_bound_explicit_predicate"
     EVIDENCE_BOUND_EXPLICIT_NOMINAL_EVENT = "evidence_bound_explicit_nominal_event"
+    CANONICAL_PROPOSITION_PROVENANCE = "canonical_proposition_provenance"
+    CANONICAL_PROPOSITION_MISMATCH = "canonical_proposition_mismatch"
     FACT_MISSING = "fact_missing"
     EVIDENCE_MISSING = "evidence_missing"
     EVIDENCE_OUTSIDE_EVENT = "evidence_outside_event"

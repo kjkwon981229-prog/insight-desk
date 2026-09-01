@@ -75,7 +75,34 @@ class Phase12BDiscoveryResilienceTests(unittest.TestCase):
         self.assertEqual(result[0].retrieved_via, "gdelt_doc")
         self.assertEqual((first.calls, second.calls, third.calls), (1, 1, 1))
         self.assertEqual(discovery.route_stats["naver_search"]["errors"], 1)
+        self.assertEqual(
+            discovery.route_stats["naver_search"]["error_kinds"],
+            {"transient_provider": 1},
+        )
         self.assertEqual(discovery.route_stats["gdelt_doc"]["contributed"], 1)
+
+    def test_repeated_route_failure_opens_item_local_discovery_circuit(self) -> None:
+        failing = Route(
+            "unstable_provider",
+            error=DiscoveryError(FailureKind.TRANSIENT_PROVIDER, "unavailable"),
+        )
+        healthy = Route("healthy_provider", result=(candidate("healthy_provider"),))
+        discovery = AggregatedNewsDiscovery(
+            (failing, healthy),
+            max_consecutive_errors=2,
+        )
+
+        for _ in range(4):
+            result = discovery.search("테스트", topic_id="ai_tech")
+            self.assertEqual(result[0].retrieved_via, "healthy_provider")
+
+        stats = discovery.route_stats["unstable_provider"]
+        self.assertEqual(failing.calls, 2)
+        self.assertEqual(stats["calls"], 2)
+        self.assertEqual(stats["errors"], 2)
+        self.assertEqual(stats["circuit_skips"], 2)
+        self.assertEqual(stats["state"], "open")
+        self.assertEqual(stats["last_error_kind"], "transient_provider")
 
     def test_all_healthy_routes_contribute_even_when_naver_is_nonempty(self) -> None:
         first = Route("naver_search", result=(candidate("naver_search", suffix="n1"),))
@@ -223,22 +250,33 @@ class Phase12BDiscoveryResilienceTests(unittest.TestCase):
         self.assertEqual(result[0].source_name, "news.example.com")
         self.assertIsNotNone(result[0].published_at)
 
-    def test_default_discovery_has_three_routes_when_naver_is_configured(self) -> None:
+    def test_default_discovery_uses_only_operational_korean_news_routes(self) -> None:
         discovery = default_news_discovery(
             env={"NCP_CLIENT_ID": "id", "NCP_CLIENT_SECRET": "secret"}
         )
         self.assertIsInstance(discovery, AggregatedNewsDiscovery)
         self.assertEqual(
             tuple(route.route_id for route in discovery.routes),
-            ("naver_search", "bing_news_rss", "gdelt_doc"),
+            ("naver_search", "bing_news_rss"),
         )
 
     def test_default_discovery_remains_operational_without_naver_credentials(self) -> None:
         discovery = default_news_discovery(env={})
         self.assertEqual(
             tuple(route.route_id for route in discovery.routes),
+            ("bing_news_rss",),
+        )
+
+    def test_gdelt_requires_explicit_opt_in(self) -> None:
+        discovery = default_news_discovery(env={"GDELT_DISCOVERY_ENABLED": "true"})
+        self.assertEqual(
+            tuple(route.route_id for route in discovery.routes),
             ("bing_news_rss", "gdelt_doc"),
         )
+
+    def test_invalid_gdelt_flag_fails_configuration_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "GDELT_DISCOVERY_ENABLED"):
+            default_news_discovery(env={"GDELT_DISCOVERY_ENABLED": "sometimes"})
 
     def test_production_uses_discovery_router_instead_of_direct_naver_search(self) -> None:
         source = Path("scripts/phase11_daily_production.py").read_text(encoding="utf-8")
