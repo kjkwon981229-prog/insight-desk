@@ -17,7 +17,7 @@ class KosisApiError(RuntimeError):
 class KosisClient:
     api_key: str
     transport: Transport | None = None
-    timeout: float = 5.0
+    timeout: float = 20.0
 
     @classmethod
     def from_environment(cls, *, transport: Transport | None = None) -> "KosisClient | None":
