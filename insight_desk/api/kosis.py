@@ -43,7 +43,6 @@ class KosisClient:
             "method": "getList",
             "apiKey": self.api_key,
             "format": "json",
-            "jsonVD": "Y",
             "orgId": org_id,
             "tblId": table_id,
             "objL1": object_l1,
