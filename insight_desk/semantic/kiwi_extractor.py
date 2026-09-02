@@ -11,6 +11,7 @@ _NOUN_TAGS = {"SL", "SN"}
 _TOPIC_SURFACES = {"은", "는"}
 _TRAILING_PUNCTUATION = " \t\r\n.!?…"
 _SENTENCE_TERMINALS = frozenset(".!?…")
+_PREDICATE_TAGS = frozenset({"VV", "VA", "XSV", "VCP", "VCN"})
 # This is deliberately tiny: each nominal structure must come from a measured locked failure.
 # It is not a general headline/event-type vocabulary.
 _EXPLICIT_NOMINAL_ACTIONS = ("선발투수 예고",)
@@ -28,6 +29,7 @@ class _LiteralFactParts:
     subject: str
     action: str
     object: str | None
+    proposition_start: int = 0
 
 
 def _is_noun_like(token: MorphologyToken) -> bool:
@@ -90,6 +92,38 @@ def _object_candidate(text: str, tokens: tuple[MorphologyToken, ...], *, after: 
     return objects[-1].text
 
 
+def _structural_proposition_start(
+    text: str,
+    tokens: tuple[MorphologyToken, ...],
+    subject: _CasePhrase,
+) -> int:
+    """Exclude only a structurally detached, non-predicative prefix before the fact subject.
+
+    Some publisher bodies encode a byline/location/source prefix in the same extracted line as the
+    lead and separate it with ``|``. That prefix is not part of the event proposition. We narrow the
+    exact-source range only when the final delimiter before the subject is followed solely by
+    whitespace and the prefix itself contains no case particle or predicate. This keeps contextual
+    clauses such as ``업계에 따르면 | ...`` attached and avoids publisher/name-specific rules.
+    """
+
+    if subject.start <= 0:
+        return 0
+    separator = text.rfind("|", 0, subject.start)
+    if separator < 0:
+        return 0
+    if text[separator + 1 : subject.start].strip():
+        return 0
+    prefix = text[:separator]
+    if not prefix.strip() or any(char in _SENTENCE_TERMINALS for char in prefix):
+        return 0
+    prefix_tokens = tuple(token for token in tokens if token.end <= separator)
+    if not prefix_tokens:
+        return 0
+    if any(token.tag.startswith("J") or token.tag in _PREDICATE_TAGS for token in prefix_tokens):
+        return 0
+    return subject.start
+
+
 def _predicate_fact_parts(text: str, tokens: tuple[MorphologyToken, ...]) -> _LiteralFactParts | None:
     subject = _subject_candidate(text, tokens)
     if subject is None or not _has_predicate_after(tokens, subject.marker_end):
@@ -97,7 +131,12 @@ def _predicate_fact_parts(text: str, tokens: tuple[MorphologyToken, ...]) -> _Li
     action = text[subject.marker_end:].strip().rstrip(_TRAILING_PUNCTUATION).strip()
     if not action:
         return None
-    return _LiteralFactParts(subject.text, action, _object_candidate(text, tokens, after=subject.marker_end))
+    return _LiteralFactParts(
+        subject.text,
+        action,
+        _object_candidate(text, tokens, after=subject.marker_end),
+        proposition_start=_structural_proposition_start(text, tokens, subject),
+    )
 
 
 def _nominal_fact_parts(text: str) -> _LiteralFactParts | None:
@@ -191,9 +230,11 @@ class KiwiDeterministicFactExtractor:
                         raise ValueError("Kiwi deterministic extractor lost exact source surface")
                     if parts.object is not None and parts.object not in text:
                         raise ValueError("Kiwi deterministic extractor object lost source surface")
+                    proposition_start = absolute_start + parts.proposition_start
+                    if proposition_start >= absolute_end:
+                        raise ValueError("Kiwi deterministic extractor produced an invalid proposition range")
                     digest = hashlib.sha256(
-                        f"{evidence.evidence_id}\x1f{line_start + sentence.start}\x1f"
-                        f"{line_start + sentence.end}".encode("utf-8")
+                        f"{evidence.evidence_id}\x1f{proposition_start}\x1f{absolute_end}".encode("utf-8")
                     ).hexdigest()[:20]
                     drafts.append(
                         FactDraft(
@@ -202,7 +243,7 @@ class KiwiDeterministicFactExtractor:
                             action=parts.action,
                             object=parts.object,
                             evidence_ids=(evidence.evidence_id,),
-                            source_start=absolute_start,
+                            source_start=proposition_start,
                             source_end=absolute_end,
                         )
                     )
