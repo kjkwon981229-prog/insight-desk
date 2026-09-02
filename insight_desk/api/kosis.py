@@ -55,6 +55,9 @@ class KosisClient:
             "method": "getList",
             "apiKey": self.api_key,
             "format": "json",
+            # KOSIS URL-generator examples still include jsonVD=Y for this endpoint even though the
+            # compact request-variable table omits it. Preserve the generated JSON request contract.
+            "jsonVD": "Y",
             "orgId": org_id,
             "tblId": table_id,
             "objL1": object_l1,
@@ -65,8 +68,6 @@ class KosisClient:
         if object_l2:
             params["objL2"] = object_l2
         if normalized_fields:
-            # KOSIS documents outputFields as an optional response-field selector. A space-separated
-            # value is encoded as '+' by urlencode, matching the URL-generator form contract.
             params["outputFields"] = " ".join(normalized_fields)
         transport = self.transport or UrlLibTransport()
         response = None
