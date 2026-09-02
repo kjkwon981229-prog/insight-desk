@@ -37,7 +37,7 @@ def _statistics(client: KosisClient) -> object:
 
 
 class KosisTransportResilienceTests(unittest.TestCase):
-    def test_current_parameter_contract_excludes_legacy_jsonvd(self) -> None:
+    def test_generated_json_parameter_contract_includes_jsonvd(self) -> None:
         transport = SequenceTransport([HttpResponse(status=200, body=b"[]", headers={})])
         client = KosisClient("key", transport=transport)
         with patch.dict(os.environ, {}, clear=True):
@@ -59,6 +59,7 @@ class KosisTransportResilienceTests(unittest.TestCase):
                 "method",
                 "apiKey",
                 "format",
+                "jsonVD",
                 "orgId",
                 "tblId",
                 "objL1",
@@ -68,7 +69,7 @@ class KosisTransportResilienceTests(unittest.TestCase):
                 "newEstPrdCnt",
             },
         )
-        self.assertNotIn("jsonVD", query)
+        self.assertEqual(query["jsonVD"], ["Y"])
         self.assertNotIn("outputFields", query)
         self.assertEqual(query["orgId"], ["101"])
         self.assertEqual(query["tblId"], ["DT_1J22001"])
@@ -78,7 +79,7 @@ class KosisTransportResilienceTests(unittest.TestCase):
         self.assertEqual(query["prdSe"], ["M"])
         self.assertEqual(query["newEstPrdCnt"], ["1"])
 
-    def test_explicit_output_fields_use_current_kosis_selector_contract(self) -> None:
+    def test_explicit_output_fields_use_kosis_selector_contract(self) -> None:
         transport = SequenceTransport([HttpResponse(status=200, body=b"[]", headers={})])
         KosisClient("key", transport=transport).statistics(
             org_id="101",
@@ -88,26 +89,30 @@ class KosisTransportResilienceTests(unittest.TestCase):
             item_id="T",
             period_type="M",
             max_periods=1,
-            output_fields=("PRD_DE", "DT"),
+            output_fields=("ORG_ID", "TBL_ID", "TBL_NM", "PRD_DE", "DT"),
         )
         query = parse_qs(urlparse(transport.urls[0]).query, keep_blank_values=True)
-        self.assertEqual(query["outputFields"], ["PRD_DE DT"])
+        self.assertEqual(query["jsonVD"], ["Y"])
+        self.assertEqual(query["outputFields"], ["ORG_ID TBL_ID TBL_NM PRD_DE DT"])
 
-    def test_marked_probe_fields_do_not_change_unmarked_runtime_calls(self) -> None:
+    def test_marked_probe_fields_do_not_change_unmarked_runtime_field_shape(self) -> None:
+        marked_fields = "ORG_ID TBL_ID TBL_NM ITM_ID ITM_NM UNIT_NM PRD_SE PRD_DE DT"
         marked = SequenceTransport([HttpResponse(status=200, body=b"[]", headers={})])
         with patch.dict(
             os.environ,
-            {"INSIGHT_DESK_KOSIS_PROBE_OUTPUT_FIELDS": "PRD_DE DT"},
+            {"INSIGHT_DESK_KOSIS_PROBE_OUTPUT_FIELDS": marked_fields},
             clear=True,
         ):
             _statistics(KosisClient("key", transport=marked))
         marked_query = parse_qs(urlparse(marked.urls[0]).query, keep_blank_values=True)
-        self.assertEqual(marked_query["outputFields"], ["PRD_DE DT"])
+        self.assertEqual(marked_query["jsonVD"], ["Y"])
+        self.assertEqual(marked_query["outputFields"], [marked_fields])
 
         unmarked = SequenceTransport([HttpResponse(status=200, body=b"[]", headers={})])
         with patch.dict(os.environ, {}, clear=True):
             _statistics(KosisClient("key", transport=unmarked))
         unmarked_query = parse_qs(urlparse(unmarked.urls[0]).query, keep_blank_values=True)
+        self.assertEqual(unmarked_query["jsonVD"], ["Y"])
         self.assertNotIn("outputFields", unmarked_query)
 
     def test_transient_url_error_is_retried_then_success_is_returned(self) -> None:
