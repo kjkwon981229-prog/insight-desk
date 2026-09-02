@@ -90,6 +90,13 @@ class Phase8UIViewModelTests(unittest.TestCase):
         story_card = html.split('<article id="story-1"', 1)[1].split("</article>", 1)[0]
         self.assertEqual(story_card.count(source), 1)
         self.assertNotIn('class="story-summary"', story_card)
+        self.assertIn('data-summary-elision="headline-collision"', story_card)
+
+    def test_distinct_summary_does_not_emit_summary_elision_marker(self) -> None:
+        html = render_briefing_html(build_briefing_view_model(briefing(entry())))
+        story_card = html.split('<article id="story-1"', 1)[1].split("</article>", 1)[0]
+        self.assertIn('class="story-summary"', story_card)
+        self.assertNotIn("data-summary-elision", story_card)
 
     def test_html_uses_plain_korean_copy_and_localized_topic_labels(self) -> None:
         rendered = briefing(
