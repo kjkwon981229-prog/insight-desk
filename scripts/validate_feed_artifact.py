@@ -25,6 +25,7 @@ PSAT_FORBIDDEN = (
 )
 _URL_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])")
 _FQ_STALE_SPORTS = "FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE"
+_SUMMARY_ELISION_HEADLINE_COLLISION = "headline-collision"
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -89,6 +90,7 @@ class FeedParser(HTMLParser):
                 "topic": "",
                 "headline": "",
                 "summary": "",
+                "summary_elision": attributes.get("data-summary-elision") or "",
                 "source_url": "",
             }
             self._story_depth = 1
@@ -241,7 +243,16 @@ def validate_html(
         event_id = story["event_id"].strip()
         headline = story["headline"].strip()
         summary = story["summary"].strip()
+        summary_elision = story["summary_elision"].strip()
         topic = story["topic"].strip()
+        if summary_elision:
+            if summary_elision != _SUMMARY_ELISION_HEADLINE_COLLISION:
+                raise ValueError(f"FEED_QUALITY_SUMMARY_ELISION_INVALID:{index}")
+            if summary:
+                raise ValueError(f"FEED_QUALITY_SUMMARY_ELISION_CONFLICT:{index}")
+            if not headline:
+                raise ValueError(f"FEED_QUALITY_INCOMPLETE_STORY:{index}")
+            summary = headline
         if not event_id or not headline or not summary:
             raise ValueError(f"FEED_QUALITY_INCOMPLETE_STORY:{index}")
         max_headline = max(max_headline, len(headline))
