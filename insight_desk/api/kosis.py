@@ -36,9 +36,16 @@ class KosisClient:
         period_type: str,
         max_periods: int,
         object_l2: str | None = None,
+        output_fields: tuple[str, ...] | None = None,
     ) -> object:
         if self.transport_attempts < 1:
             raise ValueError("KOSIS transport_attempts must be at least 1")
+        if output_fields is not None:
+            normalized_fields = tuple(field.strip() for field in output_fields)
+            if not normalized_fields or any(not field for field in normalized_fields):
+                raise ValueError("KOSIS output_fields must contain non-empty field names")
+        else:
+            normalized_fields = ()
         params: dict[str, str] = {
             "method": "getList",
             "apiKey": self.api_key,
@@ -52,6 +59,10 @@ class KosisClient:
         }
         if object_l2:
             params["objL2"] = object_l2
+        if normalized_fields:
+            # KOSIS documents outputFields as an optional response-field selector. A space-separated
+            # value is encoded as '+' by urlencode, matching the URL-generator form contract.
+            params["outputFields"] = " ".join(normalized_fields)
         transport = self.transport or UrlLibTransport()
         response = None
         for attempt in range(self.transport_attempts):
