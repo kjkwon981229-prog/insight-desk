@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import importlib.util
 import unittest
 
 from insight_desk.acquisition import (
@@ -10,10 +11,12 @@ from insight_desk.acquisition import (
     ExtractedArticle,
     ExtractionQualityPolicy,
     FetchedPage,
+    TrafilaturaExtractor,
 )
 
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+HAS_ACQUISITION_RUNTIME = importlib.util.find_spec("lxml") is not None
 
 
 class Fetcher:
@@ -80,6 +83,33 @@ class Phase12BAcquisitionResilienceTests(unittest.TestCase):
         self.assertNotIn("로그인 메뉴", result.body)
         self.assertNotIn("관련기사 광고", result.body)
         self.assertEqual(result.page_title, "테스트 기사")
+
+    @unittest.skipUnless(
+        HAS_ACQUISITION_RUNTIME,
+        "source-block normalization requires the production acquisition runtime",
+    )
+    def test_multiline_article_deck_cannot_fuse_with_direct_lead_text(self) -> None:
+        html = (
+            "<html><head><title>구조 경계</title></head><body><article>"
+            "<strong>첫 번째 요약<br>두 번째 요약</strong>"
+            "연구진은 새 측정 장치를 공개했다.<br><br>"
+            + "후속 설명 문단이다. " * 30
+            + "</article></body></html>"
+        )
+        expected_boundary = "두 번째 요약\n연구진은 새 측정 장치를 공개했다."
+
+        fallback = ArticleMainTextExtractor().extract(html, url=candidate().url)
+        self.assertIn(expected_boundary, fallback.body)
+        self.assertNotIn("두 번째 요약연구진", fallback.body)
+
+        try:
+            primary = TrafilaturaExtractor().extract(html, url=candidate().url)
+        except Exception as exc:
+            if "trafilatura dependency unavailable" in str(exc):
+                self.skipTest("acquisition optional dependency not installed")
+            raise
+        self.assertIn(expected_boundary, primary.body)
+        self.assertNotIn("두 번째 요약연구진", primary.body)
 
     def test_static_article_main_fallback_avoids_playwright(self) -> None:
         raw = article_html()

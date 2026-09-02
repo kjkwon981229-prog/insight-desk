@@ -112,6 +112,10 @@ class Phase5RealProductionReplayTests(unittest.TestCase):
                 result.publication_digest,
             )
             self.assertEqual(
+                result.audit["runtime_authority"]["event_topic_binding"],
+                "exact_canonical_source_proposition",
+            )
+            self.assertEqual(
                 result.state["publication_ids"],
                 [item["publication_id"] for item in manifest["publications"]],
             )

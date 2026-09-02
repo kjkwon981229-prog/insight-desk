@@ -157,7 +157,7 @@ function validRunId(value) {
 }
 
 function validNotificationType(value) {
-  return value === "READY" || value === "FAILURE";
+  return value === "READY";
 }
 
 function validNotificationSource(value) {
@@ -226,12 +226,11 @@ function legacyNotificationMarkerKey(date, type) {
   return `${NOTIFICATION_PREFIX}${date}:${type}`;
 }
 
-function notificationPayload(type, env, { source = "other", runId = "" } = {}) {
-  const ready = type === "READY";
-  const baseTag = ready ? "insight-desk-ready" : "insight-desk-failure";
+function notificationPayload(env, { source = "other", runId = "" } = {}) {
+  const baseTag = "insight-desk-ready";
   return {
-    title: ready ? "오늘 브리핑 준비 완료" : "오늘 브리핑 업데이트 실패",
-    body: ready ? "Insight Desk 오늘 브리핑을 확인하세요." : "마지막 정상 브리핑을 유지하고 있습니다.",
+    title: "오늘 브리핑 준비 완료",
+    body: "Insight Desk 오늘 브리핑을 확인하세요.",
     tag: source === "manual" && runId ? `${baseTag}-${runId}` : baseTag,
     url: `${configuredOrigin(env)}/insight-desk/`,
   };
@@ -325,7 +324,7 @@ async function dispatchNotificationOnce(env, requestPayload, dependencies = {}) 
     env.PUSH_SUBSCRIPTIONS,
     Number(env.MAX_SUBSCRIPTIONS || DEFAULT_MAX_SUBSCRIPTIONS),
   );
-  const payload = notificationPayload(type, env, { source, runId });
+  const payload = notificationPayload(env, { source, runId });
   let sent = 0;
   let failed = 0;
   let pruned = 0;
@@ -464,41 +463,6 @@ function authMatches(request, env) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
-export function kstDate(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-export async function runWatchdog(env, dependencies = {}) {
-  if (!hasKv(env) || !hasVapidConfig(env)) {
-    return { ok: false, skipped: true, reason: "CONFIG_NOT_READY" };
-  }
-  const now = dependencies.now ? dependencies.now() : new Date();
-  const date = kstDate(now);
-  const readyMarker = await env.PUSH_SUBSCRIPTIONS.get(`${READY_STATE_PREFIX}${date}`);
-  if (readyMarker) {
-    try {
-      const ready = JSON.parse(readyMarker);
-      if (ready.source === "schedule" && ready.delivery_state === "DELIVERED") {
-        return { ok: true, skipped: true, reason: "READY_ALREADY_RECORDED", date };
-      }
-    } catch {
-      // Legacy/manual markers do not prove that today's scheduled run ran.
-    }
-  }
-  return dispatchNotification(
-    env,
-    { date, run_id: `watchdog-${date}`, type: "FAILURE", source: "schedule" },
-    dependencies,
-  );
-}
-
 export async function handleRequest(request, env, _context, dependencies = {}) {
   const method = request.method.toUpperCase();
   const path = requestPath(request);
@@ -582,9 +546,6 @@ export async function handleRequest(request, env, _context, dependencies = {}) {
 const worker = {
   async fetch(request, env, context) {
     return handleRequest(request, env, context);
-  },
-  async scheduled(_controller, env) {
-    await runWatchdog(env);
   },
 };
 

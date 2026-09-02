@@ -17,7 +17,7 @@ sanitized contract probe or a recorded production call.
 | KOSIS | Authoritative enrichment | Enabled config and credential | May add a bound official fact; cannot rewrite the event | One-row read-only probe when configured |
 | OpenDART | Authoritative enrichment | Enabled config and credential | May add a bound official fact; cannot rewrite the event | One-row read-only probe when configured |
 | Push Worker health | Publication delivery | When the Worker URL exists | None | Read-only `/health` publication-binding-v2 probe |
-| Web Push send | Publication delivery | Main deployment only, with send token | None | Bound READY/FAILURE response in the main workflow |
+| Web Push send | Publication delivery | Main deployment only, with send token | None | Bound READY response for an exact deployed publication; abstention/failure never notifies end users |
 | GitHub Actions / Artifacts / Pages | Build and deployment | Workflow event dependent | None | Workflow/job/artifact/deployment evidence |
 
 The visible semantic authority is the one exact canonical source proposition. External semantic

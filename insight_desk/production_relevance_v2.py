@@ -174,6 +174,56 @@ class ConfiguredLiteralRelevanceOwner:
         matched = self.matcher(title=title, body=body, topic=topic)
         return relevance_from_literal_match(topic_id=topic.topic_id, matched=matched)
 
+    def decide_canonical_proposition(
+        self,
+        *,
+        proposition: str,
+        canonical_topic: str,
+        topic,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> RelevanceDecision:
+        """Bind the selected event to its topic using only its exact source proposition.
+
+        Article-level relevance may be satisfied by terms scattered across unrelated source
+        blocks. Once Event Understanding has selected the central event, topic ownership must be
+        proved locally by the same immutable proposition that can become visible. Flat
+        actor/action/object fields are deliberately not consulted.
+        """
+
+        binding_terms = tuple(
+            dict.fromkeys(
+                tuple(topic.required_intent_terms)
+                + tuple(topic.intent_anchors)
+            )
+        )
+        if canonical_topic != topic.topic_id or not binding_terms:
+            matched = False
+        else:
+            proposition_topic = _CanonicalPropositionTopic(
+                topic_id=topic.topic_id,
+                intent_anchors=binding_terms,
+                required_intent_terms=(),
+            )
+            matched = self.matcher(
+                title=proposition,
+                body="",
+                topic=proposition_topic,
+            )
+
+        if matched:
+            return RelevanceDecision(
+                topic_id=topic.topic_id,
+                verdict=RelevanceVerdict.RELEVANT,
+                evidence_refs=evidence_refs,
+                reasons=(RelevanceReason.CONFIGURED_LITERAL_MATCH,),
+            )
+        return RelevanceDecision(
+            topic_id=topic.topic_id,
+            verdict=RelevanceVerdict.DEFER,
+            evidence_refs=evidence_refs,
+            reasons=(RelevanceReason.RESOLUTION_REQUIRED,),
+        )
+
     def decide_event(
         self,
         *,
@@ -198,3 +248,12 @@ class ConfiguredLiteralRelevanceOwner:
         return project_event_relevance(
             self.decide_event(event=event, facts=facts, topic=topic)
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _CanonicalPropositionTopic:
+    """Minimal topic surface consumed by the preserved configured-literal matcher."""
+
+    topic_id: str
+    intent_anchors: tuple[str, ...]
+    required_intent_terms: tuple[str, ...]

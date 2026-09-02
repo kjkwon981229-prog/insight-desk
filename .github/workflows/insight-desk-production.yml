@@ -193,8 +193,12 @@ jobs:
           test -s build/site/push-sw.js
           test -s build/site/assets/css/style.css
           test -s build/site/assets/js/push.js
-          grep -q 'SUPPORTED headline + summary only' build/site/index.html
+          grep -q '오늘 알아둘 뉴스를 모았습니다.' build/site/index.html
           grep -q 'manifest.webmanifest' build/site/index.html
+          if grep -Eq 'SUPPORTED headline \+ summary only|>VERIFIED<|검증 뉴스|검증된 재구성|검증 완료 뉴스|원문 보존|검증된 항목만 표시|검증을 통과한 뉴스만 표시합니다\.' build/site/index.html; then
+            echo "::error::Internal verification copy leaked into the user-facing briefing."
+            exit 1
+          fi
           if [[ -n "$PUSH_WORKER_URL" ]]; then
             grep -q 'push-sw.js' build/site/index.html
             grep -q 'assets/js/push.js' build/site/index.html
@@ -291,13 +295,13 @@ jobs:
 
   push_notify:
     needs: [build, deploy]
-    if: always() && github.event_name != 'pull_request' && needs.build.result != 'skipped' && needs.build.result != 'cancelled' && needs.deploy.result != 'cancelled'
+    # End-user notifications announce an exact deployed publication only. Safe abstention and
+    # operational failures remain visible in Actions but never become PWA failure popups.
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
-      BUILD_RESULT: ${{ needs.build.result }}
-      DEPLOY_RESULT: ${{ needs.deploy.result }}
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
       PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
     steps:
@@ -306,13 +310,12 @@ jobs:
         run: echo "::add-mask::$PUSH_SEND_TOKEN"
 
       - name: Download exact publication identity
-        if: needs.build.result == 'success' && needs.deploy.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: production-audit-${{ github.run_id }}
           path: build
 
-      - name: Send production state notification
+      - name: Send publication-ready notification
         shell: bash
         run: |
           set -u
@@ -334,54 +337,42 @@ jobs:
             workflow_dispatch) notification_source="manual" ;;
           esac
 
-          notification_type="FAILURE"
-          if [[ "$BUILD_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then
-            notification_type="READY"
-          fi
+          notification_type="READY"
           briefing_date="$(TZ=Asia/Seoul date +%F)"
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
-          BRIEFING_ID=""
-          PUBLICATION_DIGEST=""
-          if [[ "$notification_type" == "READY" ]]; then
-            state_file="build/run-state.json"
-            if [[ ! -s "$state_file" ]]; then
-              echo "::warning::READY push suppressed because exact run-state identity is missing."
-              exit 0
-            fi
-            BRIEFING_ID="$(jq -r '.briefing_id // empty' "$state_file")"
-            PUBLICATION_DIGEST="$(jq -r '.publication_digest // empty' "$state_file")"
-            publication_contract_version="$(jq -r '.publication_contract_version // 0' "$state_file")"
-            if [[ "$publication_contract_version" != "2" || ! "$PUBLICATION_DIGEST" =~ ^[0-9a-f]{64}$ || -z "$BRIEFING_ID" ]]; then
-              echo "::warning::READY push suppressed because publication identity is invalid."
-              exit 0
-            fi
-
-            health_file="${RUNNER_TEMP}/insight-desk-push-health.json"
-            health_status="$(curl --silent --show-error --max-time 20 \
-              --output "$health_file" \
-              --write-out '%{http_code}' \
-              "${PUSH_WORKER_URL%/}/health" || true)"
-            if [[ ! "$health_status" =~ ^2[0-9][0-9]$ ]] || ! jq -e '.publication_binding_version == 2' "$health_file" >/dev/null 2>&1; then
-              echo "::warning::READY push suppressed because the deployed Worker does not prove publication binding v2."
-              exit 0
-            fi
-            payload="$(jq -cn \
-              --arg date "$briefing_date" \
-              --arg run_id "$run_id" \
-              --arg type "$notification_type" \
-              --arg source "$notification_source" \
-              --arg briefing_id "$BRIEFING_ID" \
-              --arg publication_digest "$PUBLICATION_DIGEST" \
-              '{date:$date,run_id:$run_id,type:$type,source:$source,briefing_id:$briefing_id,publication_digest:$publication_digest}')"
-          else
-            payload="$(jq -cn \
-              --arg date "$briefing_date" \
-              --arg run_id "$run_id" \
-              --arg type "$notification_type" \
-              --arg source "$notification_source" \
-              '{date:$date,run_id:$run_id,type:$type,source:$source}')"
+          state_file="build/run-state.json"
+          if [[ ! -s "$state_file" ]]; then
+            echo "::warning::READY push suppressed because exact run-state identity is missing."
+            exit 0
           fi
+          BRIEFING_ID="$(jq -r '.briefing_id // empty' "$state_file")"
+          PUBLICATION_DIGEST="$(jq -r '.publication_digest // empty' "$state_file")"
+          publication_contract_version="$(jq -r '.publication_contract_version // 0' "$state_file")"
+          if [[ "$publication_contract_version" != "2" || ! "$PUBLICATION_DIGEST" =~ ^[0-9a-f]{64}$ || -z "$BRIEFING_ID" ]]; then
+            echo "::warning::READY push suppressed because publication identity is invalid."
+            exit 0
+          fi
+
+          health_file="${RUNNER_TEMP}/insight-desk-push-health.json"
+          health_status="$(curl --silent --show-error --max-time 20 \
+            --output "$health_file" \
+            --write-out '%{http_code}' \
+            "${PUSH_WORKER_URL%/}/health" || true)"
+          if [[ ! "$health_status" =~ ^2[0-9][0-9]$ ]] || ! jq -e \
+            '.publication_binding_version == 2 and .notification_policy == "publication_ready_only"' \
+            "$health_file" >/dev/null 2>&1; then
+            echo "::warning::READY push suppressed because the deployed Worker does not prove the ready-only publication contract."
+            exit 0
+          fi
+          payload="$(jq -cn \
+            --arg date "$briefing_date" \
+            --arg run_id "$run_id" \
+            --arg type "$notification_type" \
+            --arg source "$notification_source" \
+            --arg briefing_id "$BRIEFING_ID" \
+            --arg publication_digest "$PUBLICATION_DIGEST" \
+            '{date:$date,run_id:$run_id,type:$type,source:$source,briefing_id:$briefing_id,publication_digest:$publication_digest}')"
 
           response_file="${RUNNER_TEMP}/insight-desk-push-response.json"
           http_status="$(curl --silent --show-error --max-time 20 \
@@ -396,24 +387,23 @@ jobs:
             echo "::warning::Push endpoint did not accept the notification (type=$notification_type; http=$http_status)."
             exit 0
           fi
-          if [[ "$notification_type" == "READY" ]]; then
-            if ! jq -e \
-              --arg source "$notification_source" \
-              --arg briefing_id "$BRIEFING_ID" \
-              --arg publication_digest "$PUBLICATION_DIGEST" \
-              '.request_state == "REQUEST_ACCEPTED" and (.duplicate | type == "boolean") and .source == $source and .briefing_id == $briefing_id and .publication_digest == $publication_digest' \
-              "$response_file" >/dev/null 2>&1; then
-              echo "::warning::Push endpoint returned an unbound READY response (http=$http_status)."
-              exit 0
-            fi
-          elif ! jq -e '.request_state == "REQUEST_ACCEPTED" and (.duplicate | type == "boolean")' "$response_file" >/dev/null 2>&1; then
-            echo "::warning::Push endpoint returned an invalid FAILURE response (http=$http_status)."
+          if ! jq -e \
+            --arg source "$notification_source" \
+            --arg briefing_id "$BRIEFING_ID" \
+            --arg publication_digest "$PUBLICATION_DIGEST" \
+            '.request_state == "REQUEST_ACCEPTED" and (.duplicate | type == "boolean") and .source == $source and .briefing_id == $briefing_id and .publication_digest == $publication_digest' \
+            "$response_file" >/dev/null 2>&1; then
+            echo "::warning::Push endpoint returned an unbound READY response (http=$http_status)."
             exit 0
           fi
           echo "Push notification accepted (type=$notification_type; source=$notification_source; http=$http_status)."
 
+  delivery_guard:
+    needs: [build, deploy]
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result != 'success'
+    runs-on: ubuntu-24.04
+    steps:
       - name: Fail when a successful build was not deployed
-        if: always() && needs.build.result == 'success' && needs.deploy.result != 'success'
         run: |
-          echo "::error::Production build succeeded but Pages deployment did not; FAILURE notification was sent when configured."
+          echo "::error::Production build succeeded but Pages deployment did not; no end-user notification was sent."
           exit 1

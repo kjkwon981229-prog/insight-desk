@@ -12,6 +12,26 @@ from insight_desk.publication_identity_v2 import (
 )
 
 
+_TOPIC_DISPLAY_LABELS = {
+    "ai_tech": "AI 테크",
+    "AI·테크": "AI 테크",
+    "economy": "경제",
+    "경제·투자": "경제",
+    "kpop": "K-POP",
+    "엔터·음악·K-POP": "K-POP",
+    "kbo_hanwha": "한화 이글스",
+    "KBO·한화 이글스": "한화 이글스",
+    "psat_recruitment": "공무원 시험",
+    "PSAT·공채 일정": "공무원 시험",
+}
+
+
+def _topic_display_label(topic: str) -> str:
+    """Keep stable internal topic identifiers out of user-facing copy."""
+
+    return _TOPIC_DISPLAY_LABELS.get(topic, topic)
+
+
 @dataclass(frozen=True, slots=True)
 class StoryViewModel:
     index: int
@@ -139,36 +159,36 @@ def build_briefing_view_model(
 
 def _story_html(story: StoryViewModel) -> str:
     topic = (
-        f'<span class="story-topic">{escape(story.topic)}</span>'
+        f'<span class="story-topic">{escape(_topic_display_label(story.topic))}</span>'
         if story.topic is not None
         else ""
     )
-    mode_label = (
-        "원문 보존"
-        if story.render_mode is RenderMode.EXTRACTIVE_FALLBACK
-        else "검증된 재구성"
-    )
-    metadata = "".join(
-        part
-        for part in (
-            topic,
-            f'<span>{escape(mode_label)}</span>',
-        )
-        if part
-    )
+    metadata = f'<div class="story-meta">{topic}</div>' if topic else ""
     source = (
         f'<a class="story-source" href="{escape(story.source_url, quote=True)}" '
         'target="_blank" rel="noopener noreferrer">원문 보기</a>'
         if story.source_url is not None
         else ""
     )
+    summary_matches_headline = story.summary.strip() == story.headline.strip()
+    summary = (
+        ""
+        if summary_matches_headline
+        else f'<p class="story-summary">{escape(story.summary)}</p>'
+    )
+    summary_elision = (
+        ' data-summary-elision="headline-collision"'
+        if summary_matches_headline
+        else ""
+    )
     return (
-        f'<article class="story-row" data-event-id="{escape(story.event_id, quote=True)}">'
+        f'<article class="story-row" data-event-id="{escape(story.event_id, quote=True)}"'
+        f'{summary_elision}>'
         f'<div class="story-index">{story.index:02d}</div>'
         '<div class="story-main">'
-        f'<div class="story-meta">{metadata}</div>'
+        f'{metadata}'
         f'<h3>{escape(story.headline)}</h3>'
-        f'<p class="story-summary">{escape(story.summary)}</p>'
+        f'{summary}'
         f'{source}'
         '</div></article>'
     )
@@ -200,9 +220,9 @@ def _push_html(config: PwaRuntimeConfig) -> tuple[str, str, str]:
     head_meta = f'<meta name="insight-desk-push-worker-url" content="{worker_url}">'
     section = '''<section class="push-settings" data-push-settings data-push-service-worker-url="push-sw.js">
     <div>
-      <span class="eyebrow">웹 알림</span>
-      <h2>브리핑 상태 알림</h2>
-      <p>홈 화면에 추가한 앱에서 브리핑 준비 완료 또는 업데이트 실패 상태만 알립니다.</p>
+      <span class="eyebrow">알림</span>
+      <h2>새 브리핑 알림</h2>
+      <p>새 브리핑이 준비되면 알려드립니다.</p>
     </div>
     <div class="push-actions">
       <button type="button" data-push-enable>알림 켜기</button>
@@ -233,7 +253,6 @@ def render_briefing_html(
     if view.stories:
         lead_items = "".join(
             '<li class="lead-signal">'
-            '<span class="label">검증 뉴스</span>'
             f'<a href="#story-{story.index}">{escape(story.headline)}</a>'
             '</li>'
             for story in view.stories[:3]
@@ -251,7 +270,7 @@ def render_briefing_html(
     else:
         lead_block = ""
         stories = ""
-        empty = '<p class="overview-empty">게시 가능한 검증 뉴스가 없습니다.</p>'
+        empty = '<p class="overview-empty">오늘 보여드릴 뉴스가 없습니다.</p>'
 
     return f'''<!doctype html>
 <html lang="ko">
@@ -269,7 +288,7 @@ def render_briefing_html(
   <header class="site-header">
     <div class="brand-row">
       <a class="brand" href="#today">INSIGHT DESK</a>
-      <div class="header-meta"><span>{escape(view.generated_label)}</span><span>VERIFIED</span></div>
+      <div class="header-meta"><span>{escape(view.generated_label)}</span></div>
     </div>
     <nav class="site-nav" aria-label="브리핑 탐색">
       <a href="#today" aria-current="page">오늘</a>
@@ -279,24 +298,15 @@ def render_briefing_html(
   <section class="briefing-overview" id="today">
     <span class="eyebrow">오늘의 개인 브리핑</span>
     <h1>오늘의 브리핑</h1>
-    <p class="overview-lede">검증을 통과한 뉴스만 표시합니다.</p>
-    <p class="overview-status"><strong>{story_count}</strong>건 게시 가능</p>
+    <p class="overview-lede">오늘 알아둘 뉴스를 모았습니다.</p>
+    <p class="overview-status"><strong>{story_count}</strong>건</p>
     {lead_block}
     {empty}
   </section>
   {push_section}
-  <section class="signal-strip" aria-label="브리핑 범위">
-    <div class="signal-cell">
-      <span class="label">게시 항목</span>
-      <div class="signal-value">{story_count}</div>
-      <span class="signal-label">검증 완료 뉴스</span>
-      <span class="signal-note">SUPPORTED headline + summary only</span>
-    </div>
-  </section>
   <section class="content-section" id="stories">
     <div class="section-heading">
       <div><span class="section-index">01 / 오늘의 변화</span><h2>오늘 볼 뉴스</h2></div>
-      <p class="meta">검증된 항목만 표시</p>
     </div>
     <div class="story-list">{stories}</div>
   </section>

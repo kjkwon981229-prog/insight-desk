@@ -4,7 +4,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, cast
 
 from insight_desk.core import FailureKind
 
@@ -54,6 +54,50 @@ def extract_page_title(html: str) -> str | None:
     except Exception:
         return None
     return parser.best_title()
+
+
+def _preserve_article_root_text_boundaries(html: str) -> str:
+    """Make source-visible article block boundaries explicit before text extraction.
+
+    Some publishers place a multi-line deck in an inline element directly under ``article`` or
+    ``main`` and put the lead paragraph in that element's tail text. Text extractors can otherwise
+    concatenate the deck's final line and the lead into one invented proposition. A direct child
+    that already contains a forced line break is structurally multi-line, so insert one HTML break
+    before any non-empty tail. No source text is edited or reordered.
+    """
+
+    try:
+        from lxml import etree, html as lxml_html  # type: ignore[import-untyped]
+    except ImportError:
+        return html
+
+    try:
+        document = lxml_html.fromstring(html)
+    except (ValueError, etree.ParserError):
+        return html
+
+    changed = False
+    roots = document.xpath("descendant-or-self::article | descendant-or-self::main")
+    for root in roots:
+        for child in tuple(root):
+            tail = child.tail
+            if not tail or not tail.strip():
+                continue
+            has_forced_line_break = any(
+                isinstance(descendant.tag, str) and descendant.tag.casefold() == "br"
+                for descendant in child.iterdescendants()
+            )
+            if not has_forced_line_break:
+                continue
+            child.tail = None
+            boundary = etree.Element("br")
+            boundary.tail = tail
+            child.addnext(boundary)
+            changed = True
+
+    if not changed:
+        return html
+    return cast(str, etree.tostring(document, encoding="unicode", method="html"))
 
 
 class _ArticleMainParser(HTMLParser):
@@ -171,7 +215,7 @@ class TrafilaturaExtractor:
             # `favor_precision=True` discards text inside styled inline spans on measured publisher
             # pages, including dates, tenors, percentages, and punctuation required for exact proof.
             body: Any = trafilatura.extract(
-                html,
+                _preserve_article_root_text_boundaries(html),
                 include_comments=False,
                 include_tables=True,
                 output_format="txt",
@@ -193,7 +237,7 @@ class ArticleMainTextExtractor:
         del url
         parser = _ArticleMainParser()
         try:
-            parser.feed(html)
+            parser.feed(_preserve_article_root_text_boundaries(html))
             parser.close()
         except Exception as exc:
             raise AcquisitionError(

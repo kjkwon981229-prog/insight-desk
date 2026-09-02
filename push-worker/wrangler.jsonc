@@ -19,6 +19,6 @@
     "required": ["VAPID_PRIVATE_KEY", "PUSH_SEND_TOKEN"]
   },
   "triggers": {
-    "crons": ["0 0 * * *"]
+    "crons": []
   }
 }

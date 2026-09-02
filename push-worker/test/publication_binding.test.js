@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
+import worker, {
   PUBLICATION_BINDING_VERSION,
   handlePublicationRequest,
 } from "../src/publication_gateway.js";
@@ -119,8 +119,13 @@ test("health advertises the publication binding contract without exposing secret
   assert.equal(body.publication_binding_version, PUBLICATION_BINDING_VERSION);
   assert.equal(body.publication_binding_version, 2);
   assert.equal(body.publication_ready_identity, "briefing_id+sha256");
+  assert.equal(body.notification_policy, "publication_ready_only");
   assert.equal(JSON.stringify(body).includes(env.VAPID_PRIVATE_KEY), false);
   assert.equal(JSON.stringify(body).includes(env.PUSH_SEND_TOKEN), false);
+});
+
+test("the deployed worker exposes no scheduled failure entrypoint", () => {
+  assert.equal(worker.scheduled, undefined);
 });
 
 test("same publication digest deduplicates across workflow runs and records scheduled ready identity", async () => {
@@ -234,9 +239,8 @@ test("partial or malformed publication identity fails the authenticated send con
   assert.deepEqual(await badDigest.json(), { ok: false, error: "INVALID_NOTIFICATION" });
 });
 
-test("legacy READY without publication identity remains backward compatible", async () => {
+test("legacy READY without publication identity cannot bypass the gateway", async () => {
   const env = environment();
-  await subscribe(env);
   let calls = 0;
   const dependencies = { sendNotification: async () => { calls += 1; } };
   const payload = {
@@ -247,8 +251,9 @@ test("legacy READY without publication identity remains backward compatible", as
   };
   const first = await send(env, payload, dependencies);
   const second = await send(env, { ...payload, run_id: "legacy-retry" }, dependencies);
-  assert.equal(first.status, 200);
-  assert.equal((await first.json()).duplicate, false);
-  assert.equal((await second.json()).duplicate, true);
-  assert.equal(calls, 1);
+  assert.equal(first.status, 400);
+  assert.deepEqual(await first.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+  assert.equal(second.status, 400);
+  assert.deepEqual(await second.json(), { ok: false, error: "INVALID_NOTIFICATION" });
+  assert.equal(calls, 0);
 });

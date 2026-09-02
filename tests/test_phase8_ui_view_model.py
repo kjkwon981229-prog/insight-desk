@@ -69,7 +69,7 @@ class Phase8UIViewModelTests(unittest.TestCase):
         self.assertIn("A &amp; B &lt; C", html)
         self.assertIn('data-event-id="event:&quot;x&quot;"', html)
 
-    def test_extractive_fallback_is_labeled_without_changing_source_text(self) -> None:
+    def test_render_mode_is_not_exposed_as_internal_status_copy(self) -> None:
         source = "원문 그대로 유지되는 문장이다."
         html = render_briefing_html(
             build_briefing_view_model(
@@ -77,12 +77,56 @@ class Phase8UIViewModelTests(unittest.TestCase):
             )
         )
         self.assertIn(source, html)
-        self.assertIn("원문 보존", html)
+        self.assertNotIn("원문 보존", html)
+        self.assertNotIn("검증된 재구성", html)
+
+    def test_identical_headline_and_summary_are_shown_once_in_story_card(self) -> None:
+        source = "한화가 홈 경기에서 승리했다."
+        html = render_briefing_html(
+            build_briefing_view_model(
+                briefing(entry(headline=source, summary=source, render_mode=RenderMode.EXTRACTIVE_FALLBACK))
+            )
+        )
+        story_card = html.split('<article id="story-1"', 1)[1].split("</article>", 1)[0]
+        self.assertEqual(story_card.count(source), 1)
+        self.assertNotIn('class="story-summary"', story_card)
+        self.assertIn('data-summary-elision="headline-collision"', story_card)
+
+    def test_distinct_summary_does_not_emit_summary_elision_marker(self) -> None:
+        html = render_briefing_html(build_briefing_view_model(briefing(entry())))
+        story_card = html.split('<article id="story-1"', 1)[1].split("</article>", 1)[0]
+        self.assertIn('class="story-summary"', story_card)
+        self.assertNotIn("data-summary-elision", story_card)
+
+    def test_html_uses_plain_korean_copy_and_localized_topic_labels(self) -> None:
+        rendered = briefing(
+            entry("event:ai"),
+            entry("event:economy", headline="경제 뉴스", summary="경제 뉴스 본문이다."),
+        )
+        html = render_briefing_html(
+            build_briefing_view_model(
+                rendered,
+                topic_by_event={"event:ai": "ai_tech", "event:economy": "economy"},
+            )
+        )
+        self.assertIn('<span class="story-topic">AI 테크</span>', html)
+        self.assertIn('<span class="story-topic">경제</span>', html)
+        for internal_copy in (
+            "VERIFIED",
+            "검증 뉴스",
+            "검증 완료 뉴스",
+            "SUPPORTED headline + summary only",
+            "검증을 통과한 뉴스만 표시합니다.",
+            "검증된 항목만 표시",
+        ):
+            self.assertNotIn(internal_copy, html)
+        self.assertNotIn('<span class="story-topic">ai_tech</span>', html)
+        self.assertNotIn('<span class="story-topic">economy</span>', html)
 
     def test_empty_briefing_renders_empty_state_without_fake_story(self) -> None:
         html = render_briefing_html(build_briefing_view_model(briefing()))
-        self.assertIn("게시 가능한 검증 뉴스가 없습니다.", html)
-        self.assertIn("<strong>0</strong>건 게시 가능", html)
+        self.assertIn("오늘 보여드릴 뉴스가 없습니다.", html)
+        self.assertIn("<strong>0</strong>건", html)
         self.assertNotIn('<article class="story-row"', html)
 
     def test_generated_label_preserves_input_clock_instead_of_runner_timezone(self) -> None:

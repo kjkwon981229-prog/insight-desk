@@ -213,6 +213,20 @@ class SourceGroundedVisibleAuthorityTests(unittest.TestCase):
                 second_proposition="양 팀은 선발 라인업을 공개했다.",
             )
 
+    def test_one_evidence_ref_crossing_source_blocks_fails_closed(self) -> None:
+        first = "시장 전망은 개선될 수 있다"
+        second = "5대 은행의 정기예금 잔액이 증가했다."
+        with self.assertRaisesRegex(
+            GenerationContractError,
+            "requires one exact proposition",
+        ):
+            _fixture(
+                first + "\n" + second,
+                actor="5대 은행",
+                action="정기예금 잔액이 증가했다",
+                topic="economy",
+            )
+
     def test_exact_source_verification_does_not_need_semantic_verifier(self) -> None:
         proposition = "한국은행은 기준금리를 동결했다."
         registry, request = _fixture(

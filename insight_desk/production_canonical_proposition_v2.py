@@ -51,6 +51,8 @@ def resolve_exact_canonical_proposition(
     proposition = source_text[ref.start : ref.end]
     if not proposition.strip():
         raise ContractError("canonical proposition must be non-empty")
+    if "\n" in proposition or "\r" in proposition:
+        raise ContractError("canonical proposition must stay within one source block")
     return ExactCanonicalProposition(
         event=event,
         source=source,

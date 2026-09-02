@@ -1,7 +1,6 @@
-import baseWorker, {
+import {
   MAX_BODY_BYTES,
   handleRequest as handleCoreRequest,
-  runWatchdog,
 } from "./index.js";
 
 export const PUBLICATION_BINDING_VERSION = 2;
@@ -144,6 +143,7 @@ async function handleHealth(request, env, context, dependencies) {
     ...payload,
     publication_binding_version: PUBLICATION_BINDING_VERSION,
     publication_ready_identity: "briefing_id+sha256",
+    notification_policy: "publication_ready_only",
   });
 }
 
@@ -158,10 +158,7 @@ export async function handlePublicationRequest(request, env, context, dependenci
 
   const value = await readJsonClone(request);
   const binding = bindingFields(value);
-  if (binding.mode === "legacy") {
-    return handleCoreRequest(request, env, context, dependencies);
-  }
-  if (binding.mode === "invalid") {
+  if (binding.mode !== "bound") {
     return handleCoreRequest(
       requestWithPayload(request, invalidPayload(value)),
       env,
@@ -220,9 +217,6 @@ export async function handlePublicationRequest(request, env, context, dependenci
 const worker = {
   async fetch(request, env, context) {
     return handlePublicationRequest(request, env, context);
-  },
-  async scheduled(_controller, env) {
-    await runWatchdog(env);
   },
 };
 
