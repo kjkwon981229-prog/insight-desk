@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 from .transport import Transport, UrlLibTransport, decode_json_value
 
 BASE_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+_PROBE_OUTPUT_FIELDS_ENV = "INSIGHT_DESK_KOSIS_PROBE_OUTPUT_FIELDS"
 
 
 class KosisApiError(RuntimeError):
@@ -40,8 +41,12 @@ class KosisClient:
     ) -> object:
         if self.transport_attempts < 1:
             raise ValueError("KOSIS transport_attempts must be at least 1")
-        if output_fields is not None:
-            normalized_fields = tuple(field.strip() for field in output_fields)
+        requested_fields = output_fields
+        if requested_fields is None:
+            probe_fields = os.environ.get(_PROBE_OUTPUT_FIELDS_ENV, "").strip()
+            requested_fields = tuple(probe_fields.split()) if probe_fields else None
+        if requested_fields is not None:
+            normalized_fields = tuple(field.strip() for field in requested_fields)
             if not normalized_fields or any(not field for field in normalized_fields):
                 raise ValueError("KOSIS output_fields must contain non-empty field names")
         else:
