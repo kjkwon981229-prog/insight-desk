@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import cast
 
 from insight_desk.runtime_integration_audit_v2 import audit_runtime_integrations
+
+
+_KOSIS_PROBE_FIELDS_ENV = "INSIGHT_DESK_KOSIS_PROBE_OUTPUT_FIELDS"
+_KOSIS_PROBE_FIELDS = "PRD_DE DT"
 
 
 def main() -> None:
@@ -14,6 +19,10 @@ def main() -> None:
     parser.add_argument("--strict-configured", action="store_true")
     args = parser.parse_args()
 
+    # Limit only this bounded preflight process to the fields needed to prove that the configured
+    # KOSIS CPI query is responsive. Normal production enrichment does not inherit this process-local
+    # marker and therefore keeps the complete provider response contract.
+    os.environ[_KOSIS_PROBE_FIELDS_ENV] = _KOSIS_PROBE_FIELDS
     payload = audit_runtime_integrations()
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
