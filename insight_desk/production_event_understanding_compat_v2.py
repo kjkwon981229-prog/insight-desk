@@ -72,11 +72,25 @@ def _normalized(text: str) -> str:
     return " ".join(text.split())
 
 
-def _is_context_dependent_subject(subject: str) -> bool:
+def _is_context_dependent_subject(subject: str, morphology: MorphologyPort | None = None) -> bool:
     value = _normalized(subject)
     if not value:
         return True
-    return any(value.startswith(stem) for stem in _CONTEXT_SUBJECT_STEMS)
+    if any(value == stem or value.startswith(stem + " ") for stem in _CONTEXT_SUBJECT_STEMS):
+        return True
+    # Compatibility callers can retain a case/topic particle in the subject surface.
+    first_word = value.split()[0]
+    if any(first_word == stem + particle for stem in _CONTEXT_SUBJECT_STEMS
+           for particle in ("은", "는", "이", "가", "의", "을", "를", "도", "만")):
+        return True
+    tokens = _morphology_tokens(value, morphology)
+    if not tokens:
+        return False
+    first = tokens[0]
+    return (
+        str(getattr(first, "tag", "")) in {"NP", "MM"}
+        and str(getattr(first, "normalized", getattr(first, "surface", ""))) in _CONTEXT_SUBJECT_STEMS
+    )
 
 
 def _is_analytical_predicate(action: str) -> bool:
@@ -173,7 +187,7 @@ def assess_compatibility_event_understanding(
             reasons=("evidence_not_local",),
         )
 
-    if _is_context_dependent_subject(fact.subject):
+    if _is_context_dependent_subject(fact.subject, morphology):
         return CompatibilityEventUnderstandingDecision(
             status=UnderstandingStatus.UNRESOLVED,
             article_role=ArticleEventRole.CONTEXT,

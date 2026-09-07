@@ -9,12 +9,21 @@ from unittest.mock import patch
 from insight_desk.core import CandidateEvent, EventFact, EvidenceField, EvidenceSpan
 from insight_desk.core.event_understanding_v2 import ArticleEventRole, TopicRelation, UnderstandingStatus
 from insight_desk.production_event_understanding_compat_v2 import CompatibilityEventUnderstandingDecision
+from insight_desk.production_event_understanding_compat_v2 import _is_context_dependent_subject
 from insight_desk.production_replay_v2 import _recorded_edges
 from insight_desk.semantic.pipeline import SemanticArticleResult
 from scripts import phase11_daily_production as production
 
 
 class ScheduledUnderstandingRoutingTests(unittest.TestCase):
+    def test_deictic_subject_detection_requires_a_word_or_morpheme_boundary(self):
+        for subject in ("그룹 TUNEXX(튜넥스)", "그린에너지", "이들이라는책출판사"):
+            with self.subTest(subject=subject):
+                self.assertFalse(_is_context_dependent_subject(subject))
+        for subject in ("그", "그는", "그들", "그들의 계획", "이러한 기관", "해당 기업"):
+            with self.subTest(subject=subject):
+                self.assertTrue(_is_context_dependent_subject(subject))
+
     def test_unresolved_event_reaches_resolution_without_canonical_or_generation(self):
         case = {
             "candidate_id": "unresolved-source",
