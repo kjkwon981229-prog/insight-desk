@@ -165,7 +165,20 @@ def _structural_proposition_start(
 
 
 def _predicate_fact_parts(text: str, tokens: tuple[MorphologyToken, ...]) -> _LiteralFactParts | None:
-    subject = _subject_candidate(text, tokens)
+    subject_tokens = tokens
+    # Closed attribution is outside the clause. Resolve it before case roles so
+    # a reporter name tokenized as noun + 은 cannot become the event's subject.
+    for opener, closer in (("[", "]"), ("(", ")")):
+        end = text.find(closer)
+        if not (text.startswith(opener) and end > 0
+                and text[1:end].rstrip().endswith(" 기자")):
+            continue
+        attribution = tuple(token for token in tokens if token.end <= end)
+        if attribution and not any(token.tag in _PREDICATE_TAGS or token.tag in {"EF", "EC"}
+                                   for token in attribution):
+            subject_tokens = tuple(token for token in tokens if token.start > end)
+        break
+    subject = _subject_candidate(text, subject_tokens)
     if subject is None or not _has_predicate_after(tokens, subject.marker_end):
         return None
     action = text[subject.marker_end:].strip().rstrip(_TRAILING_PUNCTUATION).strip()

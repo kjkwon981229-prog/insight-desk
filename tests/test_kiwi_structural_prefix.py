@@ -50,6 +50,7 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
                 fact = result.facts[0]
                 exact = next(span.text for span in result.evidence if span.evidence_id in fact.evidence_ids)
                 self.assertEqual(exact, proposition, repr((fact, KiwiMorphologyHelper().analyze(prefix + proposition))))
+                self.assertEqual(fact.subject, "삼성생명")
 
     def test_detached_non_predicative_byline_prefix_is_not_part_of_exact_fact_span(self) -> None:
         body = (
