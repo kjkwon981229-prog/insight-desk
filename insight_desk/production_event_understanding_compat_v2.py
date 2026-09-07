@@ -217,9 +217,25 @@ def assess_compatibility_event_understanding(
     )
 
 
-def _first_sentence_end(body: str) -> int:
+def _first_sentence_end(body: str, morphology: MorphologyPort | None = None) -> int:
+    # Acquisition preserves source blocks. A detached noun-only caption is not the lead.
+    # Never skip a clause-bearing prefix: its context may constrain the following event.
+    offset = 0
+    if morphology is not None:
+        for line in body.splitlines(keepends=True):
+            tokens = _morphology_tokens(line, morphology)
+            if not tokens or any(
+                str(getattr(token, "tag", "")).startswith("J")
+                or str(getattr(token, "tag", "")) in {"VV", "VA", "XSV", "VCP", "VCN"}
+                for token in tokens
+            ):
+                break
+            offset += len(line)
+        if offset >= len(body):
+            offset = 0
+    body = body[offset:]
     boundaries = [position + 1 for position, char in enumerate(body) if char in ".!?…\n"]
-    return min(boundaries) if boundaries else len(body)
+    return offset + (min(boundaries) if boundaries else len(body))
 
 
 _TITLE_CONTENT_TAG_PREFIXES = (
@@ -385,7 +401,7 @@ def assess_compatibility_article_understanding(
     if not eligible:
         return decisions
 
-    lead_end = _first_sentence_end(article.body)
+    lead_end = _first_sentence_end(article.body, morphology)
     propositions = {
         event.event_id: _exact_proposition_span(
             article,

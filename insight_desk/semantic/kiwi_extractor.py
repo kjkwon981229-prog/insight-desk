@@ -41,6 +41,22 @@ def _phrase_before_case(text: str, tokens: tuple[MorphologyToken, ...], index: i
         return None
     marker = tokens[index]
     cursor = index - 1
+    # An adjacent parenthetical name/list belongs to the noun phrase: TUNEXX(튜넥스)가.
+    # Walk the balanced source punctuation, then still require a noun before the opener.
+    if tokens[cursor].surface == ")":
+        depth = 1
+        cursor -= 1
+        while cursor >= 0:
+            if tokens[cursor].surface == ")":
+                depth += 1
+            elif tokens[cursor].surface == "(":
+                depth -= 1
+                if depth == 0:
+                    cursor -= 1
+                    break
+            cursor -= 1
+        if cursor < 0 or depth:
+            return None
     if not _is_noun_like(tokens[cursor]):
         return None
     start = tokens[cursor].start
@@ -70,6 +86,17 @@ def _subject_candidate(text: str, tokens: tuple[MorphologyToken, ...]) -> _CaseP
         return topics[0]
     if topics:
         return None
+    if len(nominatives) > 1:
+        # A subject inside a prenominal relative clause is not the matrix subject.
+        # Retain ambiguity for coordinated finite clauses; only an intervening ETM
+        # followed by another explicit subject can discharge the embedded candidate.
+        nominatives = [
+            phrase for phrase, following in zip(nominatives, nominatives[1:])
+            if not any(
+                token.tag == "ETM" and phrase.marker_end <= token.start < following.start
+                for token in tokens
+            )
+        ] + nominatives[-1:]
     if len(nominatives) == 1:
         return nominatives[0]
     return None
@@ -108,7 +135,14 @@ def _structural_proposition_start(
 
     if subject.start <= 0:
         return 0
-    separator = text.rfind("|", 0, subject.start)
+    separator = max(text.rfind(char, 0, subject.start) for char in "|┃│")
+    if separator < 0:
+        # Balanced byline groups are attribution, but arbitrary bracketed qualifiers are not.
+        for opener, closer in (("[", "]"), ("(", ")")):
+            end = text.find(closer)
+            if text.startswith(opener) and 0 < end < subject.start and "기자" in text[1:end]:
+                separator = end
+                break
     if separator < 0:
         return 0
     if text[separator + 1 : subject.start].strip():
