@@ -136,12 +136,14 @@ def _structural_proposition_start(
     if subject.start <= 0:
         return 0
     separator = max(text.rfind(char, 0, subject.start) for char in "|┃│")
+    closed_attribution = False
     if separator < 0:
         # Balanced byline groups are attribution, but arbitrary bracketed qualifiers are not.
         for opener, closer in (("[", "]"), ("(", ")")):
             end = text.find(closer)
-            if text.startswith(opener) and 0 < end < subject.start and "기자" in text[1:end]:
+            if text.startswith(opener) and 0 < end < subject.start and text[1:end].rstrip().endswith(" 기자"):
                 separator = end
+                closed_attribution = True
                 break
     if separator < 0:
         return 0
@@ -153,7 +155,11 @@ def _structural_proposition_start(
     prefix_tokens = tuple(token for token in tokens if token.end <= separator)
     if not prefix_tokens:
         return 0
-    if any(token.tag.startswith("J") or token.tag in _PREDICATE_TAGS for token in prefix_tokens):
+    # Names inside an explicitly closed attribution can be tokenized with a trailing
+    # particle (e.g. a name ending in 은). Predicative context must still remain.
+    if any(token.tag in _PREDICATE_TAGS or token.tag in {"EF", "EC"}
+           or (token.tag.startswith("J") and not closed_attribution)
+           for token in prefix_tokens):
         return 0
     return subject.start
 
