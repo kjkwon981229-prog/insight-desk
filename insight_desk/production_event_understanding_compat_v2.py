@@ -343,6 +343,57 @@ def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
     return span.field.value == "body" and span.start < lead_end
 
 
+def _lead_title_frame_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Prove the lead's named actor, object and finite action in the source title.
+
+    Later elaboration can repeat more title words without being a different central event.
+    This source-only check uses grammatical roles, not a vocabulary of newsworthy actions.
+    It does not change the exact proposition or infer equivalence between different verbs.
+    """
+    from insight_desk.semantic.kiwi_extractor import _predicate_fact_parts
+
+    tokens = _morphology_tokens(span.text, morphology)
+    title_tokens = _morphology_tokens(article.title, morphology)
+    if not tokens or not title_tokens:
+        return False
+    parts = _predicate_fact_parts(span.text, tokens)
+    if parts is None or parts.object is None:
+        return False
+    title_units = {str(getattr(token, "normalized", "")) for token in title_tokens}
+    actor_tokens = _morphology_tokens(parts.subject, morphology) or ()
+    named_actor = {str(getattr(token, "normalized", "")) for token in actor_tokens
+                   if getattr(token, "tag", "") in {"NNP", "SL"}
+                   and len(str(getattr(token, "normalized", ""))) >= 2}
+    if not named_actor.intersection(title_units):
+        return False
+    object_tokens = _morphology_tokens(parts.object, morphology) or ()
+    object_units = {str(getattr(token, "normalized", "")) for token in object_tokens
+                    if str(getattr(token, "tag", "")).startswith("N")
+                    or getattr(token, "tag", "") == "SL"}
+    if not object_units or not object_units.issubset(title_units):
+        return False
+    finite = [index for index, token in enumerate(tokens) if getattr(token, "tag", "") == "EF"]
+    if not finite:
+        return False
+    before_end = tokens[:finite[-1]]
+    verbal = [index for index, token in enumerate(before_end)
+              if str(getattr(token, "tag", "")).startswith("V")
+              or getattr(token, "tag", "") == "XSV"]
+    if not verbal:
+        return False
+    index = verbal[-1]
+    token = tokens[index]
+    if getattr(token, "tag", "") == "XSV" and index > 0:
+        token = tokens[index - 1]
+        if not (str(getattr(token, "tag", "")).startswith("N")
+                or getattr(token, "tag", "") == "XR"):
+            return False
+    elif getattr(token, "tag", "") != "VV":
+        return False
+    predicate = str(getattr(token, "normalized", ""))
+    return len(predicate) >= 2 and predicate in title_units
+
+
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
     """Return true only when a date-only event is clearly outside the source freshness horizon."""
 
@@ -464,6 +515,10 @@ def assess_compatibility_article_understanding(
             best = max(alignment.values())
             best_events = [event for event in eligible if alignment[event.event_id] == best]
             if len(best_events) == 1 and best_events[0] == lead_events[0] and best[0] > 0:
+                winner = lead_events[0]
+            elif _lead_title_frame_bound(
+                article, frozen_propositions[lead_events[0].event_id], morphology
+            ):
                 winner = lead_events[0]
         failure_reason = "article_centrality_conflict"
 
