@@ -85,6 +85,7 @@ class TopicConfig:
     required_intent_terms: tuple[str, ...]
     news_queries: tuple[str, ...]
     event_terms: tuple[str, ...] = ()
+    conditional: bool = False
 
     def __post_init__(self) -> None:
         if not self.topic_id or not self.name:
@@ -123,6 +124,7 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
                 required_intent_terms=tuple(str(value) for value in raw.get("required_intent_terms", []) if str(value).strip()),
                 news_queries=tuple(str(value) for value in raw.get("news_queries", []) if str(value).strip()),
                 event_terms=tuple(str(value) for value in raw.get("event_terms", []) if str(value).strip()),
+                conditional=raw.get("conditional") is True,
             )
         )
     return tuple(sorted(topics, key=lambda item: (-item.priority, item.topic_id)))

@@ -202,7 +202,8 @@ class ConfiguredLiteralRelevanceOwner:
             proposition_topic = _CanonicalPropositionTopic(
                 topic_id=topic.topic_id,
                 intent_anchors=binding_terms,
-                required_intent_terms=(),
+                required_intent_terms=(tuple(topic.required_intent_terms)
+                                       if getattr(topic, "conditional", False) else ()),
             )
             matched = self.matcher(
                 title=proposition,
