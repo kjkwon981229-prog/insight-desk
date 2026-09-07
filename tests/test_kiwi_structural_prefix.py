@@ -7,6 +7,7 @@ import unittest
 from insight_desk.core import RawArticle, SourceProvenance
 from insight_desk.semantic.kiwi_extractor import KiwiDeterministicFactExtractor
 from insight_desk.semantic.pipeline import SemanticPipeline
+from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
 
 HAS_KIWI = importlib.util.find_spec("kiwipiepy") is not None
@@ -48,7 +49,7 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
                 self.assertEqual(len(result.facts), 1)
                 fact = result.facts[0]
                 exact = next(span.text for span in result.evidence if span.evidence_id in fact.evidence_ids)
-                self.assertEqual(exact, proposition)
+                self.assertEqual(exact, proposition, repr((fact, KiwiMorphologyHelper().analyze(prefix + proposition))))
 
     def test_detached_non_predicative_byline_prefix_is_not_part_of_exact_fact_span(self) -> None:
         body = (
