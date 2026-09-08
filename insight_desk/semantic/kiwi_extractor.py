@@ -43,21 +43,24 @@ def _phrase_before_case(text: str, tokens: tuple[MorphologyToken, ...], index: i
     cursor = index - 1
     # An adjacent parenthetical name/list belongs to the noun phrase: TUNEXX(튜넥스)가.
     # Walk the balanced source punctuation, then still require a noun before the opener.
-    if tokens[cursor].surface == ")":
+    suffix_pairs = {")": "(", "]": "[", "’": "‘", "”": "“", "'": "'", '"': '"'}
+    while cursor >= 0 and tokens[cursor].surface in suffix_pairs:
+        closer = tokens[cursor].surface
+        opener = suffix_pairs[closer]
         depth = 1
         cursor -= 1
         while cursor >= 0:
-            if tokens[cursor].surface == ")":
-                depth += 1
-            elif tokens[cursor].surface == "(":
+            if tokens[cursor].surface == opener:
                 depth -= 1
                 if depth == 0:
                     cursor -= 1
                     break
+            elif tokens[cursor].surface == closer:
+                depth += 1
             cursor -= 1
         if cursor < 0 or depth:
             return None
-    if not _is_noun_like(tokens[cursor]):
+    if cursor < 0 or not _is_noun_like(tokens[cursor]):
         return None
     start = tokens[cursor].start
     while cursor - 1 >= 0 and _is_noun_like(tokens[cursor - 1]):

@@ -347,8 +347,8 @@ def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
     return span.field.value == "body" and span.start < lead_end
 
 
-def _lead_title_frame_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
-    """Prove the lead's named actor, object and finite action in the source title.
+def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Prove a proposition's named actor, object and finite action in the source title.
 
     Later elaboration can repeat more title words without being a different central event.
     This source-only check uses grammatical roles, not a vocabulary of newsworthy actions.
@@ -370,7 +370,22 @@ def _lead_title_frame_bound(article: RawArticle, span: EvidenceSpan, morphology)
                    and len(str(getattr(token, "normalized", ""))) >= 2}
     if not named_actor.intersection(title_units):
         return False
-    object_tokens = _morphology_tokens(parts.object, morphology) or ()
+    # Parenthetical aliases qualify the same object, rather than a different event.
+    # Omit them for title comparison only; immutable source evidence is unchanged.
+    object_surface = []
+    depth = 0
+    for char in parts.object:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+        elif depth == 0:
+            object_surface.append(char)
+    if depth:
+        return False
+    object_tokens = _morphology_tokens("".join(object_surface), morphology) or ()
     object_units = {str(getattr(token, "normalized", "")) for token in object_tokens
                     if str(getattr(token, "tag", "")).startswith("N")
                     or getattr(token, "tag", "") == "SL"}
@@ -385,17 +400,25 @@ def _lead_title_frame_bound(article: RawArticle, span: EvidenceSpan, morphology)
               or getattr(token, "tag", "") == "XSV"]
     if not verbal:
         return False
-    index = verbal[-1]
-    token = tokens[index]
-    if getattr(token, "tag", "") == "XSV" and index > 0:
-        token = tokens[index - 1]
-        if not (str(getattr(token, "tag", "")).startswith("N")
-                or getattr(token, "tag", "") == "XR"):
-            return False
-    elif getattr(token, "tag", "") != "VV":
-        return False
-    predicate = str(getattr(token, "normalized", ""))
-    return len(predicate) >= 2 and predicate in title_units
+    for position, index in enumerate(verbal):
+        end = verbal[position + 1] if position + 1 < len(verbal) else finite[-1]
+        reported = any(getattr(t, "tag", "") == "EC" and
+                       str(getattr(t, "normalized", "")).endswith(("다고", "라고"))
+                       for t in tokens[index + 1:end])
+        if index != verbal[-1] and not reported:
+            continue
+        token = tokens[index]
+        if getattr(token, "tag", "") == "XSV" and index > 0:
+            token = tokens[index - 1]
+            if not (str(getattr(token, "tag", "")).startswith("N")
+                    or getattr(token, "tag", "") == "XR"):
+                continue
+        elif getattr(token, "tag", "") != "VV":
+            continue
+        predicate = str(getattr(token, "normalized", ""))
+        if len(predicate) >= 2 and predicate in title_units:
+            return True
+    return False
 
 
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
@@ -518,13 +541,24 @@ def assess_compatibility_article_understanding(
             }
             best = max(alignment.values())
             best_events = [event for event in eligible if alignment[event.event_id] == best]
-            if len(best_events) == 1 and best_events[0] == lead_events[0] and best[0] > 0:
+            lead = lead_events[0]
+            # Broadcast pages may repeat the same transcript. Identical exact
+            # propositions are duplicate occurrences, not competing central events.
+            if (lead in best_events and best[0] > 0
+                    and all(frozen_propositions[event.event_id].text == frozen_propositions[lead.event_id].text
+                            for event in best_events)):
                 winner = lead_events[0]
-            elif _lead_title_frame_bound(
+            elif _title_event_frame_bound(
                 article, frozen_propositions[lead_events[0].event_id], morphology
             ):
                 winner = lead_events[0]
         failure_reason = "article_centrality_conflict"
+
+    if winner is None:
+        bound = [event for event in eligible if _title_event_frame_bound(
+            article, frozen_propositions[event.event_id], morphology)]
+        if bound and len({frozen_propositions[event.event_id].text for event in bound}) == 1:
+            winner = min(bound, key=lambda event: frozen_propositions[event.event_id].start)
 
     if winner is None:
         for event in eligible:

@@ -15,14 +15,14 @@ class ScheduledSourceRecallTests(unittest.TestCase):
     def test_title_frame_cannot_promote_a_different_object_or_another_actor(self):
         cases = (
             _ArticleCase("different-object", "kpop", "튜넥스, 새 앨범 공개",
-                         "튜넥스는 공연 영상을 공개했다. 튜넥스는 새 앨범을 공개했다.", None),
+                         "튜넥스는 공연 영상을 공개했다. 튜넥스는 새 앨범을 공개했다.", "튜넥스는 새 앨범을 공개했다."),
             _ArticleCase("different-actor", "kpop", "아이브, 새 앨범 공개",
-                         "튜넥스는 새 앨범을 공개했다. 아이브는 새 앨범을 공개했다.", None),
+                         "튜넥스는 새 앨범을 공개했다. 아이브는 새 앨범을 공개했다.", "아이브는 새 앨범을 공개했다."),
         )
         outcomes = _run_cases(cases)
         for case in cases:
             with self.subTest(case=case.case_id):
-                self.assertFalse(outcomes[case.case_id].published)
+                self.assertEqual(outcomes[case.case_id].proposition, case.expected_proposition)
 
     def test_captured_fresh_sources_preserve_includes_and_reject_incidental_hanwha(self):
         cases = tuple(_ArticleCase(**row) for row in json.loads(
