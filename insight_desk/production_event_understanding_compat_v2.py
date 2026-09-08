@@ -19,6 +19,7 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingStatus,
 )
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
+from insight_desk.semantic.tooling import MorphologySourceOffsetError
 
 
 class MorphologyPort(Protocol):
@@ -103,7 +104,7 @@ def _morphology_tokens(text: str, morphology: MorphologyPort | None) -> tuple[ob
         return None
     try:
         return tuple(morphology.analyze(text))
-    except ContractError:
+    except (ContractError, MorphologySourceOffsetError):
         return None
 
 

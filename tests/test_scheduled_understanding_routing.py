@@ -10,12 +10,23 @@ from insight_desk.core import CandidateEvent, EventFact, EvidenceField, Evidence
 from insight_desk.core.event_understanding_v2 import ArticleEventRole, TopicRelation, UnderstandingStatus
 from insight_desk.production_event_understanding_compat_v2 import CompatibilityEventUnderstandingDecision
 from insight_desk.production_event_understanding_compat_v2 import _is_context_dependent_subject
+from insight_desk.production_event_understanding_compat_v2 import _first_sentence_end, _morphology_tokens
+from insight_desk.semantic.tooling import MorphologySourceOffsetError
 from insight_desk.production_replay_v2 import _recorded_edges
 from insight_desk.semantic.pipeline import SemanticArticleResult
 from scripts import phase11_daily_production as production
 
 
 class ScheduledUnderstandingRoutingTests(unittest.TestCase):
+    def test_invalid_morphology_offsets_cannot_skip_source_context_or_crash(self):
+        class InvalidOffsets:
+            def analyze(self, text):
+                raise MorphologySourceOffsetError("outside source")
+        body = "원문 문맥\n삼성생명이 새 서비스를 도입한다."
+        morphology = InvalidOffsets()
+        self.assertIsNone(_morphology_tokens(body, morphology))
+        self.assertEqual(_first_sentence_end(body, morphology), len("원문 문맥\n"))
+
     def test_deictic_subject_detection_requires_a_word_or_morpheme_boundary(self):
         for subject in ("그룹 TUNEXX(튜넥스)", "그린에너지", "이들이라는책출판사"):
             with self.subTest(subject=subject):
