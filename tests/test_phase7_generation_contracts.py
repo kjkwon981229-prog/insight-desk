@@ -216,6 +216,28 @@ class Phase7GenerationContractTests(unittest.TestCase):
                 GeneratedDraft(event_id="event:repeated", headline=headline, summary=summary,
                                evidence_ids=ids, source_proposition=span)
 
+    def test_exact_source_cannot_exempt_a_fused_repeated_deck_fragment(self) -> None:
+        text = (
+            "걸그룹 리센느(RESCENE) 멤버들이 워걸그룹 리센느(RESCENE) 멤버 4명의 "
+            "몸무게가 탑승 기준에 미치지 못했다."
+        )
+        span = EvidenceSpan(
+            evidence_id="ev:fused-deck",
+            article_id="article:fused-deck",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(text),
+            text=text,
+        )
+        with self.assertRaisesRegex(GenerationContractError, "fused repeated fragment"):
+            GeneratedDraft(
+                event_id="event:fused-deck",
+                headline=text,
+                summary=text,
+                evidence_ids=(span.evidence_id,),
+                source_proposition=span,
+            )
+
     def test_preservation_accepts_exact_source_number_date_and_quote(self) -> None:
         draft = GeneratedDraft(
             event_id="event:phase7",

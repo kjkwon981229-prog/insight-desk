@@ -108,6 +108,25 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_PSAT_FALSE_POSITIVE"):
             validate_html(page)
 
+    def test_v2_exact_source_still_rejects_a_fused_repeated_fragment(self) -> None:
+        malformed = (
+            "걸그룹 리센느(RESCENE) 멤버들이 워걸그룹 리센느(RESCENE) 멤버 4명의 "
+            "몸무게가 탑승 기준에 미치지 못했다."
+        )
+        audit = {
+            "publication_contract_version": 2,
+            "canonical_contract": {"validated": True},
+            "runtime_authority": {
+                "story_admission_semantic_gate": False,
+                "visible_identity_semantic_gate": False,
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_MALFORMED_VISIBLE_TEXT"):
+            validate_html(
+                html_for(("event:fused", "K-POP", malformed, malformed)),
+                source_audit=audit,
+            )
+
     def test_empty_feed_fails_product_gate(self) -> None:
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_NO_STORIES"):
             validate_html("<!doctype html><html><body></body></html>")

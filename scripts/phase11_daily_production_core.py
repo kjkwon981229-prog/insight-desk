@@ -592,6 +592,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                                 facts=article_facts,
                                 topic=topic,
                                 discovery=discovery,
+                                article=article,
                             )
                             if expansion is not None and getattr(expansion, "attempted", False):
                                 stats["relevance_resolution_expansions"] += 1

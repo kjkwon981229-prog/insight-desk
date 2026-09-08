@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
+from insight_desk.feed_quality_detectors_core import fused_repeated_source_fragment
 from insight_desk.providers.groq import GROQ_20B
 
 
@@ -137,6 +138,8 @@ class GeneratedDraft:
             or self.summary != source_proposition.text
         ):
             raise GenerationContractError("source draft must exactly preserve its cited proposition")
+        if source_proposition is not None and fused_repeated_source_fragment(headline):
+            raise GenerationContractError("source proposition contains a fused repeated fragment")
         # Repetition introduced by generation remains invalid. The canonical route
         # can prove that repeated nouns were already present in its exact evidence;
         # all later preservation, provenance and publication checks still apply.

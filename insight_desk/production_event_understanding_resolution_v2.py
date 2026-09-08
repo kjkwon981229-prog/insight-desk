@@ -113,18 +113,23 @@ class BoundedEventUnderstandingSourceExpansionLane:
                 seen.add(key)
                 terms.append(text)
 
-        # The source title is query context only; it is not semantic authority.
+        # Source structure and the deferred fact identify the event. Topic vocabulary is appended
+        # only as search context so it cannot displace the actor/action from the bounded query.
         add(getattr(article, "title", ""))
-        for term in tuple(getattr(topic, "required_intent_terms", ())):
-            add(term)
         for fact_id in event.fact_ids:
             fact = facts.get(fact_id)
             if fact is None:
                 continue
             add(fact.subject)
-            add(fact.action)
             add(fact.object)
+            add(fact.action)
             add(fact.event_date)
+        configured_binding = (
+            tuple(getattr(topic, "required_intent_terms", ()))
+            or tuple(getattr(topic, "intent_anchors", ()))
+        )
+        if configured_binding:
+            add(configured_binding[0])
 
         if not terms:
             return None

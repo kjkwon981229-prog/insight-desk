@@ -56,6 +56,7 @@ def _resolution_query(
     event: CandidateEvent,
     facts: Mapping[str, EventFact],
     topic: TopicPort,
+    article: object | None = None,
 ) -> str | None:
     if len(event.fact_ids) != 1:
         return None
@@ -67,13 +68,15 @@ def _resolution_query(
     binding = configured_binding[0] if configured_binding else None
     parts = _unique_text(
         (
-            binding,
+            str(getattr(article, "title", "") or "") or None,
             fact.subject,
-            fact.object,
             fact.action,
+            fact.object,
+            fact.event_date,
+            binding,
         )
     )
-    return " ".join(parts[:4]) or None
+    return " ".join(parts[:6]) or None
 
 
 class BoundedRelevanceSourceExpansionLane:
@@ -87,6 +90,7 @@ class BoundedRelevanceSourceExpansionLane:
         facts: Mapping[str, EventFact],
         topic: TopicPort,
         discovery: DiscoveryPort,
+        article: object | None = None,
     ) -> RelevanceSourceExpansion:
         if not decision.requires_resolution:
             return RelevanceSourceExpansion(
@@ -96,7 +100,7 @@ class BoundedRelevanceSourceExpansionLane:
                 reason="relevance_defer:not_deferred",
             )
 
-        query = _resolution_query(event=event, facts=facts, topic=topic)
+        query = _resolution_query(event=event, facts=facts, topic=topic, article=article)
         if query is None:
             return RelevanceSourceExpansion(
                 decision=decision,

@@ -34,6 +34,9 @@ from insight_desk.production_relevance_v2 import (
     project_event_relevance,
     rewrite_event_relevance_attempt,
 )
+from insight_desk.production_relevance_resolution_v2 import (
+    BoundedRelevanceSourceExpansionLane,
+)
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 
 
@@ -45,6 +48,7 @@ _CORE_HOOKS = (
     "event_topic_relevant",
     "event_understanding_decision",
     "expand_deferred_event_understanding",
+    "expand_deferred_event_relevance",
     "_attempt",
     "_visible_topic_headline_bound",
     "visible_story_issues",
@@ -87,6 +91,8 @@ def production_v2_runtime(core_module: ModuleType):
         morphology=_optional_morphology(),
     )
     understanding_resolution_lane = BoundedEventUnderstandingSourceExpansionLane()
+    relevance_resolution_lane = BoundedRelevanceSourceExpansionLane()
+    deferred_relevance_by_event = {}
 
     def expand_deferred_event_understanding(*, decision, article, event, facts, topic, discovery):
         return understanding_resolution_lane.expand(
@@ -135,9 +141,27 @@ def production_v2_runtime(core_module: ModuleType):
                     topic=topic,
                     evidence_refs=(evidence_ref,),
                 )
+            if decision.requires_resolution:
+                deferred_relevance_by_event[event.event_id] = decision
+            else:
+                deferred_relevance_by_event.pop(event.event_id, None)
             return project_event_relevance(decision)
 
+        def expand_deferred_event_relevance(*, event, facts, topic, discovery, article=None):
+            decision = deferred_relevance_by_event.pop(event.event_id, None)
+            if decision is None:
+                return None
+            return relevance_resolution_lane.expand(
+                decision=decision,
+                event=event,
+                facts=facts,
+                topic=topic,
+                discovery=discovery,
+                article=article,
+            )
+
         core_module.event_topic_relevant = project_canonical_proposition_relevance
+        core_module.expand_deferred_event_relevance = expand_deferred_event_relevance
 
         def project_relevance_attempt(*, topic, query, domain, stage, status, reason=None):
             projected_status, projected_reason = rewrite_event_relevance_attempt(
