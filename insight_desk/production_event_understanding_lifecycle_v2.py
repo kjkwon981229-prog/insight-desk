@@ -9,7 +9,11 @@ runs authoritative enrichment only after that promotion. The same owner also int
 identity-resolution bridge sources without registering them for publication.
 """
 
+from dataclasses import asdict
 from datetime import date
+import json
+import os
+from pathlib import Path
 from types import ModuleType
 from typing import Mapping
 
@@ -198,6 +202,18 @@ class ProductionEventUnderstandingLifecycleOwner:
             morphology=self._morphology,
             now=article.provenance.fetched_at,
         )
+
+        # Opt-in incident evidence belongs in the short-lived CI artifact, never stdout or Pages.
+        diagnostic_path = os.environ.get("INSIGHT_DESK_UNDERSTANDING_DIAGNOSTICS", "")
+        if persist and diagnostic_path:
+            path = Path(diagnostic_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({
+                    "source": asdict(source),
+                    "semantic_result": asdict(result),
+                    "decisions": {key: asdict(value) for key, value in decisions.items()},
+                }, ensure_ascii=False, default=str) + "\n")
 
         retained: list[CandidateEvent] = []
         canonicals: list[CanonicalEvent] = []

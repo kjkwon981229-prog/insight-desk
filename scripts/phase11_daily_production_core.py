@@ -85,6 +85,8 @@ class TopicConfig:
     required_intent_terms: tuple[str, ...]
     news_queries: tuple[str, ...]
     event_terms: tuple[str, ...] = ()
+    conditional: bool = False
+    event_scope_anchors: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.topic_id or not self.name:
@@ -123,6 +125,8 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
                 required_intent_terms=tuple(str(value) for value in raw.get("required_intent_terms", []) if str(value).strip()),
                 news_queries=tuple(str(value) for value in raw.get("news_queries", []) if str(value).strip()),
                 event_terms=tuple(str(value) for value in raw.get("event_terms", []) if str(value).strip()),
+                conditional=raw.get("conditional") is True,
+                event_scope_anchors=tuple(str(value) for value in raw.get("event_scope_anchors", []) if str(value).strip()),
             )
         )
     return tuple(sorted(topics, key=lambda item: (-item.priority, item.topic_id)))
@@ -251,6 +255,27 @@ def _attempt(*, topic: str, query: str, domain: str, stage: str, status: str, re
 
 def _counter(stats: dict[str, int], key: str, amount: int = 1) -> None:
     stats[key] = stats.get(key, 0) + amount
+
+
+def _query_candidate_batches(discovery, topic: TopicConfig, attempts):
+    """Interleave configured query results within the unchanged acquisition budget.
+
+    Exhausted/failed query lanes drop out, so remaining lanes can use spare capacity.
+    Each mutable batch still accepts bounded understanding-resolution candidates.
+    """
+    lanes = []
+    for query in topic.news_queries:
+        try:
+            candidates = tuple(discovery.search(query, topic_id=topic.topic_id, limit=10))
+        except DiscoveryError as exc:
+            attempts.append(_attempt(topic=topic.topic_id, query=query, domain="discovery",
+                                     stage="discovery", status="skip", reason=exc.failure_kind.value))
+            continue
+        lanes.append((query, candidates))
+    for rank in range(max((len(candidates) for _, candidates in lanes), default=0)):
+        for query, candidates in lanes:
+            if rank < len(candidates):
+                yield query, [candidates[rank]]
 
 
 def _route_counter(stats: dict[str, dict[str, int]], route: str, key: str) -> None:
@@ -388,15 +413,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         relevance_resolution_candidate_urls: set[str] = set()
         event_understanding_resolution_candidate_urls: set[str] = set()
 
-        for query in topic.news_queries:
+        for query, queue in _query_candidate_batches(discovery, topic, attempts):
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
                 break
-            try:
-                queue = list(discovery.search(query, topic_id=topic.topic_id, limit=10))
-            except DiscoveryError as exc:
-                attempts.append(_attempt(topic=topic.topic_id, query=query, domain="discovery", stage="discovery", status="skip", reason=exc.failure_kind.value))
-                continue
-
             for candidate in queue:
                 candidate_url = str(getattr(candidate, "url", "") or "").strip()
                 if stats["published_entries"] >= topic.selection_cap:
@@ -497,45 +516,6 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 for event in semantic_result.events:
                     if stats["published_entries"] >= topic.selection_cap:
                         break
-                    event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
-                    if not event_relevant:
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
-                        if (
-                            stats["relevance_resolution_expansions"] < RELEVANCE_RESOLUTION_EXPANSION_LIMIT
-                            and "expand_deferred_event_relevance" in globals()
-                        ):
-                            expansion = expand_deferred_event_relevance(
-                                event=event,
-                                facts=article_facts,
-                                topic=topic,
-                                discovery=discovery,
-                            )
-                            if expansion is not None and getattr(expansion, "attempted", False):
-                                stats["relevance_resolution_expansions"] += 1
-                                queued_urls = {
-                                    str(getattr(queued_candidate, "url", "") or "").strip()
-                                    for queued_candidate in queue
-                                }
-                                appended = 0
-                                for expanded_candidate in getattr(expansion, "candidates", ()):
-                                    expanded_url = str(getattr(expanded_candidate, "url", "") or "").strip()
-                                    if not expanded_url or expanded_url in seen_urls or expanded_url in queued_urls:
-                                        continue
-                                    queue.append(expanded_candidate)
-                                    queued_urls.add(expanded_url)
-                                    relevance_resolution_candidate_urls.add(expanded_url)
-                                    appended += 1
-                                stats["relevance_resolution_candidates"] += appended
-                                attempts.append(_attempt(
-                                    topic=topic.topic_id,
-                                    query=query,
-                                    domain=domain,
-                                    stage="event_topic_relevance_resolution",
-                                    status="expanded" if appended else "defer",
-                                    reason=str(getattr(expansion, "reason", "relevance_defer:resolution_unknown")),
-                                ))
-                        continue
-
                     understanding = event_understanding_decision(
                         event,
                         facts=article_facts,
@@ -599,6 +579,47 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             reason=understanding.reasons[0] if understanding.reasons else "not_primary_event",
                         ))
                         continue
+
+                    event_relevant = event_topic_relevant(event=event, facts=article_facts, evidence=article_evidence, topic=topic)
+                    if not event_relevant:
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="event_topic_relevance", status="skip", reason="configured_literal_missing_in_event_evidence"))
+                        if (
+                            stats["relevance_resolution_expansions"] < RELEVANCE_RESOLUTION_EXPANSION_LIMIT
+                            and "expand_deferred_event_relevance" in globals()
+                        ):
+                            expansion = expand_deferred_event_relevance(
+                                event=event,
+                                facts=article_facts,
+                                topic=topic,
+                                discovery=discovery,
+                                article=article,
+                            )
+                            if expansion is not None and getattr(expansion, "attempted", False):
+                                stats["relevance_resolution_expansions"] += 1
+                                queued_urls = {
+                                    str(getattr(queued_candidate, "url", "") or "").strip()
+                                    for queued_candidate in queue
+                                }
+                                appended = 0
+                                for expanded_candidate in getattr(expansion, "candidates", ()):
+                                    expanded_url = str(getattr(expanded_candidate, "url", "") or "").strip()
+                                    if not expanded_url or expanded_url in seen_urls or expanded_url in queued_urls:
+                                        continue
+                                    queue.append(expanded_candidate)
+                                    queued_urls.add(expanded_url)
+                                    relevance_resolution_candidate_urls.add(expanded_url)
+                                    appended += 1
+                                stats["relevance_resolution_candidates"] += appended
+                                attempts.append(_attempt(
+                                    topic=topic.topic_id,
+                                    query=query,
+                                    domain=domain,
+                                    stage="event_topic_relevance_resolution",
+                                    status="expanded" if appended else "defer",
+                                    reason=str(getattr(expansion, "reason", "relevance_defer:resolution_unknown")),
+                                ))
+                        continue
+
 
                     generation_request = GenerationRequest(event=event, facts=article_facts, evidence=article_evidence)
                     identity_text = generation_request.evidence_text

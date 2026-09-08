@@ -141,6 +141,7 @@ _MISSING_BLOCK_BOUNDARY_RE = re.compile(
     r"[가-힣A-Za-z0-9·&-]{2,28}(?:은|는|이|가)\s)"
 )
 _TRAILING_LIST_FRAGMENT_RE = re.compile(r"[,，;；、]\s*$")
+_VISIBLE_LEXICAL_TOKEN_RE = re.compile(r"[가-힣A-Za-z0-9]+")
 _INCOMPLETE_ADNOMINAL_HEADLINE_RE = re.compile(
     r"(?:이끈|거둔|밝힌|발표한|체결한|개최한|진행한|기록한|수주한|선정된|확정된|"
     r"결정된|출시한|발매한|공개한|상승한|하락한|오른|내린|앞둔|나선|보인|만든|"
@@ -792,7 +793,42 @@ def malformed_visible_text(value: str) -> bool:
         or _MISSING_FINANCIAL_VALUE_RE.search(normalized) is not None
         or _MISSING_BLOCK_BOUNDARY_RE.search(normalized) is not None
         or _TRAILING_LIST_FRAGMENT_RE.search(normalized) is not None
+        or fused_repeated_source_fragment(normalized)
     )
+
+
+def fused_repeated_source_fragment(value: str) -> bool:
+    """Detect a short source fragment fused into a repeated phrase.
+
+    HTML extraction can join the truncated tail of a deck directly to the article lead.  The
+    resulting visible sentence contains a repeated multi-token phrase whose preceding token is the
+    same lexical unit with a short extra prefix (for example ``X ... pX ...``).  Repeated names or
+    nouns on their own are valid source text, so this detector requires both the repeated phrase and
+    the fused-token seam, within one sentence.
+    """
+
+    normalized = " ".join(value.split())
+    matches = tuple(_VISIBLE_LEXICAL_TOKEN_RE.finditer(normalized))
+    tokens = tuple(match.group(0).casefold() for match in matches)
+    for width in (3, 2):
+        for first in range(1, len(tokens) - width + 1):
+            phrase = tokens[first : first + width]
+            if sum(len(token) for token in phrase) < 6:
+                continue
+            last_second = min(len(tokens) - width, first + width + 5)
+            for second in range(first + width, last_second + 1):
+                if tokens[second : second + width] != phrase:
+                    continue
+                between = normalized[matches[first + width - 1].end() : matches[second].start()]
+                if any(mark in between for mark in ".!?。！？"):
+                    continue
+                before_first = tokens[first - 1]
+                before_second = tokens[second - 1]
+                shorter, longer = sorted((before_first, before_second), key=len)
+                extra = len(longer) - len(shorter)
+                if len(shorter) >= 2 and 1 <= extra <= 3 and longer.endswith(shorter):
+                    return True
+    return False
 
 
 def context_dependent_headline(value: str) -> bool:

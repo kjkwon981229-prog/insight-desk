@@ -18,11 +18,11 @@ import scripts.phase11_daily_production as production
 
 
 class RelevanceDeferRuntimeWiringTests(unittest.TestCase):
-    def test_legacy_event_relevance_resolution_hook_is_not_reactivated(self) -> None:
+    def test_canonical_relevance_resolution_hook_is_execution_scoped(self) -> None:
         self.assertFalse(hasattr(production._core, "expand_deferred_event_relevance"))
 
         with production_v2_runtime(production._core):
-            self.assertFalse(hasattr(production._core, "expand_deferred_event_relevance"))
+            self.assertTrue(hasattr(production._core, "expand_deferred_event_relevance"))
 
         self.assertFalse(hasattr(production._core, "expand_deferred_event_relevance"))
 
@@ -177,6 +177,108 @@ class RelevanceDeferRuntimeWiringTests(unittest.TestCase):
             )
             self.assertEqual(attempt["status"], "defer")
             self.assertEqual(attempt["reason"], "resolution_required")
+
+    def test_canonical_defer_requeues_only_new_sources_through_the_normal_pipeline(self) -> None:
+        proposition = "삼성전자와 TSMC는 12인치 포토마스크 상용화를 위해 손을 잡았다."
+        fact = EventFact(
+            fact_id="fact:photomask",
+            subject="삼성전자와 TSMC",
+            action="12인치 포토마스크 상용화를 위해 손을 잡았다",
+            object="12인치 포토마스크",
+            evidence_ids=("evidence:photomask",),
+        )
+        event = CandidateEvent(
+            event_id="event:photomask",
+            topic_id="ai_tech",
+            fact_ids=(fact.fact_id,),
+            article_ids=("article:photomask",),
+        )
+        topic = SimpleNamespace(
+            topic_id="ai_tech",
+            intent_anchors=("AI", "반도체"),
+            required_intent_terms=("AI", "반도체"),
+            event_terms=("공개", "출시"),
+            event_scope_anchors=(),
+        )
+        now = datetime(2026, 9, 8, tzinfo=timezone.utc)
+        source = SourceDocument(
+            source_id="source:photomask",
+            candidate_ids=(event.article_ids[0],),
+            publisher="fixture",
+            url="https://example.com/photomask",
+            title="삼성전자·TSMC, 12인치 포토마스크 도입 협력",
+            body=proposition,
+            fetched_at=now,
+            publication_time=now,
+            retrieved_via="fixture",
+            content_sha256=hashlib.sha256(proposition.encode("utf-8")).hexdigest(),
+        )
+        canonical = CanonicalEvent(
+            event_id=event.event_id,
+            topic=event.topic_id,
+            actor=fact.subject,
+            action=fact.action,
+            event_type="news_event",
+            source_ids=(source.source_id,),
+            evidence_refs=(
+                CanonicalEvidenceRef(
+                    source_id=source.source_id,
+                    field="body",
+                    start=0,
+                    end=len(proposition),
+                    text_sha256=hashlib.sha256(proposition.encode("utf-8")).hexdigest(),
+                ),
+            ),
+        )
+
+        class Discovery:
+            def __init__(self):
+                self.query = ""
+
+            def search(self, query, *, topic_id, limit):
+                self.query = query
+                self.topic_id = topic_id
+                self.limit = limit
+                return (SimpleNamespace(url="https://example.com/corroborating"),)
+
+        discovery = Discovery()
+        article = SimpleNamespace(title=source.title)
+        with production_v2_runtime(production._core) as registry:
+            registry.sources_by_article[event.article_ids[0]] = source
+            registry.events_by_id[event.event_id] = canonical
+            self.assertFalse(
+                production._core.event_topic_relevant(
+                    event=event,
+                    facts={fact.fact_id: fact},
+                    evidence={},
+                    topic=topic,
+                )
+            )
+            # Mirror the mechanical audit write, which consumes the compatibility context.
+            production._core._attempt(
+                topic="ai_tech",
+                query="반도체",
+                domain="example.com",
+                stage="event_topic_relevance",
+                status="skip",
+                reason="configured_literal_missing_in_event_evidence",
+            )
+            expansion = production._core.expand_deferred_event_relevance(
+                event=event,
+                facts={fact.fact_id: fact},
+                topic=topic,
+                discovery=discovery,
+                article=article,
+            )
+
+        self.assertTrue(expansion.attempted)
+        self.assertEqual(
+            tuple(candidate.url for candidate in expansion.candidates),
+            ("https://example.com/corroborating",),
+        )
+        self.assertTrue(discovery.query.startswith(source.title))
+        self.assertIn(fact.subject, discovery.query)
+        self.assertIn("포토마스크", discovery.query)
 
 
 if __name__ == "__main__":

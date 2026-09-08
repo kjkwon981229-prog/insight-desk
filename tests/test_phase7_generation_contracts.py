@@ -201,6 +201,43 @@ class Phase7GenerationContractTests(unittest.TestCase):
                 evidence_ids=("ev:live-headline",),
             )
 
+    def test_repeated_nouns_require_exact_cited_source_proposition(self) -> None:
+        text = "연구소는 관측 플랫폼에 적용한 관측 솔루션을 공개했다."
+        span = EvidenceSpan(evidence_id="ev:repeated", article_id="article:repeated",
+                            field=EvidenceField.BODY, start=0, end=len(text), text=text)
+        GeneratedDraft(event_id="event:repeated", headline=text, summary=text,
+                       evidence_ids=(span.evidence_id,), source_proposition=span)
+        for headline, summary, ids in (
+            (text + " 관측", text, (span.evidence_id,)),
+            (text, text + " 관측", (span.evidence_id,)),
+            (text, text, ("ev:unrelated",)),
+        ):
+            with self.subTest(headline=headline, ids=ids), self.assertRaises(GenerationContractError):
+                GeneratedDraft(event_id="event:repeated", headline=headline, summary=summary,
+                               evidence_ids=ids, source_proposition=span)
+
+    def test_exact_source_cannot_exempt_a_fused_repeated_deck_fragment(self) -> None:
+        text = (
+            "걸그룹 리센느(RESCENE) 멤버들이 워걸그룹 리센느(RESCENE) 멤버 4명의 "
+            "몸무게가 탑승 기준에 미치지 못했다."
+        )
+        span = EvidenceSpan(
+            evidence_id="ev:fused-deck",
+            article_id="article:fused-deck",
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(text),
+            text=text,
+        )
+        with self.assertRaisesRegex(GenerationContractError, "fused repeated fragment"):
+            GeneratedDraft(
+                event_id="event:fused-deck",
+                headline=text,
+                summary=text,
+                evidence_ids=(span.evidence_id,),
+                source_proposition=span,
+            )
+
     def test_preservation_accepts_exact_source_number_date_and_quote(self) -> None:
         draft = GeneratedDraft(
             event_id="event:phase7",

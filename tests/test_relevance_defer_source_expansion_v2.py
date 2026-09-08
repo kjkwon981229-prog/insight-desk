@@ -86,6 +86,7 @@ class BoundedRelevanceSourceExpansionTests(unittest.TestCase):
             facts=facts,
             topic=_topic(),
             discovery=discovery,
+            article=SimpleNamespace(title="Home Club and Away Club game result"),
         )
 
         self.assertTrue(expansion.attempted)
@@ -100,6 +101,7 @@ class BoundedRelevanceSourceExpansionTests(unittest.TestCase):
         self.assertIn("Target Club", query)
         self.assertIn("Home Club", query)
         self.assertIn("Away Club", query)
+        self.assertTrue(query.startswith("Home Club and Away Club game result"))
 
     def test_non_deferred_decision_does_not_expand_sources(self) -> None:
         event, facts = _event_and_facts()

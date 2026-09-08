@@ -41,7 +41,26 @@ def _phrase_before_case(text: str, tokens: tuple[MorphologyToken, ...], index: i
         return None
     marker = tokens[index]
     cursor = index - 1
-    if not _is_noun_like(tokens[cursor]):
+    # An adjacent parenthetical name/list belongs to the noun phrase: TUNEXX(튜넥스)가.
+    # Walk the balanced source punctuation, then still require a noun before the opener.
+    suffix_pairs = {")": "(", "]": "[", "’": "‘", "”": "“", "'": "'", '"': '"'}
+    while cursor >= 0 and tokens[cursor].surface in suffix_pairs:
+        closer = tokens[cursor].surface
+        opener = suffix_pairs[closer]
+        depth = 1
+        cursor -= 1
+        while cursor >= 0:
+            if tokens[cursor].surface == opener:
+                depth -= 1
+                if depth == 0:
+                    cursor -= 1
+                    break
+            elif tokens[cursor].surface == closer:
+                depth += 1
+            cursor -= 1
+        if cursor < 0 or depth:
+            return None
+    if cursor < 0 or not _is_noun_like(tokens[cursor]):
         return None
     start = tokens[cursor].start
     while cursor - 1 >= 0 and _is_noun_like(tokens[cursor - 1]):
@@ -67,9 +86,31 @@ def _subject_candidate(text: str, tokens: tuple[MorphologyToken, ...]) -> _CaseP
                 nominatives.append(phrase)
 
     if len(topics) == 1:
+        # A topic-marked actor does not own a later coordinated clause's
+        # nominative actor. Keep relative clauses, but never fold two matrix
+        # subjects into the first actor's action.
+        topic = topics[0]
+        for nominative in nominatives:
+            between = [token for token in tokens
+                       if topic.marker_end <= token.start < nominative.start]
+            if any(token.tag == "EC" for token in between) and not any(
+                token.tag == "ETM" for token in between
+            ):
+                return None
         return topics[0]
     if topics:
         return None
+    if len(nominatives) > 1:
+        # A subject inside a prenominal relative clause is not the matrix subject.
+        # Retain ambiguity for coordinated finite clauses; only an intervening ETM
+        # followed by another explicit subject can discharge the embedded candidate.
+        nominatives = [
+            phrase for phrase, following in zip(nominatives, nominatives[1:])
+            if not any(
+                token.tag == "ETM" and phrase.marker_end <= token.start < following.start
+                for token in tokens
+            )
+        ] + nominatives[-1:]
     if len(nominatives) == 1:
         return nominatives[0]
     return None
@@ -108,7 +149,16 @@ def _structural_proposition_start(
 
     if subject.start <= 0:
         return 0
-    separator = text.rfind("|", 0, subject.start)
+    separator = max(text.rfind(char, 0, subject.start) for char in "|┃│")
+    closed_attribution = False
+    if separator < 0:
+        # Balanced byline groups are attribution, but arbitrary bracketed qualifiers are not.
+        for opener, closer in (("[", "]"), ("(", ")")):
+            end = text.find(closer)
+            if text.startswith(opener) and 0 < end < subject.start and text[1:end].rstrip().endswith(" 기자"):
+                separator = end
+                closed_attribution = True
+                break
     if separator < 0:
         return 0
     if text[separator + 1 : subject.start].strip():
@@ -119,13 +169,30 @@ def _structural_proposition_start(
     prefix_tokens = tuple(token for token in tokens if token.end <= separator)
     if not prefix_tokens:
         return 0
-    if any(token.tag.startswith("J") or token.tag in _PREDICATE_TAGS for token in prefix_tokens):
+    # Names inside an explicitly closed attribution can be tokenized with a trailing
+    # particle (e.g. a name ending in 은). Predicative context must still remain.
+    if any(token.tag in _PREDICATE_TAGS or token.tag in {"EF", "EC"}
+           or (token.tag.startswith("J") and not closed_attribution)
+           for token in prefix_tokens):
         return 0
     return subject.start
 
 
 def _predicate_fact_parts(text: str, tokens: tuple[MorphologyToken, ...]) -> _LiteralFactParts | None:
-    subject = _subject_candidate(text, tokens)
+    subject_tokens = tokens
+    # Closed attribution is outside the clause. Resolve it before case roles so
+    # a reporter name tokenized as noun + 은 cannot become the event's subject.
+    for opener, closer in (("[", "]"), ("(", ")")):
+        end = text.find(closer)
+        if not (text.startswith(opener) and end > 0
+                and text[1:end].rstrip().endswith(" 기자")):
+            continue
+        attribution = tuple(token for token in tokens if token.end <= end)
+        if attribution and not any(token.tag in _PREDICATE_TAGS or token.tag in {"EF", "EC"}
+                                   for token in attribution):
+            subject_tokens = tuple(token for token in tokens if token.start > end)
+        break
+    subject = _subject_candidate(text, subject_tokens)
     if subject is None or not _has_predicate_after(tokens, subject.marker_end):
         return None
     action = text[subject.marker_end:].strip().rstrip(_TRAILING_PUNCTUATION).strip()

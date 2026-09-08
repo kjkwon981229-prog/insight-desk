@@ -72,6 +72,12 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_phase5_real_production_replay_v2.py'
       - name: Run Phase 6 correctness and recall gate
         run: python -m unittest discover -s tests -p 'test_phase6_correctness_recall_v2.py'
+      - name: Run scheduled input recall and source attribution regressions
+        run: |
+          python -m unittest discover -s tests -p 'test_scheduled_source_recall.py'
+          python -m unittest discover -s tests -p 'test_kiwi_structural_prefix.py'
+      - name: Run full deterministic historical corpus with semantic runtime
+        run: python scripts/run_tests.py
       - name: Run source-grounded production and adversarial structural gates
         run: >-
           python -m unittest discover -s tests

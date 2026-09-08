@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 # Legacy replay without a V2 production audit still exercises the historical semantic
 # validator. Canonical V2 production must not let publication re-judge news meaning.
 from insight_desk.feed_quality import VisibleStoryIssue
+from insight_desk.feed_quality_detectors_core import fused_repeated_source_fragment
 from insight_desk.story_admission import StoryAdmissionStage, evaluate_story_admission
 
 
@@ -262,6 +263,13 @@ def validate_html(
         if len(summary) > MAX_SUMMARY_CHARS:
             raise ValueError(f"FEED_QUALITY_SUMMARY_TOO_LONG:{index}:{len(summary)}")
 
+        structural_malformed = (
+            fused_repeated_source_fragment(headline)
+            or fused_repeated_source_fragment(summary)
+        )
+        if structural_malformed:
+            malformed_visible_texts += 1
+
         if not canonical_v2:
             decision = evaluate_story_admission(
                 topic=topic,
@@ -287,7 +295,10 @@ def validate_html(
                 non_event_analytical_summaries += 1
             if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY.value in codes:
                 conditional_analytical_summaries += 1
-            if VisibleStoryIssue.MALFORMED_VISIBLE_TEXT.value in codes:
+            if (
+                VisibleStoryIssue.MALFORMED_VISIBLE_TEXT.value in codes
+                and not structural_malformed
+            ):
                 malformed_visible_texts += 1
             if VisibleStoryIssue.MIXED_EVENT_SUMMARY.value in codes:
                 mixed_event_summaries += 1

@@ -18,6 +18,7 @@ class _PageTitleParser(HTMLParser):
         self._title_chunks: list[str] = []
         self.og_title: str | None = None
         self.twitter_title: str | None = None
+        self.site_names: set[str] = set()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         lowered = tag.lower()
@@ -31,6 +32,8 @@ class _PageTitleParser(HTMLParser):
                 self.og_title = content
             elif key == "twitter:title" and content:
                 self.twitter_title = content
+            elif key == "og:site_name" and content:
+                self.site_names.add(content)
 
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() == "title":
@@ -54,6 +57,26 @@ def extract_page_title(html: str) -> str | None:
     except Exception:
         return None
     return parser.best_title()
+
+
+def strip_document_publisher_prefix(body: str, html: str) -> str:
+    """Remove a detached label only when the document identifies that exact publisher.
+
+    Bracketed qualifications remain evidence. No publisher-name vocabulary or
+    inferred mapping from hostnames participates in this boundary decision.
+    """
+    parser = _PageTitleParser()
+    try:
+        parser.feed(html)
+    except Exception:
+        return body
+    if len(parser.site_names) != 1:
+        return body
+    publisher = next(iter(parser.site_names))
+    label = f"[{publisher}]"
+    if body.startswith(label) and body[len(label):len(label) + 1].isspace():
+        return body[len(label):].lstrip()
+    return body
 
 
 def _preserve_article_root_text_boundaries(html: str) -> str:

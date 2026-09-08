@@ -10,6 +10,8 @@ separate one source-central news event from contextual/analytical facts before P
 
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from html import unescape
+import re
 from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, ContractError, EvidenceSpan, EventFact, RawArticle
@@ -19,6 +21,7 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingStatus,
 )
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
+from insight_desk.semantic.tooling import MorphologySourceOffsetError
 
 
 class MorphologyPort(Protocol):
@@ -72,11 +75,25 @@ def _normalized(text: str) -> str:
     return " ".join(text.split())
 
 
-def _is_context_dependent_subject(subject: str) -> bool:
+def _is_context_dependent_subject(subject: str, morphology: MorphologyPort | None = None) -> bool:
     value = _normalized(subject)
     if not value:
         return True
-    return any(value.startswith(stem) for stem in _CONTEXT_SUBJECT_STEMS)
+    if any(value == stem or value.startswith(stem + " ") for stem in _CONTEXT_SUBJECT_STEMS):
+        return True
+    # Compatibility callers can retain a case/topic particle in the subject surface.
+    first_word = value.split()[0]
+    if any(first_word == stem + particle for stem in _CONTEXT_SUBJECT_STEMS
+           for particle in ("은", "는", "이", "가", "의", "을", "를", "도", "만")):
+        return True
+    tokens = _morphology_tokens(value, morphology)
+    if not tokens:
+        return False
+    first = tokens[0]
+    return (
+        str(getattr(first, "tag", "")) in {"NP", "MM"}
+        and str(getattr(first, "normalized", getattr(first, "surface", ""))) in _CONTEXT_SUBJECT_STEMS
+    )
 
 
 def _is_analytical_predicate(action: str) -> bool:
@@ -89,7 +106,7 @@ def _morphology_tokens(text: str, morphology: MorphologyPort | None) -> tuple[ob
         return None
     try:
         return tuple(morphology.analyze(text))
-    except ContractError:
+    except (ContractError, MorphologySourceOffsetError):
         return None
 
 
@@ -116,6 +133,16 @@ def _is_copular_definition(action: str, morphology: MorphologyPort | None) -> bo
         if str(getattr(token, "tag", "")).startswith(("V", "XSV", "XSA"))
     ]
     return bool(predicate_tags) and predicate_tags[-1] in {"VCP", "VCN"}
+
+
+def _is_report_without_event(action: str, morphology: MorphologyPort | None) -> bool:
+    """A reporting predicate needs an embedded event to carry news meaning."""
+    tokens = _morphology_tokens(action, morphology) or ()
+    verbs = [str(getattr(token, "normalized", "")) for token in tokens
+             if getattr(token, "tag", "") in {"VV", "XSV"}]
+    reporting_verbs = {"전하", "말하", "밝히", "알리"}
+    return bool(verbs and verbs[-1] in reporting_verbs
+                and not any(verb not in reporting_verbs for verb in verbs[:-1]))
 
 
 def _evidence_is_local(
@@ -173,7 +200,7 @@ def assess_compatibility_event_understanding(
             reasons=("evidence_not_local",),
         )
 
-    if _is_context_dependent_subject(fact.subject):
+    if _is_context_dependent_subject(fact.subject, morphology):
         return CompatibilityEventUnderstandingDecision(
             status=UnderstandingStatus.UNRESOLVED,
             article_role=ArticleEventRole.CONTEXT,
@@ -200,6 +227,15 @@ def assess_compatibility_event_understanding(
             reasons=("copular_definition_context",),
         )
 
+    if _is_report_without_event(fact.action, morphology):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("report_without_independent_event",),
+        )
+
     if _is_analytical_predicate(fact.action):
         return CompatibilityEventUnderstandingDecision(
             status=UnderstandingStatus.RESOLVED,
@@ -217,9 +253,78 @@ def assess_compatibility_event_understanding(
     )
 
 
-def _first_sentence_end(body: str) -> int:
-    boundaries = [position + 1 for position, char in enumerate(body) if char in ".!?…\n"]
-    return min(boundaries) if boundaries else len(body)
+_LEADING_BRACKETED_BYLINE_RE = re.compile(
+    r"^\[[^\]\n]{1,80}(?:기자|특파원)[^\]\n]{0,40}\]\s*"
+)
+
+
+def _first_sentence_bounds(
+    body: str,
+    morphology: MorphologyPort | None = None,
+    *,
+    title: str = "",
+) -> tuple[int, int]:
+    # Acquisition preserves source blocks. A detached noun-only caption is not the lead.
+    # Never skip a clause-bearing prefix: its context may constrain the following event.
+    offset = 0
+    if morphology is not None:
+        for line in body.splitlines(keepends=True):
+            stripped = line.strip()
+            if not stripped:
+                offset += len(line)
+                continue
+            # A publisher can repeat its document title as the first extracted body block. It is
+            # source text, but it is not the article lead proposition.
+            if title and _source_key(unescape(stripped)) == _source_key(unescape(title)):
+                offset += len(line)
+                continue
+            # A bracketed byline followed by a detached quote is a deck, not an attributable
+            # standalone proposition.  If prose follows the byline without a quote, retain it.
+            byline = _LEADING_BRACKETED_BYLINE_RE.match(stripped)
+            if byline is not None:
+                remainder = stripped[byline.end() :].lstrip()
+                if not remainder or remainder.startswith(("\"", "'", "‘", "’", "“", "”")):
+                    offset += len(line)
+                    continue
+            tokens = _morphology_tokens(line, morphology)
+            if not tokens or any(
+                str(getattr(token, "tag", "")).startswith("J")
+                or str(getattr(token, "tag", "")) in {"VV", "VA", "XSV", "VCP", "VCN"}
+                for token in tokens
+            ):
+                break
+            offset += len(line)
+        if offset >= len(body):
+            offset = 0
+    lead = body[offset:]
+    boundaries = [position + 1 for position, char in enumerate(lead) if char in ".!?…\n"]
+    end = offset + (min(boundaries) if boundaries else len(lead))
+    return offset, end
+
+
+def _first_sentence_end(
+    body: str,
+    morphology: MorphologyPort | None = None,
+    *,
+    title: str = "",
+) -> int:
+    return _first_sentence_bounds(body, morphology, title=title)[1]
+
+
+def _next_source_sentence_end(body: str, *, after: int) -> int:
+    """Return the boundary of the next non-empty source sentence or block."""
+
+    cursor = max(0, after)
+    while cursor < len(body) and body[cursor].isspace():
+        cursor += 1
+    if cursor >= len(body):
+        return len(body)
+    boundaries = [
+        position + 1
+        for position, char in enumerate(body[cursor:])
+        if char in ".!?…\n"
+    ]
+    return cursor + (min(boundaries) if boundaries else len(body) - cursor)
 
 
 _TITLE_CONTENT_TAG_PREFIXES = (
@@ -313,6 +418,163 @@ def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
     return span.field.value == "body" and span.start < lead_end
 
 
+def _title_leading_actor_continues_lead(
+    article: RawArticle,
+    span: EvidenceSpan,
+    morphology: MorphologyPort | None,
+    *,
+    lead_text: str,
+) -> bool:
+    """Bind an early elaboration to the same named actor in both title and source lead.
+
+    This is intentionally narrower than general entity overlap.  Only a named subject occurring
+    before the proposition's first predicate qualifies, and its literal source surface must also
+    occur in the immediately preceding lead.  It cannot turn a later different-actor fact into the
+    article's central event.
+    """
+
+    tokens = _morphology_tokens(span.text, morphology)
+    if not tokens:
+        return False
+    title = unescape(article.title)
+    lead_key = _source_key(unescape(lead_text))
+    for index, token in enumerate(tokens):
+        tag = str(getattr(token, "tag", ""))
+        if tag.startswith(("V", "XSV", "XSA")):
+            return False
+        if not (
+            tag == "JKS"
+            or (
+                tag == "JX"
+                and str(getattr(token, "surface", "")) in {"은", "는"}
+            )
+        ):
+            continue
+        if index == 0:
+            return False
+        actor = tokens[index - 1]
+        actor_tag = str(getattr(actor, "tag", ""))
+        actor_surface = str(getattr(actor, "surface", "")).strip()
+        if actor_tag not in {"NNP", "SL"} or len(actor_surface) < 2:
+            return False
+        return bool(
+            re.search(r"(?<!\w)" + re.escape(actor_surface) + r"(?!\w)", title)
+            and _source_key(actor_surface) in lead_key
+        )
+    return False
+
+
+def _title_actor_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Require the exact proposition's named actor to occur in the source title."""
+
+    from insight_desk.semantic.kiwi_extractor import _predicate_fact_parts
+
+    tokens = _morphology_tokens(span.text, morphology)
+    if not tokens:
+        return False
+    parts = _predicate_fact_parts(span.text, tokens)
+    if parts is None:
+        return False
+
+    def title_has_surface(surface: str) -> bool:
+        return bool(
+            surface
+            and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", unescape(article.title))
+        )
+
+    subject_start = span.text.find(parts.subject)
+    subject_end = subject_start + len(parts.subject)
+    subject_names = [
+        str(getattr(token, "surface", ""))
+        for token in tokens
+        if subject_start <= getattr(token, "start", -1)
+        and getattr(token, "end", len(span.text) + 1) <= subject_end
+        and getattr(token, "tag", "") in {"NNP", "SL"}
+        and len(str(getattr(token, "surface", ""))) >= 2
+    ]
+    return title_has_surface(parts.subject) or any(
+        title_has_surface(name) for name in subject_names
+    )
+
+
+def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Prove a proposition's named actor, object and finite action in the source title.
+
+    Later elaboration can repeat more title words without being a different central event.
+    This source-only check uses grammatical roles, not a vocabulary of newsworthy actions.
+    It does not change the exact proposition or infer equivalence between different verbs.
+    """
+    from insight_desk.semantic.kiwi_extractor import _predicate_fact_parts
+
+    tokens = _morphology_tokens(span.text, morphology)
+    title_tokens = _morphology_tokens(article.title, morphology)
+    if not tokens or not title_tokens:
+        return False
+    parts = _predicate_fact_parts(span.text, tokens)
+    if parts is None or parts.object is None:
+        return False
+    title_units = {str(getattr(token, "normalized", "")) for token in title_tokens}
+    # Keep the grammatical subject identified in the complete source sentence.
+    # Re-analyzing an isolated name changes both POS tags and segmentation.
+    if not _title_actor_bound(article, span, morphology):
+        return False
+    def title_has_surface(surface: str) -> bool:
+        return bool(
+            surface
+            and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", unescape(article.title))
+        )
+    # Parenthetical aliases qualify the same object, rather than a different event.
+    # Omit them for title comparison only; immutable source evidence is unchanged.
+    object_surface = []
+    depth = 0
+    for char in parts.object:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+        elif depth == 0:
+            object_surface.append(char)
+    if depth:
+        return False
+    object_tokens = _morphology_tokens("".join(object_surface), morphology) or ()
+    object_units = {str(getattr(token, "normalized", "")) for token in object_tokens
+                    if str(getattr(token, "tag", "")).startswith("N")
+                    or getattr(token, "tag", "") in {"SL", "SH"}}
+    if not object_units or not all(unit in title_units or title_has_surface(unit)
+                                   for unit in object_units):
+        return False
+    finite = [index for index, token in enumerate(tokens) if getattr(token, "tag", "") == "EF"]
+    if not finite:
+        return False
+    before_end = tokens[:finite[-1]]
+    verbal = [index for index, token in enumerate(before_end)
+              if str(getattr(token, "tag", "")).startswith("V")
+              or getattr(token, "tag", "") == "XSV"]
+    if not verbal:
+        return False
+    for position, index in enumerate(verbal):
+        end = verbal[position + 1] if position + 1 < len(verbal) else finite[-1]
+        reported = any(getattr(t, "tag", "") == "EC" and
+                       str(getattr(t, "normalized", "")).endswith(("다고", "라고"))
+                       for t in tokens[index + 1:end])
+        if index != verbal[-1] and not reported:
+            continue
+        token = tokens[index]
+        if getattr(token, "tag", "") == "XSV" and index > 0:
+            token = tokens[index - 1]
+            if not (str(getattr(token, "tag", "")).startswith("N")
+                    or getattr(token, "tag", "") == "XR"):
+                continue
+        elif getattr(token, "tag", "") != "VV":
+            continue
+        predicate = str(getattr(token, "normalized", ""))
+        if len(predicate) >= 2 and predicate in title_units:
+            return True
+    return False
+
+
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
     """Return true only when a date-only event is clearly outside the source freshness horizon."""
 
@@ -385,7 +647,9 @@ def assess_compatibility_article_understanding(
     if not eligible:
         return decisions
 
-    lead_end = _first_sentence_end(article.body)
+    lead_start, lead_end = _first_sentence_bounds(
+        article.body, morphology, title=article.title
+    )
     propositions = {
         event.event_id: _exact_proposition_span(
             article,
@@ -433,9 +697,84 @@ def assess_compatibility_article_understanding(
             }
             best = max(alignment.values())
             best_events = [event for event in eligible if alignment[event.event_id] == best]
-            if len(best_events) == 1 and best_events[0] == lead_events[0] and best[0] > 0:
+            lead = lead_events[0]
+            # Broadcast pages may repeat the same transcript. Identical exact
+            # propositions are duplicate occurrences, not competing central events.
+            if (lead in best_events and best[0] > 0
+                    and all(frozen_propositions[event.event_id].text == frozen_propositions[lead.event_id].text
+                            for event in best_events)):
+                winner = lead_events[0]
+            # Some pages put source chrome or a detached quote before the true lead, and title the
+            # event with a nominal/synonymous predicate.  The first exact proposition remains
+            # central when its named actor is in the title and at least three independent title
+            # units occur in that same proposition.  This cannot promote a later background fact
+            # or a lead about another actor/object.
+            elif (
+                lead_start > 0
+                and alignment[lead.event_id][0] >= 3
+                and _title_actor_bound(article, frozen_propositions[lead.event_id], morphology)
+            ):
+                winner = lead
+            elif _title_event_frame_bound(
+                article, frozen_propositions[lead_events[0].event_id], morphology
+            ):
                 winner = lead_events[0]
         failure_reason = "article_centrality_conflict"
+
+    lead_has_extracted_fact = any(
+        span is not None
+        and span.field.value == "body"
+        and span.start < lead_end
+        and span.end > lead_start
+        for fact in facts.values()
+        for evidence_id in fact.evidence_ids
+        for span in (evidence.get(evidence_id),)
+    )
+    if winner is None and not lead_events and not lead_has_extracted_fact:
+        # A malformed/unparseable source lead can still be followed immediately by a clean,
+        # independently extractable elaboration of that same event.  Recover only when both
+        # source sentences are strongly title-bound, the elaboration is the unique best title
+        # match in the article, and its leading named actor is literal in the title and lead.
+        title_units = _title_content_units(article, morphology)
+        lead_text = article.body[lead_start:lead_end]
+        next_end = _next_source_sentence_end(article.body, after=lead_end)
+        immediate = [
+            event
+            for event in eligible
+            if frozen_propositions[event.event_id].field.value == "body"
+            and lead_end <= frozen_propositions[event.event_id].start < next_end
+        ]
+        if title_units and immediate:
+            alignment = {
+                event.event_id: _proposition_title_alignment(
+                    frozen_propositions[event.event_id].text,
+                    title_units,
+                )
+                for event in eligible
+            }
+            lead_alignment = _proposition_title_alignment(lead_text, title_units)
+            best = max(alignment.values())
+            best_events = [event for event in eligible if alignment[event.event_id] == best]
+            if (
+                len(immediate) == 1
+                and len(best_events) == 1
+                and best_events[0] == immediate[0]
+                and lead_alignment[0] >= 4
+                and best[0] >= 4
+                and _title_leading_actor_continues_lead(
+                    article,
+                    frozen_propositions[immediate[0].event_id],
+                    morphology,
+                    lead_text=lead_text,
+                )
+            ):
+                winner = immediate[0]
+
+    if winner is None:
+        bound = [event for event in eligible if _title_event_frame_bound(
+            article, frozen_propositions[event.event_id], morphology)]
+        if bound and len({frozen_propositions[event.event_id].text for event in bound}) == 1:
+            winner = min(bound, key=lambda event: frozen_propositions[event.event_id].start)
 
     if winner is None:
         for event in eligible:

@@ -24,10 +24,11 @@ from insight_desk.core import (
     SourceProvenance,
     UnderstandingStatus,
 )
-from insight_desk.generation import GenerationContractError, GenerationRequest
+from insight_desk.generation import GenerationContractError, GenerationRequest, validate_preservation
 from insight_desk.production_orchestrator_v2 import ProductionV2Registry
 from insight_desk.production_phase7_v2 import (
     build_canonical_generation_request,
+    CanonicalEventRecoveryGenerator,
 )
 from insight_desk.production_runtime_v2 import production_v2_runtime
 from insight_desk.semantic import build_resilient_fact_extractor
@@ -151,6 +152,8 @@ def _run_cases(
                     primary.append(event)
 
             if len(primary) != 1:
+                if case.expected_proposition:
+                    print("SOURCE_RECALL_STOP", case.case_id, "primary_or_topic", len(primary))
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
 
@@ -172,12 +175,20 @@ def _run_cases(
                 assessment.material.verdict is not MaterialEventVerdict.MATERIAL
                 or assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE
             ):
+                if case.expected_proposition:
+                    print("SOURCE_RECALL_STOP", case.case_id, "selection", assessment)
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
             candidate = production_core.produce_phase7_entry_candidate(
                 GenerationRequest(event=event, facts=facts, evidence=evidence)
             )
             if candidate is None or not candidate.publishable:
+                if case.expected_proposition:
+                    canonical_request = build_canonical_generation_request(
+                        registry, GenerationRequest(event=event, facts=facts, evidence=evidence))
+                    draft = CanonicalEventRecoveryGenerator(registry).generate(canonical_request)
+                    print("SOURCE_RECALL_STOP", case.case_id, "generation",
+                          validate_preservation(canonical_request, draft))
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
 
@@ -246,6 +257,16 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             case_id = str(expected["case_id"])
             with self.subTest(case_id=case_id):
                 outcome = outcomes[case_id]
+                # These synthetic understanding fixtures identify a complete central
+                # event, but cannot establish the configured topic in its exact span.
+                # A later Hanwha lineup is not evidence that Park belongs to Hanwha;
+                # an unnamed hiring body is not proof of civil-service recruitment.
+                if case_id in {
+                    "regression-kbo-later-lineup-context",
+                    "regression-psat-definition-context",
+                }:
+                    self.assertFalse(outcome.published)
+                    continue
                 self.assertTrue(outcome.published)
                 self.assertTrue(outcome.exact_provenance)
                 self.assertEqual(

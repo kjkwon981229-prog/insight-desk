@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from enum import StrEnum
 from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
+from insight_desk.feed_quality_detectors_core import fused_repeated_source_fragment
 from insight_desk.providers.groq import GROQ_20B
 
 
@@ -118,7 +119,9 @@ class GeneratedDraft:
     summary: str
     evidence_ids: tuple[str, ...]
 
-    def __post_init__(self) -> None:
+    source_proposition: InitVar[EvidenceSpan | None] = None
+
+    def __post_init__(self, source_proposition: EvidenceSpan | None) -> None:
         if not self.event_id.strip():
             raise GenerationContractError("event_id must be non-empty")
         headline = self.headline.strip()
@@ -128,7 +131,19 @@ class GeneratedDraft:
         if not summary:
             raise GenerationContractError("summary must be non-empty")
         repeated_token = _first_repeated_korean_headline_token(headline)
-        if repeated_token is not None:
+        if source_proposition is not None and (
+            not isinstance(source_proposition, EvidenceSpan)
+            or self.evidence_ids != (source_proposition.evidence_id,)
+            or self.headline != source_proposition.text
+            or self.summary != source_proposition.text
+        ):
+            raise GenerationContractError("source draft must exactly preserve its cited proposition")
+        if source_proposition is not None and fused_repeated_source_fragment(headline):
+            raise GenerationContractError("source proposition contains a fused repeated fragment")
+        # Repetition introduced by generation remains invalid. The canonical route
+        # can prove that repeated nouns were already present in its exact evidence;
+        # all later preservation, provenance and publication checks still apply.
+        if repeated_token is not None and source_proposition is None:
             raise GenerationContractError(
                 f"headline repeats Korean lexical token: {repeated_token}"
             )
