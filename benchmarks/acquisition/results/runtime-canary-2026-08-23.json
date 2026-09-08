@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "date": "2026-08-23",
+  "status": "pass",
+  "github_actions_run_id": 32588130224,
+  "environment": {
+    "python": "3.12.10",
+    "trafilatura": "2.2.0",
+    "playwright": "1.62.0",
+    "chromium": "Chrome for Testing 151.0.7922.34"
+  },
+  "static_article": {
+    "method": "http+trafilatura",
+    "fallback_used": false,
+    "non_whitespace_chars": 296,
+    "title": "SK하이닉스 9월 3일 신규 계획 발표",
+    "protected_literals_preserved": true
+  },
+  "js_only_article": {
+    "method": "playwright+trafilatura",
+    "fallback_used": true,
+    "non_whitespace_chars": 296,
+    "title": "JS 렌더링 기사 테스트",
+    "protected_literals_preserved": true
+  },
+  "tested_contracts": [
+    "real Trafilatura extraction",
+    "real Playwright Chromium rendering",
+    "quality-gate-triggered fallback",
+    "RawArticle construction",
+    "exact number/date/proper-name/direct-quote retention"
+  ],
+  "not_tested": [
+    "arbitrary live news sites",
+    "NAVER live credentials/search call",
+    "publisher-specific anti-bot behavior",
+    "semantic extraction",
+    "NEWS_REWRITE_POLICY_V1"
+  ]
+}

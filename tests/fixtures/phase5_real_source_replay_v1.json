@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "replay_mode": "historical_exact_source_excerpt_replay",
+  "phase5_status": "PARTIAL",
+  "raw_article_body_complete": false,
+  "limitation": "Historic production artifacts intentionally omitted full article bodies and fact objects. This fixture replays exact source bytes preserved by live regressions and binds them to the real source URLs and visible outputs preserved by the exact production artifact. It must not be represented as full raw-body acquisition replay.",
+  "source_artifact": {
+    "workflow_run_id": 32997185398,
+    "workflow_run_number": 413,
+    "head_sha": "3bfd506efeba72b402b721a1a21cf817dc4ae8cd",
+    "artifact_id": 9617181626,
+    "artifact_name": "production-site-preflight-32997185398",
+    "artifact_sha256": "c7da6fe0b0b8f5356c3cb769f84c2db17e5dea81a9ffa932fa382709f941da64",
+    "briefing_id": "daily-20260827T030116+0900"
+  },
+  "replay_clock": "2026-08-26T18:01:16.158716+00:00",
+  "published_at_provenance": "bounded_replay_clock_proxy_not_original_timestamp",
+  "topics": [
+    {
+      "id": "economy",
+      "name": "경제·투자",
+      "enabled": true,
+      "priority": 75,
+      "candidate_budget": 3,
+      "selection_cap": 3,
+      "intent_anchors": ["한국은행", "기준금리"],
+      "required_intent_terms": [],
+      "event_terms": ["기준금리", "결정", "공개"],
+      "news_queries": ["replay-bok"]
+    },
+    {
+      "id": "kpop",
+      "name": "엔터·음악·K-POP",
+      "enabled": true,
+      "priority": 70,
+      "candidate_budget": 2,
+      "selection_cap": 2,
+      "intent_anchors": ["알파드라이브원", "음악방송", "엠카운트다운"],
+      "required_intent_terms": [],
+      "event_terms": ["공개", "무대", "음악방송"],
+      "news_queries": ["replay-kpop"]
+    },
+    {
+      "id": "kbo_hanwha",
+      "name": "KBO·한화 이글스",
+      "enabled": true,
+      "priority": 65,
+      "candidate_budget": 2,
+      "selection_cap": 2,
+      "intent_anchors": ["한화 이글스", "KBO", "경기"],
+      "required_intent_terms": ["한화"],
+      "event_terms": ["경기", "승리", "패배"],
+      "news_queries": ["replay-kbo"]
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "run413-bok-kbs-rate-decision",
+      "topic_id": "economy",
+      "query": "replay-bok",
+      "candidate_id": "replay:run413:bok:kbs",
+      "source_name": "news.kbs.co.kr",
+      "source_url": "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8647231&ref=A",
+      "search_title": "한국은행 금융통화위원회 기준금리 결정",
+      "source_excerpt": "한국은행 금융통화위원회는 27일 회의를 열어 기준금리를 결정한다.",
+      "source_excerpt_provenance": "tests/test_phase12bn_live_409_regressions.py::Live409ScheduledPolicyEventDuplicateRegressions",
+      "historical_visible": {
+        "headline": "한국은행 금융통화위원회 기준금리 결정",
+        "summary": "한국은행 금융통화위원회가 오늘(27일) 회의를 열고 기준금리를 결정합니다."
+      },
+      "recorded_generation": {
+        "headline": "한국은행 금융통화위원회, 27일 기준금리 결정",
+        "summary": "한국은행 금융통화위원회는 27일 회의를 열어 기준금리를 결정한다."
+      },
+      "expected_outcome": "publish",
+      "expected_relation": "policy_meeting_parent_representative"
+    },
+    {
+      "case_id": "run413-bok-kmib-outlook-child",
+      "topic_id": "economy",
+      "query": "replay-bok",
+      "candidate_id": "replay:run413:bok:kmib",
+      "source_name": "www.kmib.co.kr",
+      "source_url": "https://www.kmib.co.kr/article/view.asp?arcid=9000006575&cp=nv",
+      "search_title": "한은 기준금리 인상 여부와 전망 발표",
+      "source_excerpt": "한국은행은 27일 금융통화위원회에서 기준금리를 결정하고 수정 경제전망과 향후 6개월 점도표를 공개한다.",
+      "source_excerpt_provenance": "tests/test_phase12bn_live_409_regressions.py::Live409ScheduledPolicyEventDuplicateRegressions",
+      "historical_visible": {
+        "headline": "한은 기준금리 인상 여부와 전망 발표",
+        "summary": "한은은 이날 기준금리 인상 여부를 결정하고 수정 경제전망과 향후 6개월 기준금리 전망을 담은 점도표도 발표한다."
+      },
+      "recorded_generation": {
+        "headline": "한국은행, 27일 기준금리 결정·수정 경제전망 공개",
+        "summary": "한국은행은 27일 금융통화위원회에서 기준금리를 결정하고 수정 경제전망과 향후 6개월 점도표를 공개한다."
+      },
+      "expected_outcome": "suppress_same_event",
+      "expected_relation": "same_policy_meeting_child_suppressed"
+    },
+    {
+      "case_id": "run413-kpop-alphadriveone-actor-preserved",
+      "topic_id": "kpop",
+      "query": "replay-kpop",
+      "candidate_id": "replay:run413:kpop:alphadriveone",
+      "source_name": "sports.khan.co.kr",
+      "source_url": "https://sports.khan.co.kr/article/202608262257003?pt=nv",
+      "search_title": "알파드라이브원 최초 무대 공개",
+      "source_excerpt": "알파드라이브원은 오는 27일 방송되는 Mnet ‘엠카운트다운’에서 ‘BORN DIRE’와 ‘Diamond Hour’의 음악방송 무대를 최초 공개한다.",
+      "source_excerpt_provenance": "tests/test_phase12bn_live_409_regressions.py::Live409ExactFallbackActorInvariantRegressions",
+      "historical_visible": {
+        "headline": "알파드라이브원 최초 무대 공개",
+        "summary": "알파드라이브원은 오는 27일 방송되는 Mnet ‘엠카운트다운’에서 ‘BORN DIRE’와 ‘Diamond Hour’의 음악방송 무대를 최초 공개한다."
+      },
+      "recorded_generation": {
+        "headline": "알파드라이브원, 27일 ‘엠카운트다운’서 신곡 무대 최초 공개",
+        "summary": "알파드라이브원은 오는 27일 방송되는 Mnet ‘엠카운트다운’에서 ‘BORN DIRE’와 ‘Diamond Hour’의 음악방송 무대를 최초 공개한다."
+      },
+      "expected_outcome": "publish",
+      "expected_relation": "independent_kpop_actor_preserved_publication"
+    },
+    {
+      "case_id": "run413-kbo-osen-same-game-source",
+      "topic_id": "kbo_hanwha",
+      "query": "replay-kbo",
+      "candidate_id": "replay:run413:kbo:osen",
+      "source_name": "www.osen.co.kr",
+      "source_url": "http://www.osen.co.kr/article/G1112864347",
+      "search_title": "한화 1-6 패배",
+      "source_excerpt": "SSG 랜더스는 26일 인천 SSG랜더스필드에서 열린 KBO리그 경기에서 한화 이글스를 6-1로 제압해 이틀 연속 승리했다.",
+      "source_excerpt_provenance": "tests/test_phase12bl_live_401_regressions.py::Live401SourceBackedSameGameDuplicateRegressions",
+      "historical_visible": {
+        "headline": "한화 1-6 패배",
+        "summary": "김경문 감독 이끄는 한화가 26일 인천 SSG 랜더스필드에서 SSG 랜더스와 원정에서 1-6으로 패했다."
+      },
+      "recorded_generation": {
+        "headline": "SSG 랜더스, 26일 한화 이글스 6-1 제압",
+        "summary": "SSG 랜더스는 26일 인천 SSG랜더스필드에서 열린 KBO리그 경기에서 한화 이글스를 6-1로 제압해 이틀 연속 승리했다."
+      },
+      "expected_outcome": "publish",
+      "expected_relation": "independent_kbo_publication"
+    }
+  ],
+  "expected": {
+    "candidate_count": 4,
+    "expected_publishable_events": 3,
+    "expected_suppressed_same_event": 1,
+    "published_entries": 3,
+    "canonical_parent_events_min": 1,
+    "identity_same_event_min": 1,
+    "economy_publications": 1,
+    "kpop_publications": 1,
+    "kbo_hanwha_publications": 1,
+    "pwa_state_audit_digest_bound": true
+  }
+}

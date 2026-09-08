@@ -1,0 +1,118 @@
+{
+  "record_id": "groq20b-fact-extractor-canary-2026-08-23",
+  "date": "2026-08-23",
+  "status": "REJECTED",
+  "decision": "DO_NOT_PROMOTE_TO_FACT_EXTRACTOR",
+  "candidate": {
+    "provider": "groq",
+    "model": "openai/gpt-oss-20b",
+    "intended_role": "evidence-bound FactExtractorPort candidate",
+    "cost_policy": "zero-cost only"
+  },
+  "base": {
+    "branch": "phase4-core-contracts",
+    "sha": "2291a1aa93c8cf7c64e00a3c23f55fcbed445629"
+  },
+  "locked_ssot": [
+    "benchmarks/run90_temporal.json",
+    "benchmarks/run94_95_semantic.json",
+    "benchmarks/run97_generation.json"
+  ],
+  "hard_boundaries": {
+    "provider_output_untrusted": true,
+    "downstream_claim_verification_still_required": true,
+    "no_event_identity_authority": true,
+    "no_selection_authority": true,
+    "no_paid_fallback": true,
+    "no_model_substitution": true
+  },
+  "attempts": [
+    {
+      "workflow_run_id": 32593123640,
+      "job_id": 97079910472,
+      "kind": "full_bounded_canary",
+      "result": "FAIL",
+      "observed_passes_before_failure": [
+        "run90-lifecycle-resumed",
+        "run90-seoul-heat",
+        "run90-busan-rain",
+        "run90-fixture-day-12",
+        "run90-fixture-day-13",
+        "run95-context-market",
+        "run95-malformed-lineup"
+      ],
+      "failure": "run95-explicit-lineup strict structured output omitted required certainty; Groq rejected the generation with json_validate_failed",
+      "additional_observation": "failed_generation also attached location context to subjects as '잠실 한화' and '잠실 두산'"
+    },
+    {
+      "workflow_run_id": 32593265062,
+      "job_id": 97080251594,
+      "kind": "full_bounded_canary",
+      "result": "HARNESS_INVALIDATED",
+      "failure": "local validator required exact source-literal subject text and rejected Korean subject normalization",
+      "disposition": "the subject-literal gate was removed because FactDraft is explicitly unverified and downstream claim verification is mandatory"
+    },
+    {
+      "workflow_run_id": 32593360498,
+      "job_id": 97080491747,
+      "kind": "full_bounded_canary",
+      "result": "FAIL",
+      "observed_passes_before_failure": [
+        "run90-lifecycle-resumed",
+        "run90-seoul-heat",
+        "run90-busan-rain",
+        "run90-fixture-day-12",
+        "run90-fixture-day-13",
+        "run95-context-market",
+        "run95-malformed-lineup"
+      ],
+      "failure": "run95-explicit-lineup returned at least one participant that failed the source-literal participant gate"
+    },
+    {
+      "workflow_run_id": 32593503398,
+      "job_id": 97080840221,
+      "kind": "single_case_diagnostic",
+      "case_id": "run95-explicit-lineup",
+      "provider_calls": 1,
+      "result": "DIAGNOSTIC_COMPLETE",
+      "observed_output": {
+        "fact_count": 1,
+        "subject": "한화",
+        "object": "선발투수",
+        "participants": ["한화", "두산"],
+        "participants_source_literal": true
+      },
+      "locked_gold_requirement": {
+        "participants": ["한화", "두산"],
+        "starters": ["왕옌청", "곽빈"],
+        "action": "선발투수 예고",
+        "must_preserve_all_named_starters": true
+      },
+      "semantic_failure": "both named starters 왕옌청 and 곽빈 were omitted from the diagnostic fact output"
+    }
+  ],
+  "regression_state_during_canary": {
+    "benchmark_integrity": "PASS",
+    "python_tests": "69/69 PASS",
+    "push_worker_tests": "14/14 PASS"
+  },
+  "security_logging": {
+    "api_key_exposed": false,
+    "article_body_logged_by_canary": false,
+    "diagnostic_logged_only_locked_fixture_output_fields": true
+  },
+  "conclusion": {
+    "reason": "The candidate did not demonstrate stable preservation of required named facts under the locked anomaly case. A later one-call diagnostic produced source-literal team participants but omitted both explicitly named starters, confirming substantive semantic fact loss rather than only a validator-format mismatch.",
+    "further_prompt_tuning": "STOPPED",
+    "production_promotion": "FORBIDDEN",
+    "adapter_code_disposition": "REMOVE_FROM_FINAL_TREE"
+  },
+  "not_proven": [
+    "production fact extraction",
+    "claim verification",
+    "event identity merging",
+    "briefing selection",
+    "NEWS_REWRITE_POLICY_V1 generation",
+    "live-acquisition semantic correctness"
+  ]
+}

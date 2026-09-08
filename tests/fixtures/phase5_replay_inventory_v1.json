@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "phase": 5,
+  "status": "PARTIAL_COMPLETE",
+  "closure_rule": "Replay every historical case for which both real production source identity and exact source bytes are still preserved. Never promote visible-only or same-byte proposition proxies into raw-source replay evidence.",
+  "full_raw_body_replay": {
+    "available": false,
+    "reason": "Historical production artifacts intentionally omitted article bodies and fact objects.",
+    "known_persisted_full_raw_articles": 0
+  },
+  "exact_source_production_replay": {
+    "fixture": "tests/fixtures/phase5_real_source_replay_v1.json",
+    "source_artifact_run": 413,
+    "candidate_count": 4,
+    "expected_publication_count": 3,
+    "cases": [
+      {
+        "case_id": "run413-bok-kbs-rate-decision",
+        "topic": "economy",
+        "evidence_class": "real_url_plus_exact_source_bytes",
+        "expected": "publish_as_policy_parent_representative"
+      },
+      {
+        "case_id": "run413-bok-kmib-outlook-child",
+        "topic": "economy",
+        "evidence_class": "real_url_plus_exact_source_bytes",
+        "expected": "suppress_as_same_policy_parent_child"
+      },
+      {
+        "case_id": "run413-kpop-alphadriveone-actor-preserved",
+        "topic": "kpop",
+        "evidence_class": "real_url_plus_exact_source_bytes",
+        "expected": "publish_actor_preserved"
+      },
+      {
+        "case_id": "run413-kbo-osen-same-game-source",
+        "topic": "kbo_hanwha",
+        "evidence_class": "real_url_plus_exact_source_bytes",
+        "expected": "publish_independent_game_event"
+      }
+    ]
+  },
+  "historical_visible_proxy_corpus": {
+    "fixture": "tests/fixtures/phase12_story_replay_corpus.json",
+    "runs": [193, 196, 199, 203, 206, 209, 212, 215, 218, 221, 224, 227, 230, 234, 237],
+    "cards": 126,
+    "pass_labels": 61,
+    "p1_labels": 64,
+    "admission_unresolved": 1,
+    "source_unresolved": 3,
+    "allowed_use": "visible-label regression inventory and historical acceptance evidence only",
+    "forbidden_use": "must not be reported as raw article replay or source-to-publication production replay"
+  },
+  "live_acquisition_canary": {
+    "record": "benchmarks/acquisition/results/live-canary-2026-08-23.json",
+    "real_source_was_acquired": true,
+    "article_body_committed": false,
+    "replayable_from_repo": false
+  },
+  "phase10_live_canary": {
+    "record": "benchmarks/semantic/results/phase10-fresh-live-closure-2026-08-23.json",
+    "real_source_was_processed": true,
+    "article_body_logged": false,
+    "replayable_from_repo": false
+  },
+  "unbound_exact_source_regressions": {
+    "description": "Many historical live regression tests preserve exact source clauses but do not independently preserve enough production artifact URL/body provenance to qualify as source replay inputs without reconstruction or guessing.",
+    "policy": "keep as unit/regression evidence; exclude from Phase 5 real-source replay count"
+  },
+  "phase5_claim": "The recoverable historical source evidence has been replayed through the actual production entrypoint. Historical full-body replay remains impossible for evidence that was deliberately not persisted; this limitation is permanent for those runs and is not a test failure.",
+  "next_phase": 6,
+  "next_phase_gate": "Measure correctness and recall only against evidence classes whose expected outcome and provenance are explicit; report unsupported historical coverage separately instead of fabricating denominators."
+}

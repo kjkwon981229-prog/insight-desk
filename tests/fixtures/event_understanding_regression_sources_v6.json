@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "fixture_mode": "frozen_postmerge_regression_sources",
+  "replay_clock": "2026-08-30T08:00:00+00:00",
+  "cases": [
+    {
+      "case_id": "regression-economy-background-burden",
+      "topic_id": "economy",
+      "candidate_id": "qualification:v6:economy:background-burden",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/economy-background-burden",
+      "search_title": "한국은행 기준금리 인상, 차주 부담 확대",
+      "source_excerpt": "한국은행은 기준금리를 0.25%포인트 인상했다. 이에 따라 영끌족과 빚투 투자자의 부담이 가중되는 상황이다.",
+      "source_excerpt_provenance": "post-merge regression derived from the prior P1 background/status failure; exact fixture bytes are frozen for provider comparison"
+    },
+    {
+      "case_id": "regression-kbo-later-lineup-context",
+      "topic_id": "kbo_hanwha",
+      "candidate_id": "qualification:v6:kbo:later-lineup",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/kbo-later-lineup",
+      "search_title": "박준영 선발, 감독 신뢰 속 NC전 출격",
+      "source_excerpt": "박준영은 감독의 신뢰 속 NC전에 선발 등판한다. 경기 준비 상황과 최근 투구 내용도 소개됐다. 한화는 경기 전 선발 라인업을 발표했다.",
+      "source_excerpt_provenance": "tests/test_phase7_article_level_event_understanding.py::test_later_lineup_fact_is_context_when_title_and_lead_center_on_different_event"
+    },
+    {
+      "case_id": "regression-kbo-preview-stat-context",
+      "topic_id": "kbo_hanwha",
+      "candidate_id": "qualification:v6:kbo:preview-stat",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/kbo-preview-stat",
+      "search_title": "한화-NC 맞대결 프리뷰, 선발 투수와 경기 전망",
+      "source_excerpt": "한화와 NC는 29일 대전에서 맞붙는다. 양 팀 선발 투수와 경기 흐름을 전망한다. 한화는 팀 타율 리그 3위와 136홈런을 기록 중이다.",
+      "source_excerpt_provenance": "tests/test_phase7_article_level_event_understanding.py::test_preview_team_stat_is_context_when_scheduled_game_is_article_center"
+    },
+    {
+      "case_id": "regression-psat-definition-context",
+      "topic_id": "psat_recruitment",
+      "candidate_id": "qualification:v6:psat:definition",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/psat-definition",
+      "search_title": "채용시험 운영 방향 개편 확정",
+      "source_excerpt": "담당 기관은 내년 채용시험 운영 방향을 확정했다. 시험은 공직 수행에 필요한 공통 역량을 평가하는 시험이다.",
+      "source_excerpt_provenance": "tests/test_phase7_article_level_event_understanding.py::test_copular_definition_is_context_not_a_publishable_event"
+    },
+    {
+      "case_id": "regression-kbo-explicit-old-event-context",
+      "topic_id": "kbo_hanwha",
+      "candidate_id": "qualification:v6:kbo:old-event",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/kbo-old-event",
+      "search_title": "김주원, 한화전 결승 홈런으로 NC 승리 견인",
+      "source_excerpt": "김주원은 29일 한화전에서 결승 홈런을 쳐 팀 승리를 이끌었다. 한화 이글스와 NC 다이노스는 7일 앞선 경기에서도 맞붙었다.",
+      "source_excerpt_provenance": "adapted from tests/test_phase7_article_level_event_understanding.py::test_explicitly_old_event_inside_fresh_article_is_context so the raw-source provider can observe both current and historical events"
+    },
+    {
+      "case_id": "regression-ai-generic-context",
+      "topic_id": "ai_tech",
+      "candidate_id": "qualification:v6:ai:generic-context",
+      "source_name": "frozen-regression-fixture",
+      "source_url": "https://fixture.invalid/event-understanding-v6/ai-generic-context",
+      "search_title": "앤트로픽, 로봇 제어용 하드웨어 표준 공개",
+      "source_excerpt": "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다. 에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다.",
+      "source_excerpt_provenance": "tests/test_phase7_article_level_event_understanding.py::test_generic_secondary_actor_does_not_beat_named_title_bound_primary_actor"
+    },
+    {
+      "case_id": "regression-psat-2027-separate-test",
+      "topic_id": "psat_recruitment",
+      "candidate_id": "qualification:v6:psat:2027-separate-test",
+      "source_name": "인사혁신처",
+      "source_url": "https://www.mpm.go.kr/mpm/comm/newsPress/newsPressRelease/?boardId=bbs_0000000000000029&category=&cntId=4318&mode=view&pageIdx=0",
+      "search_title": "내년부터 검정시험… '공직적격성평가' 운영 방향 발표",
+      "source_excerpt": "내년부터 검정시험 형태로 처음 시행돼 국가공무원 5·7급 공채 등의 1차 시험으로 대체되는 공직적격성평가(PSAT) 시험 일정 등 운영 방향이 확정됐다. 기존 공직적격성평가를 활용하던 5‧7급 국가공무원 공개경쟁채용시험을 비롯해 민간경력자 일괄채용시험, 법원 행정고등고시, 지방직 7급 공채시험 등에서 1차 시험을 대체해 활용할 수 있다.",
+      "source_excerpt_provenance": "Ministry of Personnel Management press release dated 2026-08-27; frozen exact public excerpt for post-merge PSAT P1 qualification"
+    }
+  ]
+}

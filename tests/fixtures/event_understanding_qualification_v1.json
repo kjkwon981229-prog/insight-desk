@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "MINIMUM_PROVIDER_QUALIFICATION_ONLY",
+  "source_fixture": "tests/fixtures/phase5_real_source_replay_v1.json",
+  "limitation": "Only four historical exact-source excerpts are recoverable with URL provenance. Passing this set proves minimum contract compatibility, not full production correctness or recall.",
+  "provider_policy": "Run once per candidate provider/model contract. Do not tune the prompt against individual failed cases and rerun as a patch loop.",
+  "cases": [
+    {
+      "case_id": "run413-bok-kbs-rate-decision",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "required_structured_literals": ["한국은행", "기준금리"],
+      "parent_hint_min": 0
+    },
+    {
+      "case_id": "run413-bok-kmib-outlook-child",
+      "expected_status": "resolved",
+      "event_drafts_min": 2,
+      "primary_direct_min": 1,
+      "required_structured_literals": ["한국은행", "기준금리", "수정 경제전망", "점도표"],
+      "parent_hint_min": 2
+    },
+    {
+      "case_id": "run413-kpop-alphadriveone-actor-preserved",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "required_structured_literals": ["알파드라이브원", "음악방송", "최초 공개"],
+      "parent_hint_min": 0
+    },
+    {
+      "case_id": "run413-kbo-osen-same-game-source",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "required_structured_literals": ["SSG 랜더스", "한화 이글스", "6-1"],
+      "parent_hint_min": 0
+    }
+  ],
+  "acceptance": {
+    "all_cases_must_pass": true,
+    "exact_evidence_binding_required": true,
+    "no_fresh_news": true,
+    "no_production_wiring": true
+  }
+}

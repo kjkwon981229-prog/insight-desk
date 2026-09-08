@@ -1,0 +1,8 @@
+{
+  "record_id": "phase11-production-activation-2026-08-23",
+  "date": "2026-08-23",
+  "purpose": "Create a normal PR merge commit on main after the production workflow is already present, so the main push trigger can activate GitHub Pages deployment through the standard repository event path.",
+  "production_logic_changed": false,
+  "provider_roles_changed": false,
+  "manual_user_action_required": false
+}

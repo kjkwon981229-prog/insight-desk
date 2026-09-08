@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-08-22",
+  "provider": "cloudflare_workers_ai_free",
+  "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "role": "independent_claim_verifier",
+  "benchmark": "shared_14_pair_evidence_claim_set",
+  "cases": 14,
+  "responses": 14,
+  "errors": 0,
+  "passed": 14,
+  "accuracy": 1.0,
+  "qualified_for": [
+    "independent_claim_verification"
+  ],
+  "not_qualified_for": [
+    "event_ownership_gate",
+    "selection_policy_gate",
+    "legacy_event_type_classifier"
+  ],
+  "comparison": {
+    "local_mdeberta_same_set": "13/14"
+  },
+  "evidence": {
+    "github_actions_run_id": 32580001568,
+    "github_actions_job_id": 97047830427,
+    "artifact_id": 9477537662
+  },
+  "zero_cost_guard": "Workers Free only; quota exhaustion must fail closed and must never enable paid fallback"
+}

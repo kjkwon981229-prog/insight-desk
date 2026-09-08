@@ -1,0 +1,223 @@
+{
+  "schema_version": 6,
+  "status": "POSTMERGE_REGRESSION_QUALIFICATION",
+  "core_contract": "event_understanding_v2",
+  "structured_output_schema": "event_understanding_schema_v4",
+  "source_fixtures": [
+    "tests/fixtures/phase5_real_source_replay_v1.json",
+    "tests/fixtures/event_understanding_regression_sources_v6.json"
+  ],
+  "purpose": "Require candidate Event Understanding providers to preserve the V5 historical minimum while also surviving post-merge P1/centrality/background regressions before any provider-selection discussion.",
+  "provider_policy": "Run the frozen V6 benchmark without per-provider prompt, schema, gold, or scorer tuning. Candidate-specific transport wrappers are allowed; candidate-specific semantic exceptions are forbidden.",
+  "scoring_policy": {
+    "free_text_literal_scoring": false,
+    "entity_preservation_fields": ["actor", "object", "participants"],
+    "source_fact_scoring": "exact_bound_evidence_ranges_only",
+    "expected_event_assignment": "distinct_draft_matching",
+    "context_gold": "exact evidence passages annotated as non-primary; a resolved PRIMARY+DIRECT draft may not promote those passages",
+    "identity_not_scored": true,
+    "manual_semantic_review": "required for cases where free-form action wording can preserve structural fields while still changing event meaning"
+  },
+  "cases": [
+    {
+      "case_id": "run413-bok-kbs-rate-decision",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "parent_hint_min": 0,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["한국은행"],
+          "required_evidence_literals": ["기준금리를 결정"]
+        }
+      ]
+    },
+    {
+      "case_id": "run413-bok-kmib-outlook-child",
+      "expected_status": "resolved",
+      "event_drafts_min": 2,
+      "primary_direct_min": 1,
+      "parent_hint_min": 2,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary", "supporting"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["한국은행"],
+          "required_evidence_literals": ["기준금리를 결정"]
+        },
+        {
+          "allowed_article_roles": ["primary", "supporting"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["한국은행"],
+          "required_evidence_literals": ["수정 경제전망", "점도표"]
+        }
+      ]
+    },
+    {
+      "case_id": "run413-kpop-alphadriveone-actor-preserved",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "parent_hint_min": 0,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["알파드라이브원"],
+          "required_evidence_literals": ["음악방송 무대를 최초 공개한다"]
+        }
+      ]
+    },
+    {
+      "case_id": "run413-kbo-osen-same-game-source",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "parent_hint_min": 0,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["SSG 랜더스", "한화 이글스"],
+          "required_evidence_literals": ["6-1로 제압"]
+        }
+      ]
+    },
+    {
+      "case_id": "regression-economy-background-burden",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["한국은행"],
+          "required_evidence_literals": ["기준금리를 0.25%포인트 인상했다"]
+        }
+      ],
+      "context_evidence_literals": ["영끌족과 빚투 투자자의 부담이 가중되는 상황"]
+    },
+    {
+      "case_id": "regression-kbo-later-lineup-context",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["박준영"],
+          "required_evidence_literals": ["NC전에 선발 등판한다"]
+        }
+      ],
+      "context_evidence_literals": ["한화는 경기 전 선발 라인업을 발표했다"]
+    },
+    {
+      "case_id": "regression-kbo-preview-stat-context",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["한화", "NC"],
+          "required_evidence_literals": ["29일 대전에서 맞붙는다"]
+        }
+      ],
+      "context_evidence_literals": ["한화는 팀 타율 리그 3위와 136홈런을 기록 중이다"]
+    },
+    {
+      "case_id": "regression-psat-definition-context",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["담당 기관"],
+          "required_evidence_literals": ["내년 채용시험 운영 방향을 확정했다"]
+        }
+      ],
+      "context_evidence_literals": ["시험은 공직 수행에 필요한 공통 역량을 평가하는 시험이다"]
+    },
+    {
+      "case_id": "regression-kbo-explicit-old-event-context",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["김주원"],
+          "required_evidence_literals": ["29일 한화전에서 결승 홈런을 쳐 팀 승리를 이끌었다"]
+        }
+      ],
+      "context_evidence_literals": ["7일 앞선 경기에서도 맞붙었다"]
+    },
+    {
+      "case_id": "regression-ai-generic-context",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "primary_direct_max": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["앤트로픽"],
+          "required_evidence_literals": ["로봇 제어용 하드웨어 표준을 공개했다"]
+        }
+      ],
+      "context_evidence_literals": ["에이전트는 실제 로봇 등 물리적 장비를 안전하게 제어할 수 있다"]
+    },
+    {
+      "case_id": "regression-psat-2027-separate-test",
+      "expected_status": "resolved",
+      "event_drafts_min": 1,
+      "primary_direct_min": 1,
+      "expected_events": [
+        {
+          "allowed_article_roles": ["primary"],
+          "allowed_topic_relations": ["direct"],
+          "understanding_status": "resolved",
+          "required_entity_literals": ["공직적격성평가"],
+          "required_evidence_literals": ["국가공무원 5·7급 공채 등의 1차 시험으로 대체", "기존 공직적격성평가를 활용하던 5‧7급"]
+        }
+      ],
+      "manual_semantic_review_required": true,
+      "manual_review_question": "Does the draft preserve that 5·7급 already used PSAT and that the 2027 change is separation into a qualification test whose result replaces/is shared as the first-stage exam, rather than claiming PSAT itself is newly introduced to 5·7급?"
+    }
+  ],
+  "acceptance": {
+    "all_automatic_cases_must_pass": true,
+    "exact_evidence_binding_required": true,
+    "distinct_event_draft_matching_required": true,
+    "context_promotion_forbidden": true,
+    "manual_review_cases_must_be_approved_before_provider_selection": true,
+    "provider_selection_eligible_from_automatic_pass_alone": false,
+    "no_fresh_news": true,
+    "no_production_wiring": true
+  }
+}

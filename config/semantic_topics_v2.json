@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "topics": [
+    {
+      "id": "ai_tech",
+      "semantic_scope": "Current substantive events about artificial intelligence, robotics, semiconductors, computing infrastructure, AI products and models, technology investment or regulation, where the technology or relevant organization is part of the actual event rather than an incidental mention."
+    },
+    {
+      "id": "kpop",
+      "semantic_scope": "Current substantive events about K-pop artists, groups, labels and music activity such as releases, charts, debuts, comebacks, performances, concerts, contracts or industry results, where the music or artist activity is the actual event rather than a peripheral celebrity mention."
+    },
+    {
+      "id": "economy",
+      "semantic_scope": "Current substantive macroeconomic, monetary-policy, foreign-exchange, financial-market, inflation, financial-regulation, investment or economically material corporate-market events, excluding general political or social events that lack an economic action, datum or material market/economic effect."
+    },
+    {
+      "id": "kbo_hanwha",
+      "semantic_scope": "Current KBO baseball events with direct Hanwha Eagles involvement, including games and results, players, roster changes, injuries, trades, schedules, records, rules or baseball club operations; incidental sponsorship, marketing or entertainment references do not by themselves make an event a Hanwha baseball event."
+    },
+    {
+      "id": "psat_recruitment",
+      "semantic_scope": "Current national or local civil-service recruitment and PSAT events such as official schedules, notices, applications, selections, results or system changes that directly govern civil-service examinations or recruitment; general education or career content that mentions such exams only as background is not itself a recruitment event."
+    }
+  ]
+}

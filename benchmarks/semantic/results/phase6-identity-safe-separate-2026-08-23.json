@@ -1,0 +1,45 @@
+{
+  "result_id": "phase6-identity-safe-separate-2026-08-23",
+  "phase": "Phase 6 Semantic/Event Engine",
+  "scope": "event_identity_resolution",
+  "status": "PASS",
+  "policy": {
+    "order": [
+      "deterministic_contradiction_checks",
+      "optional_candidate_retrieval_or_similarity",
+      "optional_semantic_judgment_when_genuinely_ambiguous",
+      "default_safe_separate_when_ambiguity_remains"
+    ],
+    "semantic_judgment_required": false,
+    "explicit_date_conflict_forces_separate": true,
+    "embedding_similarity_is_identity_authority": false,
+    "llm_can_override_deterministic_block": false
+  },
+  "implementation": {
+    "pairwise_compare": "insight_desk.semantic.compare_candidate_identity",
+    "merge_or_separate": "insight_desk.semantic.resolve_candidate_pair",
+    "merge_requires_explicit_same_event_decision": true,
+    "merged_event_id_order_invariant": true,
+    "fact_provenance_preserved": true,
+    "article_provenance_preserved": true,
+    "cross_topic_merge_forbidden": true
+  },
+  "acceptance_cases": [
+    "different event dates remain separate even if semantic_same_event=true",
+    "unresolved ambiguity without semantic judgment remains separate and is a valid final identity result",
+    "optional positive semantic judgment may merge only after deterministic checks pass",
+    "negative semantic judgment remains separate",
+    "cross-topic candidates remain separate",
+    "merged candidate identity is deterministic under input-order reversal"
+  ],
+  "production_boundary": {
+    "identity_slice_closed": true,
+    "new_identity_model_required": false,
+    "new_model_rnd_required": false,
+    "phase6_complete": false,
+    "remaining_blockers": [
+      "production FactExtractorPort implementation is unresolved after Groq 20B rejection",
+      "material-event assessment producer is unresolved and cannot be inferred from legacy selection negatives"
+    ]
+  }
+}

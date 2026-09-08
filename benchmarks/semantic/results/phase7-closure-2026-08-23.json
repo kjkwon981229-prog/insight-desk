@@ -1,0 +1,72 @@
+{
+  "record_id": "phase7-closure-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 7,
+  "status": "COMPLETE",
+  "branch": "phase4-core-contracts",
+  "verified_code_head_sha": "848e8911b0e13754d4da53f423d8c004f6d2b06a",
+  "supersedes": "benchmarks/semantic/results/phase7-status-2026-08-23.json",
+  "resolved_blocker": {
+    "id": "NEWS_REWRITE_POLICY_V1_SECTION_3_UNRECOVERED",
+    "resolution": "The user supplied the authoritative complete NEWS_REWRITE_POLICY_V1 text, including Section 3 automation pipeline rules 3-1, 3-2, and 3-3.",
+    "authoritative_policy_file": "docs/NEWS_REWRITE_POLICY_V1.md"
+  },
+  "generation": {
+    "primary_model": "openai/gpt-oss-20b",
+    "structured_output": "fixed headline + summary JSON schema",
+    "policy": "complete NEWS_REWRITE_POLICY_V1 sections 0-3",
+    "phase7_section3": {
+      "3-1": "fixed parseable headline + summary output structure",
+      "3-2": "uncertainty favors minimum transformation and source preservation",
+      "3-3": "meta phrases such as '이 기사에서는' and '요약하자면' are forbidden and deterministically rejected"
+    }
+  },
+  "preservation_gate": [
+    "event identity",
+    "draft-cited evidence provenance",
+    "novel date rejection",
+    "novel numeric-expression rejection",
+    "novel quoted-text rejection",
+    "explicit Section 3 meta-phrase rejection"
+  ],
+  "claim_verification": {
+    "claims": ["headline", "summary"],
+    "primary": "Cloudflare @cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "secondary": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+    "policy": {
+      "primary_true_secondary_true": "SUPPORTED",
+      "primary_false": "REJECTED",
+      "disagreement_missing_or_error": "INDETERMINATE"
+    },
+    "publishable_rule": "headline and summary must both be SUPPORTED"
+  },
+  "failure_containment": {
+    "generation_order": [
+      "primary",
+      "one free primary retry",
+      "explicitly configured alternate only if present",
+      "non-injectable exact-source extractive fallback"
+    ],
+    "generated_claim_rejected": "one exact-source fallback verification pass",
+    "verification_indeterminate": "no wasteful regeneration; remain unpublished",
+    "event_deleted_on_generation_or_verification_failure": false,
+    "global_abort": false,
+    "paid_fallback": false
+  },
+  "provider_boundaries": {
+    "Groq_GPT_OSS_20B": "generation only",
+    "Groq_GPT_OSS_120B": "temporal/lifecycle auxiliary only",
+    "Cloudflare_Llama_3_3_70B": "primary claim verifier only",
+    "mDeBERTa_XNLI": "required secondary claim verifier",
+    "new_provider_roles_added": 0
+  },
+  "phase_boundaries": {
+    "renderer_or_pwa_integration_added": false,
+    "live_canary_run": false,
+    "next_phase": 8,
+    "next_phase_name": "Renderer/PWA/Push integration",
+    "fresh_live_canary_phase": 10
+  },
+  "closure_verdict": "PHASE_7_COMPLETE",
+  "phase8_entry_condition_satisfied": true
+}

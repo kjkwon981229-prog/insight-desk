@@ -1,0 +1,50 @@
+{
+  "suite_id": "run94_95_semantic",
+  "source_runs": ["Run94", "Run95"],
+  "purpose": "Reproduce mixed-focus, context-noun, missing-detail and Korean synthesis defects without restoring legacy semantic code.",
+  "cases": [
+    {
+      "id": "run94-mixed-focus",
+      "categories": ["OWNERSHIP_ERROR", "SOURCE_MISMATCH"],
+      "input": {"title": "게임업계에 부는 흡혈귀 콘셉트 붐, 원조 작품이 온다", "lead": "다른 제작사의 신작 블랙문은 공개 1주 만에 5000만 조회수를 기록했다."},
+      "gold": {"is_coherent_single_event": false, "reason": "Title focus and lead fact refer to different semantic owners."}
+    },
+    {
+      "id": "run94-coherent-trend",
+      "categories": ["OWNERSHIP_ERROR"],
+      "input": {"title": "게임업계에 부는 흡혈귀 콘셉트 붐, 원조 작품이 온다", "lead": "게임업계에서 흡혈귀 콘셉트를 적용한 작품이 세 편으로 늘며 여러 제작사가 관련 신작을 공개했다."},
+      "gold": {"is_coherent_single_event": true, "reason": "Lead supports the industry-trend focus."}
+    },
+    {
+      "id": "run95-context-industry",
+      "categories": ["ACTION_ERROR", "FALSE_POSITIVE"],
+      "input": {"event_type": "INDUSTRY_CHANGE", "title": "데이터 중심으로 기술 모으는 오라클의 AI 전략"},
+      "gold": {"context_noun_only_is_not_sufficient_action": true}
+    },
+    {
+      "id": "run95-context-market",
+      "categories": ["ACTION_ERROR"],
+      "input": {"event_type": "MARKET_MOVE", "title": "원·달러 환율 1417.53원"},
+      "gold": {"context_noun_only_is_not_sufficient_action": true, "requires_direction_or_state_change_for_market_move": true}
+    },
+    {
+      "id": "run95-context-roster",
+      "categories": ["ACTION_ERROR", "FALSE_POSITIVE"],
+      "input": {"event_type": "ROSTER_PERSONNEL", "title": "한화 선발 화이트의 역투"},
+      "gold": {"context_noun_only_is_not_sufficient_action": true}
+    },
+    {
+      "id": "run95-malformed-lineup",
+      "categories": ["KOREAN_GRAMMAR_DEFECT", "SUBJECT_ERROR", "OBJECT_ERROR", "UNSUPPORTED_CLAIM"],
+      "input": {"lead": "한화 이글스와 두산 베어스의 선발이 예고됐다."},
+      "gold": {"must_not_invent_missing_starters": true, "must_be_grammatical_korean": true},
+      "forbidden_outputs": ["한화 이글스와과", "두산 베어스의가"]
+    },
+    {
+      "id": "run95-explicit-lineup",
+      "categories": ["SUBJECT_ERROR", "OBJECT_ERROR", "SYNTHESIS_FACT_LOSS"],
+      "input": {"title": "잠실 한화 왕옌청 두산 곽빈 선발투수 예고"},
+      "gold": {"participants": ["한화", "두산"], "starters": ["왕옌청", "곽빈"], "action": "선발투수 예고", "must_preserve_all_named_starters": true}
+    }
+  ]
+}

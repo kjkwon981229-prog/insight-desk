@@ -1,0 +1,48 @@
+{
+  "record_id": "phase6-fact-material-closure-2026-08-23",
+  "date": "2026-08-23",
+  "status": "CANDIDATE_VALIDATED",
+  "base": {
+    "branch": "phase4-core-contracts",
+    "sha": "6baaf2fb3eca0eab4e68e34ccff2dbae31fc95f8"
+  },
+  "production_candidate": {
+    "fact_extractor": "KiwiDeterministicFactExtractor/kiwi-deterministic-v1",
+    "material_event_producer": "precision-first MATERIAL-or-DEFER assessment",
+    "runtime_new_paid_paths": 0,
+    "external_api_calls": 0,
+    "credentials_required": 0,
+    "routine_user_intervention_required": 0,
+    "new_llm_provider_roles": 0
+  },
+  "audit_results": {
+    "run96_korean_positive_leads": "14/14 emitted evidence-bound facts",
+    "context_only_nominal_negatives": "3/3 emitted no fact",
+    "locked_explicit_lineup": "왕옌청 and 곽빈 preserved from exact source without name hardcoding",
+    "amount_and_direction_preservation": ["15억달러", "3.4%", "급등"],
+    "evidence_window_fragment_policy": "unsafe partial sentence fragments skipped",
+    "unsupported_language_policy": "item-local safe skip",
+    "material_event_regressions": "6/6 PASS",
+    "property_qa": "2 property tests PASS, 40 generated examples each",
+    "benchmark_integrity": "PASS: hard_scored=85 evidence_only=7 taxonomy=16 run96_positive=15 run96_tn=44",
+    "base_unittest": "125 PASS with expected optional-dependency skips",
+    "push_worker": "14/14 PASS"
+  },
+  "tool_dispositions": {
+    "KSS": "REJECTED: duplicate capability and excessive dependency surface",
+    "Snorkel": "REJECTED: does not create material truth and adds unnecessary ML dependencies",
+    "extra_korean_dependency_parser": "NOT_PROMOTED: license/provenance surface not justified by measured residual gap",
+    "scikit_learn": "DEFERRED: no valid material-event training labels",
+    "Hypothesis": "QA_ONLY: local property-based source-preservation testing"
+  },
+  "safety_boundaries": {
+    "ambiguous_fact_structure": "emit no draft",
+    "ambiguous_material_event": "DEFER",
+    "old_selection_tn_repurposed_as_material_gold": false,
+    "fact_extractor_identity_authority": false,
+    "fact_extractor_selection_authority": false,
+    "material_producer_selection_policy_authority": false,
+    "phase7_generation_or_claim_verification_changed": false
+  },
+  "remaining_phase6_question": "wire the validated material-event producer into production Phase6 selection orchestration without changing the existing explicit assess() contract or crossing into Phase 7"
+}

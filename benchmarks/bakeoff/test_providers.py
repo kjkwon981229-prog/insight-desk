@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+import json
+import os
+import unittest
+from unittest.mock import MagicMock, patch
+
+import providers
+from provider_contract import TASK_SCHEMAS, prompt_for
+
+
+CASE = {
+    "id": "contract-test",
+    "task": "MATERIAL_EVENT",
+    "input": {"title": "A사, AI 사업단 신설", "lead": "A사가 AI 사업단을 신설했다."},
+}
+
+OUTPUT = {
+    "is_material_event": True,
+    "event_type": "INDUSTRY_CHANGE",
+    "action": "신설",
+    "polarity": "POSITIVE",
+    "temporal_state": "COMPLETED",
+}
+
+CLAIM_CASE = {
+    "id": "claim-contract-test",
+    "task": "CLAIM_VERIFY",
+    "input": {
+        "premise": "A사가 AI 사업에 투자하기로 했다.",
+        "hypothesis": "A사는 AI 사업에 투자하기로 했다.",
+    },
+}
+
+
+class ProviderContractTests(unittest.TestCase):
+    def test_all_strict_schemas_are_closed_and_fully_required(self) -> None:
+        for task, schema in TASK_SCHEMAS.items():
+            with self.subTest(task=task):
+                self.assertFalse(schema["additionalProperties"])
+                self.assertEqual(set(schema["properties"]), set(schema["required"]))
+
+    def test_prompt_contains_case_input_but_not_gold(self) -> None:
+        rendered = prompt_for(CASE)
+        self.assertIn("A사, AI 사업단 신설", rendered)
+        self.assertNotIn("INDUSTRY_CHANGE", rendered)
+
+    def test_claim_prompt_defines_material_entailment_boundary(self) -> None:
+        rendered = prompt_for(CLAIM_CASE)
+        self.assertIn("fully entailed", rendered)
+        self.assertIn("lifecycle/tense", rendered)
+        self.assertIn("A사가 AI 사업에 투자하기로 했다", rendered)
+        self.assertEqual(TASK_SCHEMAS["CLAIM_VERIFY"]["properties"], {"entailed": {"type": "boolean"}})
+
+    @patch("providers.urllib.request.urlopen")
+    def test_http_transport_sets_explicit_api_client_headers(self, urlopen) -> None:
+        response = MagicMock()
+        response.read.return_value = b"{}"
+        urlopen.return_value.__enter__.return_value = response
+
+        providers._post_json(
+            "https://example.invalid/api",
+            {"hello": "world"},
+            {"Authorization": "Bearer test"},
+            attempts=1,
+        )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "insight-desk-bakeoff/0.1")
+        self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test")
+
+    @patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False)
+    @patch("providers._post_json")
+    def test_groq_uses_strict_schema(self, post_json) -> None:
+        post_json.return_value = {
+            "choices": [{"message": {"content": json.dumps(OUTPUT, ensure_ascii=False)}}]
+        }
+        actual = providers.call_groq20(CASE)
+        self.assertEqual(actual, OUTPUT)
+        payload = post_json.call_args.args[1]
+        self.assertEqual(payload["model"], "openai/gpt-oss-20b")
+        self.assertTrue(payload["response_format"]["json_schema"]["strict"])
+        self.assertEqual(
+            payload["response_format"]["json_schema"]["schema"],
+            TASK_SCHEMAS["MATERIAL_EVENT"],
+        )
+
+    @patch.dict(
+        os.environ,
+        {"CLOUDFLARE_ACCOUNT_ID": "account", "CLOUDFLARE_API_TOKEN": "test-token"},
+        clear=False,
+    )
+    @patch("providers._post_json")
+    def test_cloudflare_uses_llama70b_json_schema_mode(self, post_json) -> None:
+        post_json.return_value = {"success": True, "result": {"response": OUTPUT}}
+        actual = providers.call_cloudflare(CASE)
+        self.assertEqual(actual, OUTPUT)
+        url = post_json.call_args.args[0]
+        payload = post_json.call_args.args[1]
+        self.assertIn("@cf/meta/llama-3.3-70b-instruct-fp8-fast", url)
+        self.assertEqual(payload["response_format"]["type"], "json_schema")
+        self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
+        self.assertEqual(payload["max_tokens"], 384)
+        self.assertEqual(payload["temperature"], 0)
+
+    @patch.dict(
+        os.environ,
+        {"CLOUDFLARE_ACCOUNT_ID": "account", "CLOUDFLARE_API_TOKEN": "test-token"},
+        clear=False,
+    )
+    @patch("providers._post_json")
+    def test_cloudflare_claim_verifier_uses_same_strict_contract(self, post_json) -> None:
+        post_json.return_value = {"success": True, "result": {"response": {"entailed": True}}}
+        actual = providers.call_cloudflare(CLAIM_CASE)
+        self.assertEqual(actual, {"entailed": True})
+        payload = post_json.call_args.args[1]
+        self.assertEqual(payload["response_format"]["json_schema"], TASK_SCHEMAS["CLAIM_VERIFY"])
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
+    @patch("providers._post_json")
+    def test_gemini_uses_verified_structured_output_contract(self, post_json) -> None:
+        post_json.return_value = {
+            "candidates": [
+                {"content": {"parts": [{"text": json.dumps(OUTPUT, ensure_ascii=False)}]}}
+            ]
+        }
+        actual = providers.call_gemini(CASE)
+        self.assertEqual(actual, OUTPUT)
+        url = post_json.call_args.args[0]
+        payload = post_json.call_args.args[1]
+        self.assertIn("gemini-3.7-flash:generateContent", url)
+        generation_config = payload["generationConfig"]
+        self.assertEqual(generation_config["thinkingConfig"], {"thinkingLevel": "LOW"})
+        text_format = generation_config["responseFormat"]["text"]
+        self.assertEqual(text_format["mimeType"], "APPLICATION_JSON")
+        self.assertEqual(text_format["schema"], TASK_SCHEMAS["MATERIAL_EVENT"])
+
+
+if __name__ == "__main__":
+    unittest.main()

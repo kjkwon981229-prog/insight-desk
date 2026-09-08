@@ -1,0 +1,25 @@
+{
+  "name": "Insight Desk",
+  "short_name": "Insight Desk",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "theme_color": "#c35b78",
+  "background_color": "#f5f1ef",
+  "description": "관심사별 뉴스와 검색 관심 흐름을 정리하는 모바일 브리핑",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "x-icon-status": "APPROVED_CANDIDATE_5_EXTRACTED",
+  "x-icon-provenance": "인사이트 데스크 아이콘 탐구 보드의 Candidate 5 시안을 그대로 추출·리사이즈"
+}

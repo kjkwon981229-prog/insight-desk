@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "status": "FROZEN",
+  "frozen_at": "2026-08-23",
+  "hard_rules": {
+    "zero_cost_only": true,
+    "paid_fallback_allowed": false,
+    "global_abort_from_item_failure_allowed": false,
+    "generation_failure_may_delete_existing_event": false,
+    "llm_may_override_explicit_identity_contradiction": false,
+    "single_llm_selection_final_gate_allowed": false,
+    "numeric_confidence_without_validated_contract_allowed": false
+  },
+  "provider_roles": {
+    "generation_primary": {
+      "provider": "groq_free",
+      "model": "openai/gpt-oss-20b",
+      "status": "frozen_role_limited"
+    },
+    "temporal_auxiliary": {
+      "provider": "groq_free",
+      "model": "openai/gpt-oss-120b",
+      "status": "frozen_role_limited"
+    },
+    "claim_verification_primary": {
+      "provider": "cloudflare_workers_ai_free",
+      "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+      "verifier_id": "cloudflare",
+      "status": "frozen_claim_verifier_only"
+    },
+    "claim_verification_secondary": {
+      "provider": "local",
+      "model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+      "verifier_id": "local-nli",
+      "status": "frozen_secondary_only"
+    },
+    "rare_optional_adjudication": {
+      "provider": "gemini_api_free",
+      "model": "gemini-3.7-flash",
+      "core_dependency": false,
+      "status": "optional_not_required"
+    },
+    "same_event_candidate_retrieval": {
+      "provider": "local",
+      "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "identity_authority": false,
+      "status": "retrieval_only_optional"
+    }
+  },
+  "semantic_boundaries": {
+    "event_identity": {
+      "deterministic_contradictions_first": true,
+      "explicit_date_conflict_forces_separate": true,
+      "ambiguous_default": "keep_separate",
+      "embedding_similarity_final_authority": false
+    },
+    "selection": {
+      "material_event_separate_from_selection": true,
+      "topic_relevance_may_exclude_real_event": true,
+      "llm_final_authority": false
+    },
+    "verification": {
+      "supported_requires_primary_and_secondary_support": true,
+      "primary_rejection": "rejected",
+      "disagreement_or_error": "indeterminate"
+    },
+    "rendering": {
+      "only_supported_claims_publish": true,
+      "missing_values_must_remain_missing": true,
+      "extractive_fallback_preserves_event": true
+    }
+  },
+  "acquisition_selection": {
+    "news_search": {
+      "tool": "NAVER Search API",
+      "status": "foundation_fixed"
+    },
+    "search_trend": {
+      "tool": "NAVER Search Trend API",
+      "status": "foundation_fixed"
+    },
+    "official_data": [
+      {"tool": "OpenDART", "status": "foundation_fixed"},
+      {"tool": "KOSIS", "status": "foundation_fixed"},
+      {"tool": "ECOS", "status": "foundation_fixed"}
+    ],
+    "article_extraction": {
+      "primary": "Trafilatura",
+      "fallback": "Playwright",
+      "status": "selected_not_yet_implemented"
+    }
+  },
+  "ui_freeze": {
+    "branch": "ui-refoundation-pink-v2",
+    "reference_commit": "bb1fd3bab4a54bc43a152ff4dc6b62a34dd4e3c6",
+    "design": "Pink Editorial Intelligence / Soft Geometry V3",
+    "production_css_integrated": false,
+    "event_ledger_requires_future_history_contract": true
+  },
+  "explicit_non_roles": {
+    "cloudflare_llama_generic_selection_gate": false,
+    "cloudflare_llama_event_identity_gate": false,
+    "groq_sole_fact_verifier": false,
+    "gemini_core_runtime": false,
+    "minilm_event_identity_gate": false,
+    "legacy_event_type_classifier": false
+  },
+  "next_phase": "Phase 5 Acquisition Pipeline"
+}

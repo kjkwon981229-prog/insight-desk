@@ -1,0 +1,125 @@
+{
+  "schema_version": 5,
+  "scope": {
+    "daily_runs": [
+      193,
+      196,
+      199,
+      203,
+      206,
+      209,
+      212,
+      215,
+      218,
+      221,
+      224,
+      227,
+      230,
+      234,
+      237
+    ],
+    "production_window": "#193-#237 marker-triggered visible outputs only",
+    "card_count": 126,
+    "labeling_policy": "verified cumulative human-audit regressions + bounded retroactive structural findings + exhaustive review of remaining cards",
+    "raw_source_fact_limitation": "Production artifacts intentionally omit raw article bodies and fact objects. Historic replay therefore uses the exact same-byte visible proposition as a fact-surface proxy, bound to the production source URL/content_sha256. Exact source facts preserved in historical regressions remain authoritative for those P1 cases."
+  },
+  "counts": {
+    "runs": 15,
+    "cards": 126,
+    "p1": 64,
+    "pass": 61,
+    "admission_unresolved": 1,
+    "source_unresolved": 3
+  },
+  "label_verification": {
+    "status": "VERIFIED",
+    "byte_match": "126/126 cards matched same-byte artifact HTML and production source audit metadata",
+    "exact_historical_regression_p1": 57,
+    "retroactive_structural_p1": 7,
+    "human_review_pass": 61,
+    "admission_unresolved": 1,
+    "policy": "Exact historical P1 regression labels are authoritative; later generalized defects apply retroactively only to structurally identical earlier visible cards; remaining cards were exhaustively re-reviewed against event centrality, freshness, standalone completeness, topic ownership, and metadata/biography/description criteria.",
+    "notable_correction": "Daily 237 Card 5 is AUDIT_UNRESOLVED, not a confirmed P1, because the prior accepted audit explicitly kept it outside the five confirmed P1 regressions while exact-source attribution remained unresolved."
+  },
+  "card_fields": [
+    "i",
+    "id",
+    "topic",
+    "headline",
+    "summary",
+    "source_url",
+    "source_group_key",
+    "source_content_sha256",
+    "render_mode",
+    "verdict",
+    "reasons",
+    "source_verification",
+    "label_provenance",
+    "expected_accepted"
+  ],
+  "chunk_files": [
+    {
+      "path": "phase12_story_replay/chunk_a.json",
+      "runs": [
+        193,
+        196,
+        199,
+        203,
+        206
+      ],
+      "cards": 38,
+      "sha256": "8df16c5e09db62ecda104bef9aeea13dc6553612f4f02bebd362eecdb1694157"
+    },
+    {
+      "path": "phase12_story_replay/chunk_b1.json",
+      "runs": [
+        209,
+        212,
+        215
+      ],
+      "cards": 28,
+      "sha256": "11f4e4b9b9f51c603c4558092f7f816884b01edc02b57eb2d8d0510898619895"
+    },
+    {
+      "path": "phase12_story_replay/chunk_b2.json",
+      "runs": [
+        218,
+        221,
+        224
+      ],
+      "cards": 28,
+      "sha256": "1e09b2dff0b403e7703cd37aef63f69079e1804627399fabcf1dec2f2651f62b"
+    },
+    {
+      "path": "phase12_story_replay/chunk_c1.json",
+      "runs": [
+        227,
+        230
+      ],
+      "cards": 15,
+      "sha256": "884c5da8640d9bd678b7b3c2b879d9ec112e92bb8bbfba7f7797998598a0c080"
+    },
+    {
+      "path": "phase12_story_replay/chunk_c2.json",
+      "runs": [
+        234,
+        237
+      ],
+      "cards": 17,
+      "sha256": "9e11c090ef2edc635d4a4178ddc8d21386642fc62c8cb325ab922e5e74b1a83a"
+    }
+  ],
+  "rc20": {
+    "case_id": "RC-20-LS-ELECTRIC-CONTRACT-EXPANSION",
+    "left_source_fact": "LS일렉트릭이 북미 빅테크 기업과 체결한 인공지능 AI 데이터센터 전력설비 공급계약 규모를 2배 이상 확대했다. 6월 계약서 물량은 1064억원으로 납기 경쟁력을 강화한다.",
+    "right_source_fact": "LS일렉트릭이 미국 빅테크 기업과 맺은 인공지능 데이터센터 전력설비 공급 계약 규모를 기존 1064억원에서 2309억원으로 두 배 이상 늘렸다.",
+    "identity_api": "insight_desk.semantic.judge_same_event_mutual_entailment",
+    "expected_same_event": true,
+    "expected_reason": "strong_shared_event_anchor_with_independent_asymmetric_support",
+    "replay_mode": "production_identity_api"
+  },
+  "admission_policy": {
+    "AUDIT_UNRESOLVED": "fail_closed_for_replay",
+    "production_resume_requires": "all P1 rejected, all PASS admitted, unresolved rejected or independently resolved"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "record_id": "phase10-fresh-live-closure-2026-08-23",
+  "date": "2026-08-23",
+  "phase": 10,
+  "status": "COMPLETE",
+  "base_branch": "phase4-core-contracts",
+  "phase10_merge_sha": "92f9a938de6aa54e7bca6177d4499b2476205596",
+  "successful_workflow": {
+    "name": "Insight Desk Phase 10 Fresh Live Canary",
+    "run_number": 6,
+    "run_id": 32619362939,
+    "job_id": 97145030437,
+    "result": "success"
+  },
+  "live_path": {
+    "topic_id": "ai_tech",
+    "query": "인공지능 발표",
+    "domain": "www.segye.com",
+    "route": "naver_search",
+    "extraction_method": "http+trafilatura",
+    "playwright_fallback_used": false,
+    "acquisition_attempts": 1,
+    "acquired_articles": 1,
+    "semantic_events": 13,
+    "material_events": 4,
+    "included_events": 4,
+    "successful_event_fact_count": 1,
+    "successful_event_evidence_count": 1,
+    "material_verdict": "material",
+    "selection_verdict": "include",
+    "temporal_source": "auxiliary",
+    "generation_render_mode": "generated",
+    "deterministic_preservation_accepted": true,
+    "headline_verdict": "supported",
+    "summary_verdict": "supported",
+    "contract_bundle_valid": true,
+    "rendered_entries": 1,
+    "html_sha256": "5304c3d1f60f55936544f327d74eeded7f7e3994461db5e73f28da1ea7265a95",
+    "html_bytes": 2777
+  },
+  "provider_roles_exercised": {
+    "groq_generation": "openai/gpt-oss-20b",
+    "groq_temporal_auxiliary": "openai/gpt-oss-120b",
+    "cloudflare_primary_verifier": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "local_secondary_verifier": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+  },
+  "failure_containment_observed": {
+    "pre_success_verification_skips": 3,
+    "examples": [
+      "headline=indeterminate;summary=indeterminate",
+      "headline=indeterminate;summary=indeterminate",
+      "headline=indeterminate;summary=supported"
+    ],
+    "global_abort": false,
+    "event_processing_continued_until_supported_candidate": true
+  },
+  "live_bug_fixed_before_pass": {
+    "symptom": "Kiwi returned a token outside the supplied source text",
+    "resolution": "typed MorphologySourceOffsetError; fail closed only for the affected sentence/evidence window; never clip or repair source offsets",
+    "new_regression": "test_live_style_invalid_kiwi_offset_skips_only_bad_sentence",
+    "phase9_full_regression_after_fix": "success",
+    "semantic_local_ci_after_fix": "success",
+    "infrastructure_ci_after_fix": "success"
+  },
+  "safety_and_cost": {
+    "paid_paths": 0,
+    "standard_github_runner": "ubuntu-24.04",
+    "secrets_present_but_not_logged": true,
+    "article_body_logged": false,
+    "headline_or_summary_logged": false,
+    "new_paid_fallback_added": false,
+    "human_intervention_required": false
+  },
+  "next_phase": 11,
+  "next_phase_name": "Production Restore"
+}

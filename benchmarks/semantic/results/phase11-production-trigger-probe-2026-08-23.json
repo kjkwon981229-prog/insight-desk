@@ -1,0 +1,7 @@
+{
+  "record_id": "phase11-production-trigger-probe-2026-08-23",
+  "date": "2026-08-23",
+  "purpose": "Ensure the production workflow is already present on main before a distinct main push event.",
+  "behavior_change": false,
+  "production_logic_change": false
+}
