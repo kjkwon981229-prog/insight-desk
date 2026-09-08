@@ -151,6 +151,8 @@ def _run_cases(
                     primary.append(event)
 
             if len(primary) != 1:
+                if case.expected_proposition:
+                    print("SOURCE_RECALL_STOP", case.case_id, "primary_or_topic", len(primary))
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
 
@@ -172,12 +174,16 @@ def _run_cases(
                 assessment.material.verdict is not MaterialEventVerdict.MATERIAL
                 or assessment.event_assessment.selection.verdict is not SelectionVerdict.INCLUDE
             ):
+                if case.expected_proposition:
+                    print("SOURCE_RECALL_STOP", case.case_id, "selection", assessment)
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
             candidate = production_core.produce_phase7_entry_candidate(
                 GenerationRequest(event=event, facts=facts, evidence=evidence)
             )
             if candidate is None or not candidate.publishable:
+                if case.expected_proposition:
+                    print("SOURCE_RECALL_STOP", case.case_id, "generation", candidate)
                 outcomes[case.case_id] = _Outcome(case.case_id, None, False, ())
                 continue
 

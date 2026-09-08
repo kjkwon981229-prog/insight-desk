@@ -371,7 +371,15 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
     def title_has_surface(surface: str) -> bool:
         return bool(surface and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", article.title))
 
-    if not title_has_surface(parts.subject):
+    subject_start = span.text.find(parts.subject)
+    subject_end = subject_start + len(parts.subject)
+    subject_names = [str(getattr(token, "surface", "")) for token in tokens
+                     if subject_start <= getattr(token, "start", -1)
+                     and getattr(token, "end", len(span.text) + 1) <= subject_end
+                     and getattr(token, "tag", "") in {"NNP", "SL"}
+                     and len(str(getattr(token, "surface", ""))) >= 2]
+    if not (title_has_surface(parts.subject)
+            or any(title_has_surface(name) for name in subject_names)):
         return False
     # Parenthetical aliases qualify the same object, rather than a different event.
     # Omit them for title comparison only; immutable source evidence is unchanged.
