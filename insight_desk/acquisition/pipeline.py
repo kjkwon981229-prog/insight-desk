@@ -15,6 +15,7 @@ from .models import (
     ExtractionQualityPolicy,
     FetchedPage,
 )
+from .runtime import strip_document_publisher_prefix
 
 
 class HtmlFetcher(Protocol):
@@ -179,7 +180,7 @@ class AcquisitionPipeline:
         method: str,
         fallback_used: bool,
     ) -> AcquisitionResult:
-        body = extracted.body.strip()
+        body = strip_document_publisher_prefix(extracted.body.strip(), page.html)
         if not body:
             raise AcquisitionError(FailureKind.EXTRACTION_EMPTY, "selected extraction is empty")
         title = (extracted.page_title or candidate.search_title).strip()

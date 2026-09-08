@@ -86,6 +86,17 @@ def _subject_candidate(text: str, tokens: tuple[MorphologyToken, ...]) -> _CaseP
                 nominatives.append(phrase)
 
     if len(topics) == 1:
+        # A topic-marked actor does not own a later coordinated clause's
+        # nominative actor. Keep relative clauses, but never fold two matrix
+        # subjects into the first actor's action.
+        topic = topics[0]
+        for nominative in nominatives:
+            between = [token for token in tokens
+                       if topic.marker_end <= token.start < nominative.start]
+            if any(token.tag == "EC" for token in between) and not any(
+                token.tag == "ETM" for token in between
+            ):
+                return None
         return topics[0]
     if topics:
         return None
