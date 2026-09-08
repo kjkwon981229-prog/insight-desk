@@ -210,6 +210,15 @@ class ConfiguredLiteralRelevanceOwner:
                 body="",
                 topic=proposition_topic,
             )
+            scope_anchors = tuple(getattr(topic, "event_scope_anchors", ()))
+            if matched and scope_anchors:
+                matched = self.matcher(
+                    title=proposition, body="",
+                    topic=_CanonicalPropositionTopic(
+                        topic_id=topic.topic_id, intent_anchors=scope_anchors,
+                        required_intent_terms=(),
+                    ),
+                )
 
         if matched:
             return RelevanceDecision(

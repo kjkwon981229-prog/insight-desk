@@ -86,6 +86,7 @@ class TopicConfig:
     news_queries: tuple[str, ...]
     event_terms: tuple[str, ...] = ()
     conditional: bool = False
+    event_scope_anchors: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.topic_id or not self.name:
@@ -125,6 +126,7 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
                 news_queries=tuple(str(value) for value in raw.get("news_queries", []) if str(value).strip()),
                 event_terms=tuple(str(value) for value in raw.get("event_terms", []) if str(value).strip()),
                 conditional=raw.get("conditional") is True,
+                event_scope_anchors=tuple(str(value) for value in raw.get("event_scope_anchors", []) if str(value).strip()),
             )
         )
     return tuple(sorted(topics, key=lambda item: (-item.priority, item.topic_id)))

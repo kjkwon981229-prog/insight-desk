@@ -14,6 +14,7 @@ class CanonicalConditionalBindingTests(unittest.TestCase):
             ("kbo_hanwha", "롯데 자이언츠가 투수를 엔트리에서 말소했다.", False),
             ("kbo_hanwha", "한화 이글스가 투수를 엔트리에서 말소했다.", True),
             ("psat_recruitment", "삼성전자가 신입사원 채용 일정을 발표했다.", False),
+            ("psat_recruitment", "농협중앙회가 5급 신규직원 공개채용을 실시한다.", False),
             ("psat_recruitment", "인사혁신처가 국가공무원 채용 일정을 발표했다.", True),
             ("kpop", "그룹 튜넥스가 신곡 퍼포먼스 비디오를 공개했다.", True),
         )
