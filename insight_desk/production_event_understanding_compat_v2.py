@@ -238,6 +238,9 @@ def _first_sentence_end(body: str, morphology: MorphologyPort | None = None) -> 
     offset = 0
     if morphology is not None:
         for line in body.splitlines(keepends=True):
+            if not line.strip():
+                offset += len(line)
+                continue
             tokens = _morphology_tokens(line, morphology)
             if not tokens or any(
                 str(getattr(token, "tag", "")).startswith("J")

@@ -18,6 +18,15 @@ from scripts import phase11_daily_production as production
 
 
 class ScheduledUnderstandingRoutingTests(unittest.TestCase):
+    def test_empty_source_blocks_do_not_become_the_article_lead(self):
+        class Morphology:
+            def analyze(self, text):
+                return (SimpleNamespace(tag="NNG" if text.startswith("사진") else "VV"),)
+        prefix = "\n사진 제공\n \t\n"
+        sentence = "삼성생명이 새 서비스를 도입한다."
+        self.assertEqual(_first_sentence_end(prefix + sentence, Morphology()),
+                         len(prefix + sentence))
+
     def test_invalid_morphology_offsets_cannot_skip_source_context_or_crash(self):
         class InvalidOffsets:
             def analyze(self, text):
