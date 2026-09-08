@@ -8,6 +8,9 @@ import unittest
 from unittest.mock import patch
 
 from test_source_grounded_production_stability_v2 import _ArticleCase, _run_cases
+from dataclasses import asdict
+from insight_desk.semantic.tooling import KiwiMorphologyHelper
+from insight_desk.semantic.kiwi_extractor import _predicate_fact_parts
 
 
 @unittest.skipUnless(importlib.util.find_spec("kiwipiepy"), "semantic-local required")
@@ -39,7 +42,14 @@ class ScheduledSourceRecallTests(unittest.TestCase):
             with self.subTest(case=case.case_id):
                 outcome = outcomes[case.case_id]
                 row = recorded[case.source_url]
-                details = {"decisions": row["decisions"], "facts": row["semantic_result"]["facts"]}
+                details = {"decisions": row["decisions"], "facts": row["semantic_result"]["facts"][:3]}
+                if outcome.proposition != case.expected_proposition and case.expected_proposition:
+                    morphology = KiwiMorphologyHelper()
+                    tokens = morphology.analyze(case.expected_proposition)
+                    parts = _predicate_fact_parts(case.expected_proposition, tokens)
+                    details["expected_tokens"] = [asdict(t) for t in tokens]
+                    details["title_tokens"] = [asdict(t) for t in morphology.analyze(case.title)]
+                    details["actor_tokens"] = [asdict(t) for t in morphology.analyze(parts.subject)] if parts else []
                 self.assertEqual(outcome.proposition, case.expected_proposition,
                                  json.dumps(details, ensure_ascii=False))
                 if case.expected_proposition is not None:
