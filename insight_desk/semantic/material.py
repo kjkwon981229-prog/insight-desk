@@ -6,7 +6,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Mapping
 
-from insight_desk.core import CandidateEvent, EvidenceSpan, EventFact
+from insight_desk.core import CandidateEvent, ContractError, EvidenceSpan, EventFact
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
 from insight_desk.story_admission import (
     StoryAdmissionInput,
@@ -14,7 +14,7 @@ from insight_desk.story_admission import (
     evaluate_story_admission,
 )
 
-from .tooling import KiwiMorphologyHelper
+from .tooling import KiwiMorphologyHelper, MorphologySourceOffsetError
 
 
 _EXPLICIT_NOMINAL_MATERIAL_ACTIONS = frozenset({"선발투수 예고"})
@@ -43,6 +43,7 @@ class MaterialEventReason(StrEnum):
     STALE_EXPLICIT_PAST_EVENT = "stale_explicit_past_event"
     STALE_SPORTS_RETROSPECTIVE = "stale_sports_retrospective"
     PREDICATE_SIGNAL_MISSING = "predicate_signal_missing"
+    REPORT_WITHOUT_EVENT = "report_without_event"
     LOCAL_HELPER_UNAVAILABLE = "local_helper_unavailable"
 
 
@@ -181,6 +182,25 @@ def assess_material_event(
         if fact.action in _EXPLICIT_NOMINAL_MATERIAL_ACTIONS:
             used_nominal = True
             continue
+        try:
+            action_tokens = morphology.analyze(fact.action)
+        except (ContractError, MorphologySourceOffsetError):
+            return MaterialEventAssessment(
+                event.event_id, MaterialEventVerdict.DEFER,
+                (MaterialEventReason.PREDICATE_SIGNAL_MISSING,),
+            )
+        verbs = [str(getattr(token, "normalized", getattr(token, "surface", "")))
+                 for token in action_tokens if token.tag in {"VV", "XSV"}]
+        # Reporting is an evidential wrapper, not proof of a material event.
+        # A finite quoted/complement event (e.g. released ... said) supplies the
+        # missing proposition. Do not promote a bare report of someone's status.
+        reporting_verbs = {"전하", "말하", "밝히", "알리"}
+        if (verbs and verbs[-1] in reporting_verbs
+                and not any(verb not in reporting_verbs for verb in verbs[:-1])):
+            return MaterialEventAssessment(
+                event.event_id, MaterialEventVerdict.DEFER,
+                (MaterialEventReason.REPORT_WITHOUT_EVENT,),
+            )
         predicate = assess_event_predicate(fact.action, morphology=morphology)
         if predicate.completeness is PredicateCompleteness.COMPLETE:
             continue
