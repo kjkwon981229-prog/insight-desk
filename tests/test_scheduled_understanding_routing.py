@@ -18,6 +18,32 @@ from scripts import phase11_daily_production as production
 
 
 class ScheduledUnderstandingRoutingTests(unittest.TestCase):
+    def test_broad_query_cannot_exhaust_the_budget_before_other_interest_queries(self):
+        queries = ("한국은행 기준금리", "원달러 환율", "코스피", "국내 경제")
+        cases = tuple({
+            "candidate_id": f"query-{q}-{i}", "topic_id": "economy", "query": query,
+            "source_url": f"https://example.com/{q}/{i}", "source_name": "fixture",
+            "search_title": "한국은행 기준금리 발표", "source_excerpt": "한국은행은 기준금리를 발표했다.",
+        } for q, query in enumerate(queries) for i in range(10))
+        visited = []
+        class EmptyPipeline:
+            def extract_article(self, article, *, topic_id, extractor):
+                visited.append(article.provenance.url)
+                return SemanticArticleResult(article_id=article.article_id, extractor_id="fixture",
+                                             evidence=(), facts=(), events=())
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with (
+                _recorded_edges(cases=cases, replay_clock=datetime(2026, 9, 8, tzinfo=timezone.utc)),
+                patch("insight_desk.production_event_understanding_lifecycle_v2.LegacySemanticPipeline", EmptyPipeline),
+                patch.object(production._core, "build_resilient_fact_extractor", return_value=SimpleNamespace(route_stats={})),
+            ):
+                production.run_production(topics_path=Path("config/topics.json"),
+                    output_dir=root / "site", state_path=root / "state.json", audit_path=root / "audit.json")
+            audit = json.loads((root / "audit.json").read_text())
+        self.assertEqual(audit["topic_stats"]["economy"]["acquisition_attempts"], 8)
+        self.assertEqual({url.split("/")[-2] for url in visited}, {"0", "1", "2", "3"})
+
     def test_empty_source_blocks_do_not_become_the_article_lead(self):
         class Morphology:
             def analyze(self, text):

@@ -255,6 +255,27 @@ def _counter(stats: dict[str, int], key: str, amount: int = 1) -> None:
     stats[key] = stats.get(key, 0) + amount
 
 
+def _query_candidate_batches(discovery, topic: TopicConfig, attempts):
+    """Interleave configured query results within the unchanged acquisition budget.
+
+    Exhausted/failed query lanes drop out, so remaining lanes can use spare capacity.
+    Each mutable batch still accepts bounded understanding-resolution candidates.
+    """
+    lanes = []
+    for query in topic.news_queries:
+        try:
+            candidates = tuple(discovery.search(query, topic_id=topic.topic_id, limit=10))
+        except DiscoveryError as exc:
+            attempts.append(_attempt(topic=topic.topic_id, query=query, domain="discovery",
+                                     stage="discovery", status="skip", reason=exc.failure_kind.value))
+            continue
+        lanes.append((query, candidates))
+    for rank in range(max((len(candidates) for _, candidates in lanes), default=0)):
+        for query, candidates in lanes:
+            if rank < len(candidates):
+                yield query, [candidates[rank]]
+
+
 def _route_counter(stats: dict[str, dict[str, int]], route: str, key: str) -> None:
     bucket = stats.setdefault(route, {})
     bucket[key] = bucket.get(key, 0) + 1
@@ -390,15 +411,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         relevance_resolution_candidate_urls: set[str] = set()
         event_understanding_resolution_candidate_urls: set[str] = set()
 
-        for query in topic.news_queries:
+        for query, queue in _query_candidate_batches(discovery, topic, attempts):
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
                 break
-            try:
-                queue = list(discovery.search(query, topic_id=topic.topic_id, limit=10))
-            except DiscoveryError as exc:
-                attempts.append(_attempt(topic=topic.topic_id, query=query, domain="discovery", stage="discovery", status="skip", reason=exc.failure_kind.value))
-                continue
-
             for candidate in queue:
                 candidate_url = str(getattr(candidate, "url", "") or "").strip()
                 if stats["published_entries"] >= topic.selection_cap:

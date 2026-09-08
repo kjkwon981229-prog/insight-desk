@@ -401,6 +401,7 @@ jobs:
             exit 0
           fi
           echo "Push notification accepted (type=$notification_type; source=$notification_source; http=$http_status)."
+          jq -c '{delivery_state, subscription_count, sent, failed, pruned, duplicate}' "$response_file"
 
   delivery_guard:
     needs: [build, deploy]
