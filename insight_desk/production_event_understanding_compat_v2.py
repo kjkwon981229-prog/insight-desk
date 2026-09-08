@@ -10,6 +10,7 @@ separate one source-central news event from contextual/analytical facts before P
 
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+import re
 from typing import Mapping, Protocol
 
 from insight_desk.core import CandidateEvent, ContractError, EvidenceSpan, EventFact, RawArticle
@@ -364,11 +365,13 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
     if parts is None or parts.object is None:
         return False
     title_units = {str(getattr(token, "normalized", "")) for token in title_tokens}
-    actor_tokens = _morphology_tokens(parts.subject, morphology) or ()
-    named_actor = {str(getattr(token, "normalized", "")) for token in actor_tokens
-                   if getattr(token, "tag", "") in {"NNP", "SL"}
-                   and len(str(getattr(token, "normalized", ""))) >= 2}
-    if not named_actor.intersection(title_units):
+    # Keep the grammatical subject identified in the complete source sentence.
+    # Re-analyzing an isolated name changes both POS tags and segmentation.
+    # Require the whole subject at lexical boundaries, never a shared name fragment.
+    def title_has_surface(surface: str) -> bool:
+        return bool(surface and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", article.title))
+
+    if not title_has_surface(parts.subject):
         return False
     # Parenthetical aliases qualify the same object, rather than a different event.
     # Omit them for title comparison only; immutable source evidence is unchanged.
@@ -388,8 +391,9 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
     object_tokens = _morphology_tokens("".join(object_surface), morphology) or ()
     object_units = {str(getattr(token, "normalized", "")) for token in object_tokens
                     if str(getattr(token, "tag", "")).startswith("N")
-                    or getattr(token, "tag", "") == "SL"}
-    if not object_units or not object_units.issubset(title_units):
+                    or getattr(token, "tag", "") in {"SL", "SH"}}
+    if not object_units or not all(unit in title_units or title_has_surface(unit)
+                                   for unit in object_units):
         return False
     finite = [index for index, token in enumerate(tokens) if getattr(token, "tag", "") == "EF"]
     if not finite:
