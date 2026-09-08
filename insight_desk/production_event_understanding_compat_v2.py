@@ -134,6 +134,16 @@ def _is_copular_definition(action: str, morphology: MorphologyPort | None) -> bo
     return bool(predicate_tags) and predicate_tags[-1] in {"VCP", "VCN"}
 
 
+def _is_report_without_event(action: str, morphology: MorphologyPort | None) -> bool:
+    """A reporting predicate needs an embedded event to carry news meaning."""
+    tokens = _morphology_tokens(action, morphology) or ()
+    verbs = [str(getattr(token, "normalized", "")) for token in tokens
+             if getattr(token, "tag", "") in {"VV", "XSV"}]
+    reporting_verbs = {"전하", "말하", "밝히", "알리"}
+    return bool(verbs and verbs[-1] in reporting_verbs
+                and not any(verb not in reporting_verbs for verb in verbs[:-1]))
+
+
 def _evidence_is_local(
     event: CandidateEvent,
     fact: EventFact,
@@ -214,6 +224,15 @@ def assess_compatibility_event_understanding(
             topic_relation=TopicRelation.BACKGROUND,
             publishable_event=False,
             reasons=("copular_definition_context",),
+        )
+
+    if _is_report_without_event(fact.action, morphology):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("report_without_independent_event",),
         )
 
     if _is_analytical_predicate(fact.action):
