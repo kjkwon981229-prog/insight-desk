@@ -208,6 +208,7 @@ class CanonicalEventRecoveryGenerator:
             headline=proposition,
             summary=proposition,
             evidence_ids=(evidence_id,),
+            source_proposition=request.evidence[evidence_id],
         )
 
 

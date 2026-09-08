@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from enum import StrEnum
 from typing import Mapping, Protocol
 
@@ -26,33 +26,12 @@ def _first_repeated_korean_headline_token(text: str) -> str | None:
     untouched so this gate does not pretend to be a general language model.
     """
 
-    # An exact quoted name can repeat the surrounding event's category noun.
-    # Keep repetition checks within each quoted scope and across all unquoted
-    # fragments. Source preservation separately rejects invented quoted text.
-    quote_pairs = {"'": "'", '"': '"', "‘": "’", "“": "”"}
-    scopes = [""]
-    closing = None
-    for char in text:
-        if closing is not None:
-            if char == closing:
-                closing = None
-            else:
-                scopes[-1] += char
-        elif char in quote_pairs:
-            closing = quote_pairs[char]
-            scopes.append("")
-            scopes[0] += " "
-        else:
-            scopes[0] += char
-    if closing is not None:
-        scopes = [text]
-    for scope in scopes:
-        seen: set[str] = set()
-        for match in _HEADLINE_KOREAN_TOKEN_RE.finditer(scope):
-            token = match.group(0)
-            if token in seen:
-                return token
-            seen.add(token)
+    seen: set[str] = set()
+    for match in _HEADLINE_KOREAN_TOKEN_RE.finditer(text):
+        token = match.group(0)
+        if token in seen:
+            return token
+        seen.add(token)
     return None
 
 
@@ -139,7 +118,9 @@ class GeneratedDraft:
     summary: str
     evidence_ids: tuple[str, ...]
 
-    def __post_init__(self) -> None:
+    source_proposition: InitVar[EvidenceSpan | None] = None
+
+    def __post_init__(self, source_proposition: EvidenceSpan | None) -> None:
         if not self.event_id.strip():
             raise GenerationContractError("event_id must be non-empty")
         headline = self.headline.strip()
@@ -149,7 +130,17 @@ class GeneratedDraft:
         if not summary:
             raise GenerationContractError("summary must be non-empty")
         repeated_token = _first_repeated_korean_headline_token(headline)
-        if repeated_token is not None:
+        if source_proposition is not None and (
+            not isinstance(source_proposition, EvidenceSpan)
+            or self.evidence_ids != (source_proposition.evidence_id,)
+            or self.headline != source_proposition.text
+            or self.summary != source_proposition.text
+        ):
+            raise GenerationContractError("source draft must exactly preserve its cited proposition")
+        # Repetition introduced by generation remains invalid. The canonical route
+        # can prove that repeated nouns were already present in its exact evidence;
+        # all later preservation, provenance and publication checks still apply.
+        if repeated_token is not None and source_proposition is None:
             raise GenerationContractError(
                 f"headline repeats Korean lexical token: {repeated_token}"
             )
