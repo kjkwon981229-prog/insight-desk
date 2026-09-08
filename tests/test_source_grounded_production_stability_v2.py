@@ -246,6 +246,16 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
             case_id = str(expected["case_id"])
             with self.subTest(case_id=case_id):
                 outcome = outcomes[case_id]
+                # These synthetic understanding fixtures identify a complete central
+                # event, but cannot establish the configured topic in its exact span.
+                # A later Hanwha lineup is not evidence that Park belongs to Hanwha;
+                # an unnamed hiring body is not proof of civil-service recruitment.
+                if case_id in {
+                    "regression-kbo-later-lineup-context",
+                    "regression-psat-definition-context",
+                }:
+                    self.assertFalse(outcome.published)
+                    continue
                 self.assertTrue(outcome.published)
                 self.assertTrue(outcome.exact_provenance)
                 self.assertEqual(
