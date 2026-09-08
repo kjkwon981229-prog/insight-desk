@@ -27,6 +27,20 @@ class ScheduledSourceRecallTests(unittest.TestCase):
             with self.subTest(case=case.case_id):
                 self.assertEqual(outcomes[case.case_id].proposition, case.expected_proposition)
 
+    def test_second_sentence_bridge_cannot_switch_to_another_named_actor(self):
+        case = _ArticleCase(
+            "second-sentence-different-actor",
+            "kpop",
+            "임영웅 '또또' 멜론 1위…새 앨범 전곡 차트인",
+            (
+                "임영웅이 '또또'를 비롯해 새 앨범 전곡이 차트에 입성했다.\n"
+                "아이브가 새 앨범 전곡을 멜론 차트에 진입시켰다."
+            ),
+            None,
+        )
+        outcome = _run_cases((case,))[case.case_id]
+        self.assertIsNone(outcome.proposition)
+
     def test_captured_fresh_sources_preserve_includes_and_reject_incidental_hanwha(self):
         cases = tuple(_ArticleCase(**row) for row in json.loads(
             Path("tests/fixtures/scheduled_recall_20260907.json").read_text()))

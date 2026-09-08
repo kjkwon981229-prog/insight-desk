@@ -311,6 +311,22 @@ def _first_sentence_end(
     return _first_sentence_bounds(body, morphology, title=title)[1]
 
 
+def _next_source_sentence_end(body: str, *, after: int) -> int:
+    """Return the boundary of the next non-empty source sentence or block."""
+
+    cursor = max(0, after)
+    while cursor < len(body) and body[cursor].isspace():
+        cursor += 1
+    if cursor >= len(body):
+        return len(body)
+    boundaries = [
+        position + 1
+        for position, char in enumerate(body[cursor:])
+        if char in ".!?…\n"
+    ]
+    return cursor + (min(boundaries) if boundaries else len(body) - cursor)
+
+
 _TITLE_CONTENT_TAG_PREFIXES = (
     "NN",
     "NR",
@@ -400,6 +416,52 @@ def _proposition_title_alignment(
 
 def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
     return span.field.value == "body" and span.start < lead_end
+
+
+def _title_leading_actor_continues_lead(
+    article: RawArticle,
+    span: EvidenceSpan,
+    morphology: MorphologyPort | None,
+    *,
+    lead_text: str,
+) -> bool:
+    """Bind an early elaboration to the same named actor in both title and source lead.
+
+    This is intentionally narrower than general entity overlap.  Only a named subject occurring
+    before the proposition's first predicate qualifies, and its literal source surface must also
+    occur in the immediately preceding lead.  It cannot turn a later different-actor fact into the
+    article's central event.
+    """
+
+    tokens = _morphology_tokens(span.text, morphology)
+    if not tokens:
+        return False
+    title = unescape(article.title)
+    lead_key = _source_key(unescape(lead_text))
+    for index, token in enumerate(tokens):
+        tag = str(getattr(token, "tag", ""))
+        if tag.startswith(("V", "XSV", "XSA")):
+            return False
+        if not (
+            tag == "JKS"
+            or (
+                tag == "JX"
+                and str(getattr(token, "surface", "")) in {"은", "는"}
+            )
+        ):
+            continue
+        if index == 0:
+            return False
+        actor = tokens[index - 1]
+        actor_tag = str(getattr(actor, "tag", ""))
+        actor_surface = str(getattr(actor, "surface", "")).strip()
+        if actor_tag not in {"NNP", "SL"} or len(actor_surface) < 2:
+            return False
+        return bool(
+            re.search(r"(?<!\w)" + re.escape(actor_surface) + r"(?!\w)", title)
+            and _source_key(actor_surface) in lead_key
+        )
+    return False
 
 
 def _title_actor_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
@@ -658,6 +720,55 @@ def assess_compatibility_article_understanding(
             ):
                 winner = lead_events[0]
         failure_reason = "article_centrality_conflict"
+
+    lead_has_extracted_fact = any(
+        span is not None
+        and span.field.value == "body"
+        and span.start < lead_end
+        and span.end > lead_start
+        for fact in facts.values()
+        for evidence_id in fact.evidence_ids
+        for span in (evidence.get(evidence_id),)
+    )
+    if winner is None and not lead_events and not lead_has_extracted_fact:
+        # A malformed/unparseable source lead can still be followed immediately by a clean,
+        # independently extractable elaboration of that same event.  Recover only when both
+        # source sentences are strongly title-bound, the elaboration is the unique best title
+        # match in the article, and its leading named actor is literal in the title and lead.
+        title_units = _title_content_units(article, morphology)
+        lead_text = article.body[lead_start:lead_end]
+        next_end = _next_source_sentence_end(article.body, after=lead_end)
+        immediate = [
+            event
+            for event in eligible
+            if frozen_propositions[event.event_id].field.value == "body"
+            and lead_end <= frozen_propositions[event.event_id].start < next_end
+        ]
+        if title_units and immediate:
+            alignment = {
+                event.event_id: _proposition_title_alignment(
+                    frozen_propositions[event.event_id].text,
+                    title_units,
+                )
+                for event in eligible
+            }
+            lead_alignment = _proposition_title_alignment(lead_text, title_units)
+            best = max(alignment.values())
+            best_events = [event for event in eligible if alignment[event.event_id] == best]
+            if (
+                len(immediate) == 1
+                and len(best_events) == 1
+                and best_events[0] == immediate[0]
+                and lead_alignment[0] >= 4
+                and best[0] >= 4
+                and _title_leading_actor_continues_lead(
+                    article,
+                    frozen_propositions[immediate[0].event_id],
+                    morphology,
+                    lead_text=lead_text,
+                )
+            ):
+                winner = immediate[0]
 
     if winner is None:
         bound = [event for event in eligible if _title_event_frame_bound(
