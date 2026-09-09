@@ -15,7 +15,6 @@ from insight_desk.production_event_understanding_compat_v2 import (
     _first_sentence_end,
     _morphology_tokens,
 )
-from insight_desk.semantic.tooling import KiwiMorphologyHelper
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
 from insight_desk.production_replay_v2 import _recorded_edges
 from insight_desk.semantic.pipeline import SemanticArticleResult
@@ -59,7 +58,16 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
                          len(prefix + sentence))
 
     def test_nominal_display_decks_are_skipped_but_subordinate_context_is_not(self):
-        morphology = KiwiMorphologyHelper()
+        class StructuralMorphology:
+            def analyze(self, text):
+                stripped = text.strip()
+                if stripped.endswith(("지원", "추진")):
+                    return (SimpleNamespace(tag="NNG"),)
+                if stripped == "업계에 따르면":
+                    return (SimpleNamespace(tag="VV"), SimpleNamespace(tag="EC"))
+                return (SimpleNamespace(tag="VV"),)
+
+        morphology = StructuralMorphology()
         decks = (
             "분산된 검진 기록 AI가 분석…간호사 반복 업무 줄이고 고객 건강관리 집중 운영 지원\n"
             "향후 차움 넘어 차병원 검진센터까지 확대 추진\n"
