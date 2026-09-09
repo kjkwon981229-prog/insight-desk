@@ -398,10 +398,69 @@ def _first_sentence_bounds(
                     for token in tokens
                 )
             )
+            # A display deck can join two headline fragments with an ellipsis.  The first
+            # fragment may carry a finite ending (for example ``상징성 커…``), while the final
+            # fragment is still an unterminated nominal caption.  Judge only the post-ellipsis
+            # tail before treating that internal finite ending as article prose.  A complete
+            # sentence after the ellipsis retains EF and is never skipped.
+            ellipsis_nominal_tail = False
+            if "…" in stripped:
+                tail = stripped.rsplit("…", 1)[-1].strip()
+                tail_tokens = _morphology_tokens(tail, morphology)
+                tail_syntactic = tuple(
+                    token
+                    for token in (tail_tokens or ())
+                    if not str(getattr(token, "tag", "")).startswith("S")
+                )
+                tail_lexical = tuple(
+                    token
+                    for token in tail_syntactic
+                    if not str(getattr(token, "tag", "")).startswith("J")
+                )
+                tail_final_tag = (
+                    str(getattr(tail_syntactic[-1], "tag", ""))
+                    if tail_syntactic
+                    else ""
+                )
+                tail_final_lexical_tag = (
+                    str(getattr(tail_lexical[-1], "tag", ""))
+                    if tail_lexical
+                    else ""
+                )
+                tail_trailing_particle = (
+                    tail_final_tag.startswith("J")
+                    and (
+                        tail_final_lexical_tag.startswith(("N", "XSN"))
+                        or tail_final_lexical_tag in {"SL", "SH", "SN", "XR"}
+                    )
+                    and not any(
+                        str(getattr(token, "tag", "")).startswith(
+                            ("V", "E", "XSV", "XSA")
+                        )
+                        for token in (tail_tokens or ())
+                    )
+                )
+                ellipsis_nominal_tail = bool(
+                    tail_syntactic
+                    and not any(
+                        str(getattr(token, "tag", "")) == "EF"
+                        for token in (tail_tokens or ())
+                    )
+                    and (
+                        tail_final_tag.startswith(("N", "XSN"))
+                        or tail_final_tag in {"SL", "SH", "SN", "XR"}
+                        or tail_trailing_particle
+                    )
+                )
             if (
                 syntactic
                 and not stripped.endswith((".", "!", "?", "。", "！", "？", "…"))
-                and not any(str(getattr(token, "tag", "")) == "EF" for token in tokens)
+                and (
+                    not any(
+                        str(getattr(token, "tag", "")) == "EF" for token in tokens
+                    )
+                    or ellipsis_nominal_tail
+                )
                 and (
                     final_tag.startswith(("N", "XSN"))
                     or final_tag in {"SL", "SH", "SN", "XR"}

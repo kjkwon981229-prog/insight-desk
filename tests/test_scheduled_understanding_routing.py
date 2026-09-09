@@ -61,7 +61,24 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
         class StructuralMorphology:
             def analyze(self, text):
                 stripped = text.strip()
-                if stripped.endswith(("지원", "추진", "강점’")):
+                if stripped == "90년 넘게 못 풀어 상징성 커…과학매체 “수학계 가장 중요한 날”":
+                    return (
+                        SimpleNamespace(tag="VV"),
+                        SimpleNamespace(tag="EF"),
+                        SimpleNamespace(tag="NNG"),
+                    )
+                if stripped == "과학매체 “수학계 가장 중요한 날”":
+                    return (SimpleNamespace(tag="NNG"),)
+                if stripped in {
+                    "시장 기대 커…회사는 안전성을 검증한다고 밝혔다",
+                    "회사는 안전성을 검증한다고 밝혔다",
+                }:
+                    return (
+                        SimpleNamespace(tag="NNG"),
+                        SimpleNamespace(tag="XSV"),
+                        SimpleNamespace(tag="EF"),
+                    )
+                if stripped.endswith(("지원", "추진", "강점’", "증명", "교차")):
                     return (SimpleNamespace(tag="NNG"),)
                 if stripped.endswith("과제로"):
                     return (SimpleNamespace(tag="NNG"), SimpleNamespace(tag="JKB"))
@@ -89,6 +106,29 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
         start, end = _first_sentence_bounds(particle_deck + meta_proposition, morphology)
         self.assertEqual(start, len(particle_deck))
         self.assertEqual((particle_deck + meta_proposition)[start:end], meta_proposition)
+
+        composite_decks = (
+            "오픈AI, 유체 속도 무한대로 커지는 ‘특이점’ 발생 가능성 증명\n"
+            "90년 넘게 못 풀어 상징성 커…과학매체 “수학계 가장 중요한 날”\n"
+            "‘인간 전문성 소실’ 비관, 수학 능력 ‘상향평준화’ 가능성 낙관 교차\n"
+        )
+        reported_proposition = (
+            "오픈AI가 차세대 인공지능(AI) 모델을 이용해 수학계 7대 난제 중 하나인 "
+            "‘나비에-스토크스 방정식’의 해법을 찾았다고 발표했다."
+        )
+        start, end = _first_sentence_bounds(
+            composite_decks + reported_proposition, morphology
+        )
+        self.assertEqual(start, len(composite_decks))
+        self.assertEqual(
+            (composite_decks + reported_proposition)[start:end], reported_proposition
+        )
+
+        finite_after_ellipsis = "시장 기대 커…회사는 안전성을 검증한다고 밝혔다\n"
+        start, _ = _first_sentence_bounds(
+            finite_after_ellipsis + proposition, morphology
+        )
+        self.assertEqual(start, 0)
 
         context = "업계에 따르면\n"
         start, end = _first_sentence_bounds(context + proposition, morphology)
