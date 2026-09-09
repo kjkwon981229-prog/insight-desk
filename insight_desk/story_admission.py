@@ -57,6 +57,18 @@ class StoryAdmissionDecision:
 
 
 _AI_TECH_TOPIC_ID = "ai_tech"
+_ROUTINE_PRESENCE_TOPICS = frozenset(
+    {
+        "AI·테크",
+        "AI 테크",
+        "ai_tech",
+        "경제",
+        "경제·투자",
+        "economy",
+        "공무원 시험",
+        "psat_recruitment",
+    }
+)
 _KBO_TOPIC_NAMES = frozenset({"KBO·한화 이글스", "kbo_hanwha"})
 _KBO_TOPIC_ID = "kbo_hanwha"
 _KPOP_TOPIC_NAMES = frozenset({"엔터·음악·K-POP", "kpop"})
@@ -222,6 +234,20 @@ def _biographical_text(value: str) -> bool:
         any(cue in normalized for cue in _BIO_COMPOSITION_CUES)
         and any(cue in normalized for cue in _BIO_REPUTATION_CUES)
     )
+
+
+def _routine_presence_only(*, topic: str, value: str) -> bool:
+    """Reject a bare institutional presence event with no source-literal outcome.
+
+    A visit or attendance is a grammatically complete event, but in the non-entertainment
+    briefing lanes it is not independently newsworthy unless the same proposition ends in a
+    substantive action (for example a launch, agreement, investment, order, or result).  The
+    anchored predicate shape deliberately leaves those compound propositions untouched.
+    """
+
+    if topic not in _ROUTINE_PRESENCE_TOPICS:
+        return False
+    return detectors.routine_presence_without_outcome(value)
 
 
 def _stale_sports_retrospective(value: str, *, now: datetime) -> bool:
@@ -546,6 +572,8 @@ def evaluate_story_admission(
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL, _MATERIAL_CONDITIONAL)
         if detectors.non_event_analytical_text(text):
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
+        if _routine_presence_only(topic=topic, value=text):
+            reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
         if _biographical_text(text):
             reject(StoryAdmissionReason.BIOGRAPHY, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
         stale, stale_codes = _freshness_codes(text, now=reference)
@@ -578,6 +606,8 @@ def evaluate_story_admission(
     if detectors.conditional_analytical_text(visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL)
     if detectors.non_event_analytical_text(visible_text):
+        reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT)
+    if _routine_presence_only(topic=topic, value=visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT)
     if _biographical_text(visible_text):
         reject(StoryAdmissionReason.BIOGRAPHY, _FQ_NON_EVENT)

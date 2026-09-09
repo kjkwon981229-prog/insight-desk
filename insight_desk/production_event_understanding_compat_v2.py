@@ -21,6 +21,7 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingStatus,
 )
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
+from insight_desk.feed_quality_detectors import routine_presence_without_outcome
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
 
 
@@ -69,6 +70,8 @@ _ANALYTICAL_PREDICATES = (
     "효과가 있을",
     "효과가 기대",
 )
+
+_ROUTINE_PRESENCE_TOPICS = frozenset({"ai_tech", "economy", "psat_recruitment"})
 
 
 def _normalized(text: str) -> str:
@@ -234,6 +237,18 @@ def assess_compatibility_event_understanding(
             topic_relation=TopicRelation.BACKGROUND,
             publishable_event=False,
             reasons=("report_without_independent_event",),
+        )
+
+    if (
+        event.topic_id in _ROUTINE_PRESENCE_TOPICS
+        and routine_presence_without_outcome(fact.action)
+    ):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("routine_presence_without_outcome",),
         )
 
     if _is_analytical_predicate(fact.action):

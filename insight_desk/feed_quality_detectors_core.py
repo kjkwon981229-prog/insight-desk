@@ -568,6 +568,14 @@ _CONCRETE_EVENT_PREDICATE_CUES = (
     "사용을 시작했다",
     "활용을 시작했다",
 )
+_ROUTINE_PRESENCE_ONLY_RE = re.compile(
+    r"(?:"
+    r"방문(?:했|했다)|참석(?:했|했다)|참관(?:했|했다)|시찰(?:했|했다)|"
+    r"둘러봤(?:다)?|찾아갔(?:다)?"
+    r")"
+    r"(?:다고\s+(?:(?:이날|오늘|어제|\d{1,2}일)\s+)?"
+    r"(?:밝혔다|전했다|설명했다|알렸다))?$"
+)
 _PUBLICATION_SELF_REFERENCE_RE = re.compile(r"^(?:본지|본보)(?:는|가)\s+")
 _PUBLICATION_RETROSPECTIVE_STRONG_CUES = (
     "앞서 ",
@@ -1204,6 +1212,17 @@ def non_event_analytical_text(value: str) -> bool:
         and any(cue in normalized for cue in _DESCRIPTIVE_PREDICATE_CUES)
         and not any(cue in normalized for cue in _CONCRETE_EVENT_PREDICATE_CUES)
     )
+
+
+def routine_presence_without_outcome(value: str) -> bool:
+    """Detect a bare visit/attendance predicate with no same-proposition outcome.
+
+    The expression is end-anchored: a visit followed by a launch, agreement, investment,
+    decision, order, or result ends in that substantive predicate and is therefore not matched.
+    """
+
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    return _ROUTINE_PRESENCE_ONLY_RE.search(normalized) is not None
 
 
 def conditional_analytical_text(value: str) -> bool:
