@@ -219,7 +219,14 @@ def _domain(url: str) -> str:
 
 
 def _source_group_key(candidate: ArticleCandidate) -> str:
-    candidate_id = candidate.candidate_id[:-4] if candidate.candidate_id.endswith("-alt") else candidate.candidate_id
+    candidate_id = candidate.candidate_id
+    if candidate_id.endswith("-alt"):
+        # Historical alternate ids created before URL-bound article identity.
+        candidate_id = candidate_id[:-4]
+    elif "-alt-" in candidate_id:
+        parent_id, marker, alternate_digest = candidate_id.rpartition("-alt-")
+        if parent_id and marker and re.fullmatch(r"[0-9a-f]{16}", alternate_digest):
+            candidate_id = parent_id
     return hashlib.sha256(candidate_id.encode("utf-8")).hexdigest()
 
 
