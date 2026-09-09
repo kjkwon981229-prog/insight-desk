@@ -61,8 +61,10 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
         class StructuralMorphology:
             def analyze(self, text):
                 stripped = text.strip()
-                if stripped.endswith(("지원", "추진")):
+                if stripped.endswith(("지원", "추진", "강점’")):
                     return (SimpleNamespace(tag="NNG"),)
+                if stripped.endswith("과제로"):
+                    return (SimpleNamespace(tag="NNG"), SimpleNamespace(tag="JKB"))
                 if stripped == "업계에 따르면":
                     return (SimpleNamespace(tag="VV"), SimpleNamespace(tag="EC"))
                 return (SimpleNamespace(tag="VV"),)
@@ -76,6 +78,17 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
         start, end = _first_sentence_bounds(decks + proposition, morphology)
         self.assertEqual(start, len(decks))
         self.assertEqual((decks + proposition)[start:end], proposition)
+
+        particle_deck = (
+            "30억명 이상 이용자 ‘유통망 강점’\n"
+            "AI 서비스 안정성 검증이 과제로\n"
+        )
+        meta_proposition = (
+            "메타가 e메일 발송부터 여행 예약·결제까지 해주는 인공지능(AI) 비서를 공개했다."
+        )
+        start, end = _first_sentence_bounds(particle_deck + meta_proposition, morphology)
+        self.assertEqual(start, len(particle_deck))
+        self.assertEqual((particle_deck + meta_proposition)[start:end], meta_proposition)
 
         context = "업계에 따르면\n"
         start, end = _first_sentence_bounds(context + proposition, morphology)

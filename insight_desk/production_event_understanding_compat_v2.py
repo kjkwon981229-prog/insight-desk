@@ -379,6 +379,25 @@ def _first_sentence_bounds(
                 if not str(getattr(token, "tag", "")).startswith("S")
             )
             final_tag = str(getattr(syntactic[-1], "tag", "")) if syntactic else ""
+            lexical = tuple(
+                token
+                for token in syntactic
+                if not str(getattr(token, "tag", "")).startswith("J")
+            )
+            final_lexical_tag = (
+                str(getattr(lexical[-1], "tag", "")) if lexical else ""
+            )
+            trailing_particle_deck = (
+                final_tag.startswith("J")
+                and (
+                    final_lexical_tag.startswith(("N", "XSN"))
+                    or final_lexical_tag in {"SL", "SH", "SN", "XR"}
+                )
+                and not any(
+                    str(getattr(token, "tag", "")).startswith(("V", "E", "XSV", "XSA"))
+                    for token in tokens
+                )
+            )
             if (
                 syntactic
                 and not stripped.endswith((".", "!", "?", "。", "！", "？", "…"))
@@ -386,6 +405,7 @@ def _first_sentence_bounds(
                 and (
                     final_tag.startswith(("N", "XSN"))
                     or final_tag in {"SL", "SH", "SN", "XR"}
+                    or trailing_particle_deck
                 )
             ):
                 offset += len(line)
