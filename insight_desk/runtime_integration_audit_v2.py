@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import socket
 import ssl
+import time
 from typing import Callable, Mapping
 import urllib.error
 import urllib.parse
@@ -28,6 +29,7 @@ from insight_desk.acquisition.discovery import (
 )
 from insight_desk.api import EcosClient, KosisClient, NaverApiClient, OpenDartClient
 from insight_desk.api.naver import NaverCredentials
+from insight_desk.core import FailureKind
 
 
 _DEFAULT_CONFIG = Path("config/authoritative_sources.json")
@@ -62,6 +64,7 @@ class IntegrationProbeSpec:
     required: bool = False
     inactive_status: str = _DISABLED
     probe: Callable[[], None] | None = None
+    retry_delays: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.integration_id or not self.role or not self.scope:
@@ -70,6 +73,8 @@ class IntegrationProbeSpec:
             raise ValueError(f"{self.integration_id}: active configured integration needs a probe")
         if self.required and not self.active:
             raise ValueError(f"{self.integration_id}: required integration must be active")
+        if any(delay < 0 for delay in self.retry_delays):
+            raise ValueError(f"{self.integration_id}: retry delays must be non-negative")
 
 
 def _url_error_kind(exc: urllib.error.URLError) -> str:
@@ -103,6 +108,31 @@ def _error_kind(exc: Exception) -> str:
     return type(exc).__name__
 
 
+def _retryable_probe_failure(exc: Exception) -> bool:
+    """Retry only failures that can change without a configuration or code change."""
+
+    if isinstance(exc, DiscoveryError):
+        return exc.failure_kind in {FailureKind.TRANSIENT_PROVIDER, FailureKind.INVALID_OUTPUT}
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in {408, 425, 429, 500, 502, 503, 504}
+    if isinstance(exc, urllib.error.URLError):
+        return isinstance(
+            exc.reason,
+            (
+                TimeoutError,
+                socket.timeout,
+                socket.gaierror,
+                ssl.SSLError,
+                ConnectionError,
+                OSError,
+            ),
+        )
+    if isinstance(exc, (TimeoutError, socket.timeout, ssl.SSLError, ConnectionError, OSError)):
+        return True
+    cause = exc.__cause__
+    return isinstance(cause, Exception) and cause is not exc and _retryable_probe_failure(cause)
+
+
 def evaluate_integration_probes(
     specs: tuple[IntegrationProbeSpec, ...],
 ) -> dict[str, object]:
@@ -124,16 +154,23 @@ def evaluate_integration_probes(
                 unconfigured_optional.append(spec.integration_id)
         else:
             attempted = True
-            calls = 1
             assert spec.probe is not None
-            try:
-                spec.probe()
-            except Exception as exc:  # no provider detail or credential-bearing URL enters the audit
-                status = _FAIL
-                error_kind = _error_kind(exc)
-                configured_failures.append(spec.integration_id)
-            else:
-                status = _PASS
+            status = _FAIL
+            for attempt in range(len(spec.retry_delays) + 1):
+                calls += 1
+                try:
+                    spec.probe()
+                except Exception as exc:  # no credential-bearing detail enters the audit
+                    error_kind = _error_kind(exc)
+                    if attempt < len(spec.retry_delays) and _retryable_probe_failure(exc):
+                        time.sleep(spec.retry_delays[attempt])
+                        continue
+                    configured_failures.append(spec.integration_id)
+                    break
+                else:
+                    status = _PASS
+                    error_kind = None
+                    break
 
         if spec.required and status != _PASS:
             configured_failures.append(spec.integration_id)
@@ -146,6 +183,8 @@ def evaluate_integration_probes(
             "required": spec.required,
             "attempted": attempted,
             "calls": calls,
+            "attempt_limit": len(spec.retry_delays) + 1,
+            "recovered_after_retry": status == _PASS and calls > 1,
             "status": status,
             "error_kind": error_kind,
         }
@@ -184,6 +223,12 @@ def _probe_naver(client: NaverApiClient) -> None:
 
 def _probe_bing() -> None:
     BingNewsRssDiscovery().search("인공지능", topic_id="integration_probe", limit=1)
+
+
+# Separate provider attempts into three windows. KOSIS already retries transport calls within one
+# window; these delays protect the daily workflow from a short provider-wide outage while keeping
+# every configured integration fail-closed when no real response succeeds.
+_LIVE_PROBE_RETRY_DELAYS = (15.0, 45.0)
 
 
 def _probe_gdelt() -> None:
@@ -321,6 +366,7 @@ def build_runtime_integration_specs(
             active=True,
             required=True,
             probe=_probe_bing,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "naver_news_search",
@@ -329,6 +375,7 @@ def build_runtime_integration_specs(
             configured=naver_client is not None,
             active=naver_client is not None,
             probe=(lambda: _probe_naver(naver_client)) if naver_client is not None else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "gdelt_doc",
@@ -338,6 +385,7 @@ def build_runtime_integration_specs(
             active=gdelt_enabled,
             inactive_status=_DISABLED,
             probe=_probe_gdelt if gdelt_enabled else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "ecos",
@@ -346,6 +394,7 @@ def build_runtime_integration_specs(
             configured=ecos_client is not None,
             active=_enabled(ecos_config),
             probe=(lambda: _probe_ecos(ecos_client, ecos_config)) if ecos_client else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "kosis",
@@ -354,6 +403,7 @@ def build_runtime_integration_specs(
             configured=kosis_client is not None,
             active=_enabled(kosis_config),
             probe=(lambda: _probe_kosis(kosis_client, kosis_config)) if kosis_client else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "opendart",
@@ -362,6 +412,7 @@ def build_runtime_integration_specs(
             configured=dart_client is not None,
             active=_enabled(dart_config),
             probe=(lambda: _probe_opendart(dart_client, dart_config)) if dart_client else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "push_worker_health",
@@ -370,6 +421,7 @@ def build_runtime_integration_specs(
             configured=bool(push_worker_url),
             active=bool(push_worker_url),
             probe=(lambda: _probe_push_worker(push_worker_url)) if push_worker_url else None,
+            retry_delays=_LIVE_PROBE_RETRY_DELAYS,
         ),
         IntegrationProbeSpec(
             "groq_generation",

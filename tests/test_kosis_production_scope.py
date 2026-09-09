@@ -33,7 +33,11 @@ class KosisProductionScopeTests(unittest.TestCase):
         self.assertIsNotNone(kosis.probe)
 
     def test_active_configured_kosis_failure_remains_fail_closed(self) -> None:
+        calls = 0
+
         def fail() -> None:
+            nonlocal calls
+            calls += 1
             raise TimeoutError("synthetic timeout")
 
         payload = evaluate_integration_probes(
@@ -45,13 +49,16 @@ class KosisProductionScopeTests(unittest.TestCase):
                     configured=True,
                     active=True,
                     probe=fail,
+                    retry_delays=(0.0,),
                 ),
             )
         )
         record = payload["integrations"]["kosis"]
         self.assertEqual(record["status"], "FAIL")
         self.assertTrue(record["attempted"])
-        self.assertEqual(record["calls"], 1)
+        self.assertEqual(calls, 2)
+        self.assertEqual(record["calls"], 2)
+        self.assertFalse(record["recovered_after_retry"])
         self.assertIn("kosis", payload["configured_failures"])
         self.assertFalse(payload["all_configured_operational_routes_passed"])
 
