@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+import re
 
 from .facts import FactDraft, FactExtractionRequest
 from .tooling import KiwiMorphologyHelper, MorphologySourceOffsetError, MorphologyToken
@@ -15,6 +16,10 @@ _PREDICATE_TAGS = frozenset({"VV", "VA", "XSV", "VCP", "VCN"})
 # This is deliberately tiny: each nominal structure must come from a measured locked failure.
 # It is not a general headline/event-type vocabulary.
 _EXPLICIT_NOMINAL_ACTIONS = ("선발투수 예고",)
+_LEADING_REPORTER_CREDIT_RE = re.compile(
+    r"^[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)\s*(?:=|[|｜┃│])\s*"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +154,14 @@ def _structural_proposition_start(
 
     if subject.start <= 0:
         return 0
+    reporter_credit = _LEADING_REPORTER_CREDIT_RE.match(text)
+    if (
+        reporter_credit is not None
+        and reporter_credit.end() <= subject.start
+    ):
+        # Keep every exact source byte after the explicit credit.  A compound company descriptor
+        # can contain punctuation before the grammatical subject (for example ``교통·모빌리티``).
+        return reporter_credit.end()
     separator = max(text.rfind(char, 0, subject.start) for char in "|┃│")
     closed_attribution = False
     if separator < 0:
@@ -180,6 +193,9 @@ def _structural_proposition_start(
 
 def _predicate_fact_parts(text: str, tokens: tuple[MorphologyToken, ...]) -> _LiteralFactParts | None:
     subject_tokens = tokens
+    reporter_credit = _LEADING_REPORTER_CREDIT_RE.match(text)
+    if reporter_credit is not None:
+        subject_tokens = tuple(token for token in tokens if token.start >= reporter_credit.end())
     # Closed attribution is outside the clause. Resolve it before case roles so
     # a reporter name tokenized as noun + 은 cannot become the event's subject.
     for opener, closer in (("[", "]"), ("(", ")")):

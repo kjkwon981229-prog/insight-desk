@@ -154,6 +154,8 @@ _PREDICATE_LED_CONDITIONAL_HEADLINE_RE = re.compile(
 _VISIBLE_BYLINE_RE = re.compile(
     r"(?:"
     r"^[\(（\[][^\)）\]]{0,80}(?:기자|특파원|뉴스)[\)）\]]\s*"
+    r"|^[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)\s*=\s*"
     r"|(?:^|[\s,])(?:[가-힣A-Za-z0-9·]+(?:뉴스|일보|신문|방송|통신|TV))\s+"
     r"[가-힣]{2,4}\s+(?:기자|특파원)(?:가|이)?\s+(?:전했다|보도했다)(?:[.!?。！？]|$)"
     r")"
@@ -1223,6 +1225,25 @@ def routine_presence_without_outcome(value: str) -> bool:
 
     normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
     return _ROUTINE_PRESENCE_ONLY_RE.search(normalized) is not None
+
+
+def nonassertive_interrogative_text(value: str) -> bool:
+    """Return true when a source proposition asks a question instead of asserting an event.
+
+    Question punctuation is definitive.  Korean source leads also commonly render the
+    ``-ㄹ까/-을까`` interrogative ending with a period; the preceding Hangul syllable then has a
+    final rieul (jongseong 8).  This structural check does not infer uncertainty from ordinary
+    forecasts or announced future events.
+    """
+
+    normalized = " ".join(value.split()).rstrip()
+    if normalized.endswith(("?", "？")):
+        return True
+    normalized = normalized.rstrip(".!。！").rstrip()
+    if len(normalized) < 2 or not normalized.endswith("까"):
+        return False
+    preceding = ord(normalized[-2]) - 0xAC00
+    return 0 <= preceding < 11172 and preceding % 28 == 8
 
 
 def conditional_analytical_text(value: str) -> bool:

@@ -127,5 +127,32 @@
     "source_url": "https://www.m-i.kr/news/articleView.html?idxno=1411594",
     "source_name": "www.m-i.kr",
     "expected_proposition": null
+  },
+  {
+    "case_id": "fresh-20260909-corner-byline-ai-include",
+    "topic": "ai_tech",
+    "title": "≪브레이크뉴스≫ 대구대, 국가 사이버 안보 위한 AI 안전성 검증 맡는다",
+    "body": "【브레이크뉴스 대구】진예솔 기자=대구대학교가 국가 사이버 안보 역량 강화를 위한 초거대 인공지능(AI) 파운데이션 모델 개발 국책사업에 참여한다.\n8일 대구대는 과학기술정보통신부가 주도하는 ‘국가 사이버 안보 역량 내재화를 위한 AI 파운데이션 모델 개발’ 사업의 참여기관으로 최종 선정됐다고 밝혔다.",
+    "source_url": "http://www.breaknews.com/1235113",
+    "source_name": "www.breaknews.com",
+    "expected_proposition": "대구대학교가 국가 사이버 안보 역량 강화를 위한 초거대 인공지능(AI) 파운데이션 모델 개발 국책사업에 참여한다."
+  },
+  {
+    "case_id": "fresh-20260909-generated-summary-block-ai-include",
+    "topic": "ai_tech",
+    "title": "에스트래픽, 'AI 기반 도시운영 컨트롤타워' 공개",
+    "body": "AI 핵심 요약\nbeta\n- 에스트래픽이 9일 WSCE 2026서 AI 도시운영모델 공개했다\n- 원주형 K-AI CITY PMO 맡아 도시지능센터 구축 추진했다\n- 교통·철도 확장과 자사주 소각 등 주주환원도 이어갔다\n!AI가 자동 생성한 요약으로 정확하지 않을 수 있어요.\n[서울=뉴스핌] 양태훈 기자 = 교통·모빌리티 인프라 전문기업 에스트래픽이 부산 벡스코에서 열리는 '2026 월드 스마트시티 엑스포(WSCE 2026)'에 강원권 대표사로 참가해 '인공지능(AI) 기반 도시운영 컨트롤타워 모델'을 공개한다.\n에스트래픽은 오는 11일까지 열리는 이번 행사에서 국토교통부의 'AI 특화 시범도시(K-AI CITY)' 사업을 기반으로 한 AI 기반 통합 도시운영체계를 선보인다고 9일 밝혔다.",
+    "source_url": "https://www.newspim.com/news/view/20260909000216",
+    "source_name": "www.newspim.com",
+    "expected_proposition": "교통·모빌리티 인프라 전문기업 에스트래픽이 부산 벡스코에서 열리는 '2026 월드 스마트시티 엑스포(WSCE 2026)'에 강원권 대표사로 참가해 '인공지능(AI) 기반 도시운영 컨트롤타워 모델'을 공개한다."
+  },
+  {
+    "case_id": "fresh-20260909-interrogative-hanwha-reject",
+    "topic": "kbo_hanwha",
+    "title": "9일 LG전 등판→11일 완전체에 합류?…한화 유일 10승 투수는 언제 빠지나, \"구단과 상의, 아직 미정\"",
+    "body": "[대전=스포츠조선 이종서 기자] 왕옌청(25·한화 이글스)은 '대만 완전체'에 맞춰서 합류할까.\n한화 이글스는 19일 개막하는 아시안게임에 총 3명의 선수를 보낸다.\n일단 왕옌청은 9일 LG 트윈스전에 선발로 나선다. 김경문 한화 감독은 \"일단 9일에 LG전엔 등판한다\"라며 \"추후 합류 여부는 구단과 상의할 예정\"이라고 했다.",
+    "source_url": "https://www.sportschosun.com/baseball/2026-09-09/202609090100059720003852",
+    "source_name": "www.sportschosun.com",
+    "expected_proposition": null
   }
 ]

@@ -43,7 +43,13 @@ def _extract(body: str, *, suffix: str):
 class KiwiStructuralPrefixTests(unittest.TestCase):
     def test_bracketed_and_unicode_separator_bylines_preserve_exact_event(self) -> None:
         proposition = "삼성생명이 인공지능 기반 상담 훈련 서비스를 도입한다."
-        for prefix in ("[직썰 / 손성은 기자] ", "[STN뉴스] 류승우 기자┃", "(엑스포츠뉴스 김수아 기자) "):
+        for prefix in (
+            "[직썰 / 손성은 기자] ",
+            "[STN뉴스] 류승우 기자┃",
+            "(엑스포츠뉴스 김수아 기자) ",
+            "【브레이크뉴스 대구】진예솔 기자=",
+            "[서울=뉴스핌] 양태훈 기자 = ",
+        ):
             with self.subTest(prefix=prefix):
                 result = _extract(prefix + proposition, suffix="structured-byline")
                 self.assertEqual(len(result.facts), 1)

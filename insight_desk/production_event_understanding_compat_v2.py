@@ -21,7 +21,10 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingStatus,
 )
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
-from insight_desk.feed_quality_detectors import routine_presence_without_outcome
+from insight_desk.feed_quality_detectors import (
+    nonassertive_interrogative_text,
+    routine_presence_without_outcome,
+)
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
 
 
@@ -239,6 +242,15 @@ def assess_compatibility_event_understanding(
             reasons=("report_without_independent_event",),
         )
 
+    if nonassertive_interrogative_text(fact.action):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("nonassertive_interrogative",),
+        )
+
     if (
         event.topic_id in _ROUTINE_PRESENCE_TOPICS
         and routine_presence_without_outcome(fact.action)
@@ -271,6 +283,55 @@ def assess_compatibility_event_understanding(
 _LEADING_BRACKETED_BYLINE_RE = re.compile(
     r"^\[[^\]\n]{1,80}(?:기자|특파원)[^\]\n]{0,40}\]\s*"
 )
+_LEADING_REPORTER_CREDIT_RE = re.compile(
+    r"^[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)\s*(?:=|[|｜┃│])\s*"
+)
+_GENERATED_SUMMARY_HEADER_RE = re.compile(
+    r"^(?=[^\n]{0,80}(?:AI|인공지능))(?=[^\n]{0,80}(?:요약|summary))[^\n]{1,80}$",
+    flags=re.IGNORECASE,
+)
+_GENERATED_SUMMARY_BULLET_RE = re.compile(r"^\s*[-–—•]\s+\S")
+_GENERATED_SUMMARY_DISCLOSURE_RE = re.compile(
+    r"^(?=[^\n]{0,240}(?:AI|인공지능))"
+    r"(?=[^\n]{0,240}(?:자동\s*생성|생성형|기계\s*생성))"
+    r"(?=[^\n]{0,240}(?:요약|summary))"
+    r"(?=[^\n]{0,240}(?:정확|오류|검증|참고))[^\n]{1,240}$",
+    flags=re.IGNORECASE,
+)
+
+
+def _leading_generated_summary_prefix_end(body: str) -> int:
+    """Return the end of an explicitly disclosed publisher-generated summary block.
+
+    The block must be at the document start and prove all three structural parts: a generated-AI
+    summary header, at least one bullet, and a bounded accuracy/error disclosure.  No publisher,
+    domain, or article wording participates in the decision.
+    """
+
+    offset = 0
+    started = False
+    saw_bullet = False
+    for index, line in enumerate(body.splitlines(keepends=True)):
+        if index >= 12:
+            return 0
+        stripped = line.strip()
+        line_end = offset + len(line)
+        if not started:
+            if not stripped:
+                offset = line_end
+                continue
+            if _GENERATED_SUMMARY_HEADER_RE.match(stripped) is None:
+                return 0
+            started = True
+            offset = line_end
+            continue
+        if _GENERATED_SUMMARY_BULLET_RE.match(stripped) is not None:
+            saw_bullet = True
+        if saw_bullet and _GENERATED_SUMMARY_DISCLOSURE_RE.match(stripped) is not None:
+            return line_end
+        offset = line_end
+    return 0
 
 
 def _first_sentence_bounds(
@@ -281,9 +342,12 @@ def _first_sentence_bounds(
 ) -> tuple[int, int]:
     # Acquisition preserves source blocks. A detached noun-only caption is not the lead.
     # Never skip a clause-bearing prefix: its context may constrain the following event.
-    offset = 0
+    offset = _leading_generated_summary_prefix_end(body)
+    reporter_credit = _LEADING_REPORTER_CREDIT_RE.match(body[offset:])
+    if reporter_credit is not None:
+        offset += reporter_credit.end()
     if morphology is not None:
-        for line in body.splitlines(keepends=True):
+        for line in body[offset:].splitlines(keepends=True):
             stripped = line.strip()
             if not stripped:
                 offset += len(line)
@@ -429,8 +493,8 @@ def _proposition_title_alignment(
     )
 
 
-def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
-    return span.field.value == "body" and span.start < lead_end
+def _is_body_lead(span: EvidenceSpan, *, lead_start: int, lead_end: int) -> bool:
+    return span.field.value == "body" and lead_start <= span.start < lead_end
 
 
 def _title_leading_actor_continues_lead(
@@ -492,9 +556,17 @@ def _title_actor_bound(article: RawArticle, span: EvidenceSpan, morphology) -> b
         return False
 
     def title_has_surface(surface: str) -> bool:
-        return bool(
-            surface
-            and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", unescape(article.title))
+        if not surface:
+            return False
+        candidates = [surface]
+        # Korean university titles conventionally shorten ``…대학교`` to ``…대``.  Bind only
+        # this closed institutional suffix transformation; arbitrary prefix overlap is unsafe.
+        if surface.endswith("대학교") and len(surface) > len("대학교"):
+            candidates.append(surface[: -len("대학교")] + "대")
+        title = unescape(article.title)
+        return any(
+            re.search(r"(?<!\w)" + re.escape(candidate) + r"(?!\w)", title)
+            for candidate in candidates
         )
 
     subject_start = span.text.find(parts.subject)
@@ -693,7 +765,11 @@ def assess_compatibility_article_understanding(
     lead_events = [
         event
         for event in eligible
-        if _is_body_lead(frozen_propositions[event.event_id], lead_end=lead_end)
+        if _is_body_lead(
+            frozen_propositions[event.event_id],
+            lead_start=lead_start,
+            lead_end=lead_end,
+        )
     ]
     winner: CandidateEvent | None = None
     failure_reason = "article_centrality_unresolved"

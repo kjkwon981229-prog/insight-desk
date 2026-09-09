@@ -572,6 +572,8 @@ def evaluate_story_admission(
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL, _MATERIAL_CONDITIONAL)
         if detectors.non_event_analytical_text(text):
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
+        if detectors.nonassertive_interrogative_text(text):
+            reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
         if _routine_presence_only(topic=topic, value=text):
             reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT, _MATERIAL_NON_EVENT)
         if _biographical_text(text):
@@ -606,6 +608,8 @@ def evaluate_story_admission(
     if detectors.conditional_analytical_text(visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_CONDITIONAL)
     if detectors.non_event_analytical_text(visible_text):
+        reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT)
+    if detectors.nonassertive_interrogative_text(visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT)
     if _routine_presence_only(topic=topic, value=visible_text):
         reject(StoryAdmissionReason.NON_EVENT_DESCRIPTION, _FQ_NON_EVENT)

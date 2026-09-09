@@ -12,6 +12,10 @@ from urllib.parse import urlparse
 # Legacy replay without a V2 production audit still exercises the historical semantic
 # validator. Canonical V2 production must not let publication re-judge news meaning.
 from insight_desk.feed_quality import VisibleStoryIssue
+from insight_desk.feed_quality_detectors import (
+    nonassertive_interrogative_text,
+    visible_metadata_text,
+)
 from insight_desk.feed_quality_detectors_core import fused_repeated_source_fragment
 from insight_desk.story_admission import StoryAdmissionStage, evaluate_story_admission
 
@@ -227,6 +231,7 @@ def validate_html(
     context_dependent_headlines = 0
     context_dependent_summaries = 0
     visible_metadata_issues = 0
+    nonassertive_questions = 0
     non_event_analytical_summaries = 0
     conditional_analytical_summaries = 0
     malformed_visible_texts = 0
@@ -269,6 +274,18 @@ def validate_html(
         )
         if structural_malformed:
             malformed_visible_texts += 1
+
+        # Canonical V2 does not semantically re-judge an accepted event, but source chrome and a
+        # non-assertive question are observable presentation/proposition invariants.  Keep these
+        # last-line guards active so the audit cannot report clean counters for visibly bad cards.
+        if canonical_v2:
+            if visible_metadata_text(headline) or visible_metadata_text(summary):
+                visible_metadata_issues += 1
+            if (
+                nonassertive_interrogative_text(headline)
+                or nonassertive_interrogative_text(summary)
+            ):
+                nonassertive_questions += 1
 
         if not canonical_v2:
             decision = evaluate_story_admission(
@@ -349,6 +366,8 @@ def validate_html(
         )
     if visible_metadata_issues:
         raise ValueError(f"FEED_QUALITY_VISIBLE_METADATA:{visible_metadata_issues}")
+    if nonassertive_questions:
+        raise ValueError(f"FEED_QUALITY_NONASSERTIVE_QUESTION:{nonassertive_questions}")
     if non_event_analytical_summaries:
         raise ValueError(
             f"FEED_QUALITY_NON_EVENT_ANALYTICAL_SUMMARY:{non_event_analytical_summaries}"
@@ -402,6 +421,7 @@ def validate_html(
         "context_dependent_headlines": context_dependent_headlines,
         "context_dependent_summaries": context_dependent_summaries,
         "visible_metadata_issues": visible_metadata_issues,
+        "nonassertive_questions": nonassertive_questions,
         "non_event_analytical_summaries": non_event_analytical_summaries,
         "conditional_analytical_summaries": conditional_analytical_summaries,
         "malformed_visible_texts": malformed_visible_texts,
