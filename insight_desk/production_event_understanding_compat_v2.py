@@ -366,7 +366,31 @@ def _first_sentence_bounds(
                     offset += len(line)
                     continue
             tokens = _morphology_tokens(line, morphology)
-            if not tokens or any(
+            if not tokens:
+                break
+            # Publisher decks commonly precede the prose lead as one or more noun-final display
+            # lines.  Internal modifiers can contain particles or connective verbs, so their mere
+            # presence does not make the line a finite proposition.  Skip only an unterminated,
+            # noun-final line with no sentence-final ending.  A subordinate source clause such as
+            # ``업계에 따르면`` ends in EC and remains attached to the following proposition.
+            syntactic = tuple(
+                token
+                for token in tokens
+                if not str(getattr(token, "tag", "")).startswith("S")
+            )
+            final_tag = str(getattr(syntactic[-1], "tag", "")) if syntactic else ""
+            if (
+                syntactic
+                and not stripped.endswith((".", "!", "?", "。", "！", "？", "…"))
+                and not any(str(getattr(token, "tag", "")) == "EF" for token in tokens)
+                and (
+                    final_tag.startswith(("N", "XSN"))
+                    or final_tag in {"SL", "SH", "SN", "XR"}
+                )
+            ):
+                offset += len(line)
+                continue
+            if any(
                 str(getattr(token, "tag", "")).startswith("J")
                 or str(getattr(token, "tag", "")) in {"VV", "VA", "XSV", "VCP", "VCN"}
                 for token in tokens
@@ -662,6 +686,49 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
     return False
 
 
+def _title_reported_claim_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Bind a quoted source title to the exact attributed claim in the prose lead.
+
+    Korean news titles often quote the embedded claim while the lead retains the essential
+    attribution (``…다고 발표했다``).  Requiring a literal named actor, a visibly quoted title,
+    and the same morphology-derived embedded predicate recovers that source structure without
+    treating a later same-article event as equivalent or removing the attribution from the
+    visible proposition.
+    """
+
+    title = unescape(article.title)
+    quoted = ("“" in title and "”" in title) or title.count('"') >= 2
+    if not quoted or not _title_actor_bound(article, span, morphology):
+        return False
+    tokens = _morphology_tokens(span.text, morphology)
+    title_tokens = _morphology_tokens(title, morphology)
+    if not tokens or not title_tokens:
+        return False
+    title_units = {
+        str(getattr(token, "normalized", ""))
+        for token in title_tokens
+        if str(getattr(token, "normalized", ""))
+    }
+    for report_index, token in enumerate(tokens):
+        if not (
+            getattr(token, "tag", "") == "EC"
+            and str(getattr(token, "normalized", "")).endswith(("다고", "라고"))
+        ):
+            continue
+        for predicate_index in range(report_index - 1, -1, -1):
+            predicate = tokens[predicate_index]
+            tag = str(getattr(predicate, "tag", ""))
+            normalized = str(getattr(predicate, "normalized", ""))
+            if tag == "XSV" and predicate_index > 0:
+                previous = tokens[predicate_index - 1]
+                if str(getattr(previous, "tag", "")).startswith(("N", "XR")):
+                    normalized = str(getattr(previous, "normalized", ""))
+            elif tag != "VV":
+                continue
+            return bool(normalized and normalized in title_units)
+    return False
+
+
 def _historical_event_context(article: RawArticle, fact: EventFact) -> bool:
     """Return true only when a date-only event is clearly outside the source freshness horizon."""
 
@@ -795,6 +862,16 @@ def assess_compatibility_article_understanding(
                     and all(frozen_propositions[event.event_id].text == frozen_propositions[lead.event_id].text
                             for event in best_events)):
                 winner = lead_events[0]
+            # A quoted title can state the embedded claim while the prose lead preserves its
+            # attribution.  Keep the exact attributed lead and require broad literal title
+            # overlap in addition to actor and predicate binding.
+            elif (
+                alignment[lead.event_id][0] >= 4
+                and _title_reported_claim_bound(
+                    article, frozen_propositions[lead.event_id], morphology
+                )
+            ):
+                winner = lead
             # Some pages put source chrome or a detached quote before the true lead, and title the
             # event with a nominal/synonymous predicate.  The first exact proposition remains
             # central when its named actor is in the title and at least three independent title

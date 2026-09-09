@@ -10,7 +10,12 @@ from insight_desk.core import CandidateEvent, EventFact, EvidenceField, Evidence
 from insight_desk.core.event_understanding_v2 import ArticleEventRole, TopicRelation, UnderstandingStatus
 from insight_desk.production_event_understanding_compat_v2 import CompatibilityEventUnderstandingDecision
 from insight_desk.production_event_understanding_compat_v2 import _is_context_dependent_subject
-from insight_desk.production_event_understanding_compat_v2 import _first_sentence_end, _morphology_tokens
+from insight_desk.production_event_understanding_compat_v2 import (
+    _first_sentence_bounds,
+    _first_sentence_end,
+    _morphology_tokens,
+)
+from insight_desk.semantic.tooling import KiwiMorphologyHelper
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
 from insight_desk.production_replay_v2 import _recorded_edges
 from insight_desk.semantic.pipeline import SemanticArticleResult
@@ -52,6 +57,22 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
         sentence = "삼성생명이 새 서비스를 도입한다."
         self.assertEqual(_first_sentence_end(prefix + sentence, Morphology()),
                          len(prefix + sentence))
+
+    def test_nominal_display_decks_are_skipped_but_subordinate_context_is_not(self):
+        morphology = KiwiMorphologyHelper()
+        decks = (
+            "분산된 검진 기록 AI가 분석…간호사 반복 업무 줄이고 고객 건강관리 집중 운영 지원\n"
+            "향후 차움 넘어 차병원 검진센터까지 확대 추진\n"
+        )
+        proposition = "LG CNS가 차움 건강검진센터에 AI 에이전트를 적용한다."
+        start, end = _first_sentence_bounds(decks + proposition, morphology)
+        self.assertEqual(start, len(decks))
+        self.assertEqual((decks + proposition)[start:end], proposition)
+
+        context = "업계에 따르면\n"
+        start, end = _first_sentence_bounds(context + proposition, morphology)
+        self.assertEqual(start, 0)
+        self.assertEqual((context + proposition)[start:end], context)
 
     def test_invalid_morphology_offsets_cannot_skip_source_context_or_crash(self):
         class InvalidOffsets:

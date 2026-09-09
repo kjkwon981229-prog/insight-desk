@@ -61,6 +61,22 @@ class ScheduledSourceRecallTests(unittest.TestCase):
             with self.subTest(case=case.case_id):
                 self.assertEqual(outcomes[case.case_id].proposition, case.expected_proposition)
 
+    def test_quoted_title_cannot_bind_a_different_reported_predicate(self):
+        case = _ArticleCase(
+            "quoted-different-reported-predicate",
+            "ai_tech",
+            "앤트로픽 “로봇 제어용 하드웨어 표준 공개했다”",
+            (
+                "앤트로픽은 로봇 제어용 하드웨어 표준을 검토했다고 발표했다. "
+                "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다."
+            ),
+            "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.",
+        )
+
+        outcome = _run_cases((case,))[case.case_id]
+
+        self.assertEqual(outcome.proposition, case.expected_proposition)
+
     def test_second_sentence_bridge_cannot_switch_to_another_named_actor(self):
         case = _ArticleCase(
             "second-sentence-different-actor",
