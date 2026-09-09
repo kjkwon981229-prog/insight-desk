@@ -17,8 +17,14 @@ _PREDICATE_TAGS = frozenset({"VV", "VA", "XSV", "VCP", "VCN"})
 # It is not a general headline/event-type vocabulary.
 _EXPLICIT_NOMINAL_ACTIONS = ("선발투수 예고",)
 _LEADING_REPORTER_CREDIT_RE = re.compile(
-    r"^[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
+    r"^(?:"
+    # The reporter is inside the closed publisher/byline group.
+    r"[\[\(（【][^\]\)）】\n]{0,76}[가-힣]{2,4}\s+(?:기자|특파원)[\]\)）】]\s*"
+    r"|"
+    # The publisher/dateline group is closed before the reporter credit.
+    r"[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
     r"[가-힣]{2,4}\s+(?:기자|특파원)\s*(?:=|[|｜┃│])\s*"
+    r")"
 )
 
 

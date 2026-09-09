@@ -82,7 +82,14 @@ class ScheduledSourceRecallTests(unittest.TestCase):
             diagnostic = Path(temp) / "understanding.jsonl"
             with patch.dict(os.environ, {"INSIGHT_DESK_UNDERSTANDING_DIAGNOSTICS": str(diagnostic)}):
                 outcomes = _run_cases(cases, clocks={
-                    case.case_id: datetime(2026, 9, 7, 8, tzinfo=timezone.utc) for case in cases
+                    case.case_id: datetime(
+                        2026,
+                        9,
+                        9 if "20260909" in case.case_id else 8 if "20260908" in case.case_id else 7,
+                        8,
+                        tzinfo=timezone.utc,
+                    )
+                    for case in cases
                 })
             recorded = {row["source"]["url"]: row for row in
                         map(json.loads, diagnostic.read_text().splitlines())}
