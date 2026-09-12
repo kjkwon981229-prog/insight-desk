@@ -202,9 +202,17 @@ class SourceIdentityRegressions(unittest.TestCase):
         self.assertTrue(hasattr(production, "_source_group_key"))
         original = self.candidate("article-deadbeef", "https://publisher.example/a")
         alternate = self.candidate("article-deadbeef-alt", "https://news.naver.com/a")
+        url_bound_alternate = self.candidate(
+            "article-deadbeef-alt-0123456789abcdef",
+            "https://news.naver.com/a?query=ai",
+        )
         self.assertEqual(
             production._source_group_key(original),
             production._source_group_key(alternate),
+        )
+        self.assertEqual(
+            production._source_group_key(original),
+            production._source_group_key(url_bound_alternate),
         )
 
     def test_normalized_body_fingerprint_deduplicates_url_variants_only(self) -> None:

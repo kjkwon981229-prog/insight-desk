@@ -11,6 +11,7 @@ from insight_desk.acquisition.discovery import (
     BingNewsRssDiscovery,
     DiscoveryError,
     GdeltDocDiscovery,
+    NaverNewsDiscovery,
     SequentialNewsDiscovery,
     default_news_discovery,
 )
@@ -30,6 +31,15 @@ class Response:
 
     def read(self) -> bytes:
         return self._body
+
+
+class NaverClient:
+    def __init__(self, payloads: list[dict[str, object]]) -> None:
+        self.payloads = list(payloads)
+
+    def search_news(self, *args, **kwargs) -> dict[str, object]:
+        del args, kwargs
+        return self.payloads.pop(0)
 
 
 @dataclass
@@ -61,6 +71,29 @@ def candidate(route: str, *, suffix: str | None = None, url: str | None = None) 
 
 
 class Phase12BDiscoveryResilienceTests(unittest.TestCase):
+    def test_naver_alternate_article_identity_is_bound_to_exact_url(self) -> None:
+        common = {
+            "title": "AI 반도체 공급 계약",
+            "originallink": "https://publisher.example.com/article/7",
+            "pubDate": "Wed, 09 Sep 2026 09:00:00 +0900",
+        }
+        route = NaverNewsDiscovery(
+            NaverClient(
+                [
+                    {"items": [{**common, "link": "https://n.news.naver.com/a/7?query=ai"}]},
+                    {"items": [{**common, "link": "https://n.news.naver.com/a/7?query=chip"}]},
+                ]
+            )
+        )
+
+        first = route.search("AI", topic_id="ai_tech")
+        second = route.search("반도체", topic_id="ai_tech")
+
+        self.assertEqual(first[0].candidate_id, second[0].candidate_id)
+        self.assertNotEqual(first[1].candidate_id, second[1].candidate_id)
+        self.assertTrue(first[1].candidate_id.startswith(first[0].candidate_id + "-alt-"))
+        self.assertTrue(second[1].candidate_id.startswith(second[0].candidate_id + "-alt-"))
+
     def test_aggregation_keeps_other_routes_after_error_or_empty(self) -> None:
         first = Route(
             "naver_search",

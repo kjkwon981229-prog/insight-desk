@@ -8,6 +8,8 @@ import ssl
 import unittest
 import urllib.error
 
+from insight_desk.acquisition.discovery import DiscoveryError
+from insight_desk.core import FailureKind
 from insight_desk.runtime_integration_audit_v2 import (
     IntegrationProbeSpec,
     DECLARED_PRODUCTION_API_HOSTS,
@@ -72,6 +74,67 @@ class RuntimeIntegrationAuditTests(unittest.TestCase):
         self.assertEqual(payload["status"], "FAIL")
         self.assertNotIn("must-never-be-logged", rendered)
         self.assertIn('"error_kind": "RuntimeError"', rendered)
+
+    def test_transient_and_invalid_provider_responses_require_a_real_retry_pass(self) -> None:
+        for first_error in (
+            urllib.error.URLError(socket.timeout("temporary")),
+            DiscoveryError(FailureKind.INVALID_OUTPUT, "temporary invalid XML"),
+        ):
+            with self.subTest(error=type(first_error).__name__):
+                calls = 0
+
+                def recover() -> None:
+                    nonlocal calls
+                    calls += 1
+                    if calls == 1:
+                        raise first_error
+
+                payload = evaluate_integration_probes(
+                    (
+                        IntegrationProbeSpec(
+                            "recovering",
+                            role="discovery",
+                            scope="required_runtime",
+                            configured=True,
+                            active=True,
+                            required=True,
+                            probe=recover,
+                            retry_delays=(0.0,),
+                        ),
+                    )
+                )
+                record = payload["integrations"]["recovering"]
+                self.assertEqual(payload["status"], "PASS")
+                self.assertEqual(record["calls"], 2)
+                self.assertEqual(record["attempt_limit"], 2)
+                self.assertTrue(record["recovered_after_retry"])
+
+    def test_nontransport_contract_failure_is_not_retried(self) -> None:
+        calls = 0
+
+        def fail() -> None:
+            nonlocal calls
+            calls += 1
+            raise ValueError("stable contract violation")
+
+        payload = evaluate_integration_probes(
+            (
+                IntegrationProbeSpec(
+                    "contract",
+                    role="enrichment",
+                    scope="conditional_runtime",
+                    configured=True,
+                    active=True,
+                    probe=fail,
+                    retry_delays=(0.0,),
+                ),
+            )
+        )
+        record = payload["integrations"]["contract"]
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertEqual(calls, 1)
+        self.assertEqual(record["calls"], 1)
+        self.assertFalse(record["recovered_after_retry"])
 
     def test_url_error_diagnostics_are_bounded_to_safe_transport_classes(self) -> None:
         cases = (
@@ -150,6 +213,8 @@ class RuntimeIntegrationAuditTests(unittest.TestCase):
         )
         by_id = {spec.integration_id: spec for spec in specs}
         self.assertTrue(by_id["bing_news_rss"].required)
+        self.assertEqual(by_id["bing_news_rss"].retry_delays, (15.0, 45.0))
+        self.assertEqual(by_id["kosis"].retry_delays, (15.0, 45.0))
         self.assertFalse(by_id["gdelt_doc"].active)
         self.assertFalse(by_id["groq_generation"].active)
         self.assertFalse(by_id["cloudflare_workers_ai"].active)

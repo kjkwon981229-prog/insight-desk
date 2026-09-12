@@ -42,6 +42,22 @@ def _stable_candidate_id(route_id: str, url: str) -> str:
     return "article-" + hashlib.sha256(f"{route_id}\x1f{url}".encode("utf-8")).hexdigest()[:20]
 
 
+def _alternate_candidate_id(parent_candidate_id: str, alternate_url: str) -> str:
+    """Give every alternate document URL its own immutable article identity.
+
+    A NAVER result can return the same publisher URL with different NAVER alternate URLs across
+    queries.  Reusing ``<publisher-id>-alt`` for all of them makes distinct SourceDocuments share
+    one article id and can abort the whole production run at the provenance boundary.  Keep the
+    publisher candidate prefix for duplicate grouping, while binding the article id to the exact
+    alternate URL that will be fetched.
+    """
+
+    import hashlib
+
+    digest = hashlib.sha256(alternate_url.strip().encode("utf-8")).hexdigest()[:16]
+    return f"{parent_candidate_id}-alt-{digest}"
+
+
 def _aware_pubdate(value: str) -> datetime | None:
     value = value.strip()
     if not value:
@@ -123,7 +139,7 @@ class NaverNewsDiscovery:
             parsed = urlparse(alternate)
             output.append(
                 ArticleCandidate(
-                    candidate_id=candidate.candidate_id + "-alt",
+                    candidate_id=_alternate_candidate_id(candidate.candidate_id, alternate),
                     url=alternate,
                     search_title=candidate.search_title,
                     source_name=(parsed.hostname or parsed.netloc).lower(),

@@ -127,6 +127,43 @@ class FeedArtifactValidatorTests(unittest.TestCase):
                 source_audit=audit,
             )
 
+    def test_v2_exact_source_still_rejects_visible_source_chrome(self) -> None:
+        audit = {
+            "publication_contract_version": 2,
+            "canonical_contract": {"validated": True},
+            "runtime_authority": {
+                "story_admission_semantic_gate": False,
+                "visible_identity_semantic_gate": False,
+            },
+        }
+        cases = (
+            "【브레이크뉴스 대구】진예솔 기자=대구대학교가 AI 국책사업에 참여한다.",
+            "- 에스트래픽이 AI 도시운영모델을 공개했다.",
+        )
+        for visible in cases:
+            with self.subTest(visible=visible):
+                with self.assertRaisesRegex(ValueError, "FEED_QUALITY_VISIBLE_METADATA"):
+                    validate_html(
+                        html_for(("event:chrome", "AI 테크", visible, visible)),
+                        source_audit=audit,
+                    )
+
+    def test_v2_exact_source_rejects_nonassertive_question(self) -> None:
+        audit = {
+            "publication_contract_version": 2,
+            "canonical_contract": {"validated": True},
+            "runtime_authority": {
+                "story_admission_semantic_gate": False,
+                "visible_identity_semantic_gate": False,
+            },
+        }
+        question = "왕옌청은 대만 대표팀 완전체 일정에 맞춰 합류할까."
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_NONASSERTIVE_QUESTION"):
+            validate_html(
+                html_for(("event:question", "한화 이글스", question, question)),
+                source_audit=audit,
+            )
+
     def test_empty_feed_fails_product_gate(self) -> None:
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_NO_STORIES"):
             validate_html("<!doctype html><html><body></body></html>")

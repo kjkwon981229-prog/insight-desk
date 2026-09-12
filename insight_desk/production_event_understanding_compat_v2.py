@@ -21,6 +21,10 @@ from insight_desk.core.event_understanding_v2 import (
     UnderstandingStatus,
 )
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
+from insight_desk.feed_quality_detectors import (
+    nonassertive_interrogative_text,
+    routine_presence_without_outcome,
+)
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
 
 
@@ -69,6 +73,8 @@ _ANALYTICAL_PREDICATES = (
     "효과가 있을",
     "효과가 기대",
 )
+
+_ROUTINE_PRESENCE_TOPICS = frozenset({"ai_tech", "economy", "psat_recruitment"})
 
 
 def _normalized(text: str) -> str:
@@ -236,6 +242,27 @@ def assess_compatibility_event_understanding(
             reasons=("report_without_independent_event",),
         )
 
+    if nonassertive_interrogative_text(fact.action):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("nonassertive_interrogative",),
+        )
+
+    if (
+        event.topic_id in _ROUTINE_PRESENCE_TOPICS
+        and routine_presence_without_outcome(fact.action)
+    ):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("routine_presence_without_outcome",),
+        )
+
     if _is_analytical_predicate(fact.action):
         return CompatibilityEventUnderstandingDecision(
             status=UnderstandingStatus.RESOLVED,
@@ -256,6 +283,55 @@ def assess_compatibility_event_understanding(
 _LEADING_BRACKETED_BYLINE_RE = re.compile(
     r"^\[[^\]\n]{1,80}(?:기자|특파원)[^\]\n]{0,40}\]\s*"
 )
+_LEADING_REPORTER_CREDIT_RE = re.compile(
+    r"^[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
+    r"[가-힣]{2,4}\s+(?:기자|특파원)\s*(?:=|[|｜┃│])\s*"
+)
+_GENERATED_SUMMARY_HEADER_RE = re.compile(
+    r"^(?=[^\n]{0,80}(?:AI|인공지능))(?=[^\n]{0,80}(?:요약|summary))[^\n]{1,80}$",
+    flags=re.IGNORECASE,
+)
+_GENERATED_SUMMARY_BULLET_RE = re.compile(r"^\s*[-–—•]\s+\S")
+_GENERATED_SUMMARY_DISCLOSURE_RE = re.compile(
+    r"^(?=[^\n]{0,240}(?:AI|인공지능))"
+    r"(?=[^\n]{0,240}(?:자동\s*생성|생성형|기계\s*생성))"
+    r"(?=[^\n]{0,240}(?:요약|summary))"
+    r"(?=[^\n]{0,240}(?:정확|오류|검증|참고))[^\n]{1,240}$",
+    flags=re.IGNORECASE,
+)
+
+
+def _leading_generated_summary_prefix_end(body: str) -> int:
+    """Return the end of an explicitly disclosed publisher-generated summary block.
+
+    The block must be at the document start and prove all three structural parts: a generated-AI
+    summary header, at least one bullet, and a bounded accuracy/error disclosure.  No publisher,
+    domain, or article wording participates in the decision.
+    """
+
+    offset = 0
+    started = False
+    saw_bullet = False
+    for index, line in enumerate(body.splitlines(keepends=True)):
+        if index >= 12:
+            return 0
+        stripped = line.strip()
+        line_end = offset + len(line)
+        if not started:
+            if not stripped:
+                offset = line_end
+                continue
+            if _GENERATED_SUMMARY_HEADER_RE.match(stripped) is None:
+                return 0
+            started = True
+            offset = line_end
+            continue
+        if _GENERATED_SUMMARY_BULLET_RE.match(stripped) is not None:
+            saw_bullet = True
+        if saw_bullet and _GENERATED_SUMMARY_DISCLOSURE_RE.match(stripped) is not None:
+            return line_end
+        offset = line_end
+    return 0
 
 
 def _first_sentence_bounds(
@@ -266,9 +342,12 @@ def _first_sentence_bounds(
 ) -> tuple[int, int]:
     # Acquisition preserves source blocks. A detached noun-only caption is not the lead.
     # Never skip a clause-bearing prefix: its context may constrain the following event.
-    offset = 0
+    offset = _leading_generated_summary_prefix_end(body)
+    reporter_credit = _LEADING_REPORTER_CREDIT_RE.match(body[offset:])
+    if reporter_credit is not None:
+        offset += reporter_credit.end()
     if morphology is not None:
-        for line in body.splitlines(keepends=True):
+        for line in body[offset:].splitlines(keepends=True):
             stripped = line.strip()
             if not stripped:
                 offset += len(line)
@@ -287,7 +366,110 @@ def _first_sentence_bounds(
                     offset += len(line)
                     continue
             tokens = _morphology_tokens(line, morphology)
-            if not tokens or any(
+            if not tokens:
+                break
+            # Publisher decks commonly precede the prose lead as one or more noun-final display
+            # lines.  Internal modifiers can contain particles or connective verbs, so their mere
+            # presence does not make the line a finite proposition.  Skip only an unterminated,
+            # noun-final line with no sentence-final ending.  A subordinate source clause such as
+            # ``업계에 따르면`` ends in EC and remains attached to the following proposition.
+            syntactic = tuple(
+                token
+                for token in tokens
+                if not str(getattr(token, "tag", "")).startswith("S")
+            )
+            final_tag = str(getattr(syntactic[-1], "tag", "")) if syntactic else ""
+            lexical = tuple(
+                token
+                for token in syntactic
+                if not str(getattr(token, "tag", "")).startswith("J")
+            )
+            final_lexical_tag = (
+                str(getattr(lexical[-1], "tag", "")) if lexical else ""
+            )
+            trailing_particle_deck = (
+                final_tag.startswith("J")
+                and (
+                    final_lexical_tag.startswith(("N", "XSN"))
+                    or final_lexical_tag in {"SL", "SH", "SN", "XR"}
+                )
+                and not any(
+                    str(getattr(token, "tag", "")).startswith(("V", "E", "XSV", "XSA"))
+                    for token in tokens
+                )
+            )
+            # A display deck can join two headline fragments with an ellipsis.  The first
+            # fragment may carry a finite ending (for example ``상징성 커…``), while the final
+            # fragment is still an unterminated nominal caption.  Judge only the post-ellipsis
+            # tail before treating that internal finite ending as article prose.  A complete
+            # sentence after the ellipsis retains EF and is never skipped.
+            ellipsis_nominal_tail = False
+            if "…" in stripped:
+                tail = stripped.rsplit("…", 1)[-1].strip()
+                tail_tokens = _morphology_tokens(tail, morphology)
+                tail_syntactic = tuple(
+                    token
+                    for token in (tail_tokens or ())
+                    if not str(getattr(token, "tag", "")).startswith("S")
+                )
+                tail_lexical = tuple(
+                    token
+                    for token in tail_syntactic
+                    if not str(getattr(token, "tag", "")).startswith("J")
+                )
+                tail_final_tag = (
+                    str(getattr(tail_syntactic[-1], "tag", ""))
+                    if tail_syntactic
+                    else ""
+                )
+                tail_final_lexical_tag = (
+                    str(getattr(tail_lexical[-1], "tag", ""))
+                    if tail_lexical
+                    else ""
+                )
+                tail_trailing_particle = (
+                    tail_final_tag.startswith("J")
+                    and (
+                        tail_final_lexical_tag.startswith(("N", "XSN"))
+                        or tail_final_lexical_tag in {"SL", "SH", "SN", "XR"}
+                    )
+                    and not any(
+                        str(getattr(token, "tag", "")).startswith(
+                            ("V", "E", "XSV", "XSA")
+                        )
+                        for token in (tail_tokens or ())
+                    )
+                )
+                ellipsis_nominal_tail = bool(
+                    tail_syntactic
+                    and not any(
+                        str(getattr(token, "tag", "")) == "EF"
+                        for token in (tail_tokens or ())
+                    )
+                    and (
+                        tail_final_tag.startswith(("N", "XSN"))
+                        or tail_final_tag in {"SL", "SH", "SN", "XR"}
+                        or tail_trailing_particle
+                    )
+                )
+            if (
+                syntactic
+                and not stripped.endswith((".", "!", "?", "。", "！", "？", "…"))
+                and (
+                    not any(
+                        str(getattr(token, "tag", "")) == "EF" for token in tokens
+                    )
+                    or ellipsis_nominal_tail
+                )
+                and (
+                    final_tag.startswith(("N", "XSN"))
+                    or final_tag in {"SL", "SH", "SN", "XR"}
+                    or trailing_particle_deck
+                )
+            ):
+                offset += len(line)
+                continue
+            if any(
                 str(getattr(token, "tag", "")).startswith("J")
                 or str(getattr(token, "tag", "")) in {"VV", "VA", "XSV", "VCP", "VCN"}
                 for token in tokens
@@ -414,8 +596,8 @@ def _proposition_title_alignment(
     )
 
 
-def _is_body_lead(span: EvidenceSpan, *, lead_end: int) -> bool:
-    return span.field.value == "body" and span.start < lead_end
+def _is_body_lead(span: EvidenceSpan, *, lead_start: int, lead_end: int) -> bool:
+    return span.field.value == "body" and lead_start <= span.start < lead_end
 
 
 def _title_leading_actor_continues_lead(
@@ -477,9 +659,17 @@ def _title_actor_bound(article: RawArticle, span: EvidenceSpan, morphology) -> b
         return False
 
     def title_has_surface(surface: str) -> bool:
-        return bool(
-            surface
-            and re.search(r"(?<!\w)" + re.escape(surface) + r"(?!\w)", unescape(article.title))
+        if not surface:
+            return False
+        candidates = [surface]
+        # Korean university titles conventionally shorten ``…대학교`` to ``…대``.  Bind only
+        # this closed institutional suffix transformation; arbitrary prefix overlap is unsafe.
+        if surface.endswith("대학교") and len(surface) > len("대학교"):
+            candidates.append(surface[: -len("대학교")] + "대")
+        title = unescape(article.title)
+        return any(
+            re.search(r"(?<!\w)" + re.escape(candidate) + r"(?!\w)", title)
+            for candidate in candidates
         )
 
     subject_start = span.text.find(parts.subject)
@@ -572,6 +762,49 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
         predicate = str(getattr(token, "normalized", ""))
         if len(predicate) >= 2 and predicate in title_units:
             return True
+    return False
+
+
+def _title_reported_claim_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Bind a quoted source title to the exact attributed claim in the prose lead.
+
+    Korean news titles often quote the embedded claim while the lead retains the essential
+    attribution (``…다고 발표했다``).  Requiring a literal named actor, a visibly quoted title,
+    and the same morphology-derived embedded predicate recovers that source structure without
+    treating a later same-article event as equivalent or removing the attribution from the
+    visible proposition.
+    """
+
+    title = unescape(article.title)
+    quoted = ("“" in title and "”" in title) or title.count('"') >= 2
+    if not quoted or not _title_actor_bound(article, span, morphology):
+        return False
+    tokens = _morphology_tokens(span.text, morphology)
+    title_tokens = _morphology_tokens(title, morphology)
+    if not tokens or not title_tokens:
+        return False
+    title_units = {
+        str(getattr(token, "normalized", ""))
+        for token in title_tokens
+        if str(getattr(token, "normalized", ""))
+    }
+    for report_index, token in enumerate(tokens):
+        if not (
+            getattr(token, "tag", "") == "EC"
+            and str(getattr(token, "normalized", "")).endswith(("다고", "라고"))
+        ):
+            continue
+        for predicate_index in range(report_index - 1, -1, -1):
+            predicate = tokens[predicate_index]
+            tag = str(getattr(predicate, "tag", ""))
+            normalized = str(getattr(predicate, "normalized", ""))
+            if tag == "XSV" and predicate_index > 0:
+                previous = tokens[predicate_index - 1]
+                if str(getattr(previous, "tag", "")).startswith(("N", "XR")):
+                    normalized = str(getattr(previous, "normalized", ""))
+            elif tag != "VV":
+                continue
+            return bool(normalized and normalized in title_units)
     return False
 
 
@@ -678,7 +911,11 @@ def assess_compatibility_article_understanding(
     lead_events = [
         event
         for event in eligible
-        if _is_body_lead(frozen_propositions[event.event_id], lead_end=lead_end)
+        if _is_body_lead(
+            frozen_propositions[event.event_id],
+            lead_start=lead_start,
+            lead_end=lead_end,
+        )
     ]
     winner: CandidateEvent | None = None
     failure_reason = "article_centrality_unresolved"
@@ -704,6 +941,16 @@ def assess_compatibility_article_understanding(
                     and all(frozen_propositions[event.event_id].text == frozen_propositions[lead.event_id].text
                             for event in best_events)):
                 winner = lead_events[0]
+            # A quoted title can state the embedded claim while the prose lead preserves its
+            # attribution.  Keep the exact attributed lead and require broad literal title
+            # overlap in addition to actor and predicate binding.
+            elif (
+                alignment[lead.event_id][0] >= 4
+                and _title_reported_claim_bound(
+                    article, frozen_propositions[lead.event_id], morphology
+                )
+            ):
+                winner = lead
             # Some pages put source chrome or a detached quote before the true lead, and title the
             # event with a nominal/synonymous predicate.  The first exact proposition remains
             # central when its named actor is in the title and at least three independent title

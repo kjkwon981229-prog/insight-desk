@@ -233,7 +233,9 @@ jobs:
           if-no-files-found: error
 
       - name: Upload canonical PR production artifact
-        if: github.event_name == 'pull_request' && steps.state.outputs.publish == 'true'
+        # Preserve the reviewable site and diagnostics even when the quality validator correctly
+        # fails the job.  This does not affect deployment or the fail-closed publication result.
+        if: always() && github.event_name == 'pull_request' && steps.state.outputs.publish == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: production-site-preflight-${{ github.run_id }}

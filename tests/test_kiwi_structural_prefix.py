@@ -43,7 +43,14 @@ def _extract(body: str, *, suffix: str):
 class KiwiStructuralPrefixTests(unittest.TestCase):
     def test_bracketed_and_unicode_separator_bylines_preserve_exact_event(self) -> None:
         proposition = "삼성생명이 인공지능 기반 상담 훈련 서비스를 도입한다."
-        for prefix in ("[직썰 / 손성은 기자] ", "[STN뉴스] 류승우 기자┃", "(엑스포츠뉴스 김수아 기자) "):
+        for prefix in (
+            "[직썰 / 손성은 기자] ",
+            "[STN뉴스] 류승우 기자┃",
+            "(엑스포츠뉴스 김수아 기자) ",
+            "[법률저널=안혜성 기자] ",
+            "【브레이크뉴스 대구】진예솔 기자=",
+            "[서울=뉴스핌] 양태훈 기자 = ",
+        ):
             with self.subTest(prefix=prefix):
                 result = _extract(prefix + proposition, suffix="structured-byline")
                 self.assertEqual(len(result.facts), 1)
@@ -51,6 +58,22 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
                 exact = next(span.text for span in result.evidence if span.evidence_id in fact.evidence_ids)
                 self.assertEqual(exact, proposition, repr((fact, KiwiMorphologyHelper().analyze(prefix + proposition))))
                 self.assertEqual(fact.subject, "삼성생명")
+
+    def test_closed_reporter_credit_does_not_discard_event_descriptors_before_subject(self) -> None:
+        credit = "[법률저널=안혜성 기자] "
+        proposition = (
+            "중앙행정기관, 공공기관 등 공직 채용정보를 확인하고, 현직 공무원 상담부터 "
+            "모의면접까지 직접 체험할 수 있는 공직박람회가 9일부터 대전, 전남광주에서 "
+            "차례로 열린다."
+        )
+
+        result = _extract(credit + proposition, suffix="closed-credit-with-descriptors")
+
+        fact = next(item for item in result.facts if item.subject == "공직박람회")
+        exact = next(
+            span.text for span in result.evidence if span.evidence_id in fact.evidence_ids
+        )
+        self.assertEqual(exact, proposition)
 
     def test_detached_non_predicative_byline_prefix_is_not_part_of_exact_fact_span(self) -> None:
         body = (

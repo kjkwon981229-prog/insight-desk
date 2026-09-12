@@ -9,12 +9,46 @@ from unittest.mock import patch
 
 from test_source_grounded_production_stability_v2 import _ArticleCase, _run_cases
 from dataclasses import asdict
+from insight_desk.feed_quality import VisibleStoryIssue, visible_story_issues
 from insight_desk.semantic.tooling import KiwiMorphologyHelper
 from insight_desk.semantic.kiwi_extractor import _predicate_fact_parts
 
 
 @unittest.skipUnless(importlib.util.find_spec("kiwipiepy"), "semantic-local required")
 class ScheduledSourceRecallTests(unittest.TestCase):
+    def test_routine_presence_needs_a_same_proposition_outcome(self):
+        routine = (
+            "중소기업기술정보진흥원은 김영신 원장이 지난 8일 반도체 공정용 소재·부품 "
+            "전문기업 ‘씨엠티엑스(CMTX)’를 방문했다고 9일 밝혔다."
+        )
+        consequential = (
+            "새빛연구소 대표는 오늘 AI 반도체 공장을 방문해 엔비디아와 HBM 공급계약을 "
+            "체결했다고 밝혔다."
+        )
+        cases = (
+            _ArticleCase(
+                "routine-presence",
+                "ai_tech",
+                "김영신 기정원장, 씨엠티엑스 찾아 글로벌 진출방안 모색",
+                routine,
+                None,
+            ),
+            _ArticleCase(
+                "presence-with-outcome",
+                "ai_tech",
+                "새빛연구소·엔비디아, AI 반도체 HBM 공급계약 체결",
+                consequential,
+                consequential,
+            ),
+        )
+        outcomes = _run_cases(cases)
+        self.assertIsNone(outcomes["routine-presence"].proposition)
+        self.assertEqual(outcomes["presence-with-outcome"].proposition, consequential)
+        self.assertIn(
+            VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY,
+            visible_story_issues(topic="AI·테크", headline=routine, summary=routine),
+        )
+
     def test_title_frame_cannot_promote_a_different_object_or_another_actor(self):
         cases = (
             _ArticleCase("different-object", "kpop", "튜넥스, 새 앨범 공개",
@@ -26,6 +60,22 @@ class ScheduledSourceRecallTests(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case.case_id):
                 self.assertEqual(outcomes[case.case_id].proposition, case.expected_proposition)
+
+    def test_quoted_title_cannot_bind_a_different_reported_predicate(self):
+        case = _ArticleCase(
+            "quoted-different-reported-predicate",
+            "ai_tech",
+            "앤트로픽 “로봇 제어용 하드웨어 표준 공개했다”",
+            (
+                "앤트로픽은 로봇 제어용 하드웨어 표준을 검토했다고 발표했다. "
+                "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다."
+            ),
+            "앤트로픽은 로봇 제어용 하드웨어 표준을 공개했다.",
+        )
+
+        outcome = _run_cases((case,))[case.case_id]
+
+        self.assertEqual(outcome.proposition, case.expected_proposition)
 
     def test_second_sentence_bridge_cannot_switch_to_another_named_actor(self):
         case = _ArticleCase(
@@ -48,7 +98,14 @@ class ScheduledSourceRecallTests(unittest.TestCase):
             diagnostic = Path(temp) / "understanding.jsonl"
             with patch.dict(os.environ, {"INSIGHT_DESK_UNDERSTANDING_DIAGNOSTICS": str(diagnostic)}):
                 outcomes = _run_cases(cases, clocks={
-                    case.case_id: datetime(2026, 9, 7, 8, tzinfo=timezone.utc) for case in cases
+                    case.case_id: datetime(
+                        2026,
+                        9,
+                        9 if "20260909" in case.case_id else 8 if "20260908" in case.case_id else 7,
+                        8,
+                        tzinfo=timezone.utc,
+                    )
+                    for case in cases
                 })
             recorded = {row["source"]["url"]: row for row in
                         map(json.loads, diagnostic.read_text().splitlines())}
