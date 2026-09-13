@@ -356,6 +356,50 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
         self.assertEqual(outcome.proposition, proposition)
         self.assertTrue(outcome.exact_provenance)
 
+    def test_referential_report_recovery_cannot_switch_actor_or_action(self) -> None:
+        quoted_deck = (
+            '[아이뉴스24 서효빈 기자] "생활에 필요한 밀착형 AI 서비스들을 '
+            '에이전트화해 활용하는 게 목표입니다."\n'
+        )
+        rejected_lead = (
+            "이진형 KT 본부장은 '모두의 AI' 서비스 방향을 이같이 설명했다.\n"
+        )
+        cases = (
+            _ArticleCase(
+                case_id="referential-bridge-different-actor",
+                topic="ai_tech",
+                title="KT·네이버 '모두의 AI' 검색·쇼핑 연결",
+                body=(
+                    quoted_deck
+                    + rejected_lead
+                    + "네이버는 AI 검색과 쇼핑 서비스를 하나의 에이전트로 연결한다."
+                ),
+                expected_proposition=None,
+            ),
+            _ArticleCase(
+                case_id="referential-bridge-different-action",
+                topic="ai_tech",
+                title="KT '모두의 AI' 검색·쇼핑·공공 연결",
+                body=(
+                    quoted_deck
+                    + rejected_lead
+                    + "KT는 '모두의 AI' 검색·쇼핑·공공 서비스 담당자를 채용했다."
+                ),
+                expected_proposition=None,
+            ),
+        )
+        outcomes = _run_cases(
+            cases,
+            clocks={
+                case.case_id: datetime.fromisoformat("2026-09-13T09:26:43+09:00")
+                for case in cases
+            },
+        )
+
+        for case in cases:
+            with self.subTest(case_id=case.case_id):
+                self.assertFalse(outcomes[case.case_id].published)
+
     def test_frozen_v6_runs_through_current_production_authority(self) -> None:
         qualification = json.loads(V6_QUALIFICATION.read_text(encoding="utf-8"))
         self.assertEqual(qualification["schema_version"], 6)
