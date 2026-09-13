@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from insight_desk.acquisition import (
     AcquisitionError,
@@ -108,6 +109,17 @@ class NaverNormalizationTests(unittest.TestCase):
 
 
 class AcquisitionPipelineTests(unittest.TestCase):
+    @staticmethod
+    def _pipeline_for_html(html: str, *, body: str | None = None) -> AcquisitionPipeline:
+        extracted_body = body or ("원문 본문입니다. " * 40)
+        return AcquisitionPipeline(
+            fetcher=FakeFetcher(html),
+            primary_extractor=FakeExtractor(
+                {html: ExtractedArticle(body=extracted_body, page_title="원문 제목")}
+            ),
+            quality_policy=ExtractionQualityPolicy(min_non_whitespace_chars=100),
+        )
+
     def test_primary_extraction_preserves_protected_literals_exactly(self) -> None:
         body = (
             "SK하이닉스는 9월 3일 신규 계획을 발표했다. "
@@ -196,6 +208,48 @@ class AcquisitionPipelineTests(unittest.TestCase):
         )
         result = pipeline.acquire(candidate())
         self.assertEqual(result.article.title, "검색 결과 제목")
+
+    def test_publisher_page_time_overrides_newer_discovery_time(self) -> None:
+        from scripts.phase11_daily_production_core import _is_fresh
+
+        discovery_time = datetime(2026, 9, 12, 11, 0, tzinfo=timezone.utc)
+        publisher_time = datetime(2026, 9, 8, 15, 0, tzinfo=timezone(timedelta(hours=9)))
+        html = (
+            '<html><head><meta property="article:published_time" '
+            'content="2026-09-08T15:00:00+09:00"></head><body>원문</body></html>'
+        )
+
+        result = self._pipeline_for_html(html).acquire(
+            replace(candidate(), published_at=discovery_time)
+        )
+
+        self.assertEqual(result.article.provenance.published_at, publisher_time)
+        self.assertFalse(_is_fresh(result.article.provenance.published_at, discovery_time))
+
+    def test_newsarticle_json_ld_time_is_used_when_meta_is_absent(self) -> None:
+        html = (
+            '<html><head><script type="application/ld+json">'
+            '{"@context":"https://schema.org","@type":"NewsArticle",'
+            '"datePublished":"2026-09-11T07:15:00Z"}'
+            '</script></head><body>원문</body></html>'
+        )
+
+        result = self._pipeline_for_html(html).acquire(candidate())
+
+        self.assertEqual(
+            result.article.provenance.published_at,
+            datetime(2026, 9, 11, 7, 15, tzinfo=timezone.utc),
+        )
+
+    def test_invalid_or_naive_page_time_cannot_replace_discovery_time(self) -> None:
+        for raw_value in ("not-a-date", "2026-09-08T15:00:00"):
+            with self.subTest(raw_value=raw_value):
+                html = (
+                    '<html><head><meta property="article:published_time" '
+                    f'content="{raw_value}"></head><body>원문</body></html>'
+                )
+                result = self._pipeline_for_html(html).acquire(candidate())
+                self.assertEqual(result.article.provenance.published_at, NOW)
 
 
 if __name__ == "__main__":

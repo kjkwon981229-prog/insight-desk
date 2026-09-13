@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any, cast
 
@@ -19,12 +21,22 @@ class _PageTitleParser(HTMLParser):
         self.og_title: str | None = None
         self.twitter_title: str | None = None
         self.site_names: set[str] = set()
+        self.article_published_times: list[str] = []
+        self.date_published_values: list[str] = []
+        self._inside_json_ld = False
+        self._json_ld_chunks: list[str] = []
+        self.json_ld_payloads: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         lowered = tag.lower()
         attributes = {str(key).lower(): value for key, value in attrs}
         if lowered == "title":
             self._inside_title = True
+        if lowered == "script":
+            script_type = str(attributes.get("type") or "").split(";", 1)[0].strip().lower()
+            if script_type == "application/ld+json":
+                self._inside_json_ld = True
+                self._json_ld_chunks = []
         if lowered == "meta":
             key = str(attributes.get("property") or attributes.get("name") or "").lower()
             content = str(attributes.get("content") or "").strip()
@@ -34,14 +46,30 @@ class _PageTitleParser(HTMLParser):
                 self.twitter_title = content
             elif key == "og:site_name" and content:
                 self.site_names.add(content)
+            elif key == "article:published_time" and content:
+                self.article_published_times.append(content)
+            elif key in {"datepublished", "date_published"} and content:
+                self.date_published_values.append(content)
+        if lowered == "time":
+            itemprop = str(attributes.get("itemprop") or "").strip().lower()
+            value = str(attributes.get("datetime") or "").strip()
+            if itemprop == "datepublished" and value:
+                self.date_published_values.append(value)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "title":
+        lowered = tag.lower()
+        if lowered == "title":
             self._inside_title = False
+        if lowered == "script" and self._inside_json_ld:
+            self.json_ld_payloads.append("".join(self._json_ld_chunks))
+            self._json_ld_chunks = []
+            self._inside_json_ld = False
 
     def handle_data(self, data: str) -> None:
         if self._inside_title:
             self._title_chunks.append(data)
+        if self._inside_json_ld:
+            self._json_ld_chunks.append(data)
 
     def best_title(self) -> str | None:
         for value in (self.og_title, self.twitter_title, "".join(self._title_chunks).strip()):
@@ -57,6 +85,76 @@ def extract_page_title(html: str) -> str | None:
     except Exception:
         return None
     return parser.best_title()
+
+
+def _parse_aware_publication_time(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = value.strip()
+    try:
+        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(candidate)
+        except (TypeError, ValueError, OverflowError):
+            return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+def _json_ld_article_publication_times(value: object) -> tuple[str, ...]:
+    values: list[str] = []
+    if isinstance(value, list):
+        for child in value:
+            values.extend(_json_ld_article_publication_times(child))
+        return tuple(values)
+    if not isinstance(value, dict):
+        return ()
+
+    raw_types = value.get("@type")
+    types = (raw_types,) if isinstance(raw_types, str) else raw_types
+    if isinstance(types, (tuple, list)) and any(
+        isinstance(item, str) and item.casefold() in {
+            "article",
+            "newsarticle",
+            "reportagenewsarticle",
+        }
+        for item in types
+    ):
+        published = value.get("datePublished")
+        if isinstance(published, str) and published.strip():
+            values.append(published)
+    for child in value.values():
+        if isinstance(child, (dict, list)):
+            values.extend(_json_ld_article_publication_times(child))
+    return tuple(values)
+
+
+def extract_page_published_at(html: str) -> datetime | None:
+    """Return an explicit publisher-page publication time when it is unambiguous and aware."""
+
+    parser = _PageTitleParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except Exception:
+        return None
+
+    for value in (*parser.article_published_times, *parser.date_published_values):
+        parsed = _parse_aware_publication_time(value)
+        if parsed is not None:
+            return parsed
+    for payload in parser.json_ld_payloads:
+        try:
+            decoded = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        for value in _json_ld_article_publication_times(decoded):
+            parsed = _parse_aware_publication_time(value)
+            if parsed is not None:
+                return parsed
+    return None
 
 
 def strip_document_publisher_prefix(body: str, html: str) -> str:
@@ -121,6 +219,74 @@ def _preserve_article_root_text_boundaries(html: str) -> str:
     if not changed:
         return html
     return cast(str, etree.tostring(document, encoding="unicode", method="html"))
+
+
+_PROSE_BLOCK_TAGS = frozenset({"p", "h1", "h2", "h3", "h4", "blockquote"})
+
+
+def _tag_name(node: Any) -> str:
+    return node.tag.casefold() if isinstance(getattr(node, "tag", None), str) else ""
+
+
+def _direct_table_rows(table: Any) -> tuple[Any, ...]:
+    rows: list[Any] = []
+    for child in table:
+        tag = _tag_name(child)
+        if tag == "tr":
+            rows.append(child)
+        elif tag in {"thead", "tbody", "tfoot"}:
+            rows.extend(grandchild for grandchild in child if _tag_name(grandchild) == "tr")
+    return tuple(rows)
+
+
+def _nearest_table(node: Any) -> Any | None:
+    for ancestor in node.iterancestors():
+        if _tag_name(ancestor) == "table":
+            return ancestor
+    return None
+
+
+def _is_single_row_prose_layout_table(table: Any) -> bool:
+    """Identify a layout table without class names, publishers, or article wording.
+
+    A real data table distributes values across cells and/or rows. The measured failure instead
+    has one row where exactly one cell owns several long-form paragraph blocks while its sibling
+    cells are layout/navigation. Rendering that wrapper as a table erases the paragraph boundaries.
+    """
+
+    rows = _direct_table_rows(table)
+    if len(rows) != 1:
+        return False
+    cells = tuple(child for child in rows[0] if _tag_name(child) in {"td", "th"})
+    if len(cells) < 2:
+        return False
+
+    prose_cells = 0
+    for cell in cells:
+        block_texts: list[str] = []
+        for descendant in cell.iterdescendants():
+            if _tag_name(descendant) not in _PROSE_BLOCK_TAGS:
+                continue
+            if _nearest_table(descendant) is not table:
+                continue
+            normalized = " ".join("".join(descendant.itertext()).replace("\xa0", " ").split())
+            if normalized:
+                block_texts.append(normalized)
+        if len(block_texts) >= 3 and sum(map(len, block_texts)) >= 240:
+            prose_cells += 1
+    return prose_cells == 1
+
+
+def _has_single_row_prose_layout_table(html: str) -> bool:
+    try:
+        from lxml import etree, html as lxml_html  # type: ignore[import-untyped]
+    except ImportError:
+        return False
+    try:
+        document = lxml_html.fromstring(html)
+    except (ValueError, etree.ParserError):
+        return False
+    return any(_is_single_row_prose_layout_table(table) for table in document.iter("table"))
 
 
 class _ArticleMainParser(HTMLParser):
@@ -237,10 +403,15 @@ class TrafilaturaExtractor:
         try:
             # `favor_precision=True` discards text inside styled inline spans on measured publisher
             # pages, including dates, tenors, percentages, and punctuation required for exact proof.
+            prepared_html = _preserve_article_root_text_boundaries(html)
+            # A single-row multi-cell layout wrapper can make trafilatura serialize an entire
+            # article as one ``| ... |`` table row, destroying source paragraph boundaries. Only
+            # suppress table rendering when the DOM proves that structural layout pattern; real
+            # multi-row data tables retain the normal extraction route.
             body: Any = trafilatura.extract(
-                _preserve_article_root_text_boundaries(html),
+                prepared_html,
                 include_comments=False,
-                include_tables=True,
+                include_tables=not _has_single_row_prose_layout_table(prepared_html),
                 output_format="txt",
             )
         except Exception as exc:

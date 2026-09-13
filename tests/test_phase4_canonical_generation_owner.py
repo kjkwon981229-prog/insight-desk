@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ from insight_desk.production_phase7_v2 import (
     CanonicalEventRecoveryGenerator,
     CanonicalGenerationRequest,
     build_canonical_generation_request,
+    pop_canonical_generation_rejection,
     scope_phase7_story_readmission,
 )
 from insight_desk.providers.cloudflare import CLOUDFLARE_VERIFIER_ID
@@ -234,6 +236,53 @@ class _AlwaysSupportVerifier:
 
 
 class CanonicalGenerationOwnerTests(unittest.TestCase):
+    def test_oversized_exact_source_rejection_has_bounded_audit_reason(self) -> None:
+        proposition = "한국은행은 기준금리 결정의 근거와 향후 물가 전망을 공개했다. " * 5
+        source = replace(
+            _source(),
+            body=proposition,
+            content_sha256=hashlib.sha256(proposition.encode("utf-8")).hexdigest(),
+        )
+        canonical = replace(
+            _canonical(),
+            evidence_refs=(
+                CanonicalEvidenceRef(
+                    source_id=SOURCE_ID,
+                    field="body",
+                    start=0,
+                    end=len(proposition),
+                    text_sha256=hashlib.sha256(proposition.encode("utf-8")).hexdigest(),
+                ),
+            ),
+        )
+        span = EvidenceSpan(
+            evidence_id=EVIDENCE_ID,
+            article_id=ARTICLE_ID,
+            field=EvidenceField.BODY,
+            start=0,
+            end=len(proposition),
+            text=proposition,
+        )
+        legacy = _legacy_request()
+        request = GenerationRequest(
+            event=legacy.event,
+            facts=legacy.facts,
+            evidence={EVIDENCE_ID: span},
+        )
+        registry = ProductionV2Registry(
+            sources_by_article={ARTICLE_ID: source},
+            events_by_id={EVENT_ID: canonical},
+        )
+        core = SimpleNamespace(produce_phase7_entry_candidate=lambda *_args, **_kwargs: None)
+        scope_phase7_story_readmission(core, registry)
+
+        self.assertIsNone(core.produce_phase7_entry_candidate(request))
+        self.assertEqual(
+            pop_canonical_generation_rejection(EVENT_ID),
+            "headline_exceeds_feed_ceiling",
+        )
+        self.assertIsNone(pop_canonical_generation_rejection(EVENT_ID))
+
     def test_canonical_request_uses_canonical_metadata_not_legacy_fact(self) -> None:
         request = build_canonical_generation_request(_registry(), _legacy_request())
         self.assertIsInstance(request, CanonicalGenerationRequest)

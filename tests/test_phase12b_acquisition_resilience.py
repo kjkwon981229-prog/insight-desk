@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import importlib.util
+import sys
 import unittest
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from insight_desk.acquisition import (
     AcquisitionPipeline,
@@ -76,6 +79,30 @@ def article_html(repeat: int = 30) -> str:
     )
 
 
+def single_row_layout_article_html() -> tuple[str, str, str]:
+    deck = "엔비디아 ‘베라 루빈’ 출격 임박…인도 데이터센터 GPU 도입·확장"
+    lead = (
+        "엔비디아의 차세대 그래픽처리장치(GPU) ‘베라 루빈(Vera Rubin)’이 올가을 "
+        "출하를 앞두면서 글로벌 데이터센터 투자와 맞물려 새로운 성장 동력으로 떠오르고 있다."
+    )
+    detail = (
+        "9월 12일 엔비디아는 베라 루빈의 출하를 올가을 시작할 예정이다. "
+        "인도 데이터센터 업체 요타 서비스는 GPU 40000개를 조달할 계획이다."
+    )
+    html = (
+        "<html><head><title>엔비디아 베라 루빈 올가을 출하</title></head><body>"
+        '<table class="publisher-layout"><tbody><tr>'
+        "<td><a>뉴스 홈</a></td><td><div id=\"textinput\">"
+        f"<p><strong>{deck}</strong></p><p>&nbsp;</p>"
+        '<table class="body-image"><tr><td><img src="image.jpg"></td></tr></table>'
+        f"<p>{lead}</p><p>&nbsp;</p><p>{detail}</p>"
+        f"<p>{detail}</p><p>{detail}</p>"
+        "</div></td><td><a>많이 본 기사</a></td>"
+        "</tr></tbody></table></body></html>"
+    )
+    return html, deck, lead
+
+
 class Phase12BAcquisitionResilienceTests(unittest.TestCase):
     def test_article_main_extractor_keeps_article_text_and_excludes_navigation(self) -> None:
         result = ArticleMainTextExtractor().extract(article_html(), url=candidate().url)
@@ -110,6 +137,46 @@ class Phase12BAcquisitionResilienceTests(unittest.TestCase):
             raise
         self.assertIn(expected_boundary, primary.body)
         self.assertNotIn("두 번째 요약연구진", primary.body)
+
+    @unittest.skipUnless(
+        HAS_ACQUISITION_RUNTIME,
+        "layout-table normalization requires the production acquisition runtime",
+    )
+    def test_single_row_layout_table_preserves_deck_and_lead_as_source_blocks(self) -> None:
+        html, deck, lead = single_row_layout_article_html()
+        try:
+            extracted = TrafilaturaExtractor().extract(html, url=candidate().url)
+        except Exception as exc:
+            if "trafilatura dependency unavailable" in str(exc):
+                self.skipTest("acquisition optional dependency not installed")
+            raise
+
+        lines = tuple(line.strip() for line in extracted.body.splitlines() if line.strip())
+        self.assertIn(deck, lines)
+        self.assertIn(lead, lines)
+        self.assertNotIn(deck + "   " + lead, extracted.body)
+        self.assertFalse(extracted.body.lstrip().startswith("|"))
+
+    def test_multi_row_data_table_keeps_table_extraction_enabled(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def extract(html: str, **kwargs: object) -> str:
+            del html
+            calls.append(kwargs)
+            return "분기별 실적 표를 공개했다. " * 20
+
+        html = (
+            "<html><body><article><p>회사는 분기별 실적을 공개했다.</p>"
+            "<table><tr><th>분기</th><th>매출</th></tr>"
+            "<tr><td>1분기</td><td>100</td></tr>"
+            "<tr><td>2분기</td><td>120</td></tr></table>"
+            "<p>회사는 수치를 감사받았다고 밝혔다.</p></article></body></html>"
+        )
+        with patch.dict(sys.modules, {"trafilatura": SimpleNamespace(extract=extract)}):
+            TrafilaturaExtractor().extract(html, url=candidate().url)
+
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0]["include_tables"], True)
 
     def test_static_article_main_fallback_avoids_playwright(self) -> None:
         raw = article_html()

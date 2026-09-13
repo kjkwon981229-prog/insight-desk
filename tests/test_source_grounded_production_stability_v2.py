@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from insight_desk.acquisition import TrafilaturaExtractor
 from insight_desk.core import (
     ArticleEventRole,
     CandidateEvent,
@@ -40,6 +41,7 @@ from scripts import phase11_daily_production_core as production_core
 ROOT = Path(__file__).resolve().parents[1]
 V6_QUALIFICATION = ROOT / "tests" / "fixtures" / "event_understanding_qualification_v6.json"
 SEMANTIC_RUNTIME_AVAILABLE = importlib.util.find_spec("kiwipiepy") is not None
+ACQUISITION_RUNTIME_AVAILABLE = importlib.util.find_spec("trafilatura") is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +224,49 @@ def _run_cases(
     "source-grounded production stability requires the production semantic-local runtime",
 )
 class SourceGroundedProductionStabilityTests(unittest.TestCase):
+    @unittest.skipUnless(
+        ACQUISITION_RUNTIME_AVAILABLE,
+        "layout-source regression requires the production acquisition runtime",
+    )
+    def test_single_row_layout_source_reaches_exact_canonical_publication(self) -> None:
+        deck = "엔비디아 ‘베라 루빈’ 출격 임박…인도 데이터센터 GPU 도입·확장"
+        proposition = (
+            "엔비디아의 차세대 그래픽처리장치(GPU) ‘베라 루빈(Vera Rubin)’이 올가을 "
+            "출하를 앞두면서 글로벌 데이터센터 투자와 맞물려 새로운 성장 동력으로 떠오르고 있다."
+        )
+        detail = (
+            "9월 12일 엔비디아는 베라 루빈의 출하를 올가을 시작할 예정이다. "
+            "인도 데이터센터 업체 요타 서비스는 GPU 40000개를 조달할 계획이다."
+        )
+        html = (
+            "<html><head><title>엔비디아 베라 루빈 올가을 출하</title></head><body>"
+            "<table><tr><td>뉴스 홈</td><td><div>"
+            f"<p><strong>{deck}</strong></p><p>&nbsp;</p>"
+            '<table><tr><td><img src="image.jpg"></td></tr></table>'
+            f"<p>{proposition}</p><p>{detail}</p><p>{detail}</p>"
+            "</div></td><td>많이 본 기사</td></tr></table></body></html>"
+        )
+
+        extracted = TrafilaturaExtractor().extract(
+            html,
+            url="https://example.invalid/layout-source",
+        )
+        outcome = _run_cases((
+            _ArticleCase(
+                case_id="layout-table-vera-rubin",
+                topic="ai_tech",
+                title="엔비디아 새 랠리 시작되나…베라 루빈 올가을 출하가 주가 변수",
+                body=extracted.body,
+                expected_proposition=proposition,
+            ),
+        ))["layout-table-vera-rubin"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+        self.assertLessEqual(len(proposition), 120)
+        self.assertNotIn(deck, proposition)
+        self.assertNotIn("|", proposition)
+
     def test_frozen_v6_runs_through_current_production_authority(self) -> None:
         qualification = json.loads(V6_QUALIFICATION.read_text(encoding="utf-8"))
         self.assertEqual(qualification["schema_version"], 6)
