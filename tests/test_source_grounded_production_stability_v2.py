@@ -297,6 +297,65 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
         self.assertNotIn(deck, proposition)
         self.assertNotIn("|", proposition)
 
+    def test_referential_report_lead_recovers_immediate_title_bound_event(self) -> None:
+        case_id = "fresh-20260913-referential-report-lead"
+        rejected_lead = (
+            "이진형 KT AX사업본부장 상무는 11일'모두의 AI' 사업 전략 설명회에서 "
+            "KT가 준비 중인 AI 서비스의 방향을 이같이 설명했다."
+        )
+        proposition = (
+            "KT는 '이음 인사이드'를 통해 검색과 쇼핑, 부동산, 공공서비스 등을 "
+            "하나의 AI 에이전트로 연결한다."
+        )
+        body = (
+            '[아이뉴스24 서효빈 기자] "생활에 필요한 밀착형 AI 서비스들을 '
+            '에이전트화해 활용하는 게 저희의 가장 큰 목표입니다."\n'
+            f"{rejected_lead}\n{proposition} "
+            "업스테이지·모티프·NC AI 등 국산 AI 모델 5종도 질의와 서비스 특성에 "
+            "따라 나눠 활용할 계획이다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id=case_id,
+                    topic="ai_tech",
+                    title=(
+                        "KT &quot;'모두의 AI'로 검색&middot;쇼핑&middot;공공 연결"
+                        "&hellip;국산 AI 5종 최적 활용&quot;"
+                    ),
+                    body=body,
+                    expected_proposition=proposition,
+                    source_name="아이뉴스24",
+                    source_url="https://www.inews24.com/view/2004940",
+                ),
+            ),
+            clocks={case_id: datetime.fromisoformat("2026-09-13T09:26:43+09:00")},
+        )[case_id]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertNotEqual(outcome.proposition, rejected_lead)
+        self.assertTrue(outcome.exact_provenance)
+
+    def test_referential_reporting_tail_keeps_an_explicit_reported_claim(self) -> None:
+        proposition = (
+            "KT는 검색과 쇼핑, 공공서비스를 하나의 AI 에이전트로 연결한다고 "
+            "이같이 설명했다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id="explicit-claim-before-referential-report",
+                    topic="ai_tech",
+                    title="KT, 검색·쇼핑·공공 서비스를 AI 에이전트로 연결",
+                    body=proposition,
+                    expected_proposition=proposition,
+                ),
+            )
+        )["explicit-claim-before-referential-report"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+
     def test_frozen_v6_runs_through_current_production_authority(self) -> None:
         qualification = json.loads(V6_QUALIFICATION.read_text(encoding="utf-8"))
         self.assertEqual(qualification["schema_version"], 6)

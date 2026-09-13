@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from insight_desk.feed_quality_detectors import referential_report_without_claim
 from scripts.validate_feed_artifact import validate_html
 
 
@@ -20,6 +21,24 @@ def html_for(*stories: tuple[str, str, str, str]) -> str:
 
 
 class FeedArtifactValidatorTests(unittest.TestCase):
+    def test_referential_report_detector_requires_a_visible_claim(self) -> None:
+        incomplete = (
+            "회사는 서비스 방향을 이같이 설명했다.",
+            "회사는 서비스 방향을 이처럼 설명했다.",
+            "회사는 서비스 방향을 그렇게 밝혔다.",
+            "회사는 서비스 방향을 이와 같이 말했다.",
+        )
+        complete = (
+            "회사는 서비스를 연결한다고 이같이 설명했다.",
+            "회사는 서비스를 공개하고 이같이 설명했다.",
+        )
+        for proposition in incomplete:
+            with self.subTest(incomplete=proposition):
+                self.assertTrue(referential_report_without_claim(proposition))
+        for proposition in complete:
+            with self.subTest(complete=proposition):
+                self.assertFalse(referential_report_without_claim(proposition))
+
     def test_normal_feed_passes_with_metrics(self) -> None:
         report = validate_html(
             html_for(
@@ -161,6 +180,25 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "FEED_QUALITY_NONASSERTIVE_QUESTION"):
             validate_html(
                 html_for(("event:question", "한화 이글스", question, question)),
+                source_audit=audit,
+            )
+
+    def test_v2_exact_source_rejects_referential_report_without_claim(self) -> None:
+        audit = {
+            "publication_contract_version": 2,
+            "canonical_contract": {"validated": True},
+            "runtime_authority": {
+                "story_admission_semantic_gate": False,
+                "visible_identity_semantic_gate": False,
+            },
+        }
+        incomplete = (
+            "이진형 KT AX사업본부장 상무는 KT가 준비 중인 AI 서비스의 방향을 "
+            "이같이 설명했다."
+        )
+        with self.assertRaisesRegex(ValueError, "FEED_QUALITY_CONTEXT_DEPENDENT_HEADLINE"):
+            validate_html(
+                html_for(("event:referential-report", "AI 테크", incomplete, incomplete)),
                 source_audit=audit,
             )
 

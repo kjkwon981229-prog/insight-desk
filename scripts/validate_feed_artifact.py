@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from insight_desk.feed_quality import VisibleStoryIssue
 from insight_desk.feed_quality_detectors import (
     nonassertive_interrogative_text,
+    referential_report_without_claim,
     visible_metadata_text,
 )
 from insight_desk.feed_quality_detectors_core import fused_repeated_source_fragment
@@ -275,9 +276,10 @@ def validate_html(
         if structural_malformed:
             malformed_visible_texts += 1
 
-        # Canonical V2 does not semantically re-judge an accepted event, but source chrome and a
-        # non-assertive question are observable presentation/proposition invariants.  Keep these
-        # last-line guards active so the audit cannot report clean counters for visibly bad cards.
+        # Canonical V2 does not semantically re-judge an accepted event, but source chrome,
+        # non-assertive questions, and a reporting tail with no visible claim are observable
+        # presentation/proposition invariants. Keep these last-line guards active so the audit
+        # cannot report clean counters for visibly bad cards.
         if canonical_v2:
             if visible_metadata_text(headline) or visible_metadata_text(summary):
                 visible_metadata_issues += 1
@@ -286,6 +288,10 @@ def validate_html(
                 or nonassertive_interrogative_text(summary)
             ):
                 nonassertive_questions += 1
+            if referential_report_without_claim(headline):
+                context_dependent_headlines += 1
+            if referential_report_without_claim(summary):
+                context_dependent_summaries += 1
 
         if not canonical_v2:
             decision = evaluate_story_admission(
