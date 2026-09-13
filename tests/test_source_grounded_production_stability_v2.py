@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from insight_desk.acquisition import TrafilaturaExtractor
+from insight_desk.acquisition.runtime import strip_document_publisher_prefix
 from insight_desk.core import (
     ArticleEventRole,
     CandidateEvent,
@@ -224,6 +225,35 @@ def _run_cases(
     "source-grounded production stability requires the production semantic-local runtime",
 )
 class SourceGroundedProductionStabilityTests(unittest.TestCase):
+    def test_repeated_title_publisher_label_reaches_clean_exact_publication(self) -> None:
+        title = "현대硏, 올해 성장률 3.5%로 상향…내년 2.4% 전망"
+        proposition = (
+            "반도체 경기 호황에 힘입어 올해 한국 경제가 3.5% 성장할 것이라는 전망이 나왔다."
+        )
+        html = (
+            f'<meta property="og:title" content="{title}">'
+            '<meta property="og:site_name" content="파이낸셜뉴스">'
+        )
+        extracted_body = (
+            f"{title}\n[파이낸셜뉴스] {proposition}\n"
+            "현대경제연구원은 올해 경제성장률 전망치를 기존 2.7%에서 3.5%로 상향 조정했다."
+        )
+        body = strip_document_publisher_prefix(extracted_body, html)
+
+        outcome = _run_cases((
+            _ArticleCase(
+                case_id="repeated-title-document-publisher-label",
+                topic="economy",
+                title=title,
+                body=body,
+                expected_proposition=proposition,
+            ),
+        ))["repeated-title-document-publisher-label"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+        self.assertNotIn("[파이낸셜뉴스]", body)
+
     @unittest.skipUnless(
         ACQUISITION_RUNTIME_AVAILABLE,
         "layout-source regression requires the production acquisition runtime",

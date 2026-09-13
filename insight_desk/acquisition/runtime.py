@@ -161,7 +161,10 @@ def strip_document_publisher_prefix(body: str, html: str) -> str:
     """Remove a detached label only when the document identifies that exact publisher.
 
     Bracketed qualifications remain evidence. No publisher-name vocabulary or
-    inferred mapping from hostnames participates in this boundary decision.
+    inferred mapping from hostnames participates in this boundary decision. Some
+    extractors repeat the exact page title before the lead; in that shape the same
+    document-identified label may also be removed from the immediately following
+    non-empty source block, but never from arbitrary later prose.
     """
     parser = _PageTitleParser()
     try:
@@ -174,7 +177,30 @@ def strip_document_publisher_prefix(body: str, html: str) -> str:
     label = f"[{publisher}]"
     if body.startswith(label) and body[len(label):len(label) + 1].isspace():
         return body[len(label):].lstrip()
-    return body
+
+    page_title = parser.best_title()
+    if not page_title:
+        return body
+    lines = body.splitlines(keepends=True)
+    nonempty = [index for index, line in enumerate(lines) if line.strip()]
+    if len(nonempty) < 2:
+        return body
+    title_index, lead_index = nonempty[:2]
+    normalize = lambda value: " ".join(value.replace("\xa0", " ").split())
+    if normalize(lines[title_index]) != normalize(page_title):
+        return body
+
+    lead_line = lines[lead_index]
+    indent_length = len(lead_line) - len(lead_line.lstrip(" \t"))
+    label_start = indent_length
+    label_end = label_start + len(label)
+    if (
+        not lead_line.startswith(label, label_start)
+        or not lead_line[label_end:label_end + 1].isspace()
+    ):
+        return body
+    lines[lead_index] = lead_line[:label_start] + lead_line[label_end:].lstrip(" \t")
+    return "".join(lines)
 
 
 def _preserve_article_root_text_boundaries(html: str) -> str:
