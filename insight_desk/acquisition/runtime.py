@@ -38,7 +38,12 @@ class _PageTitleParser(HTMLParser):
                 self._inside_json_ld = True
                 self._json_ld_chunks = []
         if lowered == "meta":
-            key = str(attributes.get("property") or attributes.get("name") or "").lower()
+            key = str(
+                attributes.get("property")
+                or attributes.get("name")
+                or attributes.get("itemprop")
+                or ""
+            ).lower()
             content = str(attributes.get("content") or "").strip()
             if key == "og:title" and content:
                 self.og_title = content

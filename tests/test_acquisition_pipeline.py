@@ -241,6 +241,19 @@ class AcquisitionPipelineTests(unittest.TestCase):
             datetime(2026, 9, 11, 7, 15, tzinfo=timezone.utc),
         )
 
+    def test_datepublished_meta_itemprop_is_used(self) -> None:
+        html = (
+            '<html><head><meta itemprop="datePublished" '
+            'content="2026-09-10T18:30:00+09:00"></head><body>원문</body></html>'
+        )
+
+        result = self._pipeline_for_html(html).acquire(candidate())
+
+        self.assertEqual(
+            result.article.provenance.published_at,
+            datetime(2026, 9, 10, 18, 30, tzinfo=timezone(timedelta(hours=9))),
+        )
+
     def test_invalid_or_naive_page_time_cannot_replace_discovery_time(self) -> None:
         for raw_value in ("not-a-date", "2026-09-08T15:00:00"):
             with self.subTest(raw_value=raw_value):
