@@ -23,6 +23,7 @@ from insight_desk.core.event_understanding_v2 import (
 from insight_desk.event_predicate_v2 import PredicateCompleteness, assess_event_predicate
 from insight_desk.feed_quality_detectors import (
     nonassertive_interrogative_text,
+    referential_report_without_claim,
     routine_presence_without_outcome,
 )
 from insight_desk.semantic.tooling import MorphologySourceOffsetError
@@ -222,6 +223,15 @@ def assess_compatibility_event_understanding(
             topic_relation=TopicRelation.UNRESOLVED,
             publishable_event=False,
             reasons=("predicate_unresolved",),
+        )
+
+    if referential_report_without_claim(fact.action):
+        return CompatibilityEventUnderstandingDecision(
+            status=UnderstandingStatus.RESOLVED,
+            article_role=ArticleEventRole.CONTEXT,
+            topic_relation=TopicRelation.BACKGROUND,
+            publishable_event=False,
+            reasons=("referential_report_without_claim",),
         )
 
     if _is_copular_definition(fact.action, morphology):
@@ -735,6 +745,17 @@ def _title_event_frame_bound(article: RawArticle, span: EvidenceSpan, morphology
     if not object_units or not all(unit in title_units or title_has_surface(unit)
                                    for unit in object_units):
         return False
+    return _title_finite_action_bound(article, span, morphology)
+
+
+def _title_finite_action_bound(article: RawArticle, span: EvidenceSpan, morphology) -> bool:
+    """Require the exact proposition's finite action to occur in the source title."""
+
+    tokens = _morphology_tokens(span.text, morphology)
+    title_tokens = _morphology_tokens(article.title, morphology)
+    if not tokens or not title_tokens:
+        return False
+    title_units = {str(getattr(token, "normalized", "")) for token in title_tokens}
     finite = [index for index, token in enumerate(tokens) if getattr(token, "tag", "") == "EF"]
     if not finite:
         return False
@@ -968,16 +989,49 @@ def assess_compatibility_article_understanding(
                 winner = lead_events[0]
         failure_reason = "article_centrality_conflict"
 
-    lead_has_extracted_fact = any(
-        span is not None
-        and span.field.value == "body"
-        and span.start < lead_end
-        and span.end > lead_start
+    lead_fact_ids = {
+        fact.fact_id
         for fact in facts.values()
-        for evidence_id in fact.evidence_ids
-        for span in (evidence.get(evidence_id),)
+        if any(
+            span is not None
+            and span.field.value == "body"
+            and span.start < lead_end
+            and span.end > lead_start
+            for evidence_id in fact.evidence_ids
+            for span in (evidence.get(evidence_id),)
+        )
+    }
+    lead_has_extracted_fact = bool(lead_fact_ids)
+    referential_lead_events = []
+    for event in events:
+        decision = decisions[event.event_id]
+        if (
+            "referential_report_without_claim" not in decision.reasons
+            or len(event.fact_ids) != 1
+            or event.fact_ids[0] not in lead_fact_ids
+        ):
+            continue
+        span = _exact_proposition_span(
+            article,
+            event,
+            facts=facts,
+            evidence=evidence,
+        )
+        if span is not None and _is_body_lead(
+            span,
+            lead_start=lead_start,
+            lead_end=lead_end,
+        ):
+            referential_lead_events.append(event)
+    recover_referential_lead = (
+        len(referential_lead_events) == 1
+        and lead_fact_ids == {referential_lead_events[0].fact_ids[0]}
     )
-    if winner is None and not lead_events and not lead_has_extracted_fact:
+    if (
+        winner is None
+        and not lead_events
+        and (not lead_has_extracted_fact or recover_referential_lead)
+    ):
         # A malformed/unparseable source lead can still be followed immediately by a clean,
         # independently extractable elaboration of that same event.  Recover only when both
         # source sentences are strongly title-bound, the elaboration is the unique best title
@@ -1002,12 +1056,23 @@ def assess_compatibility_article_understanding(
             lead_alignment = _proposition_title_alignment(lead_text, title_units)
             best = max(alignment.values())
             best_events = [event for event in eligible if alignment[event.event_id] == best]
+            lead_alignment_floor = 3 if recover_referential_lead else 4
+            action_bound = (
+                _title_finite_action_bound(
+                    article,
+                    frozen_propositions[immediate[0].event_id],
+                    morphology,
+                )
+                if recover_referential_lead and len(immediate) == 1
+                else True
+            )
             if (
                 len(immediate) == 1
                 and len(best_events) == 1
                 and best_events[0] == immediate[0]
-                and lead_alignment[0] >= 4
+                and lead_alignment[0] >= lead_alignment_floor
                 and best[0] >= 4
+                and action_bound
                 and _title_leading_actor_continues_lead(
                     article,
                     frozen_propositions[immediate[0].event_id],

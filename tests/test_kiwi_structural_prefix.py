@@ -94,6 +94,25 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
         self.assertNotIn("컨슈머타임스", exact)
         self.assertNotIn("안솔지 기자", exact)
 
+    def test_unbracketed_publisher_byline_keeps_the_following_dateline(self) -> None:
+        proposition = (
+            "14일, 코스피가 전 거래일에 비해 217.30포인트(-3.14%) 하락한 "
+            "6692.61에 개장했다."
+        )
+        body = "라이센스뉴스 = 김재용 기자 | " + proposition
+
+        result = _extract(body, suffix="unbracketed-byline-with-dateline")
+
+        self.assertEqual(len(result.facts), 1)
+        fact = result.facts[0]
+        exact = next(
+            span.text for span in result.evidence if span.evidence_id in fact.evidence_ids
+        )
+        self.assertEqual(exact, proposition)
+        self.assertEqual(fact.subject, "코스피")
+        self.assertNotIn("라이센스뉴스", exact)
+        self.assertNotIn("김재용 기자", exact)
+
     def test_predicative_context_before_pipe_is_not_trimmed_as_metadata(self) -> None:
         body = "업계에 따르면 | 네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
         article = RawArticle(

@@ -36,6 +36,7 @@ from insight_desk.core.identity import IdentityDisposition, identity_disposition
 from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
+from insight_desk.production_phase7_v2 import pop_canonical_generation_rejection
 from insight_desk.production_event_understanding_compat_v2 import (
     assess_compatibility_event_understanding as event_understanding_decision,
 )
@@ -374,6 +375,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "extractive_fallback": 0,
         "verification_recovery_fallback": 0,
         "extractive_fallback_unavailable": 0,
+        "canonical_source_rejected": 0,
     }
     generation_route_stats: dict[str, dict[str, int]] = {}
     verification_stats: dict[str, dict[str, int]] = {}
@@ -739,8 +741,14 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         secondary_verifier=local_verifier,
                     )
                     if entry_candidate is None:
-                        generation_stats["extractive_fallback_unavailable"] += 1
-                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="generation", status="skip", reason="extractive_fallback_unavailable"))
+                        rejection = pop_canonical_generation_rejection(event.event_id)
+                        if rejection is not None:
+                            generation_stats["canonical_source_rejected"] += 1
+                            reason = f"canonical_source_rejected:{rejection}"
+                        else:
+                            generation_stats["extractive_fallback_unavailable"] += 1
+                            reason = "extractive_fallback_unavailable"
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="generation", status="skip", reason=reason))
                         continue
 
                     _record_generation_stats(entry_candidate, generation_stats, generation_route_stats)

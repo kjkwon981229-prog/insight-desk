@@ -15,7 +15,7 @@ from .models import (
     ExtractionQualityPolicy,
     FetchedPage,
 )
-from .runtime import strip_document_publisher_prefix
+from .runtime import extract_page_published_at, strip_document_publisher_prefix
 
 
 class HtmlFetcher(Protocol):
@@ -190,7 +190,10 @@ class AcquisitionPipeline:
             url=candidate.url,
             retrieved_via=f"{candidate.retrieved_via}+{method}",
             fetched_at=page.fetched_at,
-            published_at=candidate.published_at,
+            # Search/discovery timestamps describe the index item. Prefer the publisher page's
+            # explicit article publication time so an old origin page cannot be reclassified as
+            # fresh merely because a search provider rediscovered it today.
+            published_at=extract_page_published_at(page.html) or candidate.published_at,
         )
         article = RawArticle(
             article_id=candidate.candidate_id,

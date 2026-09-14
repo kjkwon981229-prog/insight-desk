@@ -151,7 +151,7 @@ jobs:
       - name: Run current-engine daily production
         id: production
         env:
-          INSIGHT_DESK_UNDERSTANDING_DIAGNOSTICS: ${{ github.event_name == 'pull_request' && 'build/understanding-diagnostics.jsonl' || '' }}
+          INSIGHT_DESK_UNDERSTANDING_DIAGNOSTICS: build/understanding-diagnostics.jsonl
         run: >-
           python scripts/phase11_daily_production.py
           --topics config/topics.json
@@ -230,7 +230,9 @@ jobs:
             build/run-state.json
             build/production-audit.json
             build/feed-quality.json
+            build/understanding-diagnostics.jsonl
           if-no-files-found: error
+          retention-days: 7
 
       - name: Upload canonical PR production artifact
         # Preserve the reviewable site and diagnostics even when the quality validator correctly

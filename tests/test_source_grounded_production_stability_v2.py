@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from insight_desk.acquisition import TrafilaturaExtractor
+from insight_desk.acquisition.runtime import strip_document_publisher_prefix
 from insight_desk.core import (
     ArticleEventRole,
     CandidateEvent,
@@ -40,6 +42,7 @@ from scripts import phase11_daily_production_core as production_core
 ROOT = Path(__file__).resolve().parents[1]
 V6_QUALIFICATION = ROOT / "tests" / "fixtures" / "event_understanding_qualification_v6.json"
 SEMANTIC_RUNTIME_AVAILABLE = importlib.util.find_spec("kiwipiepy") is not None
+ACQUISITION_RUNTIME_AVAILABLE = importlib.util.find_spec("trafilatura") is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +225,206 @@ def _run_cases(
     "source-grounded production stability requires the production semantic-local runtime",
 )
 class SourceGroundedProductionStabilityTests(unittest.TestCase):
+    def test_unbracketed_publisher_byline_with_dateline_reaches_clean_publication(self) -> None:
+        proposition = (
+            "14일, 코스피가 전 거래일에 비해 217.30포인트(-3.14%) 하락한 "
+            "6692.61에 개장했다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id="unbracketed-publisher-byline-with-dateline",
+                    topic="economy",
+                    title="코스피, 217.30포인트 내린 6692.61 출발",
+                    body="라이센스뉴스 = 김재용 기자 | " + proposition,
+                    expected_proposition=proposition,
+                ),
+            ),
+            clocks={
+                "unbracketed-publisher-byline-with-dateline": datetime.fromisoformat(
+                    "2026-09-14T09:20:16+09:00"
+                )
+            },
+        )["unbracketed-publisher-byline-with-dateline"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+
+    def test_repeated_title_publisher_label_reaches_clean_exact_publication(self) -> None:
+        title = "현대硏, 올해 성장률 3.5%로 상향…내년 2.4% 전망"
+        proposition = (
+            "반도체 경기 호황에 힘입어 올해 한국 경제가 3.5% 성장할 것이라는 전망이 나왔다."
+        )
+        html = (
+            f'<meta property="og:title" content="{title}">'
+            '<meta property="og:site_name" content="파이낸셜뉴스">'
+        )
+        extracted_body = (
+            f"{title}\n[파이낸셜뉴스] {proposition}\n"
+            "현대경제연구원은 올해 경제성장률 전망치를 기존 2.7%에서 3.5%로 상향 조정했다."
+        )
+        body = strip_document_publisher_prefix(extracted_body, html)
+
+        outcome = _run_cases((
+            _ArticleCase(
+                case_id="repeated-title-document-publisher-label",
+                topic="economy",
+                title=title,
+                body=body,
+                expected_proposition=proposition,
+            ),
+        ))["repeated-title-document-publisher-label"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+        self.assertNotIn("[파이낸셜뉴스]", body)
+
+    @unittest.skipUnless(
+        ACQUISITION_RUNTIME_AVAILABLE,
+        "layout-source regression requires the production acquisition runtime",
+    )
+    def test_single_row_layout_source_reaches_exact_canonical_publication(self) -> None:
+        deck = "엔비디아 ‘베라 루빈’ 출격 임박…인도 데이터센터 GPU 도입·확장"
+        proposition = (
+            "엔비디아의 차세대 그래픽처리장치(GPU) ‘베라 루빈(Vera Rubin)’이 올가을 "
+            "출하를 앞두면서 글로벌 데이터센터 투자와 맞물려 새로운 성장 동력으로 떠오르고 있다."
+        )
+        detail = (
+            "9월 12일 엔비디아는 베라 루빈의 출하를 올가을 시작할 예정이다. "
+            "인도 데이터센터 업체 요타 서비스는 GPU 40000개를 조달할 계획이다."
+        )
+        html = (
+            "<html><head><title>엔비디아 베라 루빈 올가을 출하</title></head><body>"
+            "<table><tr><td>뉴스 홈</td><td><div>"
+            f"<p><strong>{deck}</strong></p><p>&nbsp;</p>"
+            '<table><tr><td><img src="image.jpg"></td></tr></table>'
+            f"<p>{proposition}</p><p>{detail}</p><p>{detail}</p>"
+            "</div></td><td>많이 본 기사</td></tr></table></body></html>"
+        )
+
+        extracted = TrafilaturaExtractor().extract(
+            html,
+            url="https://example.invalid/layout-source",
+        )
+        outcome = _run_cases((
+            _ArticleCase(
+                case_id="layout-table-vera-rubin",
+                topic="ai_tech",
+                title="엔비디아 새 랠리 시작되나…베라 루빈 올가을 출하가 주가 변수",
+                body=extracted.body,
+                expected_proposition=proposition,
+            ),
+        ))["layout-table-vera-rubin"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+        self.assertLessEqual(len(proposition), 120)
+        self.assertNotIn(deck, proposition)
+        self.assertNotIn("|", proposition)
+
+    def test_referential_report_lead_recovers_immediate_title_bound_event(self) -> None:
+        case_id = "fresh-20260913-referential-report-lead"
+        rejected_lead = (
+            "이진형 KT AX사업본부장 상무는 11일'모두의 AI' 사업 전략 설명회에서 "
+            "KT가 준비 중인 AI 서비스의 방향을 이같이 설명했다."
+        )
+        proposition = (
+            "KT는 '이음 인사이드'를 통해 검색과 쇼핑, 부동산, 공공서비스 등을 "
+            "하나의 AI 에이전트로 연결한다."
+        )
+        body = (
+            '[아이뉴스24 서효빈 기자] "생활에 필요한 밀착형 AI 서비스들을 '
+            '에이전트화해 활용하는 게 저희의 가장 큰 목표입니다."\n'
+            f"{rejected_lead}\n{proposition} "
+            "업스테이지·모티프·NC AI 등 국산 AI 모델 5종도 질의와 서비스 특성에 "
+            "따라 나눠 활용할 계획이다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id=case_id,
+                    topic="ai_tech",
+                    title=(
+                        "KT &quot;'모두의 AI'로 검색&middot;쇼핑&middot;공공 연결"
+                        "&hellip;국산 AI 5종 최적 활용&quot;"
+                    ),
+                    body=body,
+                    expected_proposition=proposition,
+                    source_name="아이뉴스24",
+                    source_url="https://www.inews24.com/view/2004940",
+                ),
+            ),
+            clocks={case_id: datetime.fromisoformat("2026-09-13T09:26:43+09:00")},
+        )[case_id]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertNotEqual(outcome.proposition, rejected_lead)
+        self.assertTrue(outcome.exact_provenance)
+
+    def test_referential_reporting_tail_keeps_an_explicit_reported_claim(self) -> None:
+        proposition = (
+            "KT는 검색과 쇼핑, 공공서비스를 하나의 AI 에이전트로 연결한다고 "
+            "이같이 설명했다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id="explicit-claim-before-referential-report",
+                    topic="ai_tech",
+                    title="KT, 검색·쇼핑·공공 서비스를 AI 에이전트로 연결",
+                    body=proposition,
+                    expected_proposition=proposition,
+                ),
+            )
+        )["explicit-claim-before-referential-report"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+
+    def test_referential_report_recovery_cannot_switch_actor_or_action(self) -> None:
+        quoted_deck = (
+            '[아이뉴스24 서효빈 기자] "생활에 필요한 밀착형 AI 서비스들을 '
+            '에이전트화해 활용하는 게 목표입니다."\n'
+        )
+        rejected_lead = (
+            "이진형 KT 본부장은 '모두의 AI' 서비스 방향을 이같이 설명했다.\n"
+        )
+        cases = (
+            _ArticleCase(
+                case_id="referential-bridge-different-actor",
+                topic="ai_tech",
+                title="KT·네이버 '모두의 AI' 검색·쇼핑 연결",
+                body=(
+                    quoted_deck
+                    + rejected_lead
+                    + "네이버는 AI 검색과 쇼핑 서비스를 하나의 에이전트로 연결한다."
+                ),
+                expected_proposition=None,
+            ),
+            _ArticleCase(
+                case_id="referential-bridge-different-action",
+                topic="ai_tech",
+                title="KT '모두의 AI' 검색·쇼핑·공공 연결",
+                body=(
+                    quoted_deck
+                    + rejected_lead
+                    + "KT는 '모두의 AI' 검색·쇼핑·공공 서비스 담당자를 채용했다."
+                ),
+                expected_proposition=None,
+            ),
+        )
+        outcomes = _run_cases(
+            cases,
+            clocks={
+                case.case_id: datetime.fromisoformat("2026-09-13T09:26:43+09:00")
+                for case in cases
+            },
+        )
+
+        for case in cases:
+            with self.subTest(case_id=case.case_id):
+                self.assertFalse(outcomes[case.case_id].published)
+
     def test_frozen_v6_runs_through_current_production_authority(self) -> None:
         qualification = json.loads(V6_QUALIFICATION.read_text(encoding="utf-8"))
         self.assertEqual(qualification["schema_version"], 6)

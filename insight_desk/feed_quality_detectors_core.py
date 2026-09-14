@@ -94,6 +94,20 @@ _REFERENTIAL_REMAINDER_RE = re.compile(
     r"(?:종목|명|개|곳|팀|기관|기업|업체|회사|제품|콘텐츠|작품|곡|경기)"
     r"(?:은|는|이|가|을|를)?(?:\s|$)"
 )
+_REFERENTIAL_REPORT_TAIL_RE = re.compile(
+    r"(?P<marker>"
+    r"(?:(?:이|그)\s*(?:와\s+)?같이)|(?:(?:이|그)\s*처럼)|(?:이|그)렇게"
+    r")\s+"
+    r"(?:(?:거듭|재차|다시|구체적으로|자세히)\s+)?"
+    r"(?:설명|말|밝|전|강조|덧붙|부연|언급|해명|답변)[가-힣]{1,12}$"
+)
+_REFERENTIAL_REPORT_ANTECEDENT_END_RE = re.compile(
+    r"(?:"
+    r"(?:다고|라고|다며|라며|다면서|라면서)"
+    r"|(?:고|며|면서|지만|는데|더니|다가|도록|해서|하여|해|돼|되어)"
+    r"|[가-힣]+(?:한|된|운)\s+(?:뒤|후)"
+    r")$"
+)
 _INTENT_EXPLANATORY_END_RE = re.compile(
     r"(?:겠다는|겠다고\s+한다는)\s+것이다$"
 )
@@ -703,6 +717,8 @@ def _bare_ranking_fragment(value: str) -> bool:
 
 def _context_dependent_text(value: str) -> bool:
     normalized = " ".join(value.split())
+    if referential_report_without_claim(normalized):
+        return True
     if any(normalized.startswith(cue) for cue in _CONTEXT_DEPENDENT_SUMMARY_LEADS):
         return True
     if any(phrase in normalized for phrase in _CONTEXT_DEPENDENT_SUMMARY_PHRASES):
@@ -731,6 +747,25 @@ def _context_dependent_text(value: str) -> bool:
     if _subjectless_funding_result(normalized):
         return True
     return _bare_ranking_fragment(normalized)
+
+
+def referential_report_without_claim(value: str) -> bool:
+    """Detect a deictic reporting tail whose claim is outside the proposition.
+
+    A terminal reporting clause such as ``이같이 설명했다`` cannot stand alone when the
+    proposition never states what was said.  An explicit reported complement or a preceding
+    asserted clause keeps the proposition complete.  This operates on discourse grammar only;
+    publishers, topics, named entities, and individual article wording are not inputs.
+    """
+
+    normalized = " ".join(value.split()).rstrip(_SENTENCE_TERMINALS).rstrip()
+    match = _REFERENTIAL_REPORT_TAIL_RE.search(normalized)
+    if match is None:
+        return False
+    prefix = normalized[: match.start("marker")].rstrip(" \t,;:·'\"‘’“”")
+    if not prefix:
+        return True
+    return _REFERENTIAL_REPORT_ANTECEDENT_END_RE.search(prefix) is None
 
 
 def orphaned_parent_content_role_text(value: str) -> bool:

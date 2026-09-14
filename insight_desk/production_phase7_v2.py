@@ -39,6 +39,30 @@ from insight_desk.verification_pipeline import verify_exact_canonical_propositio
 
 _ORIGINAL_GENERATION_STORY_ADMISSION = generation_module.validate_story_admission
 _ORIGINAL_PIPELINE_STORY_ADMISSION = generation_pipeline_module.validate_story_admission
+_CANONICAL_GENERATION_REJECTIONS: dict[str, str] = {}
+
+
+def _canonical_generation_rejection_code(exc: GenerationContractError) -> str:
+    """Return a bounded, source-text-free reason for production audit telemetry."""
+
+    message = str(exc).casefold()
+    reasons = (
+        ("headline exceeds hard feed ceiling", "headline_exceeds_feed_ceiling"),
+        ("summary exceeds hard feed ceiling", "summary_exceeds_feed_ceiling"),
+        ("fused repeated fragment", "fused_repeated_source_fragment"),
+        ("fact lineage mismatch", "fact_lineage_mismatch"),
+        ("exactly one proposition evidence span", "evidence_ref_cardinality"),
+        ("canonical source proposition is no longer valid", "canonical_proposition_invalid"),
+        ("canonical source proposition differs", "evidence_provenance_mismatch"),
+        ("deterministic preservation", "preservation_rejected"),
+    )
+    return next((code for fragment, code in reasons if fragment in message), "unknown_contract_rejection")
+
+
+def pop_canonical_generation_rejection(event_id: str) -> str | None:
+    """Consume the last fail-closed canonical Generation reason for one event."""
+
+    return _CANONICAL_GENERATION_REJECTIONS.pop(event_id, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +296,7 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
     if getattr(current, "_insight_desk_v2_scoped", False):
         return
 
+    _CANONICAL_GENERATION_REJECTIONS.clear()
     recovery_owner = CanonicalEventRecoveryGenerator(registry)
 
     def produce_phase7_v2(*args, **kwargs):
@@ -293,7 +318,10 @@ def scope_phase7_story_readmission(core_module: ModuleType, registry: CanonicalE
                 canonical_request,
                 generator=recovery_generator,
             )
-        except GenerationContractError:
+        except GenerationContractError as exc:
+            _CANONICAL_GENERATION_REJECTIONS[canonical_request.event.event_id] = (
+                _canonical_generation_rejection_code(exc)
+            )
             return None
 
         verification = verify_exact_canonical_proposition_draft(
