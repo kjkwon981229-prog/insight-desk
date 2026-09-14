@@ -50,6 +50,8 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
             "[법률저널=안혜성 기자] ",
             "【브레이크뉴스 대구】진예솔 기자=",
             "[서울=뉴스핌] 양태훈 기자 = ",
+            "최준규 기자 = ",
+            "브레이크뉴스 박동제 기자= ",
         ):
             with self.subTest(prefix=prefix):
                 result = _extract(prefix + proposition, suffix="structured-byline")
@@ -58,6 +60,19 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
                 exact = next(span.text for span in result.evidence if span.evidence_id in fact.evidence_ids)
                 self.assertEqual(exact, proposition, repr((fact, KiwiMorphologyHelper().analyze(prefix + proposition))))
                 self.assertEqual(fact.subject, "삼성생명")
+
+    def test_reporter_as_grammatical_subject_is_not_treated_as_a_credit(self) -> None:
+        proposition = "최준규 기자가 그룹 앤팀의 주간차트 2관왕 소식을 보도했다."
+
+        result = _extract(proposition, suffix="reporter-subject")
+
+        self.assertEqual(len(result.facts), 1)
+        fact = result.facts[0]
+        exact = next(
+            span.text for span in result.evidence if span.evidence_id in fact.evidence_ids
+        )
+        self.assertEqual(exact, proposition)
+        self.assertEqual(fact.subject, "최준규 기자")
 
     def test_closed_reporter_credit_does_not_discard_event_descriptors_before_subject(self) -> None:
         credit = "[법률저널=안혜성 기자] "
