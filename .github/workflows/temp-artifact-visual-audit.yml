@@ -182,4 +182,87 @@ jobs:
           }
           emit_image DESKTOP "$qa_root/desktop.png"
           emit_image MOBILE "$qa_root/mobile.png"
+
+          python3 - "$index_path" "$site_dir/qa-layout.html" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source = Path(sys.argv[1]).read_text(encoding="utf-8")
+          probe = r"""
+          <script>
+          addEventListener("load", () => requestAnimationFrame(() => {
+            const visible = (el) => {
+              const style = getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return style.display !== "none" && style.visibility !== "hidden" &&
+                rect.width > 0 && rect.height > 0;
+            };
+            const all = [...document.querySelectorAll("body *")].filter(visible);
+            const overflow = all.filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.left < -0.5 || rect.right > innerWidth + 0.5;
+            });
+            const clipped = all.filter((el) => {
+              const style = getComputedStyle(el);
+              const x = el.scrollWidth > el.clientWidth + 1 &&
+                !["visible", "clip"].includes(style.overflowX);
+              const y = el.scrollHeight > el.clientHeight + 1 &&
+                !["visible", "clip"].includes(style.overflowY);
+              return x || y;
+            });
+            const cards = [...document.querySelectorAll("article.story-row")];
+            const rects = cards.map((el) => {
+              const r = el.getBoundingClientRect();
+              return {top: r.top, bottom: r.bottom, left: r.left, right: r.right};
+            });
+            const links = [...document.querySelectorAll("article.story-row a")].map((el) => {
+              const r = el.getBoundingClientRect();
+              return {width: r.width, height: r.height};
+            });
+            const metrics = {
+              viewport_width: innerWidth,
+              viewport_height: innerHeight,
+              document_client_width: document.documentElement.clientWidth,
+              document_scroll_width: document.documentElement.scrollWidth,
+              document_scroll_height: document.documentElement.scrollHeight,
+              story_count: cards.length,
+              horizontal_overflow_count: overflow.length,
+              clipped_visible_count: clipped.length,
+              adjacent_card_overlap_count: rects.slice(1).filter((r, i) => r.top < rects[i].bottom - 0.5).length,
+              source_link_min_width: links.length ? Math.min(...links.map((x) => x.width)) : 0,
+              source_link_min_height: links.length ? Math.min(...links.map((x) => x.height)) : 0,
+              story_font_family: cards.length ? getComputedStyle(cards[0]).fontFamily : "",
+              overflow_sample: overflow.slice(0, 5).map((el) => ({tag: el.tagName, class: el.className})),
+              clipped_sample: clipped.slice(0, 5).map((el) => ({tag: el.tagName, class: el.className}))
+            };
+            document.documentElement.dataset.qaLayout =
+              btoa(unescape(encodeURIComponent(JSON.stringify(metrics))));
+          }));
+          </script>
+          """
+          if "</body>" not in source:
+              raise SystemExit("artifact has no body terminator")
+          Path(sys.argv[2]).write_text(source.replace("</body>", probe + "</body>"), encoding="utf-8")
+          PY
+          "$chrome" "${common[@]}" --window-size=1440,1000 --dump-dom             http://127.0.0.1:8765/qa-layout.html > "$qa_root/desktop-dom.html"
+          "$chrome" "${common[@]}" --window-size=390,844 --dump-dom             http://127.0.0.1:8765/qa-layout.html > "$qa_root/mobile-dom.html"
+          python3 - "$qa_root/desktop-dom.html" "$qa_root/mobile-dom.html" <<'PY'
+          from pathlib import Path
+          import base64
+          import html
+          import json
+          import re
+          import sys
+
+          for label, file_name in zip(("DESKTOP", "MOBILE"), sys.argv[1:]):
+              rendered = Path(file_name).read_text(encoding="utf-8")
+              match = re.search(r'data-qa-layout="([^"]+)"', rendered)
+              if match is None:
+                  raise SystemExit(f"missing {label} layout metrics")
+              payload = base64.b64decode(html.unescape(match.group(1))).decode("utf-8")
+              metrics = json.loads(payload)
+              if metrics["story_count"] != 6:
+                  raise SystemExit(f"{label} story count mismatch")
+              print(f"QA_LAYOUT_{label}=" + json.dumps(metrics, separators=(",", ":")))
+          PY
           echo "QA_CHROMIUM_RENDER=PASS"
