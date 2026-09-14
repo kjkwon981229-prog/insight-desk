@@ -1,0 +1,177 @@
+name: Temporary artifact visual audit
+
+on:
+  push:
+    branches:
+      - fix/canonical-generation-recall-20260912
+    paths:
+      - ".github/workflows/temp-artifact-visual-audit.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download and verify immutable production artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_REPOSITORY: ${{ github.repository }}
+          QA_ARTIFACT_ID: "10338329369"
+          QA_ZIP_SHA256: "a28f4e740c0b756c6b25a4c84f0b8e945d21540775839e0ebc971df13eb2552f"
+          QA_HTML_SHA256: "65a452437377c94276c9127f58d013f54945433a7b12b3eb13b06640cdafefb8"
+        run: |
+          set -euo pipefail
+          qa_root="$(mktemp -d)"
+          printf '%s\n' "$qa_root" > "$RUNNER_TEMP/qa-root"
+          gh api             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "/repos/$QA_REPOSITORY/actions/artifacts/$QA_ARTIFACT_ID/zip"             > "$qa_root/artifact.zip"
+          echo "$QA_ZIP_SHA256  $qa_root/artifact.zip" | sha256sum --check -
+          mkdir "$qa_root/artifact"
+          unzip -q "$qa_root/artifact.zip" -d "$qa_root/artifact"
+          mapfile -t indexes < <(find "$qa_root/artifact" -type f -name index.html -print)
+          test "${#indexes[@]}" -eq 1
+          printf '%s\n' "${indexes[0]}" > "$RUNNER_TEMP/qa-index"
+          echo "$QA_HTML_SHA256  ${indexes[0]}" | sha256sum --check -
+          echo "QA_ARTIFACT_INTEGRITY=PASS"
+
+      - name: Emit visible-card manifest without source-body text
+        shell: bash
+        run: |
+          set -euo pipefail
+          index_path="$(cat "$RUNNER_TEMP/qa-index")"
+          python3 - "$index_path" <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import hashlib
+          import json
+          import sys
+
+          class VisibleCards(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.cards = []
+                  self.current = None
+                  self.depth = 0
+                  self.stack = []
+
+              def handle_starttag(self, tag, attrs):
+                  attr = dict(attrs)
+                  classes = set((attr.get("class") or "").split())
+                  if self.current is None and tag == "article" and "story-row" in classes:
+                      self.current = {"segments": [], "links": []}
+                      self.depth = 1
+                      self.stack = [(tag, classes)]
+                      return
+                  if self.current is not None:
+                      self.depth += 1
+                      self.stack.append((tag, classes))
+                      if tag == "a" and attr.get("href"):
+                          self.current["links"].append(attr["href"])
+
+              def handle_startendtag(self, tag, attrs):
+                  if self.current is not None:
+                      attr = dict(attrs)
+                      if tag == "a" and attr.get("href"):
+                          self.current["links"].append(attr["href"])
+
+              def handle_data(self, data):
+                  if self.current is None:
+                      return
+                  text = " ".join(data.split())
+                  if not text:
+                      return
+                  tags = [tag for tag, _ in self.stack]
+                  if "script" in tags or "style" in tags:
+                      return
+                  classes = sorted({c for _, cs in self.stack for c in cs})
+                  self.current["segments"].append({
+                      "tag": tags[-1] if tags else "",
+                      "classes": classes,
+                      "text": text,
+                  })
+
+              def handle_endtag(self, tag):
+                  if self.current is None:
+                      return
+                  if self.stack:
+                      self.stack.pop()
+                  self.depth -= 1
+                  if self.depth == 0:
+                      self.cards.append(self.current)
+                      self.current = None
+                      self.stack = []
+
+          path = Path(sys.argv[1])
+          html = path.read_text(encoding="utf-8")
+          parser = VisibleCards()
+          parser.feed(html)
+          manifest = {
+              "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
+              "story_count": len(parser.cards),
+              "cards": parser.cards,
+          }
+          assert manifest["story_count"] == 6, manifest["story_count"]
+          print("QA_VISIBLE_MANIFEST=" + json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
+          PY
+
+      - name: Render desktop and mobile with Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          qa_root="$(cat "$RUNNER_TEMP/qa-root")"
+          index_path="$(cat "$RUNNER_TEMP/qa-index")"
+          site_dir="$(dirname "$index_path")"
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$site_dir"             > "$qa_root/http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then
+              break
+            fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:8765/ >/dev/null
+
+          chrome=""
+          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+            if command -v "$candidate" >/dev/null 2>&1; then
+              chrome="$candidate"
+              break
+            fi
+          done
+          test -n "$chrome"
+          "$chrome" --version
+          common=(
+            --headless=new
+            --no-sandbox
+            --disable-gpu
+            --disable-background-networking
+            --disable-component-update
+            --disable-sync
+            --hide-scrollbars
+            --no-first-run
+            --force-device-scale-factor=1
+            --virtual-time-budget=3000
+          )
+          "$chrome" "${common[@]}" --window-size=1440,4200             --screenshot="$qa_root/desktop.png" http://127.0.0.1:8765/
+          "$chrome" "${common[@]}" --window-size=390,6200             --screenshot="$qa_root/mobile.png" http://127.0.0.1:8765/
+          file "$qa_root/desktop.png" "$qa_root/mobile.png"
+          sha256sum "$qa_root/desktop.png" "$qa_root/mobile.png"
+
+          emit_image() {
+            local label="$1"
+            local file_path="$2"
+            local sequence=0
+            while IFS= read -r chunk; do
+              printf 'QA_%s_B64_%06d=%s\n' "$label" "$sequence" "$chunk"
+              sequence=$((sequence + 1))
+            done < <(base64 -w 4096 "$file_path")
+            printf 'QA_%s_CHUNKS=%d\n' "$label" "$sequence"
+          }
+          emit_image DESKTOP "$qa_root/desktop.png"
+          emit_image MOBILE "$qa_root/mobile.png"
+          echo "QA_CHROMIUM_RENDER=PASS"
