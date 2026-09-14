@@ -162,6 +162,8 @@ class FeedArtifactValidatorTests(unittest.TestCase):
         }
         cases = (
             "【브레이크뉴스 대구】진예솔 기자=대구대학교가 AI 국책사업에 참여한다.",
+            "최준규 기자 = 글로벌 주요 중앙은행들이 통화정책 전환 속도를 높였다.",
+            "브레이크뉴스 박동제 기자= 그룹 앤팀이 주간차트 2관왕을 차지했다.",
             "- 에스트래픽이 AI 도시운영모델을 공개했다.",
         )
         for visible in cases:

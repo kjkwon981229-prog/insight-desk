@@ -250,6 +250,51 @@ class SourceGroundedProductionStabilityTests(unittest.TestCase):
         self.assertEqual(outcome.proposition, proposition)
         self.assertTrue(outcome.exact_provenance)
 
+    def test_equals_delimited_reporter_credits_reach_clean_exact_publication(self) -> None:
+        cases = (
+            _ArticleCase(
+                case_id="bare-reporter-equals-credit",
+                topic="economy",
+                title="글로벌 중앙은행 피벗에 한국 증시 섹터별 차별화",
+                body=(
+                    "최준규 기자 = 글로벌 주요 중앙은행들이 통화긴축 기조에서 "
+                    "피벗(통화정책 전환)으로 전환하는 속도를 높이면서 한국 증시 내 "
+                    "섹터별 수혜와 차별화 양상이 가속화되고 있다."
+                ),
+                expected_proposition=(
+                    "글로벌 주요 중앙은행들이 통화긴축 기조에서 피벗(통화정책 전환)으로 "
+                    "전환하는 속도를 높이면서 한국 증시 내 섹터별 수혜와 차별화 양상이 "
+                    "가속화되고 있다."
+                ),
+                source_name="더페어",
+                source_url="https://www.thefairnews.co.kr/news/articleView.html?idxno=88014",
+            ),
+            _ArticleCase(
+                case_id="publisher-reporter-equals-credit",
+                topic="kpop",
+                title="앤팀, 한터차트 9월 2주 주간차트 2관왕",
+                body=(
+                    "브레이크뉴스 박동제 기자= 그룹 앤팀(&TEAM)이 한터차트 9월 2주 "
+                    "주간차트 2관왕을 차지, 뜨거운 인기를 입증했다."
+                ),
+                expected_proposition=(
+                    "그룹 앤팀(&TEAM)이 한터차트 9월 2주 주간차트 2관왕을 차지, "
+                    "뜨거운 인기를 입증했다."
+                ),
+                source_name="브레이크뉴스",
+                source_url="http://www.breaknews.com/1236469",
+            ),
+        )
+
+        outcomes = _run_cases(cases)
+
+        for case in cases:
+            with self.subTest(case=case.case_id):
+                outcome = outcomes[case.case_id]
+                self.assertEqual(outcome.proposition, case.expected_proposition)
+                self.assertTrue(outcome.exact_provenance)
+                self.assertNotIn("기자", outcome.proposition or "")
+
     def test_repeated_title_publisher_label_reaches_clean_exact_publication(self) -> None:
         title = "현대硏, 올해 성장률 3.5%로 상향…내년 2.4% 전망"
         proposition = (
