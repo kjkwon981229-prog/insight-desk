@@ -1,0 +1,129 @@
+name: Temporary main artifact text audit
+
+on:
+  push:
+    branches:
+      - fix/canonical-generation-recall-20260912
+    paths:
+      - ".github/workflows/temp-main-artifact-text-audit.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download and verify immutable main production artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_REPOSITORY: ${{ github.repository }}
+          QA_ARTIFACT_ID: "10353779404"
+          QA_ZIP_SHA256: "6869477efc6c5229bbb1086521465b5b22b72a74c0e0b37910041ff8a3e8ecb8"
+          QA_HTML_SHA256: "9242717b96c6c9f00b36388738d4ee5a3e82fed2b591a26e8b56ee667d3566d0"
+        run: |
+          set -euo pipefail
+          qa_root="$(mktemp -d)"
+          printf '%s\n' "$qa_root" > "$RUNNER_TEMP/qa-root"
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/$QA_REPOSITORY/actions/artifacts/$QA_ARTIFACT_ID/zip" \
+            > "$qa_root/artifact.zip"
+          echo "$QA_ZIP_SHA256  $qa_root/artifact.zip" | sha256sum --check -
+          mkdir "$qa_root/artifact"
+          unzip -q "$qa_root/artifact.zip" -d "$qa_root/artifact"
+          mapfile -t indexes < <(find "$qa_root/artifact" -type f -name index.html -print)
+          test "${#indexes[@]}" -eq 1
+          echo "$QA_HTML_SHA256  ${indexes[0]}" | sha256sum --check -
+          printf '%s\n' "${indexes[0]}" > "$RUNNER_TEMP/qa-index"
+          echo "QA_ARTIFACT_INTEGRITY=PASS"
+
+      - name: Emit exact visible cards and byline matches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$(cat "$RUNNER_TEMP/qa-index")" <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          import hashlib
+          import json
+          import re
+          import sys
+
+          class Cards(HTMLParser):
+              def __init__(self):
+                  super().__init__(convert_charrefs=True)
+                  self.cards = []
+                  self.card = None
+                  self.depth = 0
+                  self.capture = None
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  classes = set((attrs.get("class") or "").split())
+                  if self.card is None and tag == "article" and "story-row" in classes:
+                      self.card = {"topic": [], "headline": [], "summary": [], "source_url": ""}
+                      self.depth = 1
+                      return
+                  if self.card is None:
+                      return
+                  self.depth += 1
+                  if "topic-label" in classes:
+                      self.capture = "topic"
+                  elif tag in {"h2", "h3"} or "story-title" in classes:
+                      self.capture = "headline"
+                  elif "story-summary" in classes or (tag == "p" and self.capture is None):
+                      self.capture = "summary"
+                  if tag == "a" and attrs.get("href"):
+                      self.card["source_url"] = attrs["href"]
+
+              def handle_startendtag(self, tag, attrs):
+                  if self.card is not None and tag == "a":
+                      href = dict(attrs).get("href")
+                      if href:
+                          self.card["source_url"] = href
+
+              def handle_data(self, data):
+                  if self.card is not None and self.capture:
+                      value = " ".join(data.split())
+                      if value:
+                          self.card[self.capture].append(value)
+
+              def handle_endtag(self, tag):
+                  if self.card is None:
+                      return
+                  if tag in {"h2", "h3", "p", "span"}:
+                      self.capture = None
+                  self.depth -= 1
+                  if tag == "article" and self.depth <= 0:
+                      for key in ("topic", "headline", "summary"):
+                          self.card[key] = " ".join(self.card[key]).strip()
+                      self.cards.append(self.card)
+                      self.card = None
+                      self.capture = None
+                      self.depth = 0
+
+          path = Path(sys.argv[1])
+          raw = path.read_text(encoding="utf-8")
+          parser = Cards()
+          parser.feed(raw)
+          assert len(parser.cards) == 4, len(parser.cards)
+          pattern = re.compile(r"(?:[가-힣A-Za-z·]{2,20}\s*)?(?:기자|특파원|객원기자|인턴기자|취재기자)")
+          matches = []
+          for index, card in enumerate(parser.cards, 1):
+              visible = " ".join((card["topic"], card["headline"], card["summary"]))
+              hits = pattern.findall(visible)
+              if hits:
+                  matches.append({"card": index, "hits": hits, "visible": visible})
+          result = {
+              "html_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+              "story_count": len(parser.cards),
+              "cards": parser.cards,
+              "byline_matches": matches,
+          }
+          print("QA_VISIBLE_CARDS=" + json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+          PY
