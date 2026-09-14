@@ -21,8 +21,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           QA_REPOSITORY: ${{ github.repository }}
-          QA_ARTIFACT_ID: "10353779404"
-          QA_ZIP_SHA256: "6869477efc6c5229bbb1086521465b5b22b72a74c0e0b37910041ff8a3e8ecb8"
+          QA_ARTIFACT_ID: "10354089014"
+          QA_ZIP_SHA256: "5a0a489ae3bb152b13e2099001de96c4ded15872b604328baab9e8d5dc4d0aea"
           QA_HTML_SHA256: "9242717b96c6c9f00b36388738d4ee5a3e82fed2b591a26e8b56ee667d3566d0"
         run: |
           set -euo pipefail
@@ -36,6 +36,9 @@ jobs:
           echo "$QA_ZIP_SHA256  $qa_root/artifact.zip" | sha256sum --check -
           mkdir "$qa_root/artifact"
           unzip -q "$qa_root/artifact.zip" -d "$qa_root/artifact"
+          test -f "$qa_root/artifact/artifact.tar"
+          mkdir "$qa_root/site"
+          tar -xf "$qa_root/artifact/artifact.tar" -C "$qa_root/site"
           selected=""
           while IFS= read -r candidate; do
             candidate_sha="$(sha256sum "$candidate" | cut -d' ' -f1)"
@@ -43,7 +46,7 @@ jobs:
             if [[ "$candidate_sha" == "$QA_HTML_SHA256" ]]; then
               selected="$candidate"
             fi
-          done < <(find "$qa_root/artifact" -type f -name index.html -print)
+          done < <(find "$qa_root/site" -type f -name index.html -print)
           test -n "$selected"
           printf '%s\n' "$selected" > "$RUNNER_TEMP/qa-index"
           echo "QA_ARTIFACT_INTEGRITY=PASS"
