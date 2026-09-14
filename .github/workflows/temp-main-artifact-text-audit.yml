@@ -36,10 +36,16 @@ jobs:
           echo "$QA_ZIP_SHA256  $qa_root/artifact.zip" | sha256sum --check -
           mkdir "$qa_root/artifact"
           unzip -q "$qa_root/artifact.zip" -d "$qa_root/artifact"
-          mapfile -t indexes < <(find "$qa_root/artifact" -type f -name index.html -print)
-          test "${#indexes[@]}" -eq 1
-          echo "$QA_HTML_SHA256  ${indexes[0]}" | sha256sum --check -
-          printf '%s\n' "${indexes[0]}" > "$RUNNER_TEMP/qa-index"
+          selected=""
+          while IFS= read -r candidate; do
+            candidate_sha="$(sha256sum "$candidate" | cut -d' ' -f1)"
+            printf 'QA_INDEX_CANDIDATE sha256=%s path=%s\n' "$candidate_sha" "$candidate"
+            if [[ "$candidate_sha" == "$QA_HTML_SHA256" ]]; then
+              selected="$candidate"
+            fi
+          done < <(find "$qa_root/artifact" -type f -name index.html -print)
+          test -n "$selected"
+          printf '%s\n' "$selected" > "$RUNNER_TEMP/qa-index"
           echo "QA_ARTIFACT_INTEGRITY=PASS"
 
       - name: Emit exact visible cards and byline matches
@@ -54,68 +60,70 @@ jobs:
           import re
           import sys
 
-          class Cards(HTMLParser):
+          class VisibleCards(HTMLParser):
               def __init__(self):
                   super().__init__(convert_charrefs=True)
                   self.cards = []
-                  self.card = None
+                  self.current = None
                   self.depth = 0
-                  self.capture = None
+                  self.stack = []
 
               def handle_starttag(self, tag, attrs):
-                  attrs = dict(attrs)
-                  classes = set((attrs.get("class") or "").split())
-                  if self.card is None and tag == "article" and "story-row" in classes:
-                      self.card = {"topic": [], "headline": [], "summary": [], "source_url": ""}
+                  attr = dict(attrs)
+                  classes = set((attr.get("class") or "").split())
+                  if self.current is None and tag == "article" and "story-row" in classes:
+                      self.current = {"segments": [], "links": []}
                       self.depth = 1
+                      self.stack = [(tag, classes)]
                       return
-                  if self.card is None:
-                      return
-                  self.depth += 1
-                  if "topic-label" in classes:
-                      self.capture = "topic"
-                  elif tag in {"h2", "h3"} or "story-title" in classes:
-                      self.capture = "headline"
-                  elif "story-summary" in classes or (tag == "p" and self.capture is None):
-                      self.capture = "summary"
-                  if tag == "a" and attrs.get("href"):
-                      self.card["source_url"] = attrs["href"]
+                  if self.current is not None:
+                      self.depth += 1
+                      self.stack.append((tag, classes))
+                      if tag == "a" and attr.get("href"):
+                          self.current["links"].append(attr["href"])
 
               def handle_startendtag(self, tag, attrs):
-                  if self.card is not None and tag == "a":
-                      href = dict(attrs).get("href")
-                      if href:
-                          self.card["source_url"] = href
+                  if self.current is not None:
+                      attr = dict(attrs)
+                      if tag == "a" and attr.get("href"):
+                          self.current["links"].append(attr["href"])
 
               def handle_data(self, data):
-                  if self.card is not None and self.capture:
-                      value = " ".join(data.split())
-                      if value:
-                          self.card[self.capture].append(value)
+                  if self.current is None:
+                      return
+                  value = " ".join(data.split())
+                  if not value:
+                      return
+                  tags = [tag for tag, _ in self.stack]
+                  if "script" in tags or "style" in tags:
+                      return
+                  classes = sorted({c for _, cs in self.stack for c in cs})
+                  self.current["segments"].append({
+                      "tag": tags[-1] if tags else "",
+                      "classes": classes,
+                      "text": value,
+                  })
 
               def handle_endtag(self, tag):
-                  if self.card is None:
+                  if self.current is None:
                       return
-                  if tag in {"h2", "h3", "p", "span"}:
-                      self.capture = None
+                  if self.stack:
+                      self.stack.pop()
                   self.depth -= 1
-                  if tag == "article" and self.depth <= 0:
-                      for key in ("topic", "headline", "summary"):
-                          self.card[key] = " ".join(self.card[key]).strip()
-                      self.cards.append(self.card)
-                      self.card = None
-                      self.capture = None
-                      self.depth = 0
+                  if self.depth == 0:
+                      self.cards.append(self.current)
+                      self.current = None
+                      self.stack = []
 
           path = Path(sys.argv[1])
           raw = path.read_text(encoding="utf-8")
-          parser = Cards()
+          parser = VisibleCards()
           parser.feed(raw)
           assert len(parser.cards) == 4, len(parser.cards)
           pattern = re.compile(r"(?:[가-힣A-Za-z·]{2,20}\s*)?(?:기자|특파원|객원기자|인턴기자|취재기자)")
           matches = []
           for index, card in enumerate(parser.cards, 1):
-              visible = " ".join((card["topic"], card["headline"], card["summary"]))
+              visible = " ".join(segment["text"] for segment in card["segments"])
               hits = pattern.findall(visible)
               if hits:
                   matches.append({"card": index, "hits": hits, "visible": visible})
