@@ -126,47 +126,213 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends fonts-noto-cjk
           fc-cache -f
 
-      - name: Render desktop and mobile with Chromium
+      - name: Render and measure exact desktop and mobile viewports
         shell: bash
         run: |
           set -euo pipefail
           qa_root="$(cat "$RUNNER_TEMP/qa-root")"
           index_path="$(cat "$RUNNER_TEMP/qa-index")"
           site_dir="$(dirname "$index_path")"
+
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$site_dir"             > "$qa_root/http.log" 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          for _ in {1..20}; do
-            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then
+
+          driver_bin="$(command -v chromedriver || true)"
+          if [[ -z "$driver_bin" && -n "${CHROMEWEBDRIVER:-}" ]]; then
+            driver_bin="$(find "$CHROMEWEBDRIVER" -type f -name chromedriver -print -quit)"
+          fi
+          test -x "$driver_bin"
+          "$driver_bin" --port=9515 --log-path="$qa_root/chromedriver.log"             > "$qa_root/chromedriver-stdout.log" 2>&1 &
+          driver_pid=$!
+          trap 'kill "$driver_pid" "$server_pid" 2>/dev/null || true' EXIT
+
+          for _ in {1..40}; do
+            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null               && curl --fail --silent http://127.0.0.1:9515/status >/dev/null; then
               break
             fi
             sleep 0.25
           done
           curl --fail --silent http://127.0.0.1:8765/ >/dev/null
+          curl --fail --silent http://127.0.0.1:9515/status >/dev/null
 
-          chrome=""
-          for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
-            if command -v "$candidate" >/dev/null 2>&1; then
-              chrome="$candidate"
-              break
-            fi
-          done
-          test -n "$chrome"
-          "$chrome" --version
-          common=(
-            --headless=new
-            --no-sandbox
-            --disable-gpu
-            --disable-background-networking
-            --disable-component-update
-            --disable-sync
-            --hide-scrollbars
-            --no-first-run
-            --force-device-scale-factor=1
-            --virtual-time-budget=3000
+          python3 - "$qa_root" <<'PY'
+          import base64
+          import json
+          import math
+          from pathlib import Path
+          import time
+          import urllib.request
+          import sys
+
+          qa_root = Path(sys.argv[1])
+          webdriver = "http://127.0.0.1:9515"
+
+          def request(method, path, payload=None):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(
+                  webdriver + path,
+                  data=data,
+                  method=method,
+                  headers={"Content-Type": "application/json"},
+              )
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  decoded = json.loads(response.read().decode("utf-8"))
+              return decoded.get("value", decoded)
+
+          session = request(
+              "POST",
+              "/session",
+              {
+                  "capabilities": {
+                      "alwaysMatch": {
+                          "browserName": "chrome",
+                          "goog:chromeOptions": {
+                              "args": [
+                                  "--headless=new",
+                                  "--no-sandbox",
+                                  "--disable-gpu",
+                                  "--disable-background-networking",
+                                  "--disable-component-update",
+                                  "--disable-sync",
+                                  "--hide-scrollbars",
+                                  "--no-first-run",
+                              ]
+                          },
+                      }
+                  }
+              },
           )
-          "$chrome" "${common[@]}" --window-size=1440,4200             --screenshot="$qa_root/desktop.png" http://127.0.0.1:8765/
-          "$chrome" "${common[@]}" --window-size=390,6200             --screenshot="$qa_root/mobile.png" http://127.0.0.1:8765/
+          session_id = session["sessionId"]
+          prefix = f"/session/{session_id}"
+
+          def cdp(command, params):
+              return request(
+                  "POST",
+                  prefix + "/goog/cdp/execute",
+                  {"cmd": command, "params": params},
+              )
+
+          metric_script = r"""
+          const visible = (el) => {
+            const style = getComputedStyle(el);
+            const rect = el.getBoundingClientRect();
+            return style.display !== "none" && style.visibility !== "hidden" &&
+              rect.width > 0 && rect.height > 0;
+          };
+          const all = [...document.querySelectorAll("body *")].filter(visible);
+          const overflow = all.filter((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.left < -0.5 || rect.right > innerWidth + 0.5;
+          });
+          const clipped = all.filter((el) => {
+            const style = getComputedStyle(el);
+            const x = el.scrollWidth > el.clientWidth + 1 &&
+              !["visible", "clip"].includes(style.overflowX);
+            const y = el.scrollHeight > el.clientHeight + 1 &&
+              !["visible", "clip"].includes(style.overflowY);
+            return x || y;
+          });
+          const cards = [...document.querySelectorAll("article.story-row")];
+          const rects = cards.map((el) => {
+            const r = el.getBoundingClientRect();
+            return {top: r.top, bottom: r.bottom, left: r.left, right: r.right};
+          });
+          const links = [...document.querySelectorAll("article.story-row a")].map((el) => {
+            const r = el.getBoundingClientRect();
+            return {width: r.width, height: r.height};
+          });
+          return {
+            viewport_width: innerWidth,
+            viewport_height: innerHeight,
+            device_pixel_ratio: devicePixelRatio,
+            document_client_width: document.documentElement.clientWidth,
+            document_scroll_width: document.documentElement.scrollWidth,
+            document_scroll_height: document.documentElement.scrollHeight,
+            story_count: cards.length,
+            horizontal_overflow_count: overflow.length,
+            clipped_visible_count: clipped.length,
+            adjacent_card_overlap_count: rects.slice(1).filter(
+              (r, i) => r.top < rects[i].bottom - 0.5
+            ).length,
+            source_link_min_width: links.length ? Math.min(...links.map((x) => x.width)) : 0,
+            source_link_min_height: links.length ? Math.min(...links.map((x) => x.height)) : 0,
+            story_font_family: cards.length ? getComputedStyle(cards[0]).fontFamily : "",
+            overflow_sample: overflow.slice(0, 5).map(
+              (el) => ({tag: el.tagName, class: String(el.className)})
+            ),
+            clipped_sample: clipped.slice(0, 5).map(
+              (el) => ({tag: el.tagName, class: String(el.className)})
+            )
+          };
+          """
+
+          def capture(label, width, height, mobile):
+              cdp(
+                  "Emulation.setDeviceMetricsOverride",
+                  {
+                      "width": width,
+                      "height": height,
+                      "deviceScaleFactor": 1,
+                      "mobile": mobile,
+                  },
+              )
+              request("POST", prefix + "/url", {"url": "http://127.0.0.1:8765/"})
+              for _ in range(40):
+                  state = request(
+                      "POST",
+                      prefix + "/execute/sync",
+                      {"script": "return document.readyState", "args": []},
+                  )
+                  if state == "complete":
+                      break
+                  time.sleep(0.1)
+              time.sleep(0.5)
+              metrics = request(
+                  "POST",
+                  prefix + "/execute/sync",
+                  {"script": metric_script, "args": []},
+              )
+              layout = cdp("Page.getLayoutMetrics", {})
+              size = layout.get("cssContentSize") or layout["contentSize"]
+              shot = cdp(
+                  "Page.captureScreenshot",
+                  {
+                      "format": "png",
+                      "fromSurface": True,
+                      "captureBeyondViewport": True,
+                      "clip": {
+                          "x": 0,
+                          "y": 0,
+                          "width": width,
+                          "height": math.ceil(size["height"]),
+                          "scale": 1,
+                      },
+                  },
+              )
+              (qa_root / f"{label.lower()}.png").write_bytes(
+                  base64.b64decode(shot["data"])
+              )
+              if metrics["viewport_width"] != width:
+                  raise SystemExit(
+                      f"{label} viewport mismatch: {metrics['viewport_width']} != {width}"
+                  )
+              if metrics["story_count"] != 6:
+                  raise SystemExit(f"{label} story count mismatch")
+              print(
+                  f"QA_LAYOUT_{label}="
+                  + json.dumps(metrics, ensure_ascii=False, separators=(",", ":"))
+              )
+
+          try:
+              capture("DESKTOP", 1440, 1000, False)
+              capture("MOBILE", 390, 844, True)
+          finally:
+              try:
+                  request("DELETE", prefix)
+              except Exception:
+                  pass
+          PY
+
           file "$qa_root/desktop.png" "$qa_root/mobile.png"
           sha256sum "$qa_root/desktop.png" "$qa_root/mobile.png"
 
@@ -182,87 +348,4 @@ jobs:
           }
           emit_image DESKTOP "$qa_root/desktop.png"
           emit_image MOBILE "$qa_root/mobile.png"
-
-          python3 - "$index_path" "$site_dir/qa-layout.html" <<'PY'
-          from pathlib import Path
-          import sys
-
-          source = Path(sys.argv[1]).read_text(encoding="utf-8")
-          probe = r"""
-          <script>
-          addEventListener("load", () => requestAnimationFrame(() => {
-            const visible = (el) => {
-              const style = getComputedStyle(el);
-              const rect = el.getBoundingClientRect();
-              return style.display !== "none" && style.visibility !== "hidden" &&
-                rect.width > 0 && rect.height > 0;
-            };
-            const all = [...document.querySelectorAll("body *")].filter(visible);
-            const overflow = all.filter((el) => {
-              const rect = el.getBoundingClientRect();
-              return rect.left < -0.5 || rect.right > innerWidth + 0.5;
-            });
-            const clipped = all.filter((el) => {
-              const style = getComputedStyle(el);
-              const x = el.scrollWidth > el.clientWidth + 1 &&
-                !["visible", "clip"].includes(style.overflowX);
-              const y = el.scrollHeight > el.clientHeight + 1 &&
-                !["visible", "clip"].includes(style.overflowY);
-              return x || y;
-            });
-            const cards = [...document.querySelectorAll("article.story-row")];
-            const rects = cards.map((el) => {
-              const r = el.getBoundingClientRect();
-              return {top: r.top, bottom: r.bottom, left: r.left, right: r.right};
-            });
-            const links = [...document.querySelectorAll("article.story-row a")].map((el) => {
-              const r = el.getBoundingClientRect();
-              return {width: r.width, height: r.height};
-            });
-            const metrics = {
-              viewport_width: innerWidth,
-              viewport_height: innerHeight,
-              document_client_width: document.documentElement.clientWidth,
-              document_scroll_width: document.documentElement.scrollWidth,
-              document_scroll_height: document.documentElement.scrollHeight,
-              story_count: cards.length,
-              horizontal_overflow_count: overflow.length,
-              clipped_visible_count: clipped.length,
-              adjacent_card_overlap_count: rects.slice(1).filter((r, i) => r.top < rects[i].bottom - 0.5).length,
-              source_link_min_width: links.length ? Math.min(...links.map((x) => x.width)) : 0,
-              source_link_min_height: links.length ? Math.min(...links.map((x) => x.height)) : 0,
-              story_font_family: cards.length ? getComputedStyle(cards[0]).fontFamily : "",
-              overflow_sample: overflow.slice(0, 5).map((el) => ({tag: el.tagName, class: el.className})),
-              clipped_sample: clipped.slice(0, 5).map((el) => ({tag: el.tagName, class: el.className}))
-            };
-            document.documentElement.dataset.qaLayout =
-              btoa(unescape(encodeURIComponent(JSON.stringify(metrics))));
-          }));
-          </script>
-          """
-          if "</body>" not in source:
-              raise SystemExit("artifact has no body terminator")
-          Path(sys.argv[2]).write_text(source.replace("</body>", probe + "</body>"), encoding="utf-8")
-          PY
-          "$chrome" "${common[@]}" --window-size=1440,1000 --dump-dom             http://127.0.0.1:8765/qa-layout.html > "$qa_root/desktop-dom.html"
-          "$chrome" "${common[@]}" --window-size=390,844 --dump-dom             http://127.0.0.1:8765/qa-layout.html > "$qa_root/mobile-dom.html"
-          python3 - "$qa_root/desktop-dom.html" "$qa_root/mobile-dom.html" <<'PY'
-          from pathlib import Path
-          import base64
-          import html
-          import json
-          import re
-          import sys
-
-          for label, file_name in zip(("DESKTOP", "MOBILE"), sys.argv[1:]):
-              rendered = Path(file_name).read_text(encoding="utf-8")
-              match = re.search(r'data-qa-layout="([^"]+)"', rendered)
-              if match is None:
-                  raise SystemExit(f"missing {label} layout metrics")
-              payload = base64.b64decode(html.unescape(match.group(1))).decode("utf-8")
-              metrics = json.loads(payload)
-              if metrics["story_count"] != 6:
-                  raise SystemExit(f"{label} story count mismatch")
-              print(f"QA_LAYOUT_{label}=" + json.dumps(metrics, separators=(",", ":")))
-          PY
           echo "QA_CHROMIUM_RENDER=PASS"
