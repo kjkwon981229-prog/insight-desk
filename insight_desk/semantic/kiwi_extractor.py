@@ -24,6 +24,11 @@ _LEADING_REPORTER_CREDIT_RE = re.compile(
     # The publisher/dateline group is closed before the reporter credit.
     r"[\[\(（【][^\]\)）】\n]{1,80}[\]\)）】]\s*"
     r"[가-힣]{2,4}\s+(?:기자|특파원)\s*(?:=|[|｜┃│])\s*"
+    r"|"
+    # An unbracketed publisher credit is closed by a second delimiter. Keep any
+    # following dateline (for example ``14일,``) inside the exact proposition.
+    r"[^=|｜┃│.!?。！？\n]{2,40}\s*=\s*"
+    r"(?:[가-힣]{2,10}\s+)?[가-힣]{2,4}\s+(?:기자|특파원)\s*[|｜┃│]\s*"
     r")"
 )
 

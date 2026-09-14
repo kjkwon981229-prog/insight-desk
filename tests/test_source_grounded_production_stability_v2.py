@@ -225,6 +225,31 @@ def _run_cases(
     "source-grounded production stability requires the production semantic-local runtime",
 )
 class SourceGroundedProductionStabilityTests(unittest.TestCase):
+    def test_unbracketed_publisher_byline_with_dateline_reaches_clean_publication(self) -> None:
+        proposition = (
+            "14일, 코스피가 전 거래일에 비해 217.30포인트(-3.14%) 하락한 "
+            "6692.61에 개장했다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id="unbracketed-publisher-byline-with-dateline",
+                    topic="economy",
+                    title="코스피, 217.30포인트 내린 6692.61 출발",
+                    body="라이센스뉴스 = 김재용 기자 | " + proposition,
+                    expected_proposition=proposition,
+                ),
+            ),
+            clocks={
+                "unbracketed-publisher-byline-with-dateline": datetime.fromisoformat(
+                    "2026-09-14T09:20:16+09:00"
+                )
+            },
+        )["unbracketed-publisher-byline-with-dateline"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+
     def test_repeated_title_publisher_label_reaches_clean_exact_publication(self) -> None:
         title = "현대硏, 올해 성장률 3.5%로 상향…내년 2.4% 전망"
         proposition = (

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+import sys
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from insight_desk.feed_quality_detectors import referential_report_without_claim
-from scripts.validate_feed_artifact import validate_html
+from scripts.validate_feed_artifact import main, validate_html
 
 
 def html_for(*stories: tuple[str, str, str, str]) -> str:
@@ -166,6 +171,57 @@ class FeedArtifactValidatorTests(unittest.TestCase):
                         html_for(("event:chrome", "AI 테크", visible, visible)),
                         source_audit=audit,
                     )
+
+    def test_cli_persists_redacted_failure_location_report(self) -> None:
+        audit = {
+            "publication_contract_version": 2,
+            "canonical_contract": {"validated": True},
+            "runtime_authority": {
+                "story_admission_semantic_gate": False,
+                "visible_identity_semantic_gate": False,
+            },
+        }
+        visible = (
+            "라이센스뉴스 = 김재용 기자 | 14일, 코스피가 전 거래일보다 "
+            "217.30포인트 하락해 개장했다."
+        )
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            html_path = root / "index.html"
+            audit_path = root / "audit.json"
+            report_path = root / "report.json"
+            html_path.write_text(
+                html_for(("event:chrome", "경제·투자", visible, visible)),
+                encoding="utf-8",
+            )
+            audit_path.write_text(json.dumps(audit), encoding="utf-8")
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "validate_feed_artifact.py",
+                    str(html_path),
+                    "--audit",
+                    str(audit_path),
+                    "--report",
+                    str(report_path),
+                ],
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"FEED_QUALITY_VISIBLE_METADATA:1:stories=1:headline\+summary",
+                ):
+                    main()
+
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["story_count"], 1)
+            self.assertEqual(
+                report["error"],
+                "FEED_QUALITY_VISIBLE_METADATA:1:stories=1:headline+summary",
+            )
+            self.assertNotIn("라이센스뉴스", json.dumps(report, ensure_ascii=False))
 
     def test_v2_exact_source_rejects_nonassertive_question(self) -> None:
         audit = {

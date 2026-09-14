@@ -232,6 +232,7 @@ def validate_html(
     context_dependent_headlines = 0
     context_dependent_summaries = 0
     visible_metadata_issues = 0
+    visible_metadata_locations: list[str] = []
     nonassertive_questions = 0
     non_event_analytical_summaries = 0
     conditional_analytical_summaries = 0
@@ -281,8 +282,16 @@ def validate_html(
         # presentation/proposition invariants. Keep these last-line guards active so the audit
         # cannot report clean counters for visibly bad cards.
         if canonical_v2:
-            if visible_metadata_text(headline) or visible_metadata_text(summary):
+            metadata_fields: list[str] = []
+            if visible_metadata_text(headline):
+                metadata_fields.append("headline")
+            if visible_metadata_text(summary):
+                metadata_fields.append("summary")
+            if metadata_fields:
                 visible_metadata_issues += 1
+                visible_metadata_locations.append(
+                    f"{index}:{'+'.join(metadata_fields)}"
+                )
             if (
                 nonassertive_interrogative_text(headline)
                 or nonassertive_interrogative_text(summary)
@@ -314,6 +323,7 @@ def validate_html(
                 context_dependent_summaries += 1
             if VisibleStoryIssue.VISIBLE_METADATA.value in codes:
                 visible_metadata_issues += 1
+                visible_metadata_locations.append(f"{index}:story")
             if VisibleStoryIssue.NON_EVENT_ANALYTICAL_SUMMARY.value in codes:
                 non_event_analytical_summaries += 1
             if VisibleStoryIssue.CONDITIONAL_ANALYTICAL_SUMMARY.value in codes:
@@ -371,7 +381,10 @@ def validate_html(
             f"FEED_QUALITY_CONTEXT_DEPENDENT_SUMMARY:{context_dependent_summaries}"
         )
     if visible_metadata_issues:
-        raise ValueError(f"FEED_QUALITY_VISIBLE_METADATA:{visible_metadata_issues}")
+        locations = ",".join(visible_metadata_locations)
+        raise ValueError(
+            f"FEED_QUALITY_VISIBLE_METADATA:{visible_metadata_issues}:stories={locations}"
+        )
     if nonassertive_questions:
         raise ValueError(f"FEED_QUALITY_NONASSERTIVE_QUESTION:{nonassertive_questions}")
     if non_event_analytical_summaries:
@@ -461,7 +474,24 @@ def main() -> None:
         source_audit = json.loads(args.audit.read_text(encoding="utf-8"))
         if not isinstance(source_audit, dict):
             raise ValueError("FEED_QUALITY_SOURCE_AUDIT_INVALID_ROOT")
-    report = validate_html(html, source_audit=source_audit)
+    try:
+        report = validate_html(html, source_audit=source_audit)
+    except ValueError as exc:
+        if args.report is not None:
+            failed_parser = FeedParser()
+            failed_parser.feed(html)
+            failure_report = {
+                "status": "FAIL",
+                "error": str(exc),
+                "story_count": len(failed_parser.stories),
+                "html_sha256": hashlib.sha256(html.encode("utf-8")).hexdigest(),
+            }
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                json.dumps(failure_report, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        raise
     if args.report is not None:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(
