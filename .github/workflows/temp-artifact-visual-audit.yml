@@ -118,6 +118,14 @@ jobs:
           print("QA_VISIBLE_MANIFEST=" + json.dumps(manifest, ensure_ascii=False, separators=(",", ":")))
           PY
 
+      - name: Install Korean render font
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+
       - name: Render desktop and mobile with Chromium
         shell: bash
         run: |
