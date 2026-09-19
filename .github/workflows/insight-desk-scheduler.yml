@@ -1,0 +1,133 @@
+name: Insight Desk Reliable Schedule Dispatcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_dispatch:
+        description: Dispatch once to verify the handoff; production still blocks same-day duplicates
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # GitHub documents that schedule events can be delayed or dropped. These lightweight early
+    # probes cover the observed 95-171 minute queue delay without ever publishing before 07:30.
+    - cron: "32,47 4 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "2,17,32,47 5 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "2,17,32,47 6 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "2,17 7 * * *"
+      timezone: "Asia/Seoul"
+    # Exact target when GitHub is on time, plus one low-cost fallback after the target window.
+    - cron: "30 7 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "17 8 * * *"
+      timezone: "Asia/Seoul"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: insight-desk-reliable-scheduler
+  cancel-in-progress: false
+
+env:
+  INSIGHT_DESK_SITE_URL: https://kjkwon981229-prog.github.io/insight-desk/
+
+jobs:
+  dispatch_if_due:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout current scheduler contract
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+
+      - name: Check publication time and deployed daily identity
+        id: gate
+        run: >-
+          python scripts/schedule_publication_gate.py
+          --site-url "$INSIGHT_DESK_SITE_URL"
+          --output build/schedule-publication-gate.json
+
+      - name: Check whether production is already queued or running
+        id: active
+        if: >-
+          steps.gate.outputs.should_run == 'true' ||
+          (github.event_name == 'workflow_dispatch' && inputs.test_dispatch)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          active=0
+          for status in queued in_progress; do
+            response="$(curl --fail --silent --show-error --max-time 20 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/insight-desk-production.yml/runs?branch=main&status=$status&per_page=10")"
+            active="$((active + $(jq -r '.total_count' <<<"$response")))"
+          done
+          if (( active > 0 )); then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "Production handoff skipped because $active run(s) are already active."
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch one guarded production run
+        id: dispatch
+        if: >-
+          (steps.gate.outputs.should_run == 'true' ||
+          (github.event_name == 'workflow_dispatch' && inputs.test_dispatch)) &&
+          steps.active.outputs.active == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          payload='{"ref":"main","inputs":{"trigger_source":"scheduled_resilience"}}'
+          http_status="$(curl --silent --show-error --max-time 20 \
+            --output "${RUNNER_TEMP}/dispatch-response.json" \
+            --write-out '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/insight-desk-production.yml/dispatches" \
+            --data "$payload")"
+          if [[ "$http_status" != "200" && "$http_status" != "204" ]]; then
+            echo "::error::Production workflow dispatch failed (http=$http_status)."
+            exit 1
+          fi
+          echo "dispatched=true" >> "$GITHUB_OUTPUT"
+          if [[ "$http_status" == "200" ]]; then
+            dispatched_run_id="$(jq -r '.workflow_run_id // empty' "${RUNNER_TEMP}/dispatch-response.json")"
+            dispatched_run_url="$(jq -r '.html_url // empty' "${RUNNER_TEMP}/dispatch-response.json")"
+            echo "run_id=$dispatched_run_id" >> "$GITHUB_OUTPUT"
+            echo "run_url=$dispatched_run_url" >> "$GITHUB_OUTPUT"
+            echo "Production workflow dispatch accepted (run_id=$dispatched_run_id)."
+          else
+            echo "Production workflow dispatch accepted."
+          fi
+
+      - name: Record scheduler decision
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Insight Desk scheduler"
+            echo "- gate: ${{ steps.gate.outputs.reason }}"
+            echo "- local date: ${{ steps.gate.outputs.local_date }}"
+            echo "- deployed date: ${{ steps.gate.outputs.deployed_date }}"
+            echo "- gate error: ${{ steps.gate.outputs.error_kind }}"
+            echo "- active production: ${{ steps.active.outputs.active || 'not-checked' }}"
+            echo "- dispatched: ${{ steps.dispatch.outputs.dispatched || 'false' }}"
+            echo "- dispatched run: ${{ steps.dispatch.outputs.run_id || 'not-returned' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

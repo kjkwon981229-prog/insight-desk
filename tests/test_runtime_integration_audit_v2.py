@@ -246,14 +246,17 @@ class RuntimeIntegrationAuditTests(unittest.TestCase):
             discovered.update(re.findall(r"https://([A-Za-z0-9.-]+)", source))
         self.assertEqual(discovered, set(DECLARED_PRODUCTION_API_HOSTS))
 
-    def test_production_workflow_runs_strict_audit_only_inside_live_build(self) -> None:
+    def test_production_workflow_probes_every_live_build_without_misusing_inactive_providers(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "insight-desk-production.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("scripts.audit_runtime_integrations", workflow)
         self.assertIn("--strict-configured", workflow)
+        self.assertIn("continue-on-error: ${{ github.event_name != 'pull_request' }}", workflow)
+        self.assertIn("RUNTIME_INTEGRATION_VERDICT", workflow)
         self.assertIn("build/runtime-integration-audit.json", workflow)
         self.assertIn('GDELT_DISCOVERY_ENABLED: "false"', workflow)
+        self.assertIn("configured_not_on_visible_path", workflow)
 
     def test_production_audit_names_exact_source_instead_of_external_provider_as_visible_owner(self) -> None:
         production = (ROOT / "scripts" / "phase11_daily_production_core.py").read_text(

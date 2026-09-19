@@ -346,9 +346,14 @@ class AuthoritativeEnrichmentTests(unittest.TestCase):
         for name in ("ECOS_API_KEY", "KOSIS_API_KEY", "OPENDART_API_KEY"):
             self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", workflow)
         self.assertIn('"config/authoritative_sources.json"', workflow)
-        self.assertIn('"ecos": configured("ECOS_API_KEY")', workflow)
-        self.assertIn('"kosis": configured("KOSIS_API_KEY")', workflow)
-        self.assertIn('"opendart": configured("OPENDART_API_KEY")', workflow)
+        for route, secret in (
+            ("ecos", "ECOS_API_KEY"),
+            ("kosis", "KOSIS_API_KEY"),
+            ("opendart", "OPENDART_API_KEY"),
+        ):
+            self.assertIn(f'"{route}": (', workflow)
+            self.assertIn(f'if configured("{secret}")', workflow)
+        self.assertIn('else "not_configured_optional"', workflow)
 
     def test_authoritative_owner_does_not_import_naver_or_relevance_policy(self) -> None:
         source_text = (ROOT / "insight_desk" / "authoritative_enrichment_v2.py").read_text(
