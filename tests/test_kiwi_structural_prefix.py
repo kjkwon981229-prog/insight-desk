@@ -128,6 +128,23 @@ class KiwiStructuralPrefixTests(unittest.TestCase):
         self.assertNotIn("라이센스뉴스", exact)
         self.assertNotIn("김재용 기자", exact)
 
+    def test_publisher_only_equals_dateline_preserves_exact_event(self) -> None:
+        proposition = (
+            "인사혁신처는 올해 모두 668명을 뽑는 국가공무원 7급 공개채용시험 "
+            "2차 응시율이 86.0%로 집계됐다고 19일 밝혔다."
+        )
+
+        result = _extract("퍼블릭타임스=" + proposition, suffix="publisher-only-dateline")
+
+        self.assertEqual(len(result.facts), 1)
+        fact = result.facts[0]
+        exact = next(
+            span.text for span in result.evidence if span.evidence_id in fact.evidence_ids
+        )
+        self.assertEqual(exact, proposition)
+        self.assertEqual(fact.subject, "인사혁신처")
+        self.assertNotIn("퍼블릭타임스", exact)
+
     def test_predicative_context_before_pipe_is_not_trimmed_as_metadata(self) -> None:
         body = "업계에 따르면 | 네오팩토리가 AI 공장 구축 사업을 15억달러에 수주했다."
         article = RawArticle(

@@ -225,6 +225,34 @@ def _run_cases(
     "source-grounded production stability requires the production semantic-local runtime",
 )
 class SourceGroundedProductionStabilityTests(unittest.TestCase):
+    def test_publisher_only_equals_dateline_reaches_clean_publication(self) -> None:
+        proposition = (
+            "인사혁신처는 올해 모두 668명을 뽑는 국가공무원 7급 공개채용시험 "
+            "2차 응시율이 86.0%로 집계됐다고 19일 밝혔다."
+        )
+        outcome = _run_cases(
+            (
+                _ArticleCase(
+                    case_id="publisher-only-equals-dateline",
+                    topic="psat_recruitment",
+                    title="국가공무원 7급 공채 2차 응시율 86.0%",
+                    body="퍼블릭타임스=" + proposition,
+                    expected_proposition=proposition,
+                    source_name="퍼블릭타임스",
+                    source_url="https://www.public25.com/news/articleView.html?idxno=55035",
+                ),
+            ),
+            clocks={
+                "publisher-only-equals-dateline": datetime.fromisoformat(
+                    "2026-09-19T20:09:02+09:00"
+                )
+            },
+        )["publisher-only-equals-dateline"]
+
+        self.assertEqual(outcome.proposition, proposition)
+        self.assertTrue(outcome.exact_provenance)
+        self.assertNotIn("퍼블릭타임스", outcome.proposition or "")
+
     def test_unbracketed_publisher_byline_with_dateline_reaches_clean_publication(self) -> None:
         proposition = (
             "14일, 코스피가 전 거래일에 비해 217.30포인트(-3.14%) 하락한 "

@@ -180,6 +180,11 @@ _LEADING_PUBLISHER_BYLINE_RE = re.compile(
     r"^[^=|｜.!?。！？]{2,40}\s*=\s*"
     r"(?:[가-힣]{2,10}\s+)?[가-힣]{2,4}\s+(?:기자|특파원)\s*[|｜]\s*"
 )
+_LEADING_PUBLISHER_DATELINE_RE = re.compile(
+    r"^(?:(?:[가-힣A-Za-z0-9·&.-]{0,24}"
+    r"(?:뉴스|일보|신문|방송|통신|타임스|미디어|저널|데일리|프레스|투데이|TV))"
+    r"|뉴시스|뉴스1)\s*[=＝]\s*\S"
+)
 _STANDALONE_SOURCE_CREDIT_RE = re.compile(
     r"^[\[\(（]?(?:(?:사진|자료|영상)\s*[:：]\s*)?"
     r"[^.!?。！？]{0,60}?"
@@ -897,6 +902,7 @@ def metadata_or_caption_text(value: str) -> bool:
     return (
         _VISIBLE_BYLINE_RE.search(normalized) is not None
         or _LEADING_PUBLISHER_BYLINE_RE.search(normalized) is not None
+        or _LEADING_PUBLISHER_DATELINE_RE.search(normalized) is not None
         or _STANDALONE_SOURCE_CREDIT_RE.search(normalized) is not None
     )
 
