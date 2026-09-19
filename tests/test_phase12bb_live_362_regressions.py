@@ -62,6 +62,11 @@ class Live362VisibleChromeRegressions(unittest.TestCase):
             "충남도 제공",
             "부산시 제공",
             (
+                "퍼블릭타임스=인사혁신처는 올해 모두 668명을 뽑는 국가공무원 "
+                "7급 공개채용시험 2차 응시율이 86.0%로 집계됐다고 밝혔다."
+            ),
+            "지역경제신문＝산업부는 26일 첨단산업 지원책을 발표했다.",
+            (
                 "매일일보 = 조남상 기자 | 천안시가 내달 2일부터 닷새간 "
                 "2026 천안 K-컬처 박람회를 개최한다."
             ),
@@ -78,6 +83,7 @@ class Live362VisibleChromeRegressions(unittest.TestCase):
         cases = (
             "충남도는 26일 첨단산업 육성방안을 발표했다.",
             "매일일보는 26일 신규 편집국장 인사를 발표했다.",
+            "PER=10배인 기업이 신규 투자 계획을 발표했다.",
         )
         for text in cases:
             with self.subTest(text=text):

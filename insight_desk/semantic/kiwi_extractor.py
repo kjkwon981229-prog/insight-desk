@@ -34,6 +34,13 @@ _LEADING_REPORTER_CREDIT_RE = re.compile(
     # following dateline (for example ``14일,``) inside the exact proposition.
     r"[^=|｜┃│.!?。！？\n]{2,40}\s*=\s*"
     r"(?:[가-힣]{2,10}\s+)?[가-힣]{2,4}\s+(?:기자|특파원)\s*[|｜┃│]\s*"
+    r"|"
+    # Some publisher bodies omit the reporter and place only the outlet label
+    # before an equals delimiter. The label is presentation chrome, while the
+    # following grammatical clause remains the exact source proposition.
+    r"(?:(?:[가-힣A-Za-z0-9·&.-]{0,24}"
+    r"(?:뉴스|일보|신문|방송|통신|타임스|미디어|저널|데일리|프레스|투데이|TV))"
+    r"|뉴시스|뉴스1)\s*[=＝]\s*"
     r")"
 )
 
