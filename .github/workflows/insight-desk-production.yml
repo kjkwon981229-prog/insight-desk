@@ -15,13 +15,27 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: Origin of this dispatch; scheduled_resilience remains duplicate-guarded
+        required: false
+        default: manual
+        type: choice
+        options:
+          - manual
+          - scheduled_resilience
   schedule:
-    # 07:30 Asia/Seoul = 22:30 UTC on the previous day.
-    - cron: "30 22 * * *"
+    # Independent late fallback. The lightweight dispatcher owns the 07:30 target and retries.
+    - cron: "17 8 * * *"
+      timezone: "Asia/Seoul"
 
 concurrency:
   group: insight-desk-production-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
+  # Serialize main publications so a delayed backup trigger cannot cancel a valid deployment.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  INSIGHT_DESK_SITE_URL: https://kjkwon981229-prog.github.io/insight-desk/
 
 jobs:
   pr_live_gate:
@@ -51,9 +65,50 @@ jobs:
             echo "PR live production skipped: current head is not an explicit production-preflight candidate."
           fi
 
+  schedule_gate:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.trigger_source == 'scheduled_resilience')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      run_production: ${{ steps.gate.outputs.should_run }}
+      reason: ${{ steps.gate.outputs.reason }}
+    steps:
+      - name: Checkout exact guarded production candidate
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.10"
+
+      - name: Refuse early or duplicate daily publication
+        id: gate
+        run: >-
+          python scripts/schedule_publication_gate.py
+          --site-url "$INSIGHT_DESK_SITE_URL"
+          --output build/schedule-publication-gate.json
+
+      - name: Record guarded production decision
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Guarded production decision"
+            echo "- gate: ${{ steps.gate.outputs.reason }}"
+            echo "- local date: ${{ steps.gate.outputs.local_date }}"
+            echo "- deployed date: ${{ steps.gate.outputs.deployed_date }}"
+            echo "- gate error: ${{ steps.gate.outputs.error_kind }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
-    needs: [pr_live_gate]
-    if: always() && (github.event_name != 'pull_request' || needs.pr_live_gate.outputs.run_live == 'true')
+    needs: [pr_live_gate, schedule_gate]
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request' || needs.pr_live_gate.outputs.run_live == 'true') &&
+      (needs.schedule_gate.result == 'skipped' || needs.schedule_gate.outputs.run_production == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -116,37 +171,88 @@ jobs:
           if partial:
               raise SystemExit("PHASE12B_PARTIAL_PROVIDER_CONFIG:" + ",".join(partial))
 
+          gdelt_active = (
+              os.environ.get("GDELT_DISCOVERY_ENABLED", "false").casefold() == "true"
+          )
           routes = {
-              "naver": all(pairs["naver"]),
-              "bing_rss": True,
-              "gdelt": os.environ.get("GDELT_DISCOVERY_ENABLED", "false").casefold() == "true",
-              "groq": configured("GROQ_API_KEY"),
-              "cloudflare": all(pairs["cloudflare"]),
-              "gemini": configured("GEMINI_API_KEY"),
-              "ecos": configured("ECOS_API_KEY"),
-              "kosis": configured("KOSIS_API_KEY"),
-              "opendart": configured("OPENDART_API_KEY"),
-              "local_nli": True,
-              "exact_source": True,
+              "naver": "configured_active" if all(pairs["naver"]) else "not_configured_optional",
+              "bing_rss": "public_active",
+              "gdelt": "configured_active" if gdelt_active else "disabled_by_policy",
+              "groq": (
+                  "configured_not_on_visible_path"
+                  if configured("GROQ_API_KEY")
+                  else "not_configured_inactive"
+              ),
+              "cloudflare_ai": (
+                  "configured_not_on_visible_path"
+                  if all(pairs["cloudflare"])
+                  else "not_configured_inactive"
+              ),
+              "gemini": (
+                  "configured_not_on_visible_path"
+                  if configured("GEMINI_API_KEY")
+                  else "not_configured_inactive"
+              ),
+              "ecos": (
+                  "configured_active"
+                  if configured("ECOS_API_KEY")
+                  else "not_configured_optional"
+              ),
+              "kosis": (
+                  "configured_active"
+                  if configured("KOSIS_API_KEY")
+                  else "not_configured_optional"
+              ),
+              "opendart": (
+                  "configured_active"
+                  if configured("OPENDART_API_KEY")
+                  else "not_configured_optional"
+              ),
+              "push_worker": (
+                  "configured_active"
+                  if configured("PUSH_WORKER_URL")
+                  else "not_configured_optional"
+              ),
+              "local_nli": "installed_not_on_visible_path",
+              "exact_source": "active_semantic_authority",
           }
           print(
               "PHASE12B_ROUTE_CONFIGURATION "
-              + " ".join(
-                  f"{name}={'configured' if enabled else 'not_configured'}"
-                  for name, enabled in routes.items()
-              )
+              + " ".join(f"{name}={status}" for name, status in routes.items())
           )
           PY
 
       - name: Compile current production path
         run: python -m compileall -q insight_desk scripts
 
-      - name: Live-validate configured non-semantic integrations
-        if: github.event_name == 'pull_request'
+      - name: Live-validate configured operational integrations
+        id: integration_audit
+        continue-on-error: ${{ github.event_name != 'pull_request' }}
         run: >-
           python -m scripts.audit_runtime_integrations
           --output build/runtime-integration-audit.json
           --strict-configured
+
+      - name: Record non-PR integration health without blocking a valid briefing
+        if: always() && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if [[ ! -s build/runtime-integration-audit.json ]]; then
+            echo "::warning::Runtime integration audit did not produce a report."
+            exit 0
+          fi
+          if ! jq -e 'type == "object" and (.status | type == "string")' \
+            build/runtime-integration-audit.json >/dev/null 2>&1; then
+            echo "::warning::Runtime integration audit produced an unreadable report."
+            exit 0
+          fi
+          status="$(jq -r '.status' build/runtime-integration-audit.json)"
+          failures="$(jq -c '.configured_failures // []' build/runtime-integration-audit.json)"
+          unconfigured="$(jq -c '.unconfigured_optional_routes // []' build/runtime-integration-audit.json)"
+          echo "RUNTIME_INTEGRATION_VERDICT status=$status configured_failures=$failures unconfigured_optional=$unconfigured"
+          if [[ "$status" != "PASS" ]]; then
+            echo "::warning::One or more configured operational integrations failed their bounded live probe; publication remains governed by its own source and quality gates."
+          fi
 
       - name: Run current-engine daily production
         id: production
@@ -230,6 +336,7 @@ jobs:
             build/run-state.json
             build/production-audit.json
             build/feed-quality.json
+            build/runtime-integration-audit.json
             build/understanding-diagnostics.jsonl
           if-no-files-found: error
           retention-days: 7
@@ -284,8 +391,8 @@ jobs:
     needs: build
     # The build job is fail-closed when no publishable briefing exists. A successful non-PR build
     # therefore already proves that a validated Pages artifact was uploaded. `always()` is required
-    # because build itself depends on the PR-only gate: without an explicit status function GitHub
-    # propagates that skipped ancestor and suppresses deploy even when needs.build.result is success.
+    # because build itself depends on event-specific gates: without an explicit status function
+    # GitHub propagates a skipped ancestor and suppresses deploy even when build itself succeeded.
     # Do not add the fragile cross-job publish string back to this delivery boundary.
     if: always() && github.event_name != 'pull_request' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
@@ -342,7 +449,13 @@ jobs:
           notification_source="other"
           case "$GITHUB_EVENT_NAME" in
             schedule) notification_source="schedule" ;;
-            workflow_dispatch) notification_source="manual" ;;
+            workflow_dispatch)
+              if [[ "${{ inputs.trigger_source }}" == "scheduled_resilience" ]]; then
+                notification_source="schedule"
+              else
+                notification_source="manual"
+              fi
+              ;;
           esac
 
           notification_type="READY"

@@ -44,9 +44,14 @@ semantic authority.
 
 ## Audit rules
 
-`scripts/audit_runtime_integrations.py` performs bounded read-only probes during an explicitly marked
-PR production preflight. It records only integration identifiers, status, call count, and sanitized
-exception class. Credentials, response bodies, article text, and provider error detail are excluded.
+`scripts/audit_runtime_integrations.py` performs bounded read-only probes during every live build.
+An explicitly marked PR production preflight remains strict: a configured operational failure blocks
+that candidate. Main push, manual, and scheduled builds preserve the report as an observable artifact
+but do not let a transient auxiliary integration outage suppress a briefing that independently passes
+the source, identity, and feed-quality gates. They emit a workflow warning and the exact sanitized
+failure inventory instead. The report records only integration identifiers, status, call count, and
+sanitized exception class. Credentials, response bodies, article text, and provider error detail are
+excluded.
 
 A configured operational integration that fails its probe fails the marked preflight. An optional
 integration without credentials is reported as `NOT_CONFIGURED` and cannot affect the canonical

@@ -117,7 +117,12 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
 
     def test_workflow_restores_schedule_pages_and_push_without_legacy_engine(self) -> None:
         workflow = Path(".github/workflows/insight-desk-production.yml").read_text(encoding="utf-8")
-        self.assertIn('cron: "30 22 * * *"', workflow)
+        scheduler = Path(".github/workflows/insight-desk-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn('cron: "30 7 * * *"', scheduler)
+        self.assertIn('timezone: "Asia/Seoul"', scheduler)
+        self.assertIn('cron: "17 8 * * *"', workflow)
+        self.assertIn("scheduled_resilience", workflow)
+        self.assertIn("schedule_publication_gate.py", workflow)
         self.assertIn("branches: [main]", workflow)
         self.assertIn("actions/upload-pages-artifact@v4", workflow)
         self.assertIn("actions/deploy-pages@v4", workflow)

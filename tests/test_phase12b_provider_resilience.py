@@ -275,7 +275,10 @@ class Phase12BWorkflowGateTests(unittest.TestCase):
 
     def test_main_production_schedule_remains_enabled(self) -> None:
         workflow = Path(".github/workflows/insight-desk-production.yml").read_text(encoding="utf-8")
-        self.assertIn('cron: "30 22 * * *"', workflow)
+        scheduler = Path(".github/workflows/insight-desk-scheduler.yml").read_text(encoding="utf-8")
+        self.assertIn('cron: "30 7 * * *"', scheduler)
+        self.assertIn('timezone: "Asia/Seoul"', scheduler)
+        self.assertIn('cron: "17 8 * * *"', workflow)
         self.assertIn("github.event_name != 'pull_request'", workflow)
 
 
