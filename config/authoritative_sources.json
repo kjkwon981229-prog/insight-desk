@@ -54,6 +54,26 @@
   },
   "public_sources": [
     {
+      "id": "mpm_press_releases",
+      "url": "https://www.mpm.go.kr/mpm/comm/newsPress/newsPressRelease/",
+      "topic_ids": ["psat_recruitment"],
+      "source_type": "OFFICIAL_GOVERNMENT",
+      "publisher": "인사혁신처",
+      "trusted_domains": ["www.mpm.go.kr"],
+      "discovery_mode": "mpm_board",
+      "max_requests": 2
+    },
+    {
+      "id": "mpm_exam_notices",
+      "url": "https://www.mpm.go.kr/mpm/comm/newsInnoNotice/",
+      "topic_ids": ["psat_recruitment"],
+      "source_type": "OFFICIAL_GOVERNMENT",
+      "publisher": "인사혁신처",
+      "trusted_domains": ["www.mpm.go.kr"],
+      "discovery_mode": "mpm_board",
+      "max_requests": 2
+    },
+    {
       "id": "psat_gongmuwon",
       "url": "https://gongmuwon.gosi.kr/spcsv/indexMain2.do",
       "topic_ids": ["psat_recruitment"],

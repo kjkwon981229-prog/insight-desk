@@ -25,6 +25,7 @@ from insight_desk.acquisition.discovery import (
     BingNewsRssDiscovery,
     DiscoveryError,
     GdeltDocDiscovery,
+    MpmOfficialBoardDiscovery,
     NaverNewsDiscovery,
 )
 from insight_desk.api import EcosClient, KosisClient, NaverApiClient, OpenDartClient
@@ -50,6 +51,7 @@ DECLARED_PRODUCTION_API_HOSTS = frozenset(
         "naverapihub.apigw.ntruss.com",
         "opendart.fss.or.kr",
         "www.bing.com",
+        "www.mpm.go.kr",
     }
 )
 
@@ -356,8 +358,36 @@ def build_runtime_integration_specs(
         else None
     )
     push_worker_url = str(source.get("PUSH_WORKER_URL", "")).strip()
+    public_sources = config.get("public_sources", [])
+    if not isinstance(public_sources, list):
+        raise ValueError("public source integration config must be a list")
+    official_specs: list[IntegrationProbeSpec] = []
+    dormant_public_sources = False
+    for public_source in public_sources:
+        if not isinstance(public_source, dict):
+            raise ValueError("public source integration entry must be an object")
+        if public_source.get("discovery_mode") != "mpm_board":
+            dormant_public_sources = True
+            continue
+        if public_source.get("topic_ids") != ["psat_recruitment"]:
+            raise ValueError("MPM official discovery must be limited to PSAT")
+        route = MpmOfficialBoardDiscovery(
+            board_url=str(public_source["url"]),
+            route_id=str(public_source["id"]),
+            max_pages=int(public_source.get("max_requests", 2)),
+        )
+        official_specs.append(IntegrationProbeSpec(
+            route.route_id,
+            role="official_discovery",
+            scope="psat_runtime",
+            configured=True,
+            active=True,
+            probe=lambda route=route: route.search("PSAT", topic_id="psat_recruitment", limit=1),
+            retry_delays=(5.0,),
+        ))
 
     return (
+        *official_specs,
         IntegrationProbeSpec(
             "bing_news_rss",
             role="news_discovery",
@@ -467,7 +497,7 @@ def build_runtime_integration_specs(
             "configured_public_source_sites",
             role="reserved_configuration",
             scope="no_production_caller",
-            configured=bool(config.get("public_sources")),
+            configured=dormant_public_sources,
             active=False,
             inactive_status=_DISABLED,
         ),

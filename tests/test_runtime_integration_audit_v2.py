@@ -221,6 +221,11 @@ class RuntimeIntegrationAuditTests(unittest.TestCase):
         self.assertFalse(by_id["gemini_interactions"].active)
         self.assertFalse(by_id["naver_search_trend"].active)
         self.assertFalse(by_id["configured_public_source_sites"].active)
+        for route_id in ("mpm_press_releases", "mpm_exam_notices"):
+            self.assertTrue(by_id[route_id].active)
+            self.assertTrue(by_id[route_id].configured)
+            self.assertEqual(by_id[route_id].scope, "psat_runtime")
+            self.assertIsNotNone(by_id[route_id].probe)
 
     def test_partial_cloudflare_configuration_fails_before_any_probe(self) -> None:
         with self.assertRaisesRegex(ValueError, "Cloudflare"):

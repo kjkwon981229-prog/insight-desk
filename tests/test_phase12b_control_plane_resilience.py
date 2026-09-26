@@ -118,7 +118,7 @@ class Phase12BControlPlaneResilienceTests(unittest.TestCase):
         discovery = default_news_discovery(env={})
         self.assertEqual(
             [route.route_id for route in discovery.routes],
-            ["bing_news_rss"],
+            ["mpm_press_releases", "mpm_exam_notices", "bing_news_rss"],
         )
 
     def test_partial_naver_credentials_fail_fast(self) -> None:

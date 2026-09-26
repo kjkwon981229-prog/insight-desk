@@ -290,21 +290,21 @@ class Phase12BDiscoveryResilienceTests(unittest.TestCase):
         self.assertIsInstance(discovery, AggregatedNewsDiscovery)
         self.assertEqual(
             tuple(route.route_id for route in discovery.routes),
-            ("naver_search", "bing_news_rss"),
+            ("mpm_press_releases", "mpm_exam_notices", "naver_search", "bing_news_rss"),
         )
 
     def test_default_discovery_remains_operational_without_naver_credentials(self) -> None:
         discovery = default_news_discovery(env={})
         self.assertEqual(
             tuple(route.route_id for route in discovery.routes),
-            ("bing_news_rss",),
+            ("mpm_press_releases", "mpm_exam_notices", "bing_news_rss"),
         )
 
     def test_gdelt_requires_explicit_opt_in(self) -> None:
         discovery = default_news_discovery(env={"GDELT_DISCOVERY_ENABLED": "true"})
         self.assertEqual(
             tuple(route.route_id for route in discovery.routes),
-            ("bing_news_rss", "gdelt_doc"),
+            ("mpm_press_releases", "mpm_exam_notices", "bing_news_rss", "gdelt_doc"),
         )
 
     def test_invalid_gdelt_flag_fails_configuration_closed(self) -> None:
