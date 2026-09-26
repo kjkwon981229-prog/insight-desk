@@ -196,7 +196,9 @@ class MpmOfficialBoardDiscovery:
 
 
 def _configured_mpm_routes(config_path: Path | None = None) -> list[DiscoveryRoute]:
-    path = config_path or Path(__file__).resolve().parents[2] / "config" / "authoritative_sources.json"
+    # Production imports an installed package while running from the checked-out repository.
+    # Configuration belongs to that checkout, never to site-packages.
+    path = config_path or Path("config/authoritative_sources.json")
     try:
         config = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:

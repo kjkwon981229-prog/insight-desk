@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import unittest
+from unittest.mock import patch
 
 from insight_desk.acquisition import ArticleCandidate, MpmOfficialBoardDiscovery, default_news_discovery
+from insight_desk.acquisition import discovery as discovery_module
 from insight_desk.acquisition.discovery import AggregatedNewsDiscovery, BingNewsRssDiscovery
 
 
@@ -42,6 +44,12 @@ class _Board:
 
 
 class PsatOfficialDiscoveryTests(unittest.TestCase):
+    def test_installed_package_reads_live_checkout_configuration(self) -> None:
+        with patch.object(discovery_module, "__file__", "/tmp/site-packages/insight_desk/acquisition/discovery.py"):
+            routes = discovery_module._configured_mpm_routes()
+        self.assertEqual([route.route_id for route in routes],
+                         ["mpm_press_releases", "mpm_exam_notices"])
+
     def test_official_board_precedes_news_and_does_not_fetch_for_other_topics(self) -> None:
         routes = default_news_discovery(env={}).routes
         self.assertEqual([route.route_id for route in routes[:2]],
