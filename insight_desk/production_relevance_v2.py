@@ -36,6 +36,25 @@ def _term_present(text: str, term: str) -> bool:
     return bool(value) and value.casefold() in _normalized(text).casefold()
 
 
+def _psat_commercial_only(proposition: str) -> bool:
+    """Reject a commercial/personal event, not a sourced change to the examination.
+
+    Inspect only the selected exact proposition, never a stray title or background paragraph.
+    A public examination announcement can mention commercial actors, so explicit exam-authority
+    attribution keeps such a proposition eligible for the ordinary semantic gates.
+    """
+    lead = proposition.lstrip()
+    if any(lead.startswith(authority + particle)
+           for authority in ("인사혁신처", "국가공무원 채용시스템", "사이버국가고시센터", "정부")
+           for particle in ("은", "는", "이", "가")):
+        return False
+    commercial_actor = any(_term_present(proposition, actor) for actor in
+                           ("학원", "출판사", "교육업체", "문제집", "교재", "합격 후기"))
+    commercial_action = any(_term_present(proposition, action) for action in
+                            ("할인", "증정", "출간", "출시", "판매", "특강", "강좌", "수강", "후기", "홍보"))
+    return commercial_actor and commercial_action
+
+
 def _fact_surface(fact: EventFact) -> str:
     return " ".join(value for value in (fact.subject, fact.action, fact.object or "") if value)
 
@@ -219,6 +238,9 @@ class ConfiguredLiteralRelevanceOwner:
                         required_intent_terms=(),
                     ),
                 )
+
+            if matched and topic.topic_id == "psat_recruitment" and _psat_commercial_only(proposition):
+                matched = False
 
         if matched:
             return RelevanceDecision(

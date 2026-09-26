@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "replay_mode": "historical_exact_source_excerpt_replay",
+  "phase5_status": "PARTIAL",
+  "raw_article_body_complete": false,
+  "source_artifact": {
+    "kind": "official_press_release_public_excerpt",
+    "official_url": "https://www.mpm.go.kr/mpm/comm/newsPress/newsPressRelease/?boardId=bbs_0000000000000029&category=&cntId=4318&mode=view&pageIdx=",
+    "note": "This excerpt is an offline counterfactual replay, not the original 2026-08-28 raw ingestion."
+  },
+  "replay_clock": "2026-08-28T06:12:32+00:00",
+  "topics": [
+    {
+      "id": "psat_recruitment",
+      "name": "PSAT·공채 일정",
+      "enabled": true,
+      "conditional": true,
+      "priority": 55,
+      "candidate_budget": 36,
+      "selection_cap": 3,
+      "event_scope_anchors": ["공무원", "공직", "PSAT", "인사혁신처", "외교관후보자", "민간경력자"],
+      "intent_anchors": ["PSAT", "공직적격성평가", "5급 공채", "7급 공채", "국가공무원 채용", "외교관후보자", "민간경력자", "채용", "시험", "원서접수", "합격자", "인사혁신처", "공고", "일정"],
+      "required_intent_terms": ["공직적격성평가", "5급 공채", "7급 공채", "국가공무원", "공무원 시험", "인사혁신처", "공채", "공무원", "외교관후보자", "민간경력자", "5급", "7급"],
+      "event_terms": ["시험", "공채", "채용", "원서접수", "일정", "공고", "합격", "선발", "시행", "개편", "제도", "인사혁신처", "발표"],
+      "news_queries": ["PSAT"]
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "mpm-20260827-psat-reform",
+      "topic_id": "psat_recruitment",
+      "query": "PSAT",
+      "candidate_id": "replay:mpm:20260827:4318",
+      "source_name": "인사혁신처",
+      "source_url": "https://www.mpm.go.kr/mpm/comm/newsPress/newsPressRelease/?boardId=bbs_0000000000000029&category=&cntId=4318&mode=view&pageIdx=",
+      "search_title": "내년부터 검정시험… '공직적격성평가' 운영 방향 발표",
+      "source_excerpt": "내년부터 검정시험 형태로 처음 시행돼 국가공무원 5·7급 공채 등의 1차 시험으로 대체되는 공직적격성평가(PSAT) 시험 일정 등 운영 방향이 확정됐다. 기존 공직적격성평가를 활용하던 5‧7급 국가공무원 공개경쟁채용시험을 비롯해 민간경력자 일괄채용시험, 법원 행정고등고시, 지방직 7급 공채시험 등에서 1차 시험을 대체해 활용할 수 있다.",
+      "source_excerpt_provenance": "Official Ministry of Personnel Management release 2026-08-27, same frozen public excerpt as event_understanding_regression_sources_v6.json",
+      "recorded_generation": {
+        "headline": "내년부터 검정시험 형태로 처음 시행",
+        "summary": "내년부터 검정시험 형태로 처음 시행돼 국가공무원 5·7급 공채 등의 1차 시험으로 대체되는 공직적격성평가(PSAT) 시험 일정 등 운영 방향이 확정됐다."
+      }
+    }
+  ]
+}

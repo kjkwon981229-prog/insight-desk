@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any, Callable, Protocol, cast
 from urllib.parse import parse_qs, urlparse, urlsplit, urlunsplit
 
@@ -34,6 +37,184 @@ class DiscoveryRoute(Protocol):
     route_id: str
 
     def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]: ...
+
+
+_MPM_ORIGIN = "https://www.mpm.go.kr"
+_MPM_HOST = urllib.parse.urlsplit(_MPM_ORIGIN).hostname
+_MPM_BOARD_PATHS = {
+    "/mpm/comm/newsPress/newsPressRelease/",
+    "/mpm/comm/newsInnoNotice/",
+}
+_PSAT_EXAM_TITLES = (
+    "PSAT", "공직적격성평가", "공채", "공개경쟁채용시험", "외교관후보자",
+    "민간경력자", "국가공무원 채용", "공무원 시험",
+)
+_MPM_DATE = re.compile(r"\b20\d{2}-(?:0[1-9]|1[0-2])-(?:[0-2]\d|3[01])\b")
+_KST = timezone(timedelta(hours=9))
+
+
+def _mpm_article_url(board_url: str, href: str) -> str | None:
+    """Accept a real MPM detail link, never an off-site or synthetic board entry."""
+    url = urllib.parse.urljoin(board_url, href)
+    parsed = urllib.parse.urlsplit(url)
+    params = urllib.parse.parse_qs(parsed.query)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != _MPM_HOST
+        or parsed.path not in _MPM_BOARD_PATHS
+        or params.get("mode") != ["view"]
+        or not any(value.isdecimal() for value in params.get("cntId", ()))
+    ):
+        return None
+    return url
+
+
+class _MpmBoardRows(HTMLParser):
+    """Read only linked article titles and the same row's publication date."""
+
+    def __init__(self, board_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.board_url = board_url
+        self.items: list[tuple[str, str, datetime]] = []
+        self.rows_seen = 0
+        self._in_row = False
+        self._in_cell = False
+        self._link: str | None = None
+        self._link_text: list[str] = []
+        self._cell_text: list[str] = []
+        self._row_text: list[str] = []
+        self._row_links: list[tuple[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "tr":
+            self._in_row = True
+            self._row_text = []
+            self._row_links = []
+        elif self._in_row and tag == "td":
+            self._in_cell = True
+            self._cell_text = []
+        elif self._in_cell and tag == "a":
+            self._link = dict(attrs).get("href")
+            self._link_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._in_cell:
+            self._cell_text.append(data)
+        if self._link is not None:
+            self._link_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._link is not None:
+            title = " ".join(" ".join(self._link_text).split())
+            link = _mpm_article_url(self.board_url, self._link)
+            if title and link:
+                self._row_links.append((title, link))
+            self._link = None
+        elif tag == "td" and self._in_cell:
+            self._row_text.append(" ".join(self._cell_text))
+            self._in_cell = False
+        elif tag == "tr" and self._in_row:
+            if self._row_text:
+                self.rows_seen += 1
+            match = _MPM_DATE.search(" ".join(self._row_text))
+            if match and self._row_links:
+                try:
+                    published = datetime.combine(
+                        datetime.strptime(match.group(), "%Y-%m-%d").date(), time.min, _KST
+                    )
+                except ValueError:
+                    published = None
+                if published is not None:
+                    title, url = self._row_links[0]
+                    self.items.append((title, url, published))
+            self._in_row = False
+
+
+@dataclass(slots=True)
+class MpmOfficialBoardDiscovery:
+    """Primary-source candidate lane for PSAT/civil-service notices and releases.
+
+    The title only nominates an official page. The ordinary acquisition, source relevance,
+    event understanding, identity and verification gates still decide publication.
+    """
+
+    board_url: str
+    route_id: str
+    max_pages: int = 2
+    opener: Callable[..., Any] = urllib.request.urlopen
+    timeout: float = 12.0
+    _cached: tuple[tuple[str, str, datetime], ...] | None = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        parsed = urllib.parse.urlsplit(self.board_url)
+        if parsed.scheme != "https" or parsed.hostname != _MPM_HOST or parsed.path not in _MPM_BOARD_PATHS:
+            raise DiscoveryConfigError("MPM official board URL must be an allowlisted HTTPS board")
+        if not 1 <= self.max_pages <= 3:
+            raise DiscoveryConfigError("MPM official board page budget must be between 1 and 3")
+
+    def search(self, query: str, *, topic_id: str, limit: int = 10) -> tuple[ArticleCandidate, ...]:
+        if topic_id != "psat_recruitment":
+            return ()
+        if self._cached is None:
+            rows: list[tuple[str, str, datetime]] = []
+            for page in range(1, self.max_pages + 1):
+                url = self.board_url + "?" + urllib.parse.urlencode({"pageIdx": page})
+                request = urllib.request.Request(url, headers={"User-Agent": "InsightDesk/1.0"})
+                try:
+                    with self.opener(request, timeout=self.timeout) as response:
+                        raw = response.read()
+                except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+                    if rows:  # Preserve already-proven first-page source links on a later-page miss.
+                        break
+                    raise DiscoveryError(
+                        FailureKind.TRANSIENT_PROVIDER, f"MPM board failed:{type(exc).__name__}"
+                    ) from exc
+                parser = _MpmBoardRows(self.board_url)
+                parser.feed(raw.decode("utf-8", errors="replace"))
+                if not parser.rows_seen or not parser.items:
+                    if rows:
+                        break
+                    raise DiscoveryError(FailureKind.INVALID_OUTPUT, "MPM board has no linked dated articles")
+                rows.extend(parser.items)
+            self._cached = tuple(dict.fromkeys(rows))
+        now = datetime.now(timezone.utc)
+        return tuple(
+            ArticleCandidate(
+                candidate_id=_stable_candidate_id(self.route_id, url),
+                url=url,
+                search_title=title,
+                source_name="인사혁신처",
+                published_at=published,
+                topic_ids=(topic_id,),
+                query=query,
+                retrieved_via=self.route_id,
+            )
+            for title, url, published in self._cached
+            if any(anchor.casefold() in title.casefold() for anchor in _PSAT_EXAM_TITLES)
+            and -timedelta(hours=6) <= now - published.astimezone(timezone.utc) <= timedelta(hours=72)
+        )[:limit]
+
+
+def _configured_mpm_routes(config_path: Path | None = None) -> list[DiscoveryRoute]:
+    # Production imports an installed package while running from the checked-out repository.
+    # Configuration belongs to that checkout, never to site-packages.
+    path = config_path or Path("config/authoritative_sources.json")
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise DiscoveryConfigError("official source discovery config is unavailable or invalid") from exc
+    routes: list[DiscoveryRoute] = []
+    for source in config.get("public_sources", []):
+        if source.get("discovery_mode") != "mpm_board":
+            continue
+        if source.get("topic_ids") != ["psat_recruitment"]:
+            raise DiscoveryConfigError("MPM official board must only feed the PSAT topic")
+        routes.append(MpmOfficialBoardDiscovery(
+            board_url=str(source["url"]),
+            route_id=str(source["id"]),
+            max_pages=int(source.get("max_requests", 2)),
+        ))
+    return routes
 
 
 def _stable_candidate_id(route_id: str, url: str) -> str:
@@ -412,7 +593,7 @@ def default_news_discovery(*, env: dict[str, str] | None = None) -> AggregatedNe
         raise DiscoveryConfigError("GDELT_DISCOVERY_ENABLED must be an explicit boolean")
     gdelt_enabled = gdelt_flag in {"true", "1", "yes", "on"}
 
-    routes: list[DiscoveryRoute] = []
+    routes: list[DiscoveryRoute] = _configured_mpm_routes()
     if client_id and client_secret:
         routes.append(
             NaverNewsDiscovery(
