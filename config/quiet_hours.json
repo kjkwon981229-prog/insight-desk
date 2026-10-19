@@ -1,0 +1,4 @@
+{
+  "note": "Dates (Korea time, YYYY-MM-DD) on which no push notification is sent. The page itself still updates.",
+  "quiet_dates": ["2026-10-19", "2026-10-22"]
+}

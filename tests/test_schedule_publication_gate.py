@@ -14,6 +14,54 @@ from scripts.schedule_publication_gate import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class TwoEditionGateTests(unittest.TestCase):
+    from scripts.schedule_publication_gate import Edition as _Edition
+
+    EDITIONS = (
+        _Edition(not_before=__import__("datetime").time(7, 30), starts=__import__("datetime").time(0, 0)),
+        _Edition(not_before=__import__("datetime").time(18, 0), starts=__import__("datetime").time(15, 0)),
+    )
+
+    def _decide(self, kst_now: str, deployed: str):
+        return decide_schedule_publication(
+            now=datetime.fromisoformat(kst_now + "+09:00"),
+            deployed_briefing_id=deployed,
+            editions=self.EDITIONS,
+        )
+
+    def test_morning_edition_behaves_like_the_single_daily_gate(self) -> None:
+        self.assertTrue(self._decide("2026-10-20T07:45:00", "daily-20261019T184000+0900").should_run)
+        done = self._decide("2026-10-20T09:00:00", "daily-20261020T074000+0900")
+        self.assertFalse(done.should_run)
+        self.assertEqual(done.reason, "ALREADY_PUBLISHED_TODAY")
+
+    def test_evening_edition_is_due_after_1800_when_only_the_morning_one_is_out(self) -> None:
+        decision = self._decide("2026-10-20T18:05:00", "daily-20261020T074000+0900")
+        self.assertTrue(decision.should_run)
+        self.assertEqual(decision.reason, "EDITION_DUE")
+
+    def test_evening_edition_is_not_repeated_once_published(self) -> None:
+        decision = self._decide("2026-10-20T19:30:00", "daily-20261020T180900+0900")
+        self.assertFalse(decision.should_run)
+        self.assertEqual(decision.reason, "ALREADY_PUBLISHED_TODAY")
+
+    def test_before_1800_the_evening_edition_is_not_due(self) -> None:
+        self.assertFalse(self._decide("2026-10-20T17:59:00", "daily-20261020T074000+0900").should_run)
+
+    def test_evening_trigger_with_yesterdays_page_still_publishes(self) -> None:
+        self.assertTrue(self._decide("2026-10-20T18:05:00", "daily-20261019T184000+0900").should_run)
+
+    def test_future_deployment_still_fails_closed(self) -> None:
+        decision = self._decide("2026-10-20T18:05:00", "daily-20261021T074000+0900")
+        self.assertEqual(decision.reason, "FUTURE_DEPLOYMENT_STATE")
+
+    def test_shipped_edition_config_loads(self) -> None:
+        from scripts.schedule_publication_gate import load_editions
+
+        editions = load_editions(ROOT / "config" / "editions.json")
+        self.assertEqual(len(editions), 2)
+
+
 class SchedulePublicationGateTests(unittest.TestCase):
     def test_extracts_exact_daily_identity_from_deployed_main(self) -> None:
         html = '<main class="shell" data-briefing-id="daily-20260919T092939+0900">'

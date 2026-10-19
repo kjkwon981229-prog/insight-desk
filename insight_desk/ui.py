@@ -23,7 +23,57 @@ _TOPIC_DISPLAY_LABELS = {
     "KBO·한화 이글스": "한화 이글스",
     "psat_recruitment": "공무원 시험",
     "PSAT·공채 일정": "공무원 시험",
+    "baseball_sabermetrics": "야구 분석",
+    "야구 세이버매트릭스": "야구 분석",
+    "design_color_type": "디자인",
+    "디자인·색·글꼴": "디자인",
+    "contest_benefits": "공모전·혜택",
 }
+
+CORE_LINE_COUNT = 3
+
+# One quiet tone per displayed topic (the CSS owns the colours); unknown labels fall back to tone 0.
+_TOPIC_TONES = {
+    "AI 테크": 0,
+    "경제": 1,
+    "K-POP": 2,
+    "한화 이글스": 3,
+    "공무원 시험": 4,
+    "야구 분석": 5,
+    "디자인": 6,
+    "공모전·혜택": 7,
+}
+
+
+def _topic_tone(label: str) -> int:
+    return _TOPIC_TONES.get(label, 0)
+
+
+def _source_host(url: str | None) -> str:
+    if not url:
+        return ""
+    host = (urlsplit(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+_WEEKDAYS = ("월", "화", "수", "목", "금", "토", "일")
+
+
+def _date_title(briefing_id: str, fallback: str) -> tuple[str, str]:
+    """('10월 19일 월요일', '07:00 갱신') from the briefing identity; the stored label if unparseable."""
+
+    import re
+    from datetime import datetime
+
+    match = re.fullmatch(r"daily-(\d{8})T(\d{2})(\d{2})\d{2}[+-]\d{4}", briefing_id)
+    if match is None:
+        return fallback, ""
+    try:
+        day = datetime.strptime(match.group(1), "%Y%m%d")
+    except ValueError:
+        return fallback, ""
+    weekday = _WEEKDAYS[day.weekday()]
+    return f"{day.month}월 {day.day}일 {weekday}요일", f"{match.group(2)}:{match.group(3)} 갱신"
 
 
 def _topic_display_label(topic: str) -> str:
@@ -41,8 +91,15 @@ class StoryViewModel:
     render_mode: RenderMode
     topic: str | None = None
     source_url: str | None = None
+    selection_reason: str = ""
+    core_lines: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.core_lines and (
+            len(self.core_lines) != CORE_LINE_COUNT
+            or any(not line.strip() for line in self.core_lines)
+        ):
+            raise ValueError(f"story core_lines must be exactly {CORE_LINE_COUNT} non-empty lines")
         if self.index < 1:
             raise ValueError("story index must be >= 1")
         if not self.event_id.strip():
@@ -119,6 +176,7 @@ def build_briefing_view_model(
     topic_by_event: Mapping[str, str] | None = None,
     source_by_event: Mapping[str, str] | None = None,
     publication_by_event: Mapping[str, VerifiedPublication] | None = None,
+    card_by_event: Mapping[str, tuple[str, tuple[str, ...]]] | None = None,
 ) -> BriefingViewModel:
     """Build UI data from verified fields without re-interpreting news meaning.
 
@@ -130,6 +188,7 @@ def build_briefing_view_model(
 
     topics = topic_by_event or {}
     sources = source_by_event or {}
+    cards = card_by_event or {}
     stories = tuple(
         StoryViewModel(
             index=index,
@@ -139,6 +198,8 @@ def build_briefing_view_model(
             render_mode=entry.render_mode,
             topic=topics.get(entry.event_id),
             source_url=sources.get(entry.event_id),
+            selection_reason=cards.get(entry.event_id, ("", ()))[0],
+            core_lines=tuple(cards.get(entry.event_id, ("", ()))[1]),
         )
         for index, entry in enumerate(briefing.entries, start=1)
     )
@@ -163,33 +224,59 @@ def _story_html(story: StoryViewModel) -> str:
         if story.topic is not None
         else ""
     )
-    metadata = f'<div class="story-meta">{topic}</div>' if topic else ""
+    tone = _topic_tone(_topic_display_label(story.topic)) if story.topic is not None else 0
+    host = _source_host(story.source_url)
+    host_html = f'<span class="story-host">{escape(host)}</span>' if host else ""
+    metadata = f'<div class="story-meta" data-tone="{tone}">{topic}{host_html}</div>' if topic else ""
     source = (
         f'<a class="story-source" href="{escape(story.source_url, quote=True)}" '
-        'target="_blank" rel="noopener noreferrer">원문 보기</a>'
+        'target="_blank" rel="noopener noreferrer">원문</a>'
         if story.source_url is not None
         else ""
     )
     summary_matches_headline = story.summary.strip() == story.headline.strip()
-    summary = (
-        ""
-        if summary_matches_headline
-        else f'<p class="story-summary">{escape(story.summary)}</p>'
-    )
-    summary_elision = (
-        ' data-summary-elision="headline-collision"'
-        if summary_matches_headline
+    has_core_lines = bool(story.core_lines)
+    if has_core_lines:
+        # The verified headline/summary stay in the contract; the card shows the grounded core lines.
+        summary = ""
+        summary_elision = ' data-summary-elision="core-lines"'
+    elif summary_matches_headline:
+        summary = ""
+        summary_elision = ' data-summary-elision="headline-collision"'
+    else:
+        summary = f'<p class="story-summary">{escape(story.summary)}</p>'
+        summary_elision = ""
+    reason = (
+        f'<p class="story-reason">{escape(story.selection_reason)}</p>'
+        if story.selection_reason
         else ""
     )
+    core = (
+        '<ul class="story-core">'
+        + "".join(f"<li>{escape(line)}</li>" for line in story.core_lines)
+        + "</ul>"
+        if has_core_lines
+        else ""
+    )
+    event_attr = escape(story.event_id, quote=True)
+    actions = (
+        '<div class="story-actions">'
+        f'<button type="button" class="btn-good" data-action="good" data-event-id="{event_attr}">좋다</button>'
+        f'<button type="button" class="btn-bad" data-action="bad" data-event-id="{event_attr}">별로다</button>'
+        f'{source}'
+        '</div>'
+    )
     return (
-        f'<article class="story-row" data-event-id="{escape(story.event_id, quote=True)}"'
+        f'<article class="story-row" data-event-id="{event_attr}"'
         f'{summary_elision}>'
         f'<div class="story-index">{story.index:02d}</div>'
         '<div class="story-main">'
         f'{metadata}'
         f'<h3>{escape(story.headline)}</h3>'
+        f'{reason}'
         f'{summary}'
-        f'{source}'
+        f'{core}'
+        f'{actions}'
         '</div></article>'
     )
 
@@ -250,14 +337,8 @@ def render_briefing_html(
     push_meta, push_section, push_script = _push_html(runtime_config)
     publication_contract = _publication_contract_html(view)
     story_count = len(view.stories)
+    date_title, updated_label = _date_title(view.briefing_id, view.generated_label)
     if view.stories:
-        lead_items = "".join(
-            '<li class="lead-signal">'
-            f'<a href="#story-{story.index}">{escape(story.headline)}</a>'
-            '</li>'
-            for story in view.stories[:3]
-        )
-        lead_block = f'<ul class="lead-signals">{lead_items}</ul>'
         stories = "".join(
             _story_html(story).replace(
                 '<article class="story-row"',
@@ -268,7 +349,6 @@ def render_briefing_html(
         )
         empty = ""
     else:
-        lead_block = ""
         stories = ""
         empty = '<p class="overview-empty">오늘 보여드릴 뉴스가 없습니다.</p>'
 
@@ -280,6 +360,8 @@ def render_briefing_html(
   <meta name="theme-color" content="#c35b78">
   {push_meta}
   <title>Insight Desk</title>
+  <link rel="preload" href="assets/fonts/nanum-myeongjo-800.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/gowun-batang-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
@@ -288,31 +370,43 @@ def render_briefing_html(
   <header class="site-header">
     <div class="brand-row">
       <a class="brand" href="#today">INSIGHT DESK</a>
-      <div class="header-meta"><span>{escape(view.generated_label)}</span></div>
+      <div class="header-meta"><span>{escape(updated_label or view.generated_label)}</span></div>
     </div>
-    <nav class="site-nav" aria-label="브리핑 탐색">
-      <a href="#today" aria-current="page">오늘</a>
-      <a href="#stories">오늘 볼 뉴스</a>
-    </nav>
   </header>
   <section class="briefing-overview" id="today">
-    <span class="eyebrow">오늘의 개인 브리핑</span>
-    <h1>오늘의 브리핑</h1>
-    <p class="overview-lede">오늘 알아둘 뉴스를 모았습니다.</p>
-    <p class="overview-status"><strong>{story_count}</strong>건</p>
-    {lead_block}
+    <h1>{escape(date_title)}</h1>
+    <p class="overview-status"><span class="overview-lede">오늘 알아둘 뉴스를 모았습니다.</span> <strong>{story_count}</strong>건</p>
     {empty}
   </section>
-  {push_section}
-  <section class="content-section" id="stories">
-    <div class="section-heading">
-      <div><span class="section-index">01 / 오늘의 변화</span><h2>오늘 볼 뉴스</h2></div>
-    </div>
+  <section class="content-section" id="stories" aria-label="오늘 볼 뉴스">
     <div class="story-list">{stories}</div>
+  </section>
+  <section class="content-section" id="collection" aria-label="모아보기">
+    <div class="section-heading">
+      <div><span class="section-index">02 / 모아보기</span><h2>좋다고 한 카드</h2></div>
+    </div>
+    <p class="overview-empty" id="collection-empty">좋다를 누른 카드가 여기에 모입니다. 이 기기에만 저장됩니다.</p>
+    <div class="story-list" id="collection-list"></div>
+  </section>
+  <section class="content-section" id="settings" aria-label="설정">
+    <div class="section-heading">
+      <div><span class="section-index">03 / 설정</span><h2>설정</h2></div>
+    </div>
+    {push_section}
+    <div class="data-settings">
+      <p>좋다/별로다 기록과 모아본 카드는 이 기기에만 저장됩니다.</p>
+      <button type="button" id="clear-saved">저장한 카드 모두 지우기</button>
+    </div>
   </section>
   <footer>Insight Desk</footer>
 </main>
+<nav class="tabbar" aria-label="화면 이동">
+  <a href="#today" data-view="today" aria-current="page">오늘</a>
+  <a href="#collection" data-view="collection">모아보기</a>
+  <a href="#settings" data-view="settings">설정</a>
+</nav>
 {publication_contract}
+<script src="assets/js/feedback.js" defer></script>
 {push_script}
 </body>
 </html>

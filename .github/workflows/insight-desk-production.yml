@@ -10,6 +10,9 @@ on:
       - "insight_desk/**"
       - "assets/css/style.css"
       - "assets/js/push.js"
+      - "assets/js/feedback.js"
+      - "assets/fonts/**"
+      - "config/**"
       - ".github/workflows/insight-desk-production.yml"
       - "tests/**"
   push:
@@ -27,6 +30,8 @@ on:
   schedule:
     # Independent late fallback. The lightweight dispatcher owns the 07:30 target and retries.
     - cron: "17 8 * * *"
+      timezone: "Asia/Seoul"
+    - cron: "47 18 * * *"
       timezone: "Asia/Seoul"
 
 concurrency:
@@ -130,11 +135,32 @@ jobs:
       publish: ${{ steps.state.outputs.publish }}
       status: ${{ steps.state.outputs.status }}
       entries: ${{ steps.state.outputs.entries }}
+      no_change: ${{ steps.state.outputs.no_change }}
     steps:
       - name: Checkout current production candidate
         uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Choose edition (evening from 15:00 Korea time)
+        id: edition
+        shell: bash
+        run: |
+          hour="$(TZ=Asia/Seoul date +%H)"
+          if (( 10#$hour >= 15 )); then edition=evening; else edition=morning; fi
+          echo "edition=$edition" >> "$GITHUB_OUTPUT"
+          echo "Edition: $edition"
+
+      - name: Restore the 7-day topic memory from the state branch
+        shell: bash
+        run: |
+          mkdir -p build
+          if git ls-remote --exit-code --heads origin insight-desk-state >/dev/null 2>&1; then
+            git fetch --depth=1 origin insight-desk-state
+            git show FETCH_HEAD:history.json > build/history-in.json 2>/dev/null || echo "No history file yet; starting empty."
+          else
+            echo "No state branch yet; starting with an empty memory."
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -264,6 +290,9 @@ jobs:
           --output build/site
           --state build/run-state.json
           --audit build/production-audit.json
+          --history-in build/history-in.json
+          --history-out build/history-next.json
+          --edition "${{ steps.edition.outputs.edition }}"
 
       - name: Read production state
         id: state
@@ -284,6 +313,7 @@ jobs:
               output.write(f"status={state.get('status', 'TOTAL_FAILURE')}\n")
               output.write(f"publish={'true' if state.get('publish') is True else 'false'}\n")
               output.write(f"entries={int(state.get('published_entries', 0))}\n")
+              output.write(f"no_change={'true' if state.get('status') == 'NO_CHANGE' else 'false'}\n")
           print(
               "PHASE11_STATE "
               f"status={state.get('status', 'TOTAL_FAILURE')} "
@@ -301,6 +331,14 @@ jobs:
           test -s build/site/push-sw.js
           test -s build/site/assets/css/style.css
           test -s build/site/assets/js/push.js
+          test -s build/site/assets/js/feedback.js
+          for font in nanum-myeongjo-800 gowun-batang-400 gowun-batang-700 gowun-dodum-400; do
+            test -s "build/site/assets/fonts/${font}.woff2"
+          done
+          if grep -q 'fonts.googleapis.com' build/site/index.html; then
+            echo "::error::External font request found; fonts must be self-hosted."
+            exit 1
+          fi
           grep -q '오늘 알아둘 뉴스를 모았습니다.' build/site/index.html
           grep -q 'manifest.webmanifest' build/site/index.html
           if grep -Eq 'SUPPORTED headline \+ summary only|>VERIFIED<|검증 뉴스|검증된 재구성|검증 완료 뉴스|원문 보존|검증된 항목만 표시|검증을 통과한 뉴스만 표시합니다\.' build/site/index.html; then
@@ -338,6 +376,7 @@ jobs:
             build/feed-quality.json
             build/runtime-integration-audit.json
             build/understanding-diagnostics.jsonl
+            build/history-next.json
           if-no-files-found: error
           retention-days: 7
 
@@ -376,7 +415,8 @@ jobs:
           retention-days: 7
 
       - name: Fail closed when no publishable briefing exists
-        if: steps.state.outputs.publish != 'true'
+        # An evening edition with nothing new (status NO_CHANGE) leaves the morning page in place.
+        if: steps.state.outputs.publish != 'true' && steps.state.outputs.no_change != 'true'
         run: |
           echo "::error::No verified briefing was produced; preserving the currently deployed Pages site."
           exit 1
@@ -394,7 +434,7 @@ jobs:
     # because build itself depends on event-specific gates: without an explicit status function
     # GitHub propagates a skipped ancestor and suppresses deploy even when build itself succeeded.
     # Do not add the fragile cross-job publish string back to this delivery boundary.
-    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success'
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.build.outputs.no_change != 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -420,6 +460,11 @@ jobs:
       PUSH_WORKER_URL: ${{ vars.PUSH_WORKER_URL }}
       PUSH_SEND_TOKEN: ${{ secrets.PUSH_SEND_TOKEN }}
     steps:
+      - name: Checkout quiet-day configuration
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: config
+
       - name: Mask push token
         shell: bash
         run: echo "::add-mask::$PUSH_SEND_TOKEN"
@@ -460,9 +505,16 @@ jobs:
 
           notification_type="READY"
           briefing_date="$(TZ=Asia/Seoul date +%F)"
+          if [[ -f config/quiet_hours.json ]] && jq -e --arg d "$briefing_date" '.quiet_dates // [] | index($d)' config/quiet_hours.json >/dev/null 2>&1; then
+            echo "Push notification skipped: $briefing_date is a quiet day (exam or class)."
+            exit 0
+          fi
           run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           state_file="build/run-state.json"
+          if [[ -s "$state_file" && "$(jq -r '.edition // "morning"' "$state_file")" == "evening" && "$notification_source" == "schedule" ]]; then
+            notification_source="schedule_evening"
+          fi
           if [[ ! -s "$state_file" ]]; then
             echo "::warning::READY push suppressed because exact run-state identity is missing."
             exit 0
@@ -522,10 +574,55 @@ jobs:
 
   delivery_guard:
     needs: [build, deploy]
-    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result != 'success'
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.build.outputs.no_change != 'true' && needs.deploy.result != 'success'
     runs-on: ubuntu-24.04
     steps:
       - name: Fail when a successful build was not deployed
         run: |
           echo "::error::Production build succeeded but Pages deployment did not; no end-user notification was sent."
           exit 1
+
+  save_state:
+    needs: [build, deploy]
+    # Remember what was shown only after the page is really deployed, so a failed deploy cannot hide topics.
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download production audit and next memory
+        uses: actions/download-artifact@v4
+        with:
+          name: production-audit-${{ github.run_id }}
+          path: build
+
+      - name: Commit the 7-day memory to the state branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s build/history-next.json ]]; then
+            echo "::warning::No updated memory file in this run; nothing to save."
+            exit 0
+          fi
+          repo_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work="$(mktemp -d)"
+          if git ls-remote --exit-code --heads "$repo_url" insight-desk-state >/dev/null 2>&1; then
+            git clone --depth=1 --branch insight-desk-state "$repo_url" "$work"
+          else
+            git init "$work"
+            git -C "$work" checkout --orphan insight-desk-state
+            git -C "$work" remote add origin "$repo_url"
+          fi
+          cp build/history-next.json "$work/history.json"
+          cd "$work"
+          git config user.name "insight-desk-bot"
+          git config user.email "insight-desk-bot@users.noreply.github.com"
+          git add history.json
+          if git diff --cached --quiet; then
+            echo "Memory unchanged."
+            exit 0
+          fi
+          git commit -m "Update 7-day topic memory"
+          git push origin HEAD:insight-desk-state

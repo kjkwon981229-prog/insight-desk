@@ -1,0 +1,6 @@
+{
+  "editions": [
+    {"name": "morning", "not_before": "07:30", "starts": "00:00"},
+    {"name": "evening", "not_before": "18:00", "starts": "15:00"}
+  ]
+}

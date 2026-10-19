@@ -161,7 +161,7 @@ function validNotificationType(value) {
 }
 
 function validNotificationSource(value) {
-  return value === "schedule" || value === "manual" || value === "other";
+  return value === "schedule" || value === "schedule_evening" || value === "manual" || value === "other";
 }
 
 export function deliveryState({ subscriptionCount, sent, failed, pruned }) {

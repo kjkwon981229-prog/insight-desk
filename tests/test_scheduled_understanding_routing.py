@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from insight_desk.core import CandidateEvent, EventFact, EvidenceField, EvidenceSpan
+from insight_desk.curation.config import REPLAY_CURATION_JSON
 from insight_desk.core.event_understanding_v2 import ArticleEventRole, TopicRelation, UnderstandingStatus
 from insight_desk.production_event_understanding_compat_v2 import CompatibilityEventUnderstandingDecision
 from insight_desk.production_event_understanding_compat_v2 import _is_context_dependent_subject
@@ -19,6 +20,13 @@ from insight_desk.semantic.tooling import MorphologySourceOffsetError
 from insight_desk.production_replay_v2 import _recorded_edges
 from insight_desk.semantic.pipeline import SemanticArticleResult
 from scripts import phase11_daily_production as production
+
+
+def _replay_curation(root: Path) -> Path:
+    """These tests probe pipeline routing with tiny synthetic articles, so selection policy is off."""
+    path = root / "curation-replay.json"
+    path.write_text(json.dumps(REPLAY_CURATION_JSON), encoding="utf-8")
+    return path
 
 
 class ScheduledUnderstandingRoutingTests(unittest.TestCase):
@@ -43,7 +51,8 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
                 patch.object(production._core, "build_resilient_fact_extractor", return_value=SimpleNamespace(route_stats={})),
             ):
                 production.run_production(topics_path=Path("config/topics.json"),
-                    output_dir=root / "site", state_path=root / "state.json", audit_path=root / "audit.json")
+                    output_dir=root / "site", state_path=root / "state.json", audit_path=root / "audit.json",
+                    curation_path=_replay_curation(root), card_clients=())
             audit = json.loads((root / "audit.json").read_text())
         self.assertEqual(audit["topic_stats"]["economy"]["acquisition_attempts"], 8)
         self.assertEqual({url.split("/")[-2] for url in visited}, {"0", "1", "2", "3"})
@@ -195,7 +204,8 @@ class ScheduledUnderstandingRoutingTests(unittest.TestCase):
             ):
                 state = production.run_production(topics_path=Path("config/topics.json"),
                                                  output_dir=root / "site", state_path=root / "state.json",
-                                                 audit_path=root / "audit.json")
+                                                 audit_path=root / "audit.json",
+                                                 curation_path=_replay_curation(root), card_clients=())
             audit = json.loads((root / "audit.json").read_text())
             self.assertFalse(state["publish"])
             self.assertEqual(audit["canonical_contract"]["canonical_events"], 0)

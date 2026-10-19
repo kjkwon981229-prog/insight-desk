@@ -1,26 +1,35 @@
+/* 글꼴은 사이트 안에 넣어 둔 파일(SIL OFL): 외부 호출 없이 뜬다. 한글은 KS X 1001 2350자 + 기호만 담았고 나머지 글자는 아래 대체 글꼴로 나온다. */
+@font-face { font-family: "Nanum Myeongjo"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/nanum-myeongjo-800.woff2") format("woff2"); }
+@font-face { font-family: "Gowun Batang"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/gowun-batang-400.woff2") format("woff2"); }
+@font-face { font-family: "Gowun Batang"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/gowun-batang-700.woff2") format("woff2"); }
+@font-face { font-family: "Gowun Dodum"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/gowun-dodum-400.woff2") format("woff2"); }
 :root {
   color-scheme: light;
-  --bg: #f5f1ef;
-  --surface: #fffdfb;
-  --surface-muted: #eee9e7;
-  --surface-dark: #20232b;
-  --text: #20232b;
-  --muted: #777178;
-  --muted-strong: #5f5961;
-  --line: #d8d1d0;
-  --line-strong: #bcb3b5;
-  --accent: #c35b78;
-  --accent-strong: #943c59;
-  --accent-soft: #f0d9e0;
-  --accent-ink: #7d3049;
+  /* 분홍 서재 변형 (인사이트 데스크) */
+  --bg: #f8e6e2;
+  --surface: #fdf1ee;
+  --surface-muted: #f1d6d3;
+  --surface-dark: #3b1f1f;
+  --text: #3b1f1f;
+  --muted: #76565a;
+  --muted-strong: #5e3f43;
+  --line: #dfc4c0;
+  --line-strong: #9a7479;
+  --accent: #9c3b4e;
+  --accent-strong: #9c3b4e;
+  --accent-soft: #ecc0c3;
+  --accent-ink: #7a2a3c;
   --success: #36735c;
-  --warning: #936329;
+  --warning: #7e5e12;
   --danger: #a34856;
-  --dark-text: #fff9fa;
-  --dark-muted: #c7bdc1;
+  --dark-text: #f8e6e2;
+  --dark-muted: #dfc4c0;
   --shadow-soft: none;
-  --radius-sm: 4px;
-  --radius-md: 8px;
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --font-title: "Nanum Myeongjo", "나눔명조", "Noto Serif KR", "Batang", serif;
+  --font-read: "Gowun Batang", "Noto Serif KR", "Batang", serif;
+  --font-ui: "Gowun Dodum", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   --space-1: 6px;
   --space-2: 10px;
   --space-3: 14px;
@@ -32,25 +41,25 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #17171b;
-    --surface: #202026;
-    --surface-muted: #2a252b;
-    --surface-dark: #29232a;
-    --text: #f7eff1;
-    --muted: #b9adb2;
-    --muted-strong: #d0c3c8;
-    --line: #40393f;
-    --line-strong: #62545c;
-    --accent: #d27a98;
-    --accent-strong: #f0a1b9;
-    --accent-soft: #4c303c;
-    --accent-ink: #f0a1b9;
+    --bg: #201519;
+    --surface: #2a1c22;
+    --surface-muted: #34222a;
+    --surface-dark: #2a1c22;
+    --text: #f5e6e8;
+    --muted: #c3a2a8;
+    --muted-strong: #d9bcc1;
+    --line: #43303a;
+    --line-strong: #8b6c74;
+    --accent: #e8a6a0;
+    --accent-strong: #e8a6a0;
+    --accent-soft: #34222a;
+    --accent-ink: #e8a6a0;
     --success: #91c8aa;
-    --warning: #e0b27b;
+    --warning: #d9b865;
     --danger: #f1a0aa;
-    --dark-text: #fff9fa;
-    --dark-muted: #d6c7cc;
-    --shadow-soft: 0 12px 32px rgba(0, 0, 0, .22);
+    --dark-text: #f5e6e8;
+    --dark-muted: #c3a2a8;
+    --shadow-soft: none;
   }
 }
 * { box-sizing: border-box; }
@@ -59,16 +68,16 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.62 system-ui, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font: 15px/1.62 var(--font-ui);
   letter-spacing: -.012em;
   overflow-x: hidden;
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: keep-all;
 }
 a { color: var(--accent-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a:hover { color: var(--accent); }
 a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
-.shell { width: min(calc(100% - 36px), 1120px); margin: 0 auto; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.shell { width: min(calc(100% - 32px), 760px); margin: 0 auto; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .site-header { border-bottom: 1px solid var(--line); padding: max(24px, env(safe-area-inset-top)) 0 14px; }
 .brand-row, .header-meta, .site-nav, .section-heading, .story-meta, .evidence-line, .method-summary, .archive-link, .source-row { display: flex; align-items: center; }
 .brand-row { justify-content: space-between; gap: var(--space-3); }
@@ -87,10 +96,10 @@ a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outli
   text-transform: uppercase;
 }
 .eyebrow { color: var(--accent-strong); }
-h1, h2, h3 { color: var(--text); line-height: 1.18; margin: 0; min-width: 0; }
-h1 { font-size: clamp(2rem, 6vw, 4.6rem); letter-spacing: -.065em; }
-h2 { font-size: clamp(1.45rem, 3vw, 2.25rem); letter-spacing: -.045em; }
-h3 { font-size: clamp(1.2rem, 2vw, 1.55rem); letter-spacing: -.035em; }
+h1, h2, h3 { color: var(--text); font-family: var(--font-title); font-weight: 800; line-height: 1.3; margin: 0; min-width: 0; }
+h1 { font-size: clamp(2rem, 6vw, 4.6rem); letter-spacing: -.03em; }
+h2 { font-size: clamp(1.45rem, 3vw, 2.25rem); letter-spacing: -.02em; }
+h3 { font-size: clamp(1.2rem, 2vw, 1.55rem); letter-spacing: -.015em; }
 p { margin: 0; }
 .meta { color: var(--muted); font-size: .82rem; }
 .briefing-overview { border-bottom: 1px solid var(--line-strong); padding: clamp(34px, 7vw, 70px) 0 30px; }
@@ -263,4 +272,92 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 max(48px, env(s
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+}
+
+/* --- 카드 필드·모아보기·아래 메뉴 (단계 4) + 디자인 변형 (단계 5) --- */
+.story-row, .saved-card { word-break: keep-all; overflow-wrap: break-word; }
+.story-row { border-top: 1px solid var(--text); }
+.story-row + .story-row { border-top: 1px solid var(--text); }
+.story-list { border-bottom: 0; }
+.story-index { font-family: var(--font-ui); font-weight: 400; letter-spacing: 0; }
+.story-meta { font-family: var(--font-ui); }
+.story-topic { font-weight: 400; }
+.story-reason { border-left: 2px solid var(--accent); color: var(--accent-ink); font-family: var(--font-ui); font-size: .82rem; line-height: 1.55; margin-top: 12px; padding: 2px 0 2px 10px; }
+.story-summary { font-family: var(--font-read); }
+.story-core { counter-reset: core; display: grid; gap: 4px; list-style: none; margin: 12px 0 0; padding: 0; }
+.story-core li { color: var(--text); counter-increment: core; font-family: var(--font-read); font-size: .96rem; line-height: 1.8; padding-left: 22px; position: relative; }
+.story-core li::before { color: var(--accent); content: counter(core); font-family: var(--font-ui); font-size: .84rem; left: 2px; position: absolute; top: 0; }
+.story-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.story-actions button { background: transparent; border: 1px solid var(--line-strong); border-radius: var(--radius-md); color: var(--text); cursor: pointer; font: inherit; font-size: .9rem; min-height: 44px; min-width: 64px; padding: 0 16px; }
+.story-actions button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.story-actions .story-source { color: var(--accent); font-size: .9rem; font-weight: 400; margin-left: auto; min-height: 44px; padding: 0 4px; text-decoration: none; }
+.story-actions .story-source::after { content: " ↗"; }
+/* 별로다: 흐리게 하지 않고(글자 대비 유지) 제목을 한 단계 차분한 색으로 */
+.story-row[data-vote="bad"] h3, .story-row[data-vote="bad"] .story-core { color: var(--muted-strong); }
+.story-row[data-vote="bad"] .story-index { color: var(--muted); }
+.saved-card { border-top: 1px solid var(--text); padding: 22px 0; }
+.saved-card h3 { font-size: 1.1rem; }
+.saved-meta { color: var(--muted); font-size: .8rem; margin-bottom: 6px; }
+.data-settings { border-top: 1px solid var(--line); display: grid; gap: 12px; padding: 22px 0; }
+.data-settings p { color: var(--muted-strong); font-size: .86rem; }
+.data-settings button, .push-actions button { background: transparent; border-radius: var(--radius-md); font-family: var(--font-ui); }
+.data-settings button { border: 1px solid var(--line-strong); color: var(--text); cursor: pointer; font: inherit; justify-self: start; min-height: 44px; padding: 0 16px; }
+.tabbar { background: var(--surface); border-top: 1px solid var(--line); bottom: 0; display: grid; font-family: var(--font-ui); grid-template-columns: repeat(3, 1fr); left: 0; padding-bottom: env(safe-area-inset-bottom); position: fixed; right: 0; z-index: 10; }
+.tabbar a { color: var(--muted); font-size: .9rem; min-height: 48px; padding: 14px 0; text-align: center; text-decoration: none; }
+.tabbar a[aria-current="page"] { box-shadow: inset 0 3px 0 var(--accent); color: var(--accent); font-weight: 400; }
+.shell { padding-bottom: 80px; }
+main[data-view="collection"] #today, main[data-view="collection"] #stories, main[data-view="collection"] #settings,
+main[data-view="settings"] #today, main[data-view="settings"] #stories, main[data-view="settings"] #collection,
+main[data-view="today"] #collection, main[data-view="today"] #settings { display: none; }
+
+
+/* --- 첫 화면: 날짜와 카드만 --- */
+.site-header { border-bottom: 0; padding: max(22px, env(safe-area-inset-top)) 0 4px; }
+.brand { color: var(--accent); font-family: var(--font-ui); font-size: .78rem; font-weight: 400; letter-spacing: .16em; }
+.header-meta { font-family: var(--font-ui); }
+.briefing-overview { border-bottom: 0; padding: 6px 0 16px; }
+.briefing-overview h1 { font-size: clamp(1.7rem, 7vw, 2.4rem); letter-spacing: -.02em; margin-top: 0; }
+.overview-status { color: var(--muted); font-family: var(--font-ui); font-size: .82rem; margin-top: 6px; }
+.overview-lede { font-size: inherit; line-height: inherit; margin: 0; max-width: none; }
+.overview-status strong { color: var(--accent); font-weight: 400; }
+.content-section { padding-top: 0; }
+.story-row { grid-template-columns: 36px minmax(0, 1fr); }
+.story-row h3 { font-size: clamp(1.15rem, 4.6vw, 1.4rem); }
+
+/* --- 움직임: 분홍 서재 규칙의 두 가지(떠오름 900ms, 단추 2px 뜸 380ms)만. 줄임 설정이면 모두 끔 --- */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .story-row, .saved-card { animation: rise 900ms cubic-bezier(.61, 1, .88, 1) both; }
+  .story-row:nth-child(2) { animation-delay: 90ms; }
+  .story-row:nth-child(3) { animation-delay: 180ms; }
+  .story-row:nth-child(n+4) { animation-delay: 260ms; }
+  .story-actions button, .data-settings button, .push-actions button { transition: transform 380ms cubic-bezier(.16, 1, .3, 1), background-color 380ms cubic-bezier(.16, 1, .3, 1), border-color 380ms cubic-bezier(.16, 1, .3, 1); }
+  .story-actions button:hover, .data-settings button:hover, .push-actions button:hover { transform: translateY(-2px); }
+  .story-actions button:active { transform: translateY(0); }
+  .story-row { transition: opacity 380ms cubic-bezier(.16, 1, .3, 1); }
+}
+
+/* --- 분야 색 점·출처 줄 (색만으로 뜻을 나누지 않음: 분야 이름은 글자로 항상 함께 나옴) --- */
+:root { --tone-0: #9c3b4e; --tone-1: #8a6a1f; --tone-2: #a2506f; --tone-3: #b0562f; --tone-4: #4d6f8f; --tone-5: #36735c; --tone-6: #7a5a8c; --tone-7: #8b7a2c; }
+@media (prefers-color-scheme: dark) {
+  :root { --tone-0: #e8a6a0; --tone-1: #d9b865; --tone-2: #e2a0bd; --tone-3: #eab08a; --tone-4: #9cc0e0; --tone-5: #91c8aa; --tone-6: #c9a8dc; --tone-7: #d6c97a; }
+}
+.story-meta { align-items: center; display: flex; }
+.story-topic { align-items: center; display: inline-flex; gap: 7px; }
+.story-topic::before { background: var(--tone, var(--accent)); border-radius: 50%; content: ""; flex: none; height: 8px; width: 8px; }
+.story-meta[data-tone="0"] { --tone: var(--tone-0); } .story-meta[data-tone="1"] { --tone: var(--tone-1); }
+.story-meta[data-tone="2"] { --tone: var(--tone-2); } .story-meta[data-tone="3"] { --tone: var(--tone-3); }
+.story-meta[data-tone="4"] { --tone: var(--tone-4); } .story-meta[data-tone="5"] { --tone: var(--tone-5); }
+.story-meta[data-tone="6"] { --tone: var(--tone-6); } .story-meta[data-tone="7"] { --tone: var(--tone-7); }
+.story-host { color: var(--muted); }
+.story-host::before { content: "· "; }
+
+/* --- 데스크톱: 폭이 넓으면 카드를 두 줄로 (폰이 기본, 이 규칙은 960px 이상에서만) --- */
+@media (min-width: 960px) {
+  .shell { width: min(calc(100% - 64px), 1040px); }
+  .story-list { column-gap: 56px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .story-list .story-row { align-content: start; }
+  .story-list .story-row:nth-child(2) { border-top: 1px solid var(--text); }
+  .briefing-overview h1 { font-size: 2.8rem; }
+  .tabbar { left: 50%; max-width: 520px; right: auto; transform: translateX(-50%); width: 100%; }
 }
