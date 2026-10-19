@@ -1,0 +1,23 @@
+{
+  "pass_score": 7.0,
+  "max_daily": 5,
+  "max_per_topic": 2,
+  "dedup_days": 7,
+  "dedup_jaccard": 0.6,
+  "min_body_chars": 300,
+  "feedback_min": -2.0,
+  "feedback_max": 1.0,
+  "interest_base": {
+    "baseball_sabermetrics": 3,
+    "ai_tech": 3,
+    "design_color_type": 3,
+    "kpop": 3,
+    "contest_benefits": 3,
+    "kbo_hanwha": 2,
+    "economy": 2,
+    "psat_recruitment": 2
+  },
+  "pass_score_overrides": {
+    "kbo_hanwha": 8.0
+  }
+}

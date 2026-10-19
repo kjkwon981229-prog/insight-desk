@@ -1,0 +1,4 @@
+Gowun Batang, Gowun Dodum: Copyright 2020 The Gowun Batang/Dodum Project Authors, SIL Open Font License 1.1.
+Nanum Myeongjo: Copyright NAVER Corporation, SIL Open Font License 1.1.
+These files are subsets (KS X 1001 Hangul, Latin and common symbols) of the fonts distributed by Google Fonts.
+License text: https://openfontlicense.org

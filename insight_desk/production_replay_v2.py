@@ -259,6 +259,8 @@ def _recorded_edges(
     replacements = {
         "datetime": ReplayDateTime,
         "default_news_discovery": lambda: discovery,
+        "default_feed_discovery": lambda: None,  # recorded replay never reads live feeds
+        "default_feedback_adjust": lambda topics, cfg: {},  # nor live vote counts
         "UrlLibHtmlFetcher": lambda **_kwargs: _NoNetworkMethod("recorded-source"),
         "TrafilaturaExtractor": lambda **_kwargs: _NoNetworkMethod("exact-source-excerpt"),
         "PlaywrightHtmlRenderer": lambda **_kwargs: _NoNetworkMethod("unused-renderer"),
@@ -302,6 +304,9 @@ def run_recorded_production_replay(
     *,
     fixture_path: Path,
     work_dir: Path,
+    edition: str = "morning",
+    history_in_path: Path | None = None,
+    history_out_path: Path | None = None,
 ) -> RecordedReplayResult:
     """Run one deterministic historical replay through the actual public production entrypoint."""
 
@@ -326,6 +331,11 @@ def run_recorded_production_replay(
         ),
         encoding="utf-8",
     )
+    # Historical replay checks the recorded pipeline mechanics, not today's selection policy.
+    from insight_desk.curation.config import REPLAY_CURATION_JSON
+
+    curation_path = work_dir / "curation-replay.json"
+    curation_path.write_text(json.dumps(REPLAY_CURATION_JSON), encoding="utf-8")
 
     with _recorded_edges(cases=cases, replay_clock=replay_clock):
         runtime_state = production.run_production(
@@ -333,6 +343,11 @@ def run_recorded_production_replay(
             output_dir=output_dir,
             state_path=state_path,
             audit_path=audit_path,
+            curation_path=curation_path,
+            card_clients=(),  # recorded replay must never call a live model
+            edition=edition,
+            history_in_path=history_in_path,
+            history_out_path=history_out_path,
         )
 
     if runtime_state.get("publish") is not True:

@@ -68,11 +68,49 @@ def briefing_date(briefing_id: str) -> str:
     return datetime.strptime(value, "%Y%m%d").date().isoformat()
 
 
+@dataclass(frozen=True, slots=True)
+class Edition:
+    """One daily publication slot: due from `not_before`, satisfied by a briefing made at/after `starts`."""
+
+    not_before: time
+    starts: time
+
+
+DEFAULT_EDITIONS = (Edition(not_before=DEFAULT_NOT_BEFORE, starts=time(0, 0)),)
+
+
+def load_editions(path: Path) -> tuple[Edition, ...]:
+    """Read config/editions.json; a missing file keeps the single morning edition."""
+    if not path.is_file():
+        return DEFAULT_EDITIONS
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    editions = tuple(
+        Edition(
+            not_before=time.fromisoformat(str(item["not_before"])),
+            starts=time.fromisoformat(str(item["starts"])),
+        )
+        for item in payload.get("editions", [])
+    )
+    if not editions:
+        raise ValueError("editions config must list at least one edition")
+    if list(editions) != sorted(editions, key=lambda item: item.not_before):
+        raise ValueError("editions must be ordered by not_before")
+    return editions
+
+
+def briefing_local_datetime(briefing_id: str) -> datetime:
+    match = re.fullmatch(r"daily-(\d{8}T\d{6})([+-]\d{4})", briefing_id)
+    if match is None:
+        raise ValueError("invalid daily briefing identity")
+    return datetime.strptime(match.group(1) + match.group(2), "%Y%m%dT%H%M%S%z").astimezone(KST)
+
+
 def decide_schedule_publication(
     *,
     now: datetime,
     deployed_briefing_id: str,
     not_before: time = DEFAULT_NOT_BEFORE,
+    editions: tuple[Edition, ...] | None = None,
 ) -> SchedulePublicationDecision:
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
@@ -80,6 +118,13 @@ def decide_schedule_publication(
     local_date = local_now.date().isoformat()
     local_clock = local_now.time().replace(tzinfo=None)
     deployed_date = briefing_date(deployed_briefing_id)
+    if editions is not None and len(editions) > 1:
+        return _decide_with_editions(
+            local_now=local_now,
+            deployed_briefing_id=deployed_briefing_id,
+            deployed_date=deployed_date,
+            editions=editions,
+        )
 
     common = {
         "local_date": local_date,
@@ -112,6 +157,37 @@ def decide_schedule_publication(
         reason="PUBLICATION_DUE",
         **common,
     )
+
+
+def _decide_with_editions(
+    *,
+    local_now: datetime,
+    deployed_briefing_id: str,
+    deployed_date: str,
+    editions: tuple[Edition, ...],
+) -> SchedulePublicationDecision:
+    local_date = local_now.date().isoformat()
+    clock = local_now.time().replace(tzinfo=None)
+    due = [edition for edition in editions if clock >= edition.not_before]
+    common = {
+        "local_date": local_date,
+        "local_time": clock.isoformat(timespec="seconds"),
+        "not_before": editions[0].not_before.isoformat(timespec="minutes"),
+        "deployed_briefing_id": deployed_briefing_id,
+        "deployed_date": deployed_date,
+        "error_kind": None,
+    }
+    if not due:
+        return SchedulePublicationDecision(False, "BEFORE_PUBLICATION_WINDOW", **common)
+    if deployed_date > local_date:
+        return SchedulePublicationDecision(False, "FUTURE_DEPLOYMENT_STATE", **common)
+    current = due[-1]
+    if deployed_date < local_date:
+        return SchedulePublicationDecision(True, "PUBLICATION_DUE", **common)
+    deployed_clock = briefing_local_datetime(deployed_briefing_id).time().replace(tzinfo=None)
+    if deployed_clock >= current.starts:
+        return SchedulePublicationDecision(False, "ALREADY_PUBLISHED_TODAY", **common)
+    return SchedulePublicationDecision(True, "EDITION_DUE", **common)
 
 
 def unavailable_decision(
@@ -179,12 +255,14 @@ def main() -> None:
     parser.add_argument("--site-url", required=True)
     parser.add_argument("--output", default="build/schedule-publication-gate.json")
     parser.add_argument("--now", default=None)
+    parser.add_argument("--editions", default="config/editions.json")
     args = parser.parse_args()
 
     now = _parse_now(args.now)
     try:
+        editions = load_editions(Path(args.editions))
         deployed_id = fetch_deployed_briefing_id(args.site_url)
-        decision = decide_schedule_publication(now=now, deployed_briefing_id=deployed_id)
+        decision = decide_schedule_publication(now=now, deployed_briefing_id=deployed_id, editions=editions)
     except (ValueError, UnicodeError, urllib.error.URLError, TimeoutError, OSError) as exc:
         decision = unavailable_decision(now=now, error_kind=type(exc).__name__)
 

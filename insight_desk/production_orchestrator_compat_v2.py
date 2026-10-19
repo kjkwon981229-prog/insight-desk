@@ -492,7 +492,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             ),
         )
 
-    def build_view_v2(briefing, *, topic_by_event=None, source_by_event=None):
+    def build_view_v2(briefing, *, topic_by_event=None, source_by_event=None, card_by_event=None):
         nonlocal publication_manifest
         del topic_by_event, source_by_event
         topics = {
@@ -512,6 +512,7 @@ def install_production_orchestration(core_module: ModuleType) -> ProductionV2Reg
             topic_by_event=topics,
             source_by_event=sources,
             publication_by_event=registry.publications_by_event,
+            card_by_event=card_by_event,
         )
 
     def write_json_v2(path, payload) -> None:

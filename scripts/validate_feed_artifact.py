@@ -32,6 +32,11 @@ PSAT_FORBIDDEN = (
 _URL_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])([0-2]\d|3[01])")
 _FQ_STALE_SPORTS = "FEED_QUALITY_STALE_SPORTS_RETROSPECTIVE"
 _SUMMARY_ELISION_HEADLINE_COLLISION = "headline-collision"
+_SUMMARY_ELISION_CORE_LINES = "core-lines"
+_SUMMARY_ELISIONS = frozenset({_SUMMARY_ELISION_HEADLINE_COLLISION, _SUMMARY_ELISION_CORE_LINES})
+CORE_LINE_COUNT = 3
+MAX_CORE_LINE_CHARS = 80
+MAX_REASON_CHARS = 100
 
 
 def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
@@ -86,6 +91,8 @@ class FeedParser(HTMLParser):
         self._field: str | None = None
         self._field_depth = 0
         self._story_depth = 0
+        self._in_core = False
+        self._core_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         classes = _classes(attrs)
@@ -98,8 +105,12 @@ class FeedParser(HTMLParser):
                 "summary": "",
                 "summary_elision": attributes.get("data-summary-elision") or "",
                 "source_url": "",
+                "reason": "",
+                "core_lines": "",
+                "action_buttons": "",
             }
             self._story_depth = 1
+            self._in_core = False
             return
         if self._story is None:
             return
@@ -116,6 +127,18 @@ class FeedParser(HTMLParser):
         elif tag == "span" and "story-topic" in classes:
             self._field = "topic"
             self._field_depth = 1
+        elif tag == "p" and "story-reason" in classes:
+            self._field = "reason"
+            self._field_depth = 1
+        elif tag == "ul" and "story-core" in classes:
+            self._in_core = True
+            self._core_depth = self._story_depth
+        elif tag == "li" and self._in_core:
+            self._field = "core_line"
+            self._field_depth = 1
+            self._story["core_lines"] += "\n"
+        elif tag == "button" and attributes.get("data-action") in {"good", "bad"}:
+            self._story["action_buttons"] += (attributes.get("data-action") or "") + ","
         elif tag == "a" and "story-source" in classes:
             self._story["source_url"] = attributes.get("href") or ""
 
@@ -126,6 +149,8 @@ class FeedParser(HTMLParser):
             self._field_depth -= 1
             if self._field_depth == 0:
                 self._field = None
+        if tag == "ul" and self._in_core and self._story_depth == self._core_depth:
+            self._in_core = False
         self._story_depth -= 1
         if self._story_depth == 0:
             self.stories.append(self._story)
@@ -135,7 +160,8 @@ class FeedParser(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         if self._story is not None and self._field is not None:
-            self._story[self._field] += data
+            key = "core_lines" if self._field == "core_line" else self._field
+            self._story[key] += data
 
 
 def _validate_source_audit(
@@ -253,14 +279,29 @@ def validate_html(
         summary = story["summary"].strip()
         summary_elision = story["summary_elision"].strip()
         topic = story["topic"].strip()
+        core_lines = [line.strip() for line in story.get("core_lines", "").split("\n") if line.strip()]
+        reason_text = story.get("reason", "").strip()
         if summary_elision:
-            if summary_elision != _SUMMARY_ELISION_HEADLINE_COLLISION:
+            if summary_elision not in _SUMMARY_ELISIONS:
                 raise ValueError(f"FEED_QUALITY_SUMMARY_ELISION_INVALID:{index}")
             if summary:
                 raise ValueError(f"FEED_QUALITY_SUMMARY_ELISION_CONFLICT:{index}")
             if not headline:
                 raise ValueError(f"FEED_QUALITY_INCOMPLETE_STORY:{index}")
             summary = headline
+        if core_lines or summary_elision == _SUMMARY_ELISION_CORE_LINES:
+            if summary_elision != _SUMMARY_ELISION_CORE_LINES:
+                raise ValueError(f"FEED_QUALITY_CORE_LINES_WITHOUT_ELISION:{index}")
+            if len(core_lines) != CORE_LINE_COUNT:
+                raise ValueError(f"FEED_QUALITY_CORE_LINES_INVALID:{index}:{len(core_lines)}")
+            if any(len(line) > MAX_CORE_LINE_CHARS for line in core_lines):
+                raise ValueError(f"FEED_QUALITY_CORE_LINE_TOO_LONG:{index}")
+            if len(set(core_lines)) != len(core_lines):
+                raise ValueError(f"FEED_QUALITY_CORE_LINES_DUPLICATE:{index}")
+        if len(reason_text) > MAX_REASON_CHARS:
+            raise ValueError(f"FEED_QUALITY_REASON_TOO_LONG:{index}")
+        if story.get("action_buttons", "") and set(story["action_buttons"].strip(",").split(",")) != {"good", "bad"}:
+            raise ValueError(f"FEED_QUALITY_ACTION_BUTTONS_INCOMPLETE:{index}")
         if not event_id or not headline or not summary:
             raise ValueError(f"FEED_QUALITY_INCOMPLETE_STORY:{index}")
         max_headline = max(max_headline, len(headline))
@@ -301,6 +342,12 @@ def validate_html(
                 context_dependent_headlines += 1
             if referential_report_without_claim(summary):
                 context_dependent_summaries += 1
+            for core_line in core_lines:
+                if visible_metadata_text(core_line):
+                    visible_metadata_issues += 1
+                    visible_metadata_locations.append(f"{index}:core")
+                if nonassertive_interrogative_text(core_line):
+                    nonassertive_questions += 1
 
         if not canonical_v2:
             decision = evaluate_story_admission(

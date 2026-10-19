@@ -166,7 +166,7 @@ class ProductionPushWiringTests(unittest.TestCase):
         self.assertIn("operational failures remain visible in Actions but never become PWA failure popups", workflow)
         self.assertIn("Fail when a successful build was not deployed", workflow)
         self.assertIn(
-            "if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.deploy.result != 'success'",
+            "if: always() && github.event_name != 'pull_request' && needs.build.result == 'success' && needs.build.outputs.no_change != 'true' && needs.deploy.result != 'success'",
             workflow,
         )
         self.assertIn(

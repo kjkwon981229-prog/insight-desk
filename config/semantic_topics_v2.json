@@ -18,6 +18,18 @@
       "semantic_scope": "Current KBO baseball events with direct Hanwha Eagles involvement, including games and results, players, roster changes, injuries, trades, schedules, records, rules or baseball club operations; incidental sponsorship, marketing or entertainment references do not by themselves make an event a Hanwha baseball event."
     },
     {
+      "id": "baseball_sabermetrics",
+      "semantic_scope": "Substantive analysis, research, metrics, models or data findings about baseball performance and strategy (sabermetrics, pitching and hitting analytics, player evaluation), where the analysis itself is the content rather than a game recap, betting tip or fantasy advice."
+    },
+    {
+      "id": "design_color_type",
+      "semantic_scope": "Substantive design content about typography, typefaces, color, interface or brand design, such as case studies, research, guidelines, tool or font releases and trend analysis, where the design idea or practice is the actual subject rather than a product advertisement or discount."
+    },
+    {
+      "id": "contest_benefits",
+      "semantic_scope": "Current contests, competitions and no-cost benefits open to university students in design, video, writing, AI or baseball, where the announcement states what is being invited, who may join and when it closes; paid programs, sponsored promotions and finished results are not part of this scope."
+    },
+    {
       "id": "psat_recruitment",
       "semantic_scope": "Current national or local civil-service recruitment and PSAT events such as official schedules, notices, applications, selections, results or system changes that directly govern civil-service examinations or recruitment; general education or career content that mentions such exams only as background is not itself a recruitment event."
     }

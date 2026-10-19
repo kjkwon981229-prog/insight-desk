@@ -365,7 +365,7 @@ class Live196ArtifactValidatorRegressions(unittest.TestCase):
         html = render_briefing_html(view)
         self.assertIn(
             '<a class="story-source" href="https://example.com/news/live-196" '
-            'target="_blank" rel="noopener noreferrer">원문 보기</a>',
+            'target="_blank" rel="noopener noreferrer">원문</a>',
             html,
         )
 

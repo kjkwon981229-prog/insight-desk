@@ -10,7 +10,7 @@ const MARKER_TTL_SECONDS = 3 * 24 * 60 * 60;
 const PUBLICATION_DIGEST_RE = /^[0-9a-f]{64}$/;
 const BRIEFING_ID_RE = /^[A-Za-z0-9._:+-]{1,192}$/;
 const RUN_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
-const VALID_SOURCES = new Set(["schedule", "manual", "other"]);
+const VALID_SOURCES = new Set(["schedule", "schedule_evening", "manual", "other"]);
 const READY_STATE_VALUES = new Set([
   "DELIVERED",
   "NO_SUBSCRIBERS",

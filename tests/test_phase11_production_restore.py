@@ -12,7 +12,10 @@ class Phase11ProductionRestoreTests(unittest.TestCase):
         topics = load_topics(Path("config/topics.json"))
         self.assertEqual(
             [topic.topic_id for topic in topics],
-            ["ai_tech", "economy", "kpop", "kbo_hanwha", "psat_recruitment"],
+            [
+                "ai_tech", "economy", "kpop", "kbo_hanwha", "contest_benefits",
+                "baseball_sabermetrics", "design_color_type", "psat_recruitment",
+            ],
         )
         self.assertTrue(all(topic.news_queries for topic in topics))
         self.assertTrue(all(topic.selection_cap >= 1 for topic in topics))

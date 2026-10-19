@@ -9,6 +9,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Sequence
 from urllib.parse import urlparse
 
 from insight_desk.acquisition import (
@@ -21,6 +22,7 @@ from insight_desk.acquisition import (
     UrlLibHtmlFetcher,
     default_news_discovery,
 )
+from insight_desk.acquisition.feeds import FeedRssDiscovery
 from insight_desk.core import (
     CandidateEvent,
     ContractBundle,
@@ -33,6 +35,14 @@ from insight_desk.core import (
 )
 from insight_desk.core.event_understanding_v2 import ArticleEventRole, UnderstandingStatus
 from insight_desk.core.identity import IdentityDisposition, identity_disposition
+from insight_desk.curation.card_generation import CardResult, build_card
+from insight_desk.curation.config import load_curation_config
+from insight_desk.curation.contest import CONTEST_TOPIC_ID, verify_contest
+from insight_desk.curation.feedback import adjust_by_topic, fetch_feedback_summary
+from insight_desk.curation.filters import apply_hard_filters
+from insight_desk.curation.history import HistoryError, SeenHistory, load_history, make_entry, save_history
+from insight_desk.curation.scoring import ScoreResult, score_article
+from insight_desk.curation.selection import Scored, select_daily
 from insight_desk.feed_quality import visible_story_issues
 from insight_desk.generation import GenerationRequest, Groq20BBriefingGenerator
 from insight_desk.phase7 import Phase7EntryCandidate, produce_phase7_entry_candidate
@@ -41,7 +51,7 @@ from insight_desk.production_event_understanding_compat_v2 import (
     assess_compatibility_event_understanding as event_understanding_decision,
 )
 from insight_desk.providers.cloudflare import CLOUDFLARE_MODEL, CloudflareClaimVerifier
-from insight_desk.providers.groq import GROQ_20B, GroqFreeClient
+from insight_desk.providers.groq import GROQ_20B, GROQ_120B, GroqFreeClient
 from insight_desk.providers.local_nli import LOCAL_NLI_MODEL, LocalNliVerifier
 from insight_desk.rendering import build_rendered_briefing
 from insight_desk.semantic import (
@@ -85,17 +95,24 @@ class TopicConfig:
     intent_anchors: tuple[str, ...]
     required_intent_terms: tuple[str, ...]
     news_queries: tuple[str, ...]
+    feed_urls: tuple[str, ...] = ()
     event_terms: tuple[str, ...] = ()
     conditional: bool = False
     event_scope_anchors: tuple[str, ...] = ()
+    negative_context: tuple[str, ...] = ()
+    freshness_days: int = 3
 
     def __post_init__(self) -> None:
+        if self.freshness_days < 1:
+            raise ValueError("topic freshness_days must be positive")
         if not self.topic_id or not self.name:
             raise ValueError("topic id/name must be non-empty")
         if self.candidate_budget < 1 or self.selection_cap < 1:
             raise ValueError("topic budgets must be positive")
-        if not self.intent_anchors or not self.news_queries:
-            raise ValueError("enabled production topic requires anchors and news queries")
+        if not self.intent_anchors or not (self.news_queries or self.feed_urls):
+            raise ValueError("enabled production topic requires anchors and news queries or feed urls")
+        if any(not url.startswith("https://") for url in self.feed_urls):
+            raise ValueError("topic feed urls must be https")
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +124,19 @@ class PublishedCandidate:
     identity_text: str
     source_identity_text: str
     source_url: str
+    # Curation metadata (defaults keep every pre-existing construction site valid).
+    article_id: str = ""
+    article_title: str = ""
+    score: ScoreResult | None = None
+
+
+def _default_card_clients() -> list[GroqFreeClient]:
+    """Free Groq models (frozen zero-cost allowlist) used for the grounded core lines; none if unconfigured."""
+    clients: list[GroqFreeClient] = []
+    for model_id in (GROQ_120B, GROQ_20B):
+        if GroqFreeClient.configured(model_id=model_id):
+            clients.append(GroqFreeClient.from_env(model_id))
+    return clients
 
 
 def load_topics(path: Path) -> tuple[TopicConfig, ...]:
@@ -125,9 +155,12 @@ def load_topics(path: Path) -> tuple[TopicConfig, ...]:
                 intent_anchors=tuple(str(value) for value in raw.get("intent_anchors", []) if str(value).strip()),
                 required_intent_terms=tuple(str(value) for value in raw.get("required_intent_terms", []) if str(value).strip()),
                 news_queries=tuple(str(value) for value in raw.get("news_queries", []) if str(value).strip()),
+                feed_urls=tuple(str(value).strip() for value in raw.get("feed_urls", []) if str(value).strip()),
                 event_terms=tuple(str(value) for value in raw.get("event_terms", []) if str(value).strip()),
                 conditional=raw.get("conditional") is True,
                 event_scope_anchors=tuple(str(value) for value in raw.get("event_scope_anchors", []) if str(value).strip()),
+                negative_context=tuple(str(value) for value in raw.get("negative_context", []) if str(value).strip()),
+                freshness_days=int(raw.get("freshness_days", 3)),
             )
         )
     return tuple(sorted(topics, key=lambda item: (-item.priority, item.topic_id)))
@@ -207,12 +240,13 @@ def _identity_defer_unresolved(*_args, **_kwargs):
 resolve_deferred_identity = _identity_defer_unresolved
 
 
-def _is_fresh(published_at: datetime | None, now: datetime) -> bool | None:
-    """Preserved article-source acquisition freshness threshold."""
+def _is_fresh(published_at: datetime | None, now: datetime, freshness_days: int = 3) -> bool | None:
+    """Article-source freshness threshold; three days (72 h) unless the topic allows longer."""
     if published_at is None:
         return None
+    window = FRESHNESS_WINDOW if freshness_days == 3 else timedelta(days=freshness_days)
     age = now.astimezone(timezone.utc) - published_at.astimezone(timezone.utc)
-    return -FUTURE_CLOCK_TOLERANCE <= age <= FRESHNESS_WINDOW
+    return -FUTURE_CLOCK_TOLERANCE <= age <= window
 
 
 def _domain(url: str) -> str:
@@ -265,13 +299,40 @@ def _counter(stats: dict[str, int], key: str, amount: int = 1) -> None:
     stats[key] = stats.get(key, 0) + amount
 
 
-def _query_candidate_batches(discovery, topic: TopicConfig, attempts):
+def default_feed_discovery() -> FeedRssDiscovery:
+    return FeedRssDiscovery()
+
+
+def default_feedback_adjust(topics: Sequence[TopicConfig], cfg) -> dict[str, float]:
+    """Yesterday's 좋다/별로다 votes (from the push worker) as a small per-topic score nudge; {} if unavailable."""
+    from insight_desk.ui import _TOPIC_DISPLAY_LABELS
+
+    label_to_id = {
+        _TOPIC_DISPLAY_LABELS.get(topic.topic_id) or _TOPIC_DISPLAY_LABELS.get(topic.name) or topic.name: topic.topic_id
+        for topic in topics
+    }
+    # Votes stay on each reader's device (no collection server), so there is nothing to fetch.
+    # Set INSIGHT_DESK_FEEDBACK_URL only if a summary endpoint is ever deployed again.
+    summary = fetch_feedback_summary(os.environ.get("INSIGHT_DESK_FEEDBACK_URL", "").strip() or None)
+    return adjust_by_topic(summary, label_to_id, cfg)
+
+
+def _query_candidate_batches(discovery, topic: TopicConfig, attempts, feed_discovery=None):
     """Interleave configured query results within the unchanged acquisition budget.
 
     Exhausted/failed query lanes drop out, so remaining lanes can use spare capacity.
     Each mutable batch still accepts bounded understanding-resolution candidates.
+    Configured public feeds are extra lanes; they only supply candidates for the same gates.
     """
     lanes = []
+    for feed_url in (topic.feed_urls if feed_discovery is not None else ()):
+        try:
+            candidates = tuple(feed_discovery.fetch(feed_url, topic_id=topic.topic_id, limit=10))
+        except DiscoveryError as exc:
+            attempts.append(_attempt(topic=topic.topic_id, query=f"feed:{feed_url}", domain="discovery",
+                                     stage="discovery", status="skip", reason=exc.failure_kind.value))
+            continue
+        lanes.append((f"feed:{feed_url}", candidates))
     for query in topic.news_queries:
         try:
             candidates = tuple(discovery.search(query, topic_id=topic.topic_id, limit=10))
@@ -342,12 +403,54 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, audit_path: Path) -> dict[str, object]:
+def run_production(
+    *,
+    topics_path: Path,
+    output_dir: Path,
+    state_path: Path,
+    audit_path: Path,
+    curation_path: Path | None = None,
+    history_in_path: Path | None = None,
+    history_out_path: Path | None = None,
+    card_clients: Sequence[object] | None = None,
+    edition: str = "morning",
+) -> dict[str, object]:
+    if edition not in {"morning", "evening"}:
+        raise ValueError("edition must be morning or evening")
     topics = load_topics(topics_path)
     if not topics:
         raise RuntimeError("no enabled production topics")
+    curation_cfg = load_curation_config(
+        curation_path if curation_path is not None else Path("config/curation.json")
+    )
+    run_started = datetime.now(timezone.utc)
+    history_error = False
+    feedback_by_topic = default_feedback_adjust(topics, curation_cfg)
+    try:
+        seen_history = load_history(history_in_path, run_started) if history_in_path is not None else SeenHistory()
+    except HistoryError:
+        # A damaged memory file must not stop the briefing; the worst case is one repeated topic.
+        seen_history = SeenHistory()
+        history_error = True
+    # Evening edition carries the morning items again: today's entries do not count as already-seen.
+    todays_entries: tuple = ()
+    if edition == "evening":
+        today_kst = run_started.astimezone(KST).date()
+        todays_entries = tuple(e for e in seen_history.entries if e.shown_at.astimezone(KST).date() == today_kst)
+        seen_history = SeenHistory(entries=tuple(e for e in seen_history.entries if e not in todays_entries))
+    curation_stats: dict[str, object] = {
+        "history_error": history_error,
+        "hard_filtered": {},
+        "scored": 0,
+        "score_passed": 0,
+        "score_failed": 0,
+        "score_histogram": {},
+        "selection_dropped": {},
+    }
+    bundle_parts: dict[str, dict[str, object]] = {}
 
     discovery = default_news_discovery()
+    feed_discovery = default_feed_discovery()
     acquisition = AcquisitionPipeline(
         fetcher=UrlLibHtmlFetcher(timeout=15),
         primary_extractor=TrafilaturaExtractor(),
@@ -422,7 +525,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         relevance_resolution_candidate_urls: set[str] = set()
         event_understanding_resolution_candidate_urls: set[str] = set()
 
-        for query, queue in _query_candidate_batches(discovery, topic, attempts):
+        for query, queue in _query_candidate_batches(discovery, topic, attempts, feed_discovery):
             if stats["acquisition_attempts"] >= max_acquisitions or stats["published_entries"] >= topic.selection_cap:
                 break
             for candidate in queue:
@@ -486,10 +589,34 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                 if content_sha256 in published_content_fingerprints:
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="source_identity", status="skip", reason="content_fingerprint_already_published"))
                     continue
-                fresh = _is_fresh(article.provenance.published_at, now)
+                fresh = _is_fresh(article.provenance.published_at, now, topic.freshness_days)
                 if fresh is not True:
-                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="freshness", status="skip", reason="published_at_missing" if fresh is None else "outside_72h_window"))
+                    window_label = "72h" if topic.freshness_days == 3 else f"{topic.freshness_days}d"
+                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="freshness", status="skip", reason="published_at_missing" if fresh is None else f"outside_{window_label}_window"))
                     continue
+
+                hard_filter = apply_hard_filters(
+                    title=article.title,
+                    body=article.body,
+                    url=article.provenance.url,
+                    topic_id=topic.topic_id,
+                    negative_context=topic.negative_context,
+                    history=seen_history,
+                    now=now,
+                    cfg=curation_cfg,
+                )
+                if hard_filter.rejected:
+                    reason_code = hard_filter.reason or "hard_filter"
+                    _counter(curation_stats["hard_filtered"], reason_code)  # type: ignore[arg-type]
+                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="hard_filter", status="skip", reason=reason_code))
+                    continue
+                if topic.topic_id == CONTEST_TOPIC_ID:
+                    contest = verify_contest(title=article.title, body=article.body, now=now)
+                    if not contest.ok:
+                        reason_code = contest.reason or "contest_unverified"
+                        _counter(curation_stats["hard_filtered"], reason_code)  # type: ignore[arg-type]
+                        attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="hard_filter", status="skip", reason=reason_code))
+                        continue
 
                 source_relevance = relevance_decision(title=article.title, body=article.body, topic=topic)
                 if source_relevance.verdict is RelevanceVerdict.IRRELEVANT:
@@ -512,6 +639,24 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                         reason=source_relevance.reasons[0].value,
                     ))
                     continue
+
+                article_score = score_article(
+                    title=article.title,
+                    body=article.body,
+                    topic_id=topic.topic_id,
+                    intent_anchors=topic.intent_anchors,
+                    published_at=article.provenance.published_at,
+                    now=now,
+                    cfg=curation_cfg,
+                    feedback_adjust=feedback_by_topic.get(topic.topic_id, 0.0),
+                )
+                curation_stats["scored"] = int(curation_stats["scored"]) + 1  # type: ignore[call-overload]
+                _counter(curation_stats["score_histogram"], str(int(article_score.total)))  # type: ignore[arg-type]
+                if not article_score.passed:
+                    curation_stats["score_failed"] = int(curation_stats["score_failed"]) + 1  # type: ignore[call-overload]
+                    attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="scoring", status="skip", reason=f"score_{article_score.total:g}_below_{curation_cfg.pass_score:g}"))
+                    continue
+                curation_stats["score_passed"] = int(curation_stats["score_passed"]) + 1  # type: ignore[call-overload]
 
                 semantic_result = semantic.extract_article(article, topic_id=topic.topic_id, extractor=extractor)
                 if not semantic_result.events:
@@ -767,6 +912,9 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                             identity_text=identity_text,
                             source_identity_text=article.body,
                             source_url=article.provenance.url,
+                            article_id=article.article_id,
+                            article_title=article.title,
+                            score=article_score,
                         )
                     )
                     published_source_groups.add(source_group_key)
@@ -781,8 +929,87 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
                     events[event.event_id] = event
                     for item in entry_candidate.verification.claims:
                         claims[item.claim.claim_id] = item.claim
+                    bundle_parts[event.event_id] = {
+                        "article": article,
+                        "evidence": tuple(
+                            item for item in semantic_result.evidence if item.evidence_id in generation_request.evidence_ids
+                        ),
+                        "facts": tuple(article_facts[fact_id] for fact_id in event.fact_ids),
+                        "event": event,
+                        "claims": tuple(item.claim for item in entry_candidate.verification.claims),
+                    }
                     attempts.append(_attempt(topic=topic.topic_id, query=query, domain=domain, stage="publish_gate", status="pass"))
                     break
+
+    # Daily selection: highest scores first, at most max_per_topic per topic and max_daily overall.
+    # Only selected candidates feed the contract bundle, so counts, links and the bundle always agree.
+    scored_pool = [
+        Scored(
+            key=item.candidate.event_id,
+            topic_id=item.topic.topic_id,
+            topic_priority=item.topic.priority,
+            total=item.score.total if item.score is not None else 0.0,
+            source_domain=_domain(item.source_url),
+        )
+        for item in published
+    ]
+    published_by_key = {item.candidate.event_id: item for item in published}
+    if card_clients is None:
+        card_clients = _default_card_clients()
+    card_stats: dict[str, object] = {"attempted": 0, "ok": 0, "unavailable": 0, "rejected": 0, "weak": 0, "codes": {}}
+    cards_by_event: dict[str, CardResult] = {}
+
+    def _accept_with_card(chosen: Scored) -> str | None:
+        item = published_by_key[chosen.key]
+        if item.score is None:
+            return None
+        card_stats["attempted"] = int(card_stats["attempted"]) + 1  # type: ignore[call-overload]
+        result = build_card(
+            title=item.article_title,
+            body=item.source_identity_text,
+            topic_label=item.topic.name,
+            score=item.score,
+            now=now,
+            clients=card_clients,  # type: ignore[arg-type]
+        )
+        card_stats[result.status] = int(card_stats[result.status]) + 1  # type: ignore[call-overload]
+        _counter(card_stats["codes"], result.code)  # type: ignore[arg-type]
+        if result.status == "rejected":
+            return f"card_rejected:{result.code}"
+        if result.weak:
+            card_stats["weak"] = int(card_stats["weak"]) + 1  # type: ignore[call-overload]
+        cards_by_event[chosen.key] = result
+        return None
+
+    selection = select_daily(scored_pool, cfg=curation_cfg, accept=_accept_with_card)
+    for _dropped, drop_reason in selection.dropped:
+        _counter(curation_stats["selection_dropped"], drop_reason.split(":", 1)[0])  # type: ignore[arg-type]
+    curation_stats["card_stats"] = card_stats
+    order = {chosen.key: position for position, chosen in enumerate(selection.selected)}
+    published = sorted((item for item in published if item.candidate.event_id in order), key=lambda item: order[item.candidate.event_id])
+    articles, evidence, facts, events, claims = {}, {}, {}, {}, {}
+    for item in published:
+        parts = bundle_parts[item.candidate.event_id]
+        articles[parts["article"].article_id] = parts["article"]  # type: ignore[attr-defined]
+        for span in parts["evidence"]:  # type: ignore[attr-defined]
+            evidence[span.evidence_id] = span
+        for fact in parts["facts"]:  # type: ignore[attr-defined]
+            facts[fact.fact_id] = fact
+        events[item.candidate.event_id] = parts["event"]
+        for claim in parts["claims"]:  # type: ignore[attr-defined]
+            claims[claim.claim_id] = claim
+    curation_stats["selected"] = len(published)
+    for item in published:
+        seen_history = seen_history.add(
+            make_entry(
+                topic_id=item.topic.topic_id,
+                title=item.article_title,
+                event_id=item.candidate.event_id,
+                shown_at=now,
+            )
+        )
+    if history_out_path is not None and published:
+        save_history(history_out_path, SeenHistory(entries=todays_entries + seen_history.entries), now)
 
     briefing_id = f"daily-{now.astimezone(KST).strftime('%Y%m%dT%H%M%S%z')}"
     rendered = build_rendered_briefing(briefing_id=briefing_id, generated_at=now.astimezone(KST), candidates=tuple(item.candidate for item in published))
@@ -819,10 +1046,18 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         bundle.validate()
         topic_by_event = {item.candidate.event_id: item.topic.name for item in published}
         source_by_event = {item.candidate.event_id: item.source_url for item in published}
+        card_by_event = {
+            event_id: (
+                result.reason,
+                tuple(result.card.lines) if result.status == "ok" and result.card is not None else (),
+            )
+            for event_id, result in cards_by_event.items()
+        }
         view = build_briefing_view_model(
             rendered,
             topic_by_event=topic_by_event,
             source_by_event=source_by_event,
+            card_by_event=card_by_event,
         )
         push_worker_url = os.environ.get("PUSH_WORKER_URL", "").strip() or None
         html = render_briefing_html(view, runtime=PwaRuntimeConfig(push_worker_url=push_worker_url))
@@ -843,6 +1078,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     }
     tool_usage = {
         "discovery": discovery.route_stats,
+        "feeds": feed_discovery.route_stats if feed_discovery is not None else {},
         "acquisition": acquisition_stats,
         "fact_extraction": extractor.route_stats,
         "generation": generation_route_stats,
@@ -851,8 +1087,10 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
     }
 
     state = {
-        "status": "SUCCESS" if publish else "NO_PUBLISHABLE_ITEMS",
+        # An evening edition with nothing new is a normal quiet result, not a failed publication.
+        "status": "SUCCESS" if publish else ("NO_CHANGE" if edition == "evening" else "NO_PUBLISHABLE_ITEMS"),
         "publish": publish,
+        "edition": edition,
         "briefing_id": briefing_id,
         "generated_at": now.astimezone(KST).isoformat(),
         "published_entries": len(rendered.entries),
@@ -867,6 +1105,7 @@ def run_production(*, topics_path: Path, output_dir: Path, state_path: Path, aud
         "attempts": attempts,
         "generation_stats": generation_stats,
         "identity_stats": identity_stats,
+        "curation_stats": curation_stats,
         "tool_usage": tool_usage,
         "rendered_sources": rendered_sources,
         "provider_roles": {
@@ -911,12 +1150,25 @@ def main() -> None:
     parser.add_argument("--output", default="build/site")
     parser.add_argument("--state", default="build/run-state.json")
     parser.add_argument("--audit", default="build/production-audit.json")
+    parser.add_argument("--curation", default="config/curation.json")
+    parser.add_argument("--history-in", default=None, help="7-day shown-topic history to read (state branch checkout)")
+    parser.add_argument("--history-out", default=None, help="where to write the updated history after selection")
+    parser.add_argument("--edition", choices=("morning", "evening"), default="morning")
     args = parser.parse_args()
 
     state_path = Path(args.state)
     audit_path = Path(args.audit)
     try:
-        state = run_production(topics_path=Path(args.topics), output_dir=Path(args.output), state_path=state_path, audit_path=audit_path)
+        state = run_production(
+            topics_path=Path(args.topics),
+            output_dir=Path(args.output),
+            state_path=state_path,
+            audit_path=audit_path,
+            curation_path=Path(args.curation),
+            history_in_path=Path(args.history_in) if args.history_in else None,
+            history_out_path=Path(args.history_out) if args.history_out else None,
+            edition=args.edition,
+        )
     except Exception as exc:
         failure = {"status": "TOTAL_FAILURE", "publish": False, "error_type": type(exc).__name__}
         _write_json(state_path, failure)
