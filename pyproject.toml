@@ -38,6 +38,7 @@ packages = [
   "insight_desk.providers",
   "insight_desk.acquisition",
   "insight_desk.semantic",
+  "insight_desk.curation",
 ]
 
 [tool.ruff]
