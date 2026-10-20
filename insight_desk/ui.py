@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html import escape, unescape
 from typing import Mapping
@@ -174,6 +175,8 @@ def _display_title(raw: str | None, fallback: str) -> str:
     if not raw:
         return fallback
     title = " ".join(unescape(raw).split())
+    # 앞에 붙은 [매체명]·[기자] 꼬리표를 뗀다.
+    title = re.sub(r"^(?:\s*[\[\(［][^\]\)］]{1,30}[\]\)］])+\s*", "", title)
     # 끝에 붙은 매체 이름(" - 매체", " | 매체")만 뗀다.
     for sep in (" - ", " | ", " — "):
         head, found, tail = title.rpartition(sep)

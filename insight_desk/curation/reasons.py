@@ -61,13 +61,27 @@ def _reason_q1(text: str, title: str = "", body: str = "") -> str:
     return "새로 남는 것: 새 소식을 담음"
 
 
+_BRACKET_TAG = re.compile(r"^\s*[\[\(［][^\]\)］]{1,30}[\]\)］]\s*")
+_BYLINE_TAIL = re.compile(r"^\s*[가-힣]{2,4}\s*기자\s*[=ㅣ:]?\s*")
+
+
+def strip_byline(text: str) -> str:
+    """문장·제목 앞에 붙은 [매체=기자]·(지역=매체)·'홍길동 기자 =' 꼬리표를 뗀다."""
+    previous = None
+    while previous != text:
+        previous = text
+        text = _BRACKET_TAG.sub("", text, count=1)
+        text = _BYLINE_TAIL.sub("", text, count=1)
+    return text.strip()
+
+
 def _sentence_with(needle: str, title: str, body: str) -> str | None:
     """needle이 든 본문 문장 중 제목과 겹치지 않고 짧게 읽히는 것을 고른다."""
     folded_title = normalize(title)
     for sentence in split_sentences(body):
         if needle not in sentence:
             continue
-        cleaned = sentence.strip().rstrip(".。")
+        cleaned = strip_byline(sentence.strip()).rstrip(".。")
         if not 12 <= len(cleaned) <= 70:
             continue
         if normalize(cleaned) in folded_title or folded_title in normalize(cleaned):
