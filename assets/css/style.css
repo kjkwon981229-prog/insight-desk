@@ -305,7 +305,8 @@ footer { color: var(--muted); font-size: .78rem; padding: 38px 0 max(48px, env(s
 .tabbar { background: var(--surface); border-top: 1px solid var(--line); bottom: 0; display: grid; font-family: var(--font-ui); grid-template-columns: repeat(3, 1fr); left: 0; padding-bottom: env(safe-area-inset-bottom); position: fixed; right: 0; z-index: 10; }
 .tabbar a { color: var(--muted); font-size: .9rem; min-height: 48px; padding: 14px 0; text-align: center; text-decoration: none; }
 .tabbar a[aria-current="page"] { box-shadow: inset 0 3px 0 var(--accent); color: var(--accent); font-weight: 400; }
-.shell { padding-bottom: 80px; }
+.shell { padding-bottom: 72px; }
+footer { padding: 20px 0 8px; }
 main[data-view="collection"] #today, main[data-view="collection"] #stories, main[data-view="collection"] #settings,
 main[data-view="settings"] #today, main[data-view="settings"] #stories, main[data-view="settings"] #collection,
 main[data-view="today"] #collection, main[data-view="today"] #settings { display: none; }
@@ -316,7 +317,7 @@ main[data-view="today"] #collection, main[data-view="today"] #settings { display
 .brand { color: var(--accent); font-family: var(--font-ui); font-size: .78rem; font-weight: 400; letter-spacing: .16em; }
 .header-meta { font-family: var(--font-ui); }
 .briefing-overview { border-bottom: 0; padding: 6px 0 16px; }
-.briefing-overview h1 { font-size: clamp(1.7rem, 7vw, 2.4rem); letter-spacing: -.02em; margin-top: 0; }
+.briefing-overview h1 { font-size: clamp(1.7rem, 7vw, 2.4rem); letter-spacing: 0; margin-top: 0; }
 .overview-status { color: var(--muted); font-family: var(--font-ui); font-size: .82rem; margin-top: 6px; }
 .overview-lede { font-size: inherit; line-height: inherit; margin: 0; max-width: none; }
 .overview-status strong { color: var(--accent); font-weight: 400; }

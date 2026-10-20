@@ -100,6 +100,9 @@ _QUOTE_PATTERNS = [
 _NEG_MARKERS = ["않", "아니", "불가", "없", "무산", "취소", "부결", "중단", "철회"]
 _STRONG_NEG = ("무산", "취소", "부결", "중단", "철회", "불가")
 _WEAK_NEG = ("없다", "없었", "않았", "않는", "않을", "않다", "아니다", "아니라")
+_CLAIM_WORDS = (
+    "투자", "출자", "인수", "합병", "매각", "상장", "증자", "유치", "융자", "대출", "수주", "지원금", "보조금",
+)
 _UP_WORDS = ("증가", "상승", "확대", "늘", "급증", "인상", "성장", "개선", "호조", "흑자")
 _DOWN_WORDS = ("감소", "하락", "축소", "줄", "급감", "인하", "둔화", "악화", "부진", "적자")
 
@@ -223,6 +226,11 @@ def check_grounding(
                     return GroundingResult(False, "grounding:nouns", idx, weak)
         else:
             weak = True
+
+        # 돈의 성격을 바꾸는 말(투자·지원·인수 …)은 인용한 문장에 그 말이 있을 때만 쓴다.
+        # 연구개발비를 "투자"로, 정부 지원을 "투자 유치"로 바꿔 쓰는 요약을 막는다.
+        if any(word in line.text and word not in cited_raw for word in _CLAIM_WORDS):
+            return GroundingResult(False, "grounding:claim", idx, weak)
 
         line_negates = any(marker in line.text for marker in _NEG_MARKERS)
         if line_negates and not any(marker in cited_raw for marker in _NEG_MARKERS):

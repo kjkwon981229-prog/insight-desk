@@ -96,6 +96,21 @@ class TestReasonIsGrounded(unittest.TestCase):
     def test_quoted_word_missing(self):
         self.assertFalse(reason_is_grounded("'최악' 기록", "역대 최고 기록 달성"))
 
+    def test_template_phrase_rejected(self):
+        self.assertFalse(reason_is_grounded("새로 남는 것: 15억 같은 구체적 수치", "매출 15억"))
+
+    def test_reason_uses_body_sentence_not_template(self):
+        reason = build_reason(
+            score=_make_score(1),
+            topic_label="경제",
+            title="한화 투자 소식",
+            body="회사는 올해 영업이익이 15억원으로 늘었다고 밝혔다. 다른 문장이다.",
+            now=datetime(2025, 1, 1),
+        )
+        self.assertNotIn("구체적 수치", reason)
+        self.assertIn("영업이익이 15억원으로 늘었다고 밝혔다", reason)
+        self.assertTrue(reason_is_grounded(reason, "회사는 올해 영업이익이 15억원으로 늘었다고 밝혔다. 다른 문장이다.", "한화 투자 소식"))
+
     def test_topic_label_excluded(self):
         self.assertTrue(reason_is_grounded("관심 분야(없는라벨)와 관련", "관련 내용"))
 

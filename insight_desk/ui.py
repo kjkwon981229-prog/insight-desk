@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
+from html import escape, unescape
 from typing import Mapping
 from urllib.parse import urlsplit
 
@@ -170,6 +170,21 @@ class PwaRuntimeConfig:
         object.__setattr__(self, "push_worker_url", value)
 
 
+def _display_title(raw: str | None, fallback: str) -> str:
+    if not raw:
+        return fallback
+    title = " ".join(unescape(raw).split())
+    # 끝에 붙은 매체 이름(" - 매체", " | 매체")만 뗀다.
+    for sep in (" - ", " | ", " — "):
+        head, found, tail = title.rpartition(sep)
+        if found and head and len(tail) <= 15:
+            title = head.strip()
+            break
+    if not 8 <= len(title) <= 100:
+        return fallback
+    return title
+
+
 def build_briefing_view_model(
     briefing: RenderedBriefing,
     *,
@@ -177,6 +192,7 @@ def build_briefing_view_model(
     source_by_event: Mapping[str, str] | None = None,
     publication_by_event: Mapping[str, VerifiedPublication] | None = None,
     card_by_event: Mapping[str, tuple[str, tuple[str, ...]]] | None = None,
+    title_by_event: Mapping[str, str] | None = None,
 ) -> BriefingViewModel:
     """Build UI data from verified fields without re-interpreting news meaning.
 
@@ -189,11 +205,13 @@ def build_briefing_view_model(
     topics = topic_by_event or {}
     sources = source_by_event or {}
     cards = card_by_event or {}
+    titles = title_by_event or {}
     stories = tuple(
         StoryViewModel(
             index=index,
             event_id=entry.event_id,
-            headline=entry.headline,
+            # 본문 중간 문장 대신 기사 원제를 보여 준다(원제가 없거나 너무 길면 검증된 헤드라인).
+            headline=_display_title(titles.get(entry.event_id), entry.headline),
             summary=entry.summary,
             render_mode=entry.render_mode,
             topic=topics.get(entry.event_id),
