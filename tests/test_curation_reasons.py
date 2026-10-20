@@ -111,6 +111,12 @@ class TestReasonIsGrounded(unittest.TestCase):
         self.assertIn("영업이익이 15억원으로 늘었다고 밝혔다", reason)
         self.assertTrue(reason_is_grounded(reason, "회사는 올해 영업이익이 15억원으로 늘었다고 밝혔다. 다른 문장이다.", "한화 투자 소식"))
 
+    def test_byline_and_outlet_tags_are_stripped(self):
+        from insight_desk.curation.reasons import strip_byline
+
+        self.assertEqual(strip_byline("[위클리오늘=신하연 기자] 원·달러 환율이 올랐다"), "원·달러 환율이 올랐다")
+        self.assertEqual(strip_byline("(서울=연합뉴스) 홍길동 기자 = 금리가 동결됐다"), "금리가 동결됐다")
+
     def test_topic_label_excluded(self):
         self.assertTrue(reason_is_grounded("관심 분야(없는라벨)와 관련", "관련 내용"))
 
