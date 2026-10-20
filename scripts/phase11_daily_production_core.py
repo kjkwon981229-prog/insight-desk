@@ -193,6 +193,7 @@ def relevance_decision(*, title: str, body: str, topic: TopicConfig) -> Relevanc
     return relevance_from_literal_match(
         topic_id=topic.topic_id,
         matched=topic_relevant(title=title, body=body, topic=topic),
+        title=title,
     )
 
 
@@ -1058,6 +1059,7 @@ def run_production(
             topic_by_event=topic_by_event,
             source_by_event=source_by_event,
             card_by_event=card_by_event,
+            title_by_event={item.candidate.event_id: item.article_title for item in published},
         )
         push_worker_url = os.environ.get("PUSH_WORKER_URL", "").strip() or None
         html = render_briefing_html(view, runtime=PwaRuntimeConfig(push_worker_url=push_worker_url))

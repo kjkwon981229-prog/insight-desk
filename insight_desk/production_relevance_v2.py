@@ -172,7 +172,7 @@ class ConfiguredLiteralRelevanceOwner:
 
     def decide(self, *, title: str, body: str, topic) -> RelevanceDecision:
         matched = self.matcher(title=title, body=body, topic=topic)
-        return relevance_from_literal_match(topic_id=topic.topic_id, matched=matched)
+        return relevance_from_literal_match(topic_id=topic.topic_id, matched=matched, title=title)
 
     def decide_canonical_proposition(
         self,
